@@ -100,6 +100,7 @@ pub(super) fn project(
         return Err(unsupported());
     }
     let s = request.settings();
+    let validated = super::super::strict_tools::validated(request)?;
     if s.prediction.is_some() {
         rules.insert(RequestRule::OmitPrediction);
     }
@@ -212,12 +213,6 @@ pub(super) fn project(
                 {
                     return Err(unsupported());
                 }
-                match t.strict {
-                    FunctionStrictness::Omitted(StrictDefault::NonStrict)
-                    | FunctionStrictness::Explicit(false) => {}
-                    FunctionStrictness::Omitted(StrictDefault::Conditional)
-                    | FunctionStrictness::Explicit(true) => return Err(unsupported()),
-                }
                 let mut d = Map::new();
                 d.insert("name".into(), t.name.as_str().into());
                 if let Some(description) = &t.description {
@@ -226,9 +221,14 @@ pub(super) fn project(
                 // An omitted schema declares a function without parameters, as in the source.
                 // https://ai.google.dev/api/caching#FunctionDeclaration
                 if let Some(parameters) = &t.parameters {
-                    // This carrier describes named parameters, not a scalar/union input.
-                    // Do not infer or inject an object constraint into the source schema.
-                    if parameters.root().get("type").and_then(Value::as_str) != Some("object") {
+                    // A reference or composition may describe the required object.
+                    // Keep its original schema for upstream validation, without
+                    // injecting a type or resolving references into a new document.
+                    if parameters
+                        .root()
+                        .get("type")
+                        .is_some_and(|kind| kind.as_str() != Some("object"))
+                    {
                         return Err(unsupported());
                     }
                     d.insert("parametersJsonSchema".into(), parameters.root().clone());
@@ -241,23 +241,23 @@ pub(super) fn project(
             json!([{"functionDeclarations": declarations}]),
         );
     }
-    if let Some(choice) = &s.tool_choice {
+    if s.tool_choice.is_some() || validated {
+        let choice = s.tool_choice.as_ref().unwrap_or(&ToolChoice::Auto);
         let config = match choice {
-            ToolChoice::Auto => json!({"mode": "AUTO"}),
+            ToolChoice::Auto => json!({"mode": if validated { "VALIDATED" } else { "AUTO" }}),
             ToolChoice::None => json!({"mode": "NONE"}),
             ToolChoice::Required => json!({"mode": "ANY"}),
             ToolChoice::Specific(name) => {
                 json!({"mode": "ANY", "allowedFunctionNames": [name.as_str()]})
             }
-            ToolChoice::Allowed {
-                required: true,
-                tools,
-            } if tools
-                .iter()
-                .all(|tool| tool.kind == ToolKind::Function && tool.namespace.is_none()) =>
+            ToolChoice::Allowed { required, tools }
+                if tools
+                    .iter()
+                    .all(|tool| tool.kind == ToolKind::Function && tool.namespace.is_none()) =>
             {
                 let names: Vec<_> = tools.iter().map(|tool| tool.name.as_str()).collect();
-                json!({"mode": "ANY", "allowedFunctionNames": names})
+                json!({"mode": if *required { "ANY" } else { "VALIDATED" },
+                    "allowedFunctionNames": names})
             }
             _ => return Err(unsupported()),
         };

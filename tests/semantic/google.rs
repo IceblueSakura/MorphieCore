@@ -2066,6 +2066,146 @@ fn image_sizes_remain_strict_in_user_and_tool_result_uses() {
 }
 
 #[test]
+fn referenced_function_parameters_reach_google_without_schema_rewriting() {
+    let parameters = json!({"$ref":"#/$defs/Args","$defs":{"Args":{
+        "type":"object","properties":{"value":{"type":"integer","enum":[7]}},
+        "required":["value"],"additionalProperties":false}}});
+    let source = client(
+        GenerationApi::Responses,
+        json!({"model":"gemini","input":"go",
+        "tools":[{"type":"function","name":"lookup","strict":false,"parameters":parameters}]}),
+    );
+    let before = source.clone();
+    let (wire, rules) = encode_generation_request(
+        &source.task.semantic,
+        &source.task.fidelity,
+        &target(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        wire,
+        json!({"contents":[{"role":"user","parts":[{"text":"go"}]}],
+        "tools":[{"functionDeclarations":[{"name":"lookup","parametersJsonSchema":parameters}]}]})
+    );
+    assert!(rules.is_empty());
+    assert_eq!(source, before);
+}
+
+#[test]
+fn strict_function_arguments_use_validated_modes_without_rewriting_schemas() {
+    let parameters = json!({"type":"object","properties":{
+        "value":{"type":"integer","enum":[7]},
+        "ok":{"type":"boolean"},
+        "label":{"type":"string","enum":["cedar"]},
+        "rows":{"type":"array","items":{"type":"object","properties":{
+            "amount":{"type":"number","enum":[1.25]}},
+            "required":["amount"],"additionalProperties":false}}},
+        "required":["value","ok","label"],"additionalProperties":false});
+    for (choice, generate_mode, interaction_mode) in [
+        (None, "VALIDATED", "validated"),
+        (Some(json!("auto")), "VALIDATED", "validated"),
+        (Some(json!("required")), "ANY", "any"),
+        (Some(json!("none")), "NONE", "none"),
+        (
+            Some(json!({"type":"allowed_tools","mode":"auto",
+            "tools":[{"type":"function","name":"lookup"}]})),
+            "VALIDATED",
+            "validated",
+        ),
+    ] {
+        let mut input = json!({"model":"gemini","input":"go",
+            "tools":[{"type":"function","name":"lookup","strict":true,"parameters":parameters}]});
+        if let Some(choice) = &choice {
+            input["tool_choice"] = choice.clone();
+        }
+        let source = client(GenerationApi::Responses, input);
+        let before = source.clone();
+        let (generate, rules) = encode_generation_request(
+            &source.task.semantic,
+            &source.task.fidelity,
+            &target(),
+            None,
+        )
+        .unwrap();
+        let (interactions, other_rules) =
+            morphiecore::protocol::google::interactions::encode_generation_request(
+                &source.task.semantic,
+                &source.task.fidelity,
+                &target(),
+            )
+            .unwrap();
+        assert_eq!(
+            generate["tools"],
+            json!([{"functionDeclarations":[{
+            "name":"lookup","parametersJsonSchema":parameters}]}])
+        );
+        assert_eq!(
+            interactions["tools"],
+            json!([{"type":"function",
+            "name":"lookup","parameters":parameters}])
+        );
+        if choice.as_ref().is_some_and(Value::is_object) {
+            assert_eq!(
+                generate["toolConfig"]["functionCallingConfig"],
+                json!({"mode":generate_mode,"allowedFunctionNames":["lookup"]})
+            );
+            assert_eq!(
+                interactions["generation_config"]["tool_choice"],
+                json!({"allowed_tools":{"mode":interaction_mode,"tools":["lookup"]}})
+            );
+        } else {
+            assert_eq!(
+                generate["toolConfig"]["functionCallingConfig"],
+                json!({"mode":generate_mode})
+            );
+            assert_eq!(
+                interactions["generation_config"]["tool_choice"],
+                interaction_mode
+            );
+        }
+        assert!(rules.is_empty() && other_rules.is_empty());
+        assert_eq!(source, before);
+    }
+    // Explicit guarantees with unqualified vocabulary stay rejected, including
+    // nested properties named like keywords: traverse schema positions only.
+    for property in [
+        json!({"type":"string","minLength":5}),
+        json!({"type":"string","pattern":"^[a-z]+$"}),
+        json!({"$ref":"#/$defs/Label"}),
+        json!({"type":"boolean","enum":[true]}),
+        json!({"type":"integer","enum":[9007199254740993u64]}),
+        json!({"type":"number","enum":[9007199254740993u64]}),
+        serde_json::from_str(r#"{"type":"number","enum":[0.10000000000000001]}"#).unwrap(),
+        json!({"type":"object","properties":{"value":{"type":"integer"}}}),
+    ] {
+        let source = client(
+            GenerationApi::Responses,
+            json!({"model":"gemini","input":"go",
+            "tools":[{"type":"function","name":"lookup","strict":true,"parameters":{
+                "type":"object","properties":{"label":property},"additionalProperties":false}}]}),
+        );
+        assert!(
+            encode_generation_request(
+                &source.task.semantic,
+                &source.task.fidelity,
+                &target(),
+                None,
+            )
+            .is_err()
+        );
+        assert!(
+            morphiecore::protocol::google::interactions::encode_generation_request(
+                &source.task.semantic,
+                &source.task.fidelity,
+                &target(),
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
 fn request_maps_tool_choice_effort_and_leading_instructions() {
     let encode = |extra: Value| {
         let mut body = json!({"model":"gemini","messages":[

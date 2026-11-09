@@ -23,7 +23,7 @@ Start here for source navigation rather than an old field-support matrix. Review
 
 | Reference | Long-term use | Evidence boundary |
 |---|---|---|
-| [OpenAI / Anthropic / Google official SDKs](refs/2026-10-27-official-sdk-sources.md) | Request/output unions, serializers, accumulators, version/retry defaults, literal fixtures and SDK disagreements | Official source evidence, not automatic wire conformance or pin promotion |
+| [OpenAI / Anthropic / Google official SDKs](refs/2026-10-27-official-sdk-sources.md) | Request/output unions, serializers, accumulators, version/retry defaults, literal fixtures, SDK disagreements and [local Google function-argument evidence](refs/2026-10-27-official-sdk-sources.md#google-function-argument-carriers-2026-11-09) | Official source evidence, not automatic wire conformance or pin promotion |
 | [pi](refs/2026-10-27-client-and-proxy-sources.md#pi-actual-consumer-and-history-behavior) | Actual history, replay, strict-tool fallback, thinking allocation, compaction and event consumers | Client behavior; acceptance uses current host-installed Agents |
 | [Magpie](refs/2026-10-27-client-and-proxy-sources.md#magpie-cache-affinity-and-failure-ownership) | Cache affinity, scoped failures, publication and refresh ownership | Mechanism reference; post-publication continuation and inferred usage are not gateway policies |
 | [LiteLLM](refs/2026-10-27-client-and-proxy-sources.md#litellm-directional-bridges-and-counterexamples) | Directional bridge state, tool indices, provider conversions and counterexamples | Not protocol authority; `enterprise/` is excluded from MIT |

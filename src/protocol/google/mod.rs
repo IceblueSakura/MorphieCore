@@ -6,6 +6,7 @@ pub mod interactions;
 mod media;
 mod sampling;
 mod service;
+pub(crate) mod strict_tools;
 
 pub(crate) use media::check_public_media_url;
 pub use sampling::SamplingPolicy;

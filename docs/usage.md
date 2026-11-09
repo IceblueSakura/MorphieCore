@@ -746,6 +746,8 @@ For tool continuation, send only the new `function_call_output` or other admitte
 
 Signed Google ordinary text/calls require managed continuation on Responses. Their hidden signatures remain in the stored typed history, not fabricated reasoning items or extra public fields. Use `previous_response_id`; copying creation/retrieval/input-list JSON is not an equivalent stateless export. `store: false` can read a predecessor, but a new response with such signatures rejects because its necessary continuation state would not be retained. Responses rejects legacy `mca1.` manifest input. Genuine native reasoning/compaction carriers keep their separate replay rules.
 
+The existing Google bindings accept the [qualified strict function subset](architecture.md#google-strict-function-arguments). Repeat the tool declaration and controls on each managed request. For example, create with `store:true`, `tool_choice:"required"` and a strict function whose parameters are `{"type":"object","properties":{"label":{"type":"string","enum":["cedar"]}},"required":["label"],"additionalProperties":false}`. Continue with the returned `id`, a `function_call_output` for every delivered call, and `tool_choice:"none"` when no further calls are wanted. Do not add `parallel_tool_calls:false` or an OpenAI named forced choice: those request a single-call guarantee Google cannot carry. Unsupported strict constraints still reject; this is not unrestricted JSON Schema support.
+
 | Operation | Behavior |
 |---|---|
 | `GET /v1/responses/{response_id}` | Retrieve the final JSON snapshot, including responses created with SSE |

@@ -411,15 +411,28 @@ impl Exchange {
         self.emit(boundary, attempt, "headers", Some(value), redacted);
     }
     pub(super) fn json(&self, boundary: Boundary, attempt: Option<usize>, bytes: &[u8]) -> bool {
+        self.json_unit(boundary, attempt, bytes, true)
+    }
+    fn json_unit(
+        &self,
+        boundary: Boundary,
+        attempt: Option<usize>,
+        bytes: &[u8],
+        report_gap: bool,
+    ) -> bool {
         if !self.0.sink.0.config.selection(boundary).body {
             return true;
         }
         if bytes.len() > self.0.sink.0.config.max_unit_bytes / 2 {
-            self.emit(boundary, attempt, "body_truncated", None, false);
+            if report_gap {
+                self.emit(boundary, attempt, "body_truncated", None, false);
+            }
             return false;
         }
         let Ok(mut value) = crate::protocol::json::decode(bytes) else {
-            self.emit(boundary, attempt, "unsafe_body", None, false);
+            if report_gap {
+                self.emit(boundary, attempt, "unsafe_body", None, false);
+            }
             return false;
         };
         // A fragment of serialized arguments is not an independently sanitizable unit.
@@ -442,12 +455,16 @@ impl Exchange {
                     })
                 })
         {
-            self.emit(boundary, attempt, "unsafe_fragment", None, false);
+            if report_gap {
+                self.emit(boundary, attempt, "unsafe_fragment", None, false);
+            }
             return false;
         }
         let mut redacted = false;
         if !sanitize(&mut value, &mut redacted, 0) {
-            self.emit(boundary, attempt, "unsafe_body", None, false);
+            if report_gap {
+                self.emit(boundary, attempt, "unsafe_body", None, false);
+            }
             return false;
         }
         self.emit(boundary, attempt, "body_unit", Some(value), redacted);
@@ -501,7 +518,7 @@ pub(super) struct BodyCapture {
 }
 impl BodyCapture {
     pub(super) fn feed(&mut self, bytes: &[u8]) {
-        if self.rejected {
+        if self.rejected && !matches!(self.mode, Mode::Sse(_)) {
             return;
         }
         match &mut self.mode {
@@ -530,14 +547,14 @@ impl BodyCapture {
                             if let Some(event) = event
                                 && event.data() != "[DONE]"
                             {
-                                self.rejected |= !self.exchange.json(
+                                // One sticky gap marker leaves the bounded quota
+                                // available for later complete, sanitized units.
+                                self.rejected |= !self.exchange.json_unit(
                                     self.boundary,
                                     self.attempt,
                                     event.data().as_bytes(),
+                                    !self.rejected,
                                 );
-                                if self.rejected {
-                                    break;
-                                }
                             }
                         }
                         _ => {
@@ -549,6 +566,9 @@ impl BodyCapture {
                                 None,
                                 false,
                             );
+                            // Framing cannot recover. A rejected JSON unit above
+                            // only marks a coverage gap; later framed units remain safe to inspect.
+                            self.mode = Mode::Unsupported;
                             break;
                         }
                     }

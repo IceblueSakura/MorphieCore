@@ -1887,13 +1887,19 @@ fn project_semantic_with_table<'a>(
                         )
                 }
                 Target::OpenAi(_, _) => table.native(Feature::StrictTools),
-                _ => false,
+                Target::GenerateContent(_) | Target::Interactions(_) => {
+                    table.native(Feature::StrictTools)
+                        && crate::protocol::google::strict_tools::admits(schema)
+                }
             },
-            |request| {
-                !matches!(target, Target::Messages(_))
-                    || crate::protocol::anthropic::messages::strict_schema::admits_generation(
-                        request,
-                    )
+            |request| match target {
+                Target::Messages(_) => {
+                    crate::protocol::anthropic::messages::strict_schema::admits_generation(request)
+                }
+                Target::GenerateContent(_) | Target::Interactions(_) => {
+                    crate::protocol::google::strict_tools::validated(request).is_ok()
+                }
+                _ => true,
             },
         )?;
         if let Some((copy, effects)) = resolved {
@@ -2819,11 +2825,15 @@ mod tests {
                 .unwrap(),
         ] {
             assert!(
-                output
+                !output
                     .evidence
                     .contains_rule(super::super::disposition::CONDITIONAL_STRICTNESS.id)
             );
             assert!(!output.value.to_string().contains("\"strict\""));
+            assert!(
+                output.value["toolConfig"]["functionCallingConfig"]["mode"] == "VALIDATED"
+                    || output.value["generation_config"]["tool_choice"] == "validated"
+            );
         }
         assert_eq!(source, before);
     }

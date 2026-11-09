@@ -6,6 +6,7 @@ Checked **2026-10-27** using public GitHub release metadata and isolated release
 
 - [Source selection and licenses](#source-selection-and-licenses)
 - [Tool-contract release recheck (2026-11-04)](#tool-contract-release-recheck-2026-11-04)
+- [Google function-argument carriers (2026-11-09)](#google-function-argument-carriers-2026-11-09)
 - [How to read an SDK](#how-to-read-an-sdk)
 - [OpenAI](#openai)
 - [Anthropic](#anthropic)
@@ -41,6 +42,27 @@ GitHub's latest non-draft, non-prerelease metadata and resolved release tags ide
 | Anthropic TypeScript | [1.4.0](https://github.com/anthropics/anthropic-sdk-typescript/releases/tag/sdk-v1.4.0) | [`ea8d7de`](https://github.com/anthropics/anthropic-sdk-typescript/blob/ea8d7de0e47614ae71044fbf7bf12041318ba37e/src/resources/messages/messages.ts) |
 
 Both current OpenAI SDKs retain developer-only input `additional_tools`, optional-nullable input item ID, required output item ID and eight output roles. Input function-result status remains optional-nullable; function-call input and result-output status do not acquire that nullability. Current Anthropic named/any choice types still document exactly one call only with `disable_parallel_tool_use:true`. These shapes agree with the corresponding earlier regression references; they do not resolve collision precedence, output-role replay or strict-schema grammar accounting. The [tool-contract qualification](2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04) owns those consequential distinctions and source-access limits.
+
+## Google function-argument carriers (2026-11-09)
+
+The user selected the installed local SDKs as sufficient source evidence for this slice after official-page fetches timed out. Inspected Python **2.33.0**, locked by `tests/sdk/uv.lock`, and JavaScript **2.21.0** in `node_modules/@google/genai`; the latter is not the independent 2.31.0 regression-source pin above.
+
+| Source | Exact distinction |
+|---|---|
+| Python `google/genai/types.py`, `FunctionCallingConfigMode`; JS `dist/genai.d.ts`, same enum | `ANY` constrains output to function calls; `VALIDATED` permits calls or natural language. Neither supplies an at-most-one call carrier |
+| Python `FunctionDeclaration.parameters_json_schema`; JS `FunctionDeclaration.parametersJsonSchema` | Object JSON Schema carrier, with `additionalProperties:false` in the declaration example; distinct from typed `parameters` and from text `responseJsonSchema` |
+| Python `google/genai/_gaos/types/interactions/function.py`, `Function.parameters` | Function-input subset explicitly says `minLength`, `maxLength`, `minProperties`, `maxProperties`, `uniqueItems`, `contains`, `minContains`, `maxContains` are ignored and not enforced |
+| Python Interactions tool-choice types; JS `ToolChoiceType` | Separate request-global `auto`, `any`, `none`, `validated` spellings; no per-function `strict` member |
+
+Inspected file fingerprints (BLAKE3; local package paths, not new vendored assets):
+
+| File | Digest |
+|---|---|
+| JS `dist/genai.d.ts` | `72e862f939d6a9412d1b4a71524a1db836d39185e487a65d7e77dd9c95c8515b` |
+| Python `google/genai/types.py` | `d98838fa852ba67f4f5c9da47978fa29dc7362da08fa7a64356e9a7fe9ac8816` |
+| Python `google/genai/_gaos/types/interactions/function.py` | `9eaabd74c6b0469d708fafb5440ad0fb08b1e05a94181fd354a84468a40f0ed7` |
+
+The function-input declaration is not a promise of every text-output keyword. Native discriminators independently exercise basic closed-object/string/numeric-enum constraints and show length failures under generateContent ANY/VALIDATED and Interactions any. ANY also produces two calls from one declaration. Further nested-schema controls isolate ignored boolean enums and rejection of integer enum `9007199254740993`; fractional enum `1.25` and ordinary nested objects/arrays succeed separately. Non-strict root `$ref` object schemas succeed natively while the previous local literal-type check rejects them. These motivate the [selected bounded mapping](../architecture.md#google-strict-function-arguments), not a generic schema converter or full strict claim. [AR5](../ar5-review.md) owns the dated live results; [Roadmap](../roadmap.md#remaining-observation-dispositions) owns residual limitations.
 
 ## How to read an SDK
 

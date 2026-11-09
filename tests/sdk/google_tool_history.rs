@@ -15,7 +15,7 @@ async fn exercise(api: fixture::Api, api_name: &str) {
         let fixture = if messages {
             fixture::start_messages(api).await
         } else {
-            fixture::start(profile, api).await
+            fixture::start(profile, api, profile == GenerationApi::Responses).await
         };
         let home = tempfile::tempdir().unwrap();
         let mut command = super::isolated_sdk_python(home.path());

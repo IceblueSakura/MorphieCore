@@ -87,6 +87,7 @@ pub(super) fn project(
         return Err(unsupported());
     }
     let s = request.settings();
+    let validated = super::super::strict_tools::validated(request)?;
     if s.prediction.is_some() {
         rules.insert(RequestRule::OmitPrediction);
     }
@@ -205,12 +206,6 @@ pub(super) fn project(
                 {
                     return Err(unsupported());
                 }
-                match t.strict {
-                    FunctionStrictness::Omitted(StrictDefault::NonStrict)
-                    | FunctionStrictness::Explicit(false) => {}
-                    FunctionStrictness::Omitted(StrictDefault::Conditional)
-                    | FunctionStrictness::Explicit(true) => return Err(unsupported()),
-                }
                 // `parameters` is optional on the pinned Interactions Function type.
                 let mut tool = json!({"type":"function","name":t.name.as_str()});
                 if let Some(parameters) = &t.parameters {
@@ -228,11 +223,12 @@ pub(super) fn project(
     if let Some(n) = s.controls.max_output_tokens {
         config.insert("max_output_tokens".into(), n.into());
     }
-    if let Some(choice) = &s.tool_choice {
+    if s.tool_choice.is_some() || validated {
+        let choice = s.tool_choice.as_ref().unwrap_or(&ToolChoice::Auto);
         config.insert(
             "tool_choice".into(),
             match choice {
-                ToolChoice::Auto => json!("auto"),
+                ToolChoice::Auto => json!(if validated { "validated" } else { "auto" }),
                 ToolChoice::None => json!("none"),
                 ToolChoice::Required => json!("any"),
                 ToolChoice::Specific(name) => {
@@ -243,7 +239,7 @@ pub(super) fn project(
                         tool.kind == ToolKind::Function && tool.namespace.is_none()
                     }) =>
                 {
-                    json!({"allowed_tools":{"mode":if *required { "any" } else { "auto" },
+                    json!({"allowed_tools":{"mode":if *required { "any" } else if validated { "validated" } else { "auto" },
                         "tools":tools.iter().map(|tool| tool.name.as_str()).collect::<Vec<_>>()}})
                 }
                 _ => return Err(unsupported()),

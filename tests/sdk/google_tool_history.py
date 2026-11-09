@@ -31,7 +31,8 @@ def responses_completion(client, params, stream):
     check(result["status"] == "completed")
     for item in result["output"]:
         if item["type"] == "function_call" and "parsed_arguments" in item:
-            check(item.pop("parsed_arguments") is None)
+            parsed = item.pop("parsed_arguments")
+            check(parsed is None or parsed == json.loads(item["arguments"]))
         if item["type"] == "message":
             for part in item["content"]:
                 if "parsed" in part:
@@ -46,8 +47,9 @@ def run(base, profile, api):
     if profile.startswith("chat-"):
         return run_chat_rejection(base, api, profile == "chat-sse")
     check(profile == "responses")
-    function = {"name": "read", "strict": False, "parameters": {
-        "type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}
+    function = {"name": "read", "strict": True, "parameters": {
+        "type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"],
+        "additionalProperties": False}}
     transmissions = []
     requests = 0
     with httpx.Client(trust_env=False, event_hooks={"request": [transmissions.append]}) as http, \

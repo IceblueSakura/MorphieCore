@@ -412,10 +412,18 @@ fn google_effective_tools_preserve_old_calls_and_explicit_guarantees() {
         }
         let mut strict = body.clone();
         strict["messages"][5]["content"][0]["tool"]["definition"]["strict"] = json!(true);
-        assert_eq!(
-            representable(&endpoint, &messages(strict)),
-            Err(RejectionReason::Semantic(Feature::StrictTools))
-        );
+        let (strict_wire, _) = projected(&endpoint, &messages(strict.clone()));
+        if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent {
+            assert_eq!(
+                strict_wire["toolConfig"]["functionCallingConfig"]["mode"],
+                "VALIDATED"
+            );
+        } else {
+            assert_eq!(strict_wire["generation_config"]["tool_choice"], "validated");
+        }
+        strict["messages"][5]["content"][0]["tool"]["definition"]["input_schema"]["properties"]["new"]
+            ["minLength"] = json!(5);
+        assert!(representable(&endpoint, &messages(strict)).is_err());
         let mut serial = body.clone();
         serial["tool_choice"] = json!({"type":"auto","disable_parallel_tool_use":true});
         assert!(representable(&endpoint, &messages(serial)).is_err());
@@ -470,6 +478,42 @@ fn projected(endpoint: &Endpoint, request: &Request) -> (Value, Vec<&'static str
     );
     assert_eq!(request, &before);
     (wire, rules)
+}
+
+#[test]
+fn google_conditional_strictness_accounts_for_the_entire_validated_inventory() {
+    let closed = json!({"type":"object","properties":{"minLength":{"type":"integer","enum":[7]}},
+        "required":["minLength"],"additionalProperties":false});
+    for endpoint in [
+        GOOGLE_BINDINGS[0].endpoint(),
+        GOOGLE_BINDINGS[0].interactions_endpoint(),
+    ] {
+        let body = json!({"model":GOOGLE_BINDINGS[0].model,"input":"go",
+            "tools":[{"type":"function","name":"lookup","parameters":closed},
+                {"type":"function","name":"other","strict":false,"parameters":{"type":"object"}}]});
+        let (wire, rules) = projected(&endpoint, &source(body.clone()));
+        assert!(rules.contains(&"openai.omit-conditional-tool-strictness.v1"));
+        assert!(wire.get("toolConfig").is_none());
+        assert!(wire["generation_config"].get("tool_choice").is_none());
+        let mut explicit = body.clone();
+        explicit["tools"][0]["strict"] = json!(true);
+        assert!(representable(&endpoint, &source(explicit.clone())).is_err());
+        explicit["tools"][1]["parameters"] = closed.clone();
+        let (wire, _) = projected(&endpoint, &source(explicit));
+        if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent {
+            assert_eq!(
+                wire["tools"][0]["functionDeclarations"][0]["parametersJsonSchema"],
+                closed
+            );
+            assert_eq!(
+                wire["toolConfig"]["functionCallingConfig"]["mode"],
+                "VALIDATED"
+            );
+        } else {
+            assert_eq!(wire["tools"][0]["parameters"], closed);
+            assert_eq!(wire["generation_config"]["tool_choice"], "validated");
+        }
+    }
 }
 
 #[test]

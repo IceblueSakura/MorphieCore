@@ -40,7 +40,7 @@ async fn exercise_rejected(api: fixture::Api, messages: bool) {
         let fixture = if messages {
             fixture::start_messages(api).await
         } else {
-            fixture::start(GenerationApi::Chat, api).await
+            fixture::start(GenerationApi::Chat, api, false).await
         };
         let (path, body) = if messages {
             (
@@ -111,7 +111,7 @@ async fn exercise(api: fixture::Api) {
     {
         let profile = GenerationApi::Responses;
         for stream in [false, true] {
-            let fixture = fixture::start(profile, api).await;
+            let fixture = fixture::start(profile, api, false).await;
             let function = json!({"name":"read","strict":false,"parameters":{
                 "type":"object","properties":{"path":{"type":"string"}},"required":["path"]}});
             let mut body = {
@@ -201,7 +201,7 @@ async fn stateless_responses_do_not_publish_success_or_store_signed_calls() {
         .unwrap();
     for api in [fixture::Api::GenerateContent, fixture::Api::Interactions] {
         for stream in [false, true] {
-            let fixture = fixture::start(GenerationApi::Responses, api).await;
+            let fixture = fixture::start(GenerationApi::Responses, api, false).await;
             let mut response = client.post(format!("{}/responses", fixture.base))
                 .bearer_auth(fixture::KEY)
                 .json(&json!({"model":"gemini-3.8-flash","input":"Read.","store":false,

@@ -1479,7 +1479,8 @@ fn rejects_unrepresentable_critical_tool_semantics() {
             json!({
                 "model":"public","input":"Read.",
                 "tools":[{"type":"function","name":"read","strict":true,
-                    "parameters":{"type":"object","properties":{},"additionalProperties":false}}]
+                    "parameters":{"type":"object","properties":{"path":{"type":"string","minLength":5}},
+                        "required":["path"],"additionalProperties":false}}]
             })
             .to_string()
             .as_bytes(),

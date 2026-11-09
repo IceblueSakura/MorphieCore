@@ -21,6 +21,7 @@ pub fn semantic_contract() -> Dispositions {
         MaxOutputTokens,
         Tools,
         StructuredArguments,
+        StrictTools,
         ToolResultError,
         TopP,
         Reasoning,

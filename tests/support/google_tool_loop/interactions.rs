@@ -66,13 +66,17 @@ pub(super) async fn answer(
     if state.profile == GenerationApi::Responses {
         config["thinking_summaries"] = json!("auto");
     }
-    assert_eq!(
-        body,
-        json!({"model":"gemini-3.8-flash","store":false,"stream":true,
+    if state.strict {
+        config["tool_choice"] = json!("validated");
+    }
+    let mut expected = json!({"model":"gemini-3.8-flash","store":false,"stream":true,
         "input":expected_input(turn, state.messages), "generation_config":config,
         "tools":[{"type":"function","name":"read","parameters":{
-            "type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}]})
-    );
+            "type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}]});
+    if state.strict {
+        expected["tools"][0]["parameters"]["additionalProperties"] = json!(false);
+    }
+    assert_eq!(body, expected);
     let mut seen = state.seen.lock().unwrap();
     assert!(seen.len() < 8, "no retries or excess dispatch");
     assert_eq!(turn, seen.len() % 4 + 1);

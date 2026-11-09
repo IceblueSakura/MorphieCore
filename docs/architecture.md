@@ -33,6 +33,7 @@ This page defines accepted principles, domain contracts, and architectural decis
   - [Source and target boundaries](#source-and-target-boundaries)
     - [Protocol baselines and Provider dialects](#protocol-baselines-and-provider-dialects)
     - [Standard request boundary](#standard-request-boundary)
+    - [Google strict function arguments](#google-strict-function-arguments)
     - [Protocol tree ownership](#protocol-tree-ownership)
       - [Shared Aliyun billing dialect](#shared-aliyun-billing-dialect)
       - [Subscription Responses](#subscription-responses)
@@ -374,6 +375,17 @@ Four decoupled responsibilities:
 4. **Provider egress dialect:** Translates standard target requests to vendor wire formats where required.
 
 Strict-tool admission follows the effective binding/API disposition in shared request projection, including direct library lowering; writers render that decision. Native OpenAI/SIWC Luna uses the strict carrier. OpenRouter Luna delegates its unassessed endpoint guarantee and discovery reports `not_assessed`. Qwen Bailian Chat carries explicit strictness and resolves conditional defaults through the same owner; Bailian Responses has no equivalent strict-function carrier and rejects explicit true there. GLM's strict restriction remains model-qualified. These carrier decisions do not attest arbitrary-schema enforcement.
+
+#### Google strict function arguments
+
+**Selected 2026-11-09:** existing generateContent and Interactions targets admit a qualified closed-object function-argument subset through their native request-wide validation modes. The [local SDK evidence](refs/2026-10-27-official-sdk-sources.md#google-function-argument-carriers-2026-11-09) is separate from text-response schema support.
+
+- Preserve supplied schemas exactly. The selected vocabulary is `type`, `properties`, `required`, `additionalProperties:false`, array `items`, string/numeric `enum`, `title` and `description`; nested objects must also be closed. Boolean types are supported, boolean enums are not. Integer enum literals stay within the safe binary64 integer range; fractional enum literals must survive binary64 serialization without precision change. Length, pattern, references, composition and other unqualified constraints retain explicit-strict rejection. Non-strict generateContent schemas may use references/composition without a literal root type; preserve their original document and delegate validation upstream. Explicit scalar roots still reject.
+- Strict automatic selection uses `VALIDATED` / `validated`; required selection uses `ANY` / `any`; none stays none. Allowed names remain exact. generateContent optional allowed subsets use `VALIDATED`, including non-strict requests, without claiming a new strict guarantee.
+- The mode covers the whole effective inventory. With any strict tool, every declaration's supplied schema must fit the subset. Mixed strict/non-strict declarations are accepted only within that inventory; non-strictness does not promise invalid arguments. Conditional source defaults resolve on candidate copies through the same schema and inventory check, otherwise taking the existing named conditional-default fallback. Explicit true never takes that fallback.
+- Parameter omission keeps the native parameterless declaration. No schema deletion, argument repair, inferred prompting or local retry supplies a missing guarantee. Serial intent still rejects independently; one declared function can produce multiple calls.
+
+Ordinary Google text/call signatures use the existing managed Responses continuation contract, not a stateless extension. Clients use `store:true` and `previous_response_id`; Chat/Messages and manually reconstructed stateless Responses retain their unsupported attachment boundary. This selects no signature deletion, synthetic reasoning owner or new Google API.
 
 #### Protocol tree ownership
 
@@ -986,6 +998,7 @@ Opt-in diagnostic capture configured via [`gateway::capture::CaptureConfig`](fil
 - **Sanitization:** Authorization headers, cookies, API keys, and query tokens are strictly redacted before enqueueing.
 - **Bounded quotas:** Configured per-unit (256 KiB), per-exchange (4 MiB), and total file quota (64 MiB).
 - **Isolation:** Best-effort asynchronous worker; buffer saturation or write failure never blocks inference.
+- **Partial streams:** One sticky gap marker records rejected JSON/argument fragments while later independently sanitizable SSE units remain capturable. Repeated fragments do not consume a record each. Framing failure stops capture permanently; skipped units, aborted sources and truncated EOF retain `incomplete`, even when a later business event reports completion.
 
 ## Settled decisions
 
@@ -1104,6 +1117,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Responses queued opening and generated message identities | 2026-11-07 | Emit created/queued before actual progress without conflating Queued and Started; mint `msg_` only for new message aliases, preserving native IDs and target-local collision checks. [Stream normalization](#semantic-stream-normalization); [delivery identity](#delivery-projection-ownership) |
 | Binding-qualified Bailian reasoning domain | 2026-11-07 | DeepSeek Responses retains reasoning content rather than Qwen's summary-event alias; exact item snapshot validation remains intact. [Dialect boundary](#protocol-baselines-and-provider-dialects) |
 | Google ordered controls | 2026-11-07 | Extend source-timed configuration collapse and effective tool-set projection to existing generateContent/Interactions targets with the existing control/history/prefix losses; explicit strictness, seriality, selection and replay guards remain independent. [Tools](#ordered-tool-availability); [effort](#ordered-effort-repair-direction) |
+| Google function-argument validation | 2026-11-09 | Select a schema-checked closed-object subset and request-wide native validation modes on existing APIs; conditional defaults use the same inventory check, unsupported explicit constraints and serial guarantees still reject. Non-strict reference schemas remain unchanged for upstream validation. Ordinary signatures use managed Responses, without stateless carrier fabrication. [Contract](#google-strict-function-arguments) |
 | Unified tool semantics | 2026-11-04 | Expand ordered-tool root repair to all nine Chat/Responses/Messages directions, including request, return and replay. Accept bounded semantic approximation as the design direction; evaluate concrete collapse/alias/wrapper policies with explicit losses before activation. Source history and safety remain intact; strictness/selection/cardinality cannot silently weaken. New Google APIs, discovery, hosted execution and Client-history annotations remain outside scope. [Contract](#ordered-tool-availability); [design](api-expansion-design.md#three-protocol-tool-conversion-design); [execution](roadmap.md#conditional-stage-3-follow-ups) |
 | Ordered definition batch ownership | 2026-11-04 | One typed batch owns definitions, role and position; codec fidelity owns the wire ID. Shared borrowed/mutable views include every declaration location without cloning or inventing schema precedence. Native Responses request/output/SSE/retained history share this owner; only developer batches can enter request history, and statusless batches require observed complete closure before stream finalization. [Contract](#ordered-tool-availability) |
 | Bounded tool-set projection | 2026-11-05 | Delivered through one shared owner: effective active-set collapse, target-native retained additions (with fresh converted identities and legal-position/capacity checks) and allowed-set inventory filtering. Accept their explicit historical-definition/timing/cache losses, not weaker tool guarantees or guessed collision precedence. [Contract](#ordered-tool-availability); Native batches bypass effective-set construction; mixed histories use indexed lookup |

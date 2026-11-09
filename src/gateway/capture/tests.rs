@@ -76,7 +76,23 @@ async fn credentials_are_redacted_before_bounded_capture_and_incomplete_sources_
         .body(Boundary::UpstreamResponse, Some(2), "text/event-stream")
         .unwrap();
     unsafe_stream.feed(b"data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"synthetic-fragment-secret\"}\n\n");
+    for _ in 0..64 {
+        unsafe_stream.feed(b"data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"synthetic-fragment-secret\"}\n\n");
+    }
+    unsafe_stream.feed(b"data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"synthetic-fragment-secret\"}\n\ndata: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"name\":\"lookup\",\"arguments\":\"{\\\"password\\\":\\\"synthetic-completed-secret\\\",\\\"value\\\":7}\"}}\n\n");
+    unsafe_stream.feed(
+        b"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n",
+    );
     unsafe_stream.finish();
+    let mut oversized = capture
+        .body(Boundary::UpstreamResponse, Some(5), "text/event-stream")
+        .unwrap();
+    let mut oversized_wire = b"data: ".to_vec();
+    oversized_wire.extend(vec![b'x'; 2048]);
+    oversized_wire.extend_from_slice(b"\n\ndata: {\"text\":\"after-broken-framing\"}\n\n");
+    oversized.feed(&oversized_wire);
+    oversized.feed(b"data: {\"text\":\"after-broken-framing\"}\n\n");
+    oversized.finish();
     let mut legacy = capture
         .body(Boundary::UpstreamResponse, Some(3), "text/event-stream")
         .unwrap();
@@ -134,6 +150,7 @@ async fn credentials_are_redacted_before_bounded_capture_and_incomplete_sources_
         "synthetic-argument-secret",
         "synthetic-stream-secret",
         "synthetic-fragment-secret",
+        "synthetic-completed-secret",
         "synthetic-location-secret",
         "synthetic-link-secret",
         "synthetic-private-key",
@@ -155,6 +172,38 @@ async fn credentials_are_redacted_before_bounded_capture_and_incomplete_sources_
     assert!(captured.contains("business-stream"));
     assert!(captured.contains("unsafe_fragment"));
     assert!(captured.contains("incomplete"));
+    assert!(!captured.contains("after-broken-framing"));
+    let partial: Vec<serde_json::Value> = captured
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .filter(|value: &serde_json::Value| value["attempt"] == 2)
+        .collect();
+    let completed_call = partial
+        .iter()
+        .find(|value| value["value"]["type"] == "response.output_item.done")
+        .expect("a rejected argument fragment must not hide a later complete call");
+    let arguments: serde_json::Value = serde_json::from_str(
+        completed_call["value"]["item"]["arguments"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(arguments["value"], 7);
+    assert_ne!(arguments["password"], "synthetic-completed-secret");
+    assert!(
+        partial
+            .iter()
+            .any(|value| value["value"]["type"] == "response.completed")
+    );
+    assert!(partial.iter().any(|value| value["status"] == "incomplete"));
+    assert!(!partial.iter().any(|value| value["status"] == "source_eof"));
+    assert_eq!(
+        partial
+            .iter()
+            .filter(|value| value["status"] == "unsafe_fragment")
+            .count(),
+        1
+    );
     let errored: Vec<serde_json::Value> = captured
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
