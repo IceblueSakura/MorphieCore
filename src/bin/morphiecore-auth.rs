@@ -14,6 +14,8 @@ use std::{
     path::{Path, PathBuf},
     process::ExitCode,
 };
+#[path = "auth/callback.rs"]
+mod callback;
 
 #[derive(Parser)]
 struct Options {
@@ -86,6 +88,9 @@ struct Login {
     method: Option<Method>,
     #[arg(long)]
     callback_port: Option<u16>,
+    /// Also accept a pasted full browser callback URL on stdin; keep the listener active.
+    #[arg(long)]
+    paste_callback: bool,
     #[arg(long)]
     consent: bool,
 }
@@ -136,6 +141,8 @@ enum Error {
     Missing,
     #[error("local session cleared; remote revocation was NOT confirmed")]
     Revocation,
+    #[error("callback input failed: {0}")]
+    CallbackInput(&'static str),
 }
 fn secret(path: &Path) -> Result<Secret, Error> {
     let mut bytes = read_private_file(path, 16386)?;
@@ -322,7 +329,9 @@ async fn execute(options: Options) -> Result<Value, Error> {
             } else {
                 Method::Device
             });
-            if login.callback_port.is_some() && matches!(method, Method::Device) {
+            if (login.callback_port.is_some() || login.paste_callback)
+                && matches!(method, Method::Device)
+            {
                 return Err(CredentialError::InvalidInput.into());
             }
             let settings = LoginOptions {
@@ -346,7 +355,30 @@ async fn execute(options: Options) -> Result<Value, Error> {
                 );
             }
             let manager = CredentialManager::new(root, drivers)?;
-            let status = manager.login(profile, alias, settings, prompt).await?;
+            let status = if login.paste_callback {
+                let (sender, receiver) = tokio::sync::oneshot::channel();
+                let sender = std::sync::Mutex::new(Some(sender));
+                let operation = manager.login(profile, alias, settings, |event| {
+                    prompt(event);
+                    if let LoginPrompt::Browser(browser) = event
+                        && let Some(sender) = sender.lock().expect("login prompt lock").take()
+                    {
+                        // A completed/cancelled login may have dropped its input future.
+                        let _ = sender.send(browser.redirect_uri.clone());
+                    }
+                });
+                tokio::pin!(operation);
+                tokio::select! {
+                    biased;
+                    result = &mut operation => result?,
+                    result = callback::paste(receiver) => {
+                        result?;
+                        operation.await?
+                    }
+                }
+            } else {
+                manager.login(profile, alias, settings, prompt).await?
+            };
             Ok(oauth_status(&login.selected.provider, account, status))
         }
         Command::Refresh(selected) => {

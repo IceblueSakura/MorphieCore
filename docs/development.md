@@ -242,6 +242,8 @@ cargo test --locked --offline --test process
 
 Automatic OAuth renewal is verified via unit tests for eligibility, identity pinning, exclusivity, deduplication, cooldown, deadlines, and listener cancellation.
 
+**Headless browser login, 2026-11-09:** `cargo test --locked --offline --bin morphiecore-auth` and the `siwc_pasted_callback` credential regression pass. The subprocess check covers pasted/direct state-bound denial, open stdin at exit, and a direct code callback followed by a simultaneous paste while a test-owned proxy holds token exchange. A disposable five-case PTY check verifies hidden input, terminal restoration and cleared login state after pasted/direct denial, keyboard Ctrl-C, unfinished-paste cancellation and oversized unfinished input. The overlap and terminal-bound counterexamples fail before their fixes. The full offline baseline and `nix flake check` pass on `x86_64-linux`; no real OAuth login, other-platform runtime or production deployment is claimed.
+
 ### Diagnostics behavior checks
 
 Run `cargo test --locked --offline --lib gateway::diagnostics` against actual production sinks and traces. Dependency-only tracing, metric and OTLP exporter feasibility tests are removed; future exporter integration needs its own product boundary.

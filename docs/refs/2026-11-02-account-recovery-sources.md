@@ -41,6 +41,16 @@ Provider-scoped subject uniqueness and a single managed login are MorphieCore's 
 
 The existing pinned official Responses fixtures and SDK consumers remain the independent wire/consumer expectations. A successfully delivered `response.failed` is still a failed upstream task: it cannot recover health or commit conversation affinity.
 
+## Headless browser callback input
+
+Checked **2026-11-09** against clean public reference checkouts:
+
+- [pi ChatGPT OAuth](https://github.com/earendil-works/pi/blob/4954d760504c11df9b2cbdc040346107b6a8153d/packages/ai/src/auth/oauth/openai-chatgpt.ts): `authorizationResultFromManualInput` requires the complete matching redirect URL and `state`; `loginOpenAIChatGPT` races manual input against the active loopback callback. Borrow the input-transport pattern, not its missing ID-token verification or permissive duplicate-query handling.
+- [Codex MCP CLI input](https://github.com/openai/codex/blob/a9b0815167c27ab13719dd12d13b63e02b70d221/codex-rs/cli/src/mcp_login.rs): cancellable hidden terminal events, drop-owned terminal restoration and a bounded process-owned pipe reader avoid blocking runtime shutdown. This is an input mechanism reference, not a ChatGPT authentication contract.
+- [Crossterm 0.29.0](https://docs.rs/crossterm/0.29.0/crossterm/terminal/index.html), the current non-yanked stable release reported by `cargo info`: MIT, cross-platform raw-mode terminal control. Retain its terminal-mode facility, not whole-event paste buffering: its [paste parser](https://docs.rs/crossterm/0.29.0/src/crossterm/event/sys/unix/parse.rs.html#813-822) waits for a closing delimiter before yielding input. MorphieCore's bounded byte reader rejects oversized unfinished input and handles keyboard Ctrl-C while a drop-owned guard restores terminal mode. [Tokio stdin](https://docs.rs/tokio/1.54.1/tokio/io/fn.stdin.html) documents that its uncancellable blocking read can hold runtime shutdown open; the CLI instead owns its input thread outside the runtime's blocking pool.
+
+MorphieCore retains its existing SIWC protocol and trusted authority. The CLI uses its prepared loopback callback as the sole destination and validation owner; pasted input cannot choose an upstream origin. No copied tokens, third-party auth caches or relaxed state/nonce checks are selected. This extension requires no change to the official sign-in protocol. The official sign-in page returned HTTP 403 during this check; the protocol evidence above retains its original source date.
+
 ## Provider-specific failure evidence
 
 Rechecked on **2026-11-02** before replacing global substring classification:
