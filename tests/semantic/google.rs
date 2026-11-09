@@ -2098,10 +2098,11 @@ fn strict_function_arguments_use_validated_modes_without_rewriting_schemas() {
         "value":{"type":"integer","enum":[7]},
         "ok":{"type":"boolean"},
         "label":{"type":"string","enum":["cedar"]},
+        "offset":{"anyOf":[{"type":"integer"},{"type":"null"}]},
         "rows":{"type":"array","items":{"type":"object","properties":{
             "amount":{"type":"number","enum":[1.25]}},
             "required":["amount"],"additionalProperties":false}}},
-        "required":["value","ok","label"],"additionalProperties":false});
+        "required":["value","ok","label","offset"],"additionalProperties":false});
     for (choice, generate_mode, interaction_mode) in [
         (None, "VALIDATED", "validated"),
         (Some(json!("auto")), "VALIDATED", "validated"),
@@ -2172,6 +2173,9 @@ fn strict_function_arguments_use_validated_modes_without_rewriting_schemas() {
     for property in [
         json!({"type":"string","minLength":5}),
         json!({"type":"string","pattern":"^[a-z]+$"}),
+        json!({"anyOf":[{"type":"string"},{"type":"integer"}]}),
+        json!({"anyOf":[{"type":"string","minLength":5},{"type":"null"}]}),
+        json!({"anyOf":[{"type":"integer"},{"type":"null"}],"maxLength":5}),
         json!({"$ref":"#/$defs/Label"}),
         json!({"type":"boolean","enum":[true]}),
         json!({"type":"integer","enum":[9007199254740993u64]}),

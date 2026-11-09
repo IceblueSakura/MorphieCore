@@ -14,6 +14,22 @@ fn node(value: &Value) -> bool {
     let Some(object) = value.as_object() else {
         return false;
     };
+    // Current Agent strict serializers express optional fields as required
+    // nullable values. Admit that union, not arbitrary schema composition.
+    if let Some(branches) = object.get("anyOf") {
+        return object.iter().all(|(key, value)| match key.as_str() {
+            "anyOf" => true,
+            "title" | "description" => value.is_string(),
+            _ => false,
+        }) && branches.as_array().is_some_and(|branches| {
+            branches.len() == 2
+                && branches.iter().enumerate().any(|(index, branch)| {
+                    branch.as_object().is_some_and(|null| {
+                        null.len() == 1 && null.get("type").and_then(Value::as_str) == Some("null")
+                    }) && node(&branches[1 - index])
+                })
+        });
+    }
     let Some(kind) = object.get("type").and_then(Value::as_str) else {
         return false;
     };

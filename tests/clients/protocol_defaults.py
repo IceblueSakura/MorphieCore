@@ -198,9 +198,10 @@ def assert_chat_profile(body, pi, *, upstream=False, gateway_profile=False):
     check(body.get("reasoning_effort") == "high" if pi else "reasoning_effort" not in body,
           "default_effort")
     tools = body.get("tools", [])
-    check(len(tools) == 1 and tools[0].get("type") == "function"
-          and tools[0].get("function", {}).get("name") == "read", "default_read_tool_declaration")
-    tool = tools[0]["function"]
+    read = [tool["function"] for tool in tools if tool.get("type") == "function"
+            and tool.get("function", {}).get("name") == "read"]
+    check(len(read) == 1, "default_read_tool_declaration")
+    tool = read[0]
     check(tool.get("strict") is pi, "default_read_strict")
     schema = tool.get("parameters", {})
     check(schema.get("type") == "object"
@@ -336,9 +337,9 @@ def assert_responses_profile(body, pi):
     else:
         check(not additions, "default_responses_additional_tools")
         tools = body.get("tools", [])
-    check(len(tools) == 1 and tools[0].get("type") == "function"
-          and tools[0].get("name") == "read", "default_read_tool_declaration")
-    tool = tools[0]
+    read = [tool for tool in tools if tool.get("type") == "function" and tool.get("name") == "read"]
+    check(len(read) == 1, "default_read_tool_declaration")
+    tool = read[0]
     check("strict" not in tool if pi else tool.get("strict") is False, "default_read_strict")
     schema = tool.get("parameters", {})
     check(schema.get("type") == "object"
@@ -378,7 +379,7 @@ def assert_responses_history(body, phase, path, *, pi=False, upstream=False):
               and "".join(part["text"] for part in answer["content"]) == TEXT,
               "default_responses_final_history")
         check(answer.get("status") == "completed" and
-              all(part.get("annotations") == [] if pi or upstream else "annotations" not in part
+              all(part.get("annotations") == [] if pi or upstream else part.get("annotations", []) == []
                   for part in answer["content"]), "default_responses_annotations")
     reasoning = [item for item in items if item.get("type") == "reasoning"]
     check(len(reasoning) == phase - 1,

@@ -4,33 +4,10 @@ from pathlib import Path
 import unittest
 
 import protocol_defaults as defaults
-from drivers import messages_content_equal
 
 
 class ProtocolDefaultOracles(unittest.TestCase):
     path = Path("/synthetic/sample.txt")
-
-    def test_messages_replay_ignores_only_exact_empty_text_shells(self):
-        tool = {"type": "tool_use", "id": "call", "name": "read", "input": {}}
-        thinking = {"type": "thinking", "thinking": "", "signature": "synthetic"}
-        expected = [{"type": "text", "text": ""}, thinking, tool]
-        original = copy.deepcopy(expected)
-        self.assertTrue(messages_content_equal([thinking, tool], expected))
-        self.assertEqual(expected, original)
-        for meaningful in [
-            {"type": "text", "text": " "},
-            {"type": "text", "text": "answer"},
-            {"type": "text", "text": "", "cache_control": {"type": "ephemeral"}},
-            {"type": "text", "text": "", "signature": "synthetic"},
-            thinking, tool,
-            {"type": "tool_result", "tool_use_id": "call", "content": ""},
-        ]:
-            with self.subTest(block=meaningful):
-                self.assertFalse(messages_content_equal([], [meaningful]))
-        changed = copy.deepcopy(tool)
-        changed["id"] = "other"
-        self.assertFalse(messages_content_equal([thinking, changed], expected))
-        self.assertFalse(messages_content_equal([tool, thinking], expected))
 
     def responses_body(self, pi):
         tool = {"type": "function", "name": "read", "parameters": {
@@ -42,7 +19,8 @@ class ProtocolDefaultOracles(unittest.TestCase):
             body["reasoning"] = {"effort": "medium", "summary": "auto"}
             body["input"].insert(0, {"type": "additional_tools", "role": "developer", "tools": [tool]})
         else:
-            body["tools"] = [{**tool, "strict": False}]
+            body["tools"] = [{**tool, "strict": False}, {
+                "type": "function", "name": "auxiliary", "parameters": {"type": "object"}}]
         return body
 
     def test_responses_defaults_cannot_be_simplified_into_a_passing_profile(self):
@@ -88,6 +66,9 @@ class ProtocolDefaultOracles(unittest.TestCase):
                         "properties": {"path": {"type": "string"}}, "required": ["path"]}}}]}
             if pi:
                 body.update(thinking={"type": "enabled"}, reasoning_effort="high")
+            else:
+                body["tools"].append({"type": "function", "function": {
+                    "name": "auxiliary", "parameters": {"type": "object"}}})
             defaults.assert_chat_profile(body, pi)
             body["tools"][0]["function"]["strict"] = not pi
             with self.assertRaisesRegex(RuntimeError, "^default_read_strict$"):
@@ -134,8 +115,7 @@ class ProtocolDefaultOracles(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "^default_responses_history_order$"):
             defaults.assert_responses_history(reordered, 3, self.path)
         body["input"][5]["content"][0]["annotations"] = []
-        with self.assertRaisesRegex(RuntimeError, "^default_responses_annotations$"):
-            defaults.assert_responses_history(body, 3, self.path)
+        defaults.assert_responses_history(body, 3, self.path)
         defaults.assert_responses_history(body, 3, self.path, upstream=True)
         defaults.assert_responses_history(body, 3, self.path, pi=True)
         del body["input"][5]["content"][0]["annotations"]

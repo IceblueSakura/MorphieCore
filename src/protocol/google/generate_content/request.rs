@@ -33,8 +33,6 @@ pub enum RequestRule {
     /// Explicit opt-in for unattributed readable reasoning.
     ReasoningAsText,
     OmitSchemaName,
-    /// A pre-ownership surrogate signature returned by an older gateway is dropped.
-    OmitLegacySignature,
 }
 impl RequestRule {
     pub(crate) fn effect(
@@ -45,7 +43,6 @@ impl RequestRule {
             Change, ConversionBoundary as B, Effect, Field, Owner,
         };
         let (field, change) = match self {
-            Self::OmitLegacySignature => (Field::Replay, Change::Omit),
             Self::OmitMessagePhase => (Field::MessagePhase, Change::Omit),
             Self::OmitPrediction => (Field::Prediction, Change::Omit),
             Self::OmitSampling => (Field::Sampling, Change::Omit),
@@ -80,7 +77,6 @@ impl RequestRule {
                 crate::lowering::disposition::GENERATE_CONTENT_REASONING_AS_TEXT.id
             }
             Self::OmitSchemaName => crate::lowering::disposition::GENERATE_CONTENT_SCHEMA_NAME.id,
-            Self::OmitLegacySignature => "gemini.omit-legacy-signature.v1",
         }
     }
 }

@@ -574,6 +574,8 @@ For built-in models, override the test origin/key and permitted headers without 
 
 ### Installed-client synthetic recovery
 
+**Current-client convergence, 2026-11-09:** the full offline baseline, pinned assets, all Python suites and 20 SDK loopbacks pass. All 25 installed-client scenarios pass on safe unwrapped pi **1.5.0** and OpenCode **2.2.5**. Default tool checks require the real read declaration/schema without snapshotting auxiliary tools such as OpenCode's new `skill`; Responses accepts official empty annotations as well as the selected Client shorthand. Historical version labels below retain their original evidence dates, not compatibility targets.
+
 `protocol_defaults.py` characterizes native Chat, Responses and Messages defaults using the existing isolated drivers, transparent forwarder and synthetic upstream authority. It retains built-in models and their tool/strictness/reasoning controls rather than reusing curated compatibility profiles. Origin/key and the 2048-token output cap are test-owned; warming and compaction are disabled. Pi retries are disabled; exact transmission counts detect any OpenCode retries. OpenCode Responses explicitly selects HTTP because its built-in OpenAI transport defaults to WebSocket; no body/history rewrite is applied. Provider and model endpoint overrides are both explicit because built-in model settings take precedence.
 
 | Client / protocol | Built-in client model → synthetic gateway binding | Client requests / upstream attempts | Current characterized result |
@@ -581,7 +583,7 @@ For built-in models, override the test origin/key and permitted headers without 
 | pi / Chat | `deepseek/deepseek-flash` → `deepseek-beta-chat` | 3 / 3 | Reverified with pi 1.5.0 on 2026-11-06: strict read, tool result, final answer and same-session recall complete through an explicit `/beta` account root |
 | OpenCode / Chat | `deepseek/deepseek-flash` → `deepseek-chat` | 3 / 3 | Read/tool-result/final answer and same-session recall complete |
 | pi / Responses | `opencode/gpt-6.1-sol` → `openai-sol-responses` | 3 / 3 | Built-in developer `additional_tools` remains at the transcript head; direct call/result, final answer and same-session recall complete |
-| OpenCode / Responses | `openai/gpt-6.1-sol` → `openai-sol-responses` | 3 / 3 | Read/tool-result/final answer and same-session recall complete; raw history omits annotations and prepared upstream history supplies the empty array through the selected Client codec rule |
+| OpenCode / Responses | `openai/gpt-6.1-sol` → `openai-sol-responses` | 3 / 3 | Read/tool-result/final answer and same-session recall complete; prepared upstream text history requires the official annotations array, including when current Client replay uses the selected empty-collection shorthand |
 | pi / Messages | `opencode-go/claude-haiku-5-5` → `opencode-go-haiku-messages` | 3 / 3 | Root-low effort and message-local medium markers retain their positions; default read/result/answer/recall and original signed/redacted history complete |
 | OpenCode / Messages | `opencode-go/claude-haiku-5-5` → `opencode-go-haiku-messages` | 3 / 3 | Default adaptive thinking, native signed/redacted history and same-session recall complete |
 
@@ -808,4 +810,4 @@ Some installed clients omit the wire cap despite `limit.output`. Set the fixed c
 
 For R1a Chat, use `low`, set `body.max_completion_tokens` explicitly and check the selected `#low` variant's actual `reasoning_effort`. Verify next-turn call/result, final-answer and reasoning history, not just the first tool round.
 
-OpenCode Responses continuation uses the selected [input-only annotations shorthand](architecture.md#client-responses-history-shorthand); check that raw ingress omits the array while the prepared upstream request supplies `annotations:[]`. This L2 equivalence creates no loss/insertion receipt or ignored field.
+OpenCode Responses continuation uses the selected [input-only annotations shorthand](architecture.md#client-responses-history-shorthand) when the current serializer omits an empty array. Accept the official array at ingress too, and independently require prepared upstream `annotations:[]`; do not turn an old serializer's omission into a product requirement. This L2 equivalence creates no loss/insertion receipt or ignored field.

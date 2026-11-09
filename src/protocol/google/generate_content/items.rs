@@ -127,10 +127,6 @@ fn item_parts(
                 return Err(CodecError::invalid());
             }
             let token = value.replay_token().ok_or_else(unsupported)?;
-            if r.parts.is_empty() && super::replay::is_legacy(token) {
-                rules.insert(RequestRule::OmitLegacySignature);
-                return Ok(());
-            }
             let value = Signed::decode(token)?;
             let mut part = Map::new();
             part.insert("thought".into(), true.into());

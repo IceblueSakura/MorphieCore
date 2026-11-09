@@ -25,15 +25,6 @@ def check(condition, code):
         raise RuntimeError(code)
 
 
-def messages_content_equal(actual, expected):
-    """Compare replay without unsigned, unbound zero-byte text shells."""
-    if not isinstance(actual, list) or not isinstance(expected, list):
-        return False
-    empty = {"type": "text", "text": ""}
-    return ([block for block in actual if block != empty]
-            == [block for block in expected if block != empty])
-
-
 def check_client_version(case, version):
     # The caller supplies the current host's unwrapped binary. Validate its
     # version record, not equality with an independent protocol source lock.

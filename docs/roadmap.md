@@ -57,11 +57,11 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-09):** Treat **AR5 as one consolidated problem set**, in order: global semantic and lifecycle boundaries, protocol contracts and carriers, then Provider/model dialects. Google and strict guarantees participate from the start; their earlier postponement only narrowed the temporary analysis surface and no longer sets priority. Follow the [AR5 closure order](#ar5-closure-order) and [function-grouped dispositions](#remaining-observation-dispositions), reusing the selected carrier repairs and completed qualification. External-client repairs remain excluded, and Stage-4 contract selection is not the current focus. The [partial-delivery exit](#partial-delivery-exit) does not require closing every observation. [AR5 Review](ar5-review.md) owns observations and passing evidence; production activation remains separately approved.
+**Current status (2026-11-09):** The concentrated AR5 slice has verified current-client adaptation, repaired Google nullable strict admission, and completed the ordered R13 request-attribution check. Remaining schema analysis, stateless carrier limits and unavailable protected-output samples have [explicit dispositions](#remaining-observation-dispositions). Use the [partial-delivery exit](#partial-delivery-exit) for handoff; no additional broad sweep or external-client repair is scheduled. [AR5 Review](ar5-review.md) owns evidence. Stage-4 selection and production activation remain separate.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
-| AR5 first | Consolidate shared causes, resolve protocol boundaries, then isolate dialect-specific gaps | Verified repair or explicit attribution/disposition; preserve guarantees, replay guards and affected-path acceptance |
+| AR5 handoff | Retain the consolidated boundary dispositions and verified affected paths | Partial-delivery exit; closing every observation is not required |
 | Cache affinity, after AR5 and before Stage 4 | [R09 independent-account failover](#cache-affinity-qualification); further test items await user supplementation | Selected cache-affinity acceptance, retaining real-account prerequisites |
 | Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default prerequisites for AR5 |
 | API expansion | Select and implement Stage-4 operation contracts | Per-operation lifecycle, protocol and SDK acceptance |
@@ -70,68 +70,38 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Remaining Agent qualification
 
-The remaining AR5 boundaries are the current priority. [AR5 Review](ar5-review.md#pending-observations) owns their evidence; [Architecture](architecture.md) owns accepted contracts, and [Development](development.md#production-profile-acceptance) owns bounded qualification procedures. No broad Provider sweep, credential reprovisioning or account rewrite is scheduled.
+**Concentrated review, 2026-11-09:** adapt only to the locally installed current Agents, with bounded real-Provider follow-up permitted. [AR5 Review](ar5-review.md#pending-observations) owns evidence; [Architecture](architecture.md) owns contracts. No historical-client compatibility, broad Provider sweep, account rewrite or Stage-4 activation is selected.
 
 ### AR5 closure order
 
-**User-selected analysis order, 2026-11-08:** Consolidate all retained AR5 observations before choosing another target-specific slice. Analyze global issues first, specific protocols second, and Provider/model dialects last. This supersedes the earlier Chat/Responses-before-Messages/Google tiers, strict deprioritization and next-Qwen-cell scheduling. Google and strict analysis are active, not conditional on discovering a carrier first. Semantic changes still require their boundary-specific selection.
+Retain the selected **global → protocol → Provider/model** order: separate tool guarantees, ordinary signatures, protected reasoning and request/content fidelity; identify the first divergent owner; then isolate residual dialect behavior. These are analysis layers, not mandatory client × model × protocol sweeps.
 
-| Order | Analysis scope | Required result |
-|---|---|---|
-| **1 — Global** | Across all five IDs: tool identity/cardinality/seriality versus argument guarantees (R05); ordinary attachments versus protected reasoning and replay trust (R01/R02/R06); instruction preservation and upstream content attribution (R13) | Identify the authoritative IR/execution owner, first divergent boundary and shared cause or evidence gap. Keep genuinely different guarantees separate even when they share an investigation. |
-| **2 — Protocol** | Compare Chat, Responses, Messages, generateContent and Interactions against their primary contracts, client-retainable carriers and existing SDK/client evidence, including Google and strict semantics | Record exact/equivalent/lossy/omitted/rejected dispositions and minimal counterexamples. Resolve shared carrier choices before adding target exceptions; unsupported mappings retain honest rejection pending selection. |
-| **3 — Provider/model dialect** | Investigate only residual differences after the global/protocol review: remaining Google Agent profiles, real Haiku protected output and remaining scoped upstream content limitations | Qualify the exact model/mode/binding with bounded discriminators, or record attribution/unavailable prerequisites. No repeated broad sweep. |
-
-These are analysis layers, not three new implementation packages or mandatory all-cell test sweeps. Reuse the existing evidence across the functional dispositions below. A blocked live prerequisite does not prevent source/code analysis or work on another shared boundary. Completed carrier repairs and the Qwen thinking-off JSON/SSE qualification belong to [Architecture](architecture.md#google-strict-function-arguments) and [AR5 evidence](ar5-review.md), not another queued target sweep.
-
-Reuse the existing lowering/disposition owners, codecs, pinned SDKs and isolated client drivers; no new dependency or test framework is planned. Fix each live run's target, budget, caps and deadline before sending under the bounds below. Run one coherent slice at a time, fixing faults at their shared owner before protocol or dialect specialization. If a carrier decision or live prerequisite is unavailable, record the precise blocked subcase and continue independent analysis; ordering does not authorize semantic loss. Implementation exits require directional regressions, the offline baseline, relevant SDK checks and affected real-client acceptance. Documentation-only disposition changes use documentation checks. Once the retained boundaries have verified repairs or explicit dispositions, use the partial-delivery exit rather than inventing more AR5 sweeps.
+Reuse existing codecs, lowering/disposition owners, typed history, pinned SDKs and isolated current-client drivers. No new dependency, replay cache, retry layer or diagnostic platform is planned. Apply the [bounded real-Agent procedure](development.md#real-agent-scenario-selection); explicit further trials are permitted, each with a finite target/request/attempt/output/wire/deadline budget fixed before serial dispatch. Hidden retries remain off. Project-managed OAuth renewal remains authorized; credential lifecycle and routing constraints are unchanged.
 
 ### Remaining observation dispositions
 
-There are **five retained observation IDs across three functional domains**, matching the [AR5 inventory](ar5-review.md#pending-observations). They form one analysis backlog under the global → protocol → dialect order above; the domains below locate detailed dispositions, not separate priority queues. Status and re-entry are attributes of each boundary, not separate copies of its plan. The selected [Bailian strictness policy](architecture.md#shared-aliyun-billing-dialect) closes R17 and R18's strict-admission subcase. R02/R06 share one carrier problem across client protocols. **User-selected 2026-11-09:** R09 moves out of AR5 into [cache-affinity qualification](#cache-affinity-qualification), after AR5 and before Stage 4. The existing Readable Chat carrier extension is selected in [Architecture](architecture.md#chat-reasoning-extensions); this reorganization selects no deployment, new binding or additional content/signature loss.
+**Five retained IDs, four boundaries.** Current evidence closes the R13 request-attribution gap and distinguishes R01 activation from protected-output availability. Neither requires another generic sweep. Keep exact content assertions and explicit guarantees.
 
-**User-selected closure, 2026-11-09:** Remove **R18** from AR5 follow-up. Local repairs and thinking-off forcing qualification are complete; remaining unsupported thinking-enabled forcing is an accepted [service limitation](architecture.md#shared-aliyun-billing-dialect), with existing rejection unchanged. No further R18 investigation, retest or repair is scheduled. Native counterexamples and passing evidence remain in [AR5 Review](ar5-review.md#bailian-function-guarantee-follow-up-2026-11-09).
-
-**User-selected closure, 2026-11-09:** Close and remove **R21** from AR5, replacing its former Provider-specific deferral. Cancellation, execution and feedback qualification is complete; retain the scoped [Grok recovery limitations](architecture.md#subscription-responses) and incomplete native tool-snapshot coverage recorded in [AR5 Review](ar5-review.md#r21-write-feedback-qualification-2026-11-08). No further R21 investigation, retest or repair is scheduled.
-
-**User-selected scope, 2026-11-08:** Bailian structured-output variability and its associated envelope/failed-stream observations are removed from AR5 follow-up. No further investigation, retest or repair is scheduled for that issue; existing format carriage and envelope normalization remain unchanged.
-
-**User-selected removal, 2026-11-08:** Retire **R04/R08** and their external-client repair/attribution follow-ups from AR5. Do not substitute gateway omission, history equivalence or deduplication work. Existing history/replay assertions and test-authority forwarding ceilings remain; retirement is not a repair or broader compatibility qualification.
-
-Use the existing lowering, replay/projection owners, reducers and client drivers for separately selected follow-ups. No new dependency, replay store, retry layer or diagnostic platform is planned.
-
-**User-selected status, updated 2026-11-09:** All retained observations contribute to consolidated analysis, including Google, strict guarantees and existing R13 attribution evidence. R13 does not require another recall sweep. Analysis does not select weaker explicit guarantees or content/signature loss. The routing freeze remains. The general Google API expansion pause does not defer AR5 source, semantic or carrier analysis of existing paths.
-
-Retain the exact profile, first divergent field/event, responsible owner and disposition for any follow-up. Use known field paths, event/block kinds, terminal classes and recognized error categories; private exchanges are not public fixtures. If fresh Provider evidence is necessary, fix target, operation, request/attempt budget, output/wire caps and deadline before each run, and run serially without hidden retries.
-
-**User-selected follow-up bounds, 2026-11-09:** incomplete evidence may receive unlimited additional explicit Provider trials, superseding the temporary three-scenario/repeat ceilings. Each run still fixes finite requests, output/wire caps and deadlines before dispatch. Record each outcome independently; success does not erase earlier failures. OAuth renewal through the project manager/CLI remains authorized. This changes investigation scheduling, not gateway/SDK retry policy or the manager's quarantined-refresh lifecycle.
-
-Stop the dependent live run or implementation when its prerequisite or semantic selection is unavailable; continue independent global/protocol analysis. A later implementation slice needs independent directional regressions, the required offline baseline, relevant SDK/client checks and affected real acceptance. Preserve credential/auth, bounds, cancellation, replay isolation and terminal honesty.
+**Scope fence:** R17 and R18's strict-admission subcase are closed by the selected Bailian relaxation. R18's remaining thinking-enabled forcing and R21's Grok content behavior are accepted service limitations, with no further follow-up scheduled. R04/R08 and Bailian structured-output variability remain removed; do not substitute gateway omission, history-equivalence or deduplication work. R09 is separately scheduled [after AR5 and before Stage 4](#cache-affinity-qualification). These dispositions do not approve new bindings, signature loss or deployment.
 
 #### Tool invocation and argument guarantees
 
-Invocation identity, seriality, argument-schema guarantees and terminal spelling are separate contracts. Preserve the accepted [strict-tool ownership](architecture.md#standard-request-boundary) and [Bailian tool policy](architecture.md#shared-aliyun-billing-dialect); passing one dimension does not reopen another.
-
-| Boundary | Current disposition | Next work and exit / re-entry condition |
+| Boundary | Current disposition | Next work / re-entry |
 |---|---|---|
-| **R05 — Google strict profile** | [Closed-object argument subset selected](architecture.md#google-strict-function-arguments) on existing APIs; full original Agent profiles remain unqualified outside that schema/control subset. | Broaden only for a concrete supported constraint/carrier with independent evidence. Length/pattern/reference/composition constraints and Google serial intent remain rejected; do not opt out of strictness or delete schemas to qualify an Agent. Ordinary attachment carriage in R02/R06 remains separate. |
+| **R05 — Google strict profile** | The selected [closed-object subset](architecture.md#google-strict-function-arguments), including required nullable fields, is qualified. Full current-Agent profiles are not. | Retain length/pattern/general-composition and serial rejection. Native local-reference/inline samples now pass; strict reference admission remains next-stage schema analysis, not an established upstream impossibility. Separately review conservative strict/serial checks under no-call selection. Broaden only for a concrete supported carrier with directional and affected-path evidence; do not delete schemas or disable strictness. |
 
 #### History and replay carriers
 
-Ordinary content/call attachments and protected reasoning have distinct semantic owners. Follow [history and replay](architecture.md#history-and-replay); the selected Readable Chat reasoning transport does not authorize ordinary signature transport.
-
-| Boundary | Current disposition | Next work and exit / re-entry condition |
+| Boundary | Current disposition | Next work / re-entry |
 |---|---|---|
-| **R02 / R06 — Google ordinary attachments** | Scoped stateless limitation; the user selected existing managed Responses continuation, without a new stateless carrier or signature loss. | Use `store:true` / `previous_response_id` on the supported path. Stateless Chat/Responses/Messages retain honest attachment rejection. Reopen stateless support only with a selected client-retainable ordinary text/call carrier and client integration; never silently delete signatures or move ordinary content into reasoning. No new Google API activation. |
-| **R01 — Real Haiku protected output** | Only the unobserved real protected-output cell remains; the existing-profile carrier repair is selected and verified. | Resume only when protected output is available on the same profile, preserving signatures, replay guards and original assertions. No new carrier/loss decision or repeat of completed synthetic/SDK/client carrier loops is needed. |
+| **R02 / R06 — Google ordinary attachments** | Scoped stateless limitation; managed Responses continuation is selected and qualified. Current Agents still reconstruct stateless history. | Use `store:true` / `previous_response_id` on integrated callers. Stateless Agent support needs separately selected client continuation integration or a client-retainable ordinary text/call carrier. External-client repairs remain excluded. Never delete signatures or move ordinary content into reasoning; no new Google API activation. |
+| **R01 — Real Haiku protected output** | Unavailable sample prerequisite. Current OpenCode's original Chat loop passes without protected output; a separate explicit adaptive/medium discriminator also produces none. Carrier repair remains qualified. | Resume when the same profile actually yields protected output. The missing-activation hypothesis alone does not justify another carrier repair or automatic effort-to-activation mapping. Preserve signatures, replay guards and original assertions. |
 
 #### Instruction following and content recall
 
-Keep upstream content attribution separate from request preservation, tool policy, cancellation and feedback mechanics. Exact-label assertions remain; prompt/history rewriting is not selected.
-
-| Boundary | Current disposition | Next work and exit / re-entry condition |
+| Boundary | Current disposition | Next work / re-entry |
 |---|---|---|
-| **R13 — Messages literal-label recall** | Scoped upstream omission on complete native comparisons; reopened for bounded follow-up, not a scheduled recall sweep. | Re-enter only for a concrete new project-owned divergence. Reuse native/prepared/delivered evidence, keep the exact-label assertion and separate HTTP failures/incomplete captures. No prompting or history rewrite. |
+| **R13 — Messages literal-label recall** | Scoped upstream content omission. The unchanged five-request audit preserves full ordered request history/instructions/tools/effort and establishes complete native/delivered text agreement on a failing recall. | No further recall sweep or prompt/history rewrite is scheduled. Re-enter only for a concrete new project-owned divergence; retain exact-label failure and distinguish HTTP/incomplete-capture outcomes. |
 
 #### Other qualification gates
 
