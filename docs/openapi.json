@@ -101,7 +101,7 @@
         "description": "Startup-immutable, authenticated discovery with no request-body or upstream I/O. Unlisted cases are not assessed. Claims describe individual gateway boundaries, not complete exchange success or Provider-effective support. HEAD returns headers without a body.",
         "responses": {
           "200": {
-            "description": "Complete snapshot within min(response_bytes, 256 KiB); oversized snapshots fail startup, never truncate.",
+            "description": "Complete snapshot within min(response_bytes, 4 MiB); oversized snapshots fail startup, never truncate.",
             "headers": {"Cache-Control": {"schema": {"const": "no-store"}}},
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CapabilitySnapshot"}}}
           },

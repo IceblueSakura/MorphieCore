@@ -515,6 +515,42 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
 }
 
 #[test]
+fn complete_capability_catalog_fits_the_publication_budget_without_truncation() {
+    use crate::gateway::ingress::capabilities::CapabilityView;
+    let gate = crate::gateway::tests::support::gateway(Limits::default());
+    let mut entries = BTreeMap::new();
+    for index in 0..64 {
+        let label = format!("alias-{index:02}");
+        for ((protocol, _), entry) in &gate.state.entries {
+            let mut entry = entry.as_ref().clone();
+            entry.public.id = crate::topology::ModelId::new(&label).unwrap();
+            entries.insert((*protocol, label.clone()), Arc::new(entry));
+        }
+    }
+    let view = CapabilityView::bind(&entries, &BTreeMap::new(), 4 << 20).unwrap();
+    assert!(view.0.len() > 256 << 10);
+    let snapshot: Value = serde_json::from_slice(&view.0).unwrap();
+    let published = snapshot["data"].as_array().unwrap();
+    assert_eq!(published.len(), entries.len());
+    for (protocol, label) in entries.keys() {
+        let protocol = match protocol {
+            ClientProtocol::Chat => "chat_completions",
+            ClientProtocol::Responses => "responses",
+            ClientProtocol::Messages => "messages",
+        };
+        assert!(
+            published.iter().any(
+                |entry| entry["model"].as_str() == Some(label) && entry["protocol"] == protocol
+            )
+        );
+    }
+    assert!(matches!(
+        CapabilityView::bind(&entries, &BTreeMap::new(), view.0.len() - 1),
+        Err(StartupError::Limits)
+    ));
+}
+
+#[test]
 fn local_directory_encodes_empty_and_alias_views_with_inclusive_resource_limits() {
     use crate::gateway::ingress::models::ModelView;
     let topology = aliases(65, true);

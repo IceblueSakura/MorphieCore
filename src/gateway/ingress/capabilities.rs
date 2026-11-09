@@ -9,7 +9,7 @@ use bytes::Bytes;
 use serde::Serialize;
 use std::{collections::BTreeMap, sync::Arc};
 
-const MAX_BYTES: usize = 256 << 10;
+const MAX_BYTES: usize = 4 << 20;
 const LINK: &str = "</v1/morphiecore/capabilities>; rel=\"describedby\"";
 
 #[derive(Serialize)]

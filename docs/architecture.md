@@ -1021,6 +1021,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Decision | Date | Accepted Architectural Consequence |
 |---|---|---|
 | Model capability discovery | 2026-10-26 | Unified discovery contracts for Generation Text and Pi; other modalities schema-only |
+| Capability snapshot publication budget | 2026-11-09 | Select a 4 MiB capability-snapshot ceiling for complete multi-model publication, still intersected with `response_bytes`; retain failure on overflow without truncation. Generation Text discovery keeps its independent budget. [Publication contract](usage.md#capability-discovery-and-adaptation-notice) |
 | DeepSeek parallel-tool admission | 2026-10-25 | Rejects serial tool intent; omits parallel permission with evidence on DeepSeek targets |
 | Messages signed delivery | 2026-10-27 | Enforces native thinking signatures; revised 2026-10-30: unsigned thinking is omitted, never signed |
 | Local telemetry wiring | 2026-10-25 | Native structured logs via tracing/OTel without global runtime locks |
