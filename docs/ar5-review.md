@@ -30,6 +30,7 @@ This record retains the dated scenario coverage. Further qualification follows [
 - [Tool policy and Grok request qualification, 2026-11-08](#tool-policy-and-grok-request-qualification-2026-11-08)
 - [Selected root repairs and qualification, 2026-11-09](#selected-root-repairs-and-qualification-2026-11-09)
 - [Bailian function-guarantee follow-up, 2026-11-09](#bailian-function-guarantee-follow-up-2026-11-09)
+- [Shared Bailian strict relaxation, 2026-11-09](#shared-bailian-strict-relaxation-2026-11-09)
 - [Updating this record](#updating-this-record)
 
 ## Test context
@@ -48,11 +49,11 @@ Collection totals retain their original execution scope when resolved entries ar
 
 ## Pending observations
 
-The **eight retained IDs** form one consolidated problem set. The inventory below separates global boundaries, protocol carriers and residual Provider/model evidence; it does not assert that all symptoms share one cause. The [roadmap analysis order](roadmap.md#ar5-closure-order) owns global → protocol → dialect priority, and the [dispositions](roadmap.md#remaining-observation-dispositions) own work, re-entry and deferrals. Google and strict guarantees are included without the earlier temporary postponement. Detailed observations remain grouped by function for lookup, not as separate queues. Dated evidence below retains its original collection scope. R09 evidence is retained [separately](#cache-affinity-qualification-evidence), following its move to post-AR5, pre-Stage-4 cache-affinity qualification.
+The **seven retained IDs** form one consolidated problem set. The inventory below separates global boundaries, protocol carriers and residual Provider/model evidence; it does not assert that all symptoms share one cause. The [roadmap analysis order](roadmap.md#ar5-closure-order) owns global → protocol → dialect priority, and the [dispositions](roadmap.md#remaining-observation-dispositions) own work, re-entry and deferrals. Google and strict guarantees are included without the earlier temporary postponement. Detailed observations remain grouped by function for lookup, not as separate queues. Dated evidence below retains its original collection scope. R09 evidence is retained [separately](#cache-affinity-qualification-evidence), following its move to post-AR5, pre-Stage-4 cache-affinity qualification. R17 and R18's strict-admission subcase are closed by the selected [shared-service relaxation](#shared-bailian-strict-relaxation-2026-11-09).
 
 | Shared boundary / evidence | IDs | Global question | Protocol boundary | Residual Provider/model evidence |
 |---|---|---|---|---|
-| [Tool invocation and argument guarantees](#tool-invocation-and-argument-guarantees) | R05, R17, R18 | Distinct invocation identity, cardinality, seriality and schema-enforcement guarantees at admission/lowering boundaries | Google supports the selected strict schema subset; unsupported constraints and seriality remain independent gaps | GLM Chat/Bailian Responses strict and enabled-thinking forcing limitations; original full Google Agent profiles are not qualified by the supported SDK subset |
+| [Tool invocation and argument guarantees](#tool-invocation-and-argument-guarantees) | R05, R18 | Distinct invocation identity, cardinality, seriality and schema-enforcement guarantees at admission/lowering boundaries | Google supports the selected strict schema subset; unsupported constraints and seriality remain independent gaps | Bailian enabled-thinking forcing limitations; original full Google Agent profiles are not qualified by the supported SDK subset |
 | [History and replay carriers](#history-and-replay-carriers) | R01, R02, R06 | Ordinary attachments and protected reasoning have distinct owners under shared identity, signature and replay-trust invariants | R02/R06 share one generateContent ordinary-attachment gap across Chat/Responses/Messages clients; managed continuation is distinct | Existing Readable Chat carrier repair passes; real Haiku protected output remains unobserved |
 | [Instruction following and content recall](#instruction-following-and-content-recall) | R13, R21 | Distinct instruction/history preservation, cancellation/feedback ownership and upstream content-attribution boundaries | Existing native/prepared/delivered/client comparisons retain exact content assertions; no request rewrite is supported | Complete captures show scoped upstream omissions; R21 evidence joins shared analysis while its Provider-specific retest/repair remains deferred |
 
@@ -62,8 +63,7 @@ A passing sample closes only its exercised boundary. Completed portions stay in 
 
 | ID | Observation and affected path | Current evidence and unresolved boundary |
 |---|---|---|
-| R18 | Bailian forced invocation and strict arguments | **Selection:** thinking GLM Chat chooses the prompted decoy through an initial sample plus three repeats. Single-tool, low-effort Qwen/GLM Responses both ignore `allowed_tools/required`; string `required` independently returns zero calls in **4/4 per model**. These exact default/enabled-thinking profiles retain local rejection. **Arguments:** native Qwen Responses strict/auto emits an out-of-enum value through an initial sample plus three repeats; the 2026-11-09 thinking-off required-subset contrast also violates both integer/string enums with strict true. Responses strict tools retain rejection. Completed thinking-off forcing, including multi-declaration inventory filtering, serial carriage and Qwen Chat call/`stop` qualification are retained in passing evidence. |
-| R17 | pi GLM Chat strict-profile admission | 2026-11-07, pi 1.5.0, `dashscope-glm-chat`: the original read/history profile rejects locally with `400 invalid_request`, 0 upstream attempts and planning reason `admission.strict_tools`. Pure preflight isolates explicit strict tools. The 2026-11-09 native Chat `strict:true` auto sample returns one call violating both integer/string enums, independently supporting the retained rejection. Non-strict controls remain diagnostic variants, not strict opt-outs for acceptance. |
+| R18 | Bailian forced invocation | Thinking GLM Chat chooses the prompted decoy through an initial sample plus three repeats. Single-tool, low-effort Qwen/GLM Responses both ignore `allowed_tools/required`; string `required` independently returns zero calls in **4/4 per model**. These exact default/enabled-thinking profiles retain local rejection independently of the selected strict relaxation. Completed thinking-off forcing, including multi-declaration inventory filtering, serial carriage and Qwen Chat call/`stop` qualification are retained in passing evidence. |
 | R05 | Full Google Agent strict-profile qualification | The selected closed-object function subset now has strict native mode mappings on both APIs. Full original Agent profiles remain unqualified: length/pattern/reference/composition constraints and serial requests are outside that subset, and a supported SDK loop does not qualify default-pi declarations. This remaining profile scope is independent of the ordinary-attachment gap in R02/R06. |
 
 ### History and replay carriers
@@ -387,6 +387,8 @@ Body-free evidence is retained locally at `testdata/reports/ar5-selected-*-20261
 
 ## Bailian function-guarantee follow-up, 2026-11-09
 
+This section retains the native counterexamples and pre-selection dispositions. Current function-strict admission follows the subsequently selected [shared-service policy](architecture.md#shared-aliyun-billing-dialect).
+
 [Current service sources](refs/2026-10-19-bailian-compatible-requests.md#function-guarantee-recheck-2026-11-09) distinguish function-schema guarantees from output-text strictness, request inventory from allowed names, and GLM **5.3** from hybrid 5.2. No new model, binding or endpoint is activated.
 
 All **six native requests** are serial, loader-bound to one declared `aliyun-dashscope-cn` account, **2048 output tokens / 120-second total deadlines / 256-KiB requests / 2-MiB responses**, with one send each and no retries. They use the same closed object, required typed fields, integer/string enums and conflicting prompt. The disposable oracle checks positive/negative examples before dispatch; all six exchanges return HTTP 200 and complete.
@@ -404,6 +406,23 @@ Actual production CLI + pinned OpenAI Python **3.37.0** accepts **JSON 3/3 and S
 The full offline baseline passes after the repair, including all-target Clippy `-D warnings`, formatting, production compilation, pinned assets and the four Python suites. Separate connected synthetic acceptance passes **20 SDK scenarios / 25 installed-client scenarios**, using safe unwrapped **pi 1.5.0 / OpenCode 2.0.32** and isolated state.
 
 Disposable setup failures occur before inference: one exporter type error, a body-timeout value outside documented bounds and the Messages-only `default_output_tokens` candidate field. Correcting the temporary setup yields the passing stories without changing product configuration validation. The initial regression fixture also needs an ownership correction before reaching its intended admission failure. Helpers, scratch stores and private captures are removed; body-free evidence is retained in `testdata/reports/ar5-bailian-functions-*-20261109.job`.
+
+## Shared Bailian strict relaxation, 2026-11-09
+
+The user selected one [default-relaxation policy](architecture.md#shared-aliyun-billing-dialect) for DashScope and TokenPlan, with positive exceptions only for independently verified model/API pairs. The current set is empty. Supplied schemas and original source strictness remain intact; the accepted loss is best-effort arguments, not newly enforced schemas.
+
+Offline directional checks cover both plans, Chat/Responses, root and retained inline definitions, explicit true/false and conditional omission, unknown models under permissive direct contracts, and unchanged standard-API behavior. Endpoint encoding and direct lowering agree. Discovery reports `approved_adaptation` with `bailian.relax-function-strictness.v1`, rather than `faithful`. The original inline-wire expectation was corrected to its standard batch spelling `strict:false`; the source guarantee is still relaxed.
+
+| Real consumer | Passing result | Independent observations |
+|---|---|---|
+| Current unwrapped pi **1.5.0**, `dashscope-glm-chat` | **3 requests / 3 complete attempts** | A curated read/feedback/recall profile explicitly enables client strict serialization: every client declaration carries `strict:true`, prepared declarations omit it and preserve the exact parameter schema. Actual scratch read succeeds; returned call IDs/arguments, result association and exact recall survive. Low effort emits no readable reasoning in this sample |
+| OpenAI Python **3.37.0**, `dashscope-flash-responses` | JSON **3/3**, SSE **3/3** | Every SDK request uses `strict:true`; native strict is omitted while schema, thinking-off, forced invocation and original-call feedback/recall remain intact |
+
+Each story fixes one loader-selected account, concurrency **1**, no retries, **2048 output tokens / 120-second route/exchange deadlines / 256-KiB requests / 2-MiB responses**, and a **420-second outer bound**. An initial pi observer required nonempty reasoning and aborted its second ingress after **one complete upstream attempt**. The target-appropriate repeat permits absent reasoning but compares any observed reasoning exactly, then passes the full story. Total real inference attempts are **10**: that initial attempt plus the three passing three-request stories. No new strict-enforcement exception or separate TokenPlan live qualification is inferred.
+
+The full offline baseline passes, including production construction, all-target Clippy `-D warnings`, formatting, production compilation, pinned assets and the four Python suites. Separate synthetic acceptance passes **20 SDK scenarios / 25 current-client scenarios**. Production-lane and discovery fixtures now expect the selected relaxation instead of obsolete `strict:false`/faithful assumptions; their schema and history comparisons remain.
+
+Temporary helpers, scratch credentials and private captures are removed; body-free evidence is retained locally as `testdata/reports/bailian-strict-relaxation-*-20261109.job`. The earlier native enum failures remain the reason to use best-effort behavior rather than add a verified exception.
 
 ## Updating this record
 

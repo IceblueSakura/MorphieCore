@@ -457,6 +457,11 @@ pub(crate) const CONDITIONAL_STRICTNESS: Rule = Rule::new(
     Field::Tools,
     Change::Approximate,
 );
+pub(crate) const BAILIAN_RELAX_STRICTNESS: Rule = Rule::new(
+    "bailian.relax-function-strictness.v1",
+    Field::Tools,
+    Change::Approximate,
+);
 pub(crate) const EFFORT: Rule = Rule::new(
     "generation.project-effort.v1",
     Field::Effort,

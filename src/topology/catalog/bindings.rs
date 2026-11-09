@@ -237,6 +237,15 @@ impl ApiKeyBinding {
                 crate::lowering::disposition::Disposition::Delegate,
             );
         }
+        if self.dialect == Dialect::Bailian {
+            contract.dispositions.set(
+                crate::semantic::task::generation::Feature::StrictTools,
+                crate::protocol::openai::dialect::bailian::function_strictness(
+                    self.upstream,
+                    family,
+                ),
+            );
+        }
         Ok(Endpoint {
             bound_replay_scope: None,
             id: self.endpoint_id(protocol),

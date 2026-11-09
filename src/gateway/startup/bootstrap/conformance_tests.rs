@@ -449,7 +449,7 @@ async fn observe_intake(
                         }],
                         parameters
                     );
-                    if upstream == Api::Messages || upstream == Api::Chat {
+                    if upstream == Api::Messages || upstream == Api::Chat && !bailian {
                         assert_eq!(tool["strict"], false);
                     } else {
                         assert!(tool.get("strict").is_none());

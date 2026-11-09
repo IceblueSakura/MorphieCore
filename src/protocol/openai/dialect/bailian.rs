@@ -10,6 +10,23 @@ use crate::{
 };
 use serde_json::{Map, Value, json};
 
+// Qualification is specific to the shared service, exact model and API.
+// Canonical model flags and successful ordinary calls are not enforcement evidence.
+// docs/refs/2026-10-19-bailian-compatible-requests.md
+const VERIFIED_STRICT_TOOLS: &[(&str, GenerationApi)] = &[];
+
+pub(crate) fn function_strictness(
+    model: &str,
+    profile: GenerationApi,
+) -> crate::lowering::disposition::Disposition {
+    use crate::lowering::disposition::{BAILIAN_RELAX_STRICTNESS, Disposition};
+    if VERIFIED_STRICT_TOOLS.contains(&(model, profile)) {
+        Disposition::Native
+    } else {
+        Disposition::Approximate(BAILIAN_RELAX_STRICTNESS)
+    }
+}
+
 pub(in crate::protocol::openai) const CONTROL_FIELDS: &[&str] =
     &["enable_thinking", "thinking_budget", "top_k"];
 const UNOWNED: &[&str] = &[
@@ -513,8 +530,7 @@ pub(in crate::protocol::openai) fn check_semantic(
     Ok(())
 }
 
-/// Shared lowering has already resolved strictness against the API contract.
-/// Chat carries explicit strictness; Responses only receives non-strict tools.
+/// Shared lowering preserves strictness only for a qualified model/API pair.
 pub(in crate::protocol::openai) fn write_tools(
     s: &GenerationSettings,
     o: &mut Map<String, Value>,
@@ -533,10 +549,10 @@ pub(in crate::protocol::openai) fn write_tools(
             if let Some(schema) = &t.parameters {
                 value["parameters"] = schema.root().clone();
             }
+            if let FunctionStrictness::Explicit(strict) = t.strict {
+                value["strict"] = json!(strict);
+            }
             values.push(if profile == GenerationApi::Chat {
-                if let FunctionStrictness::Explicit(strict) = t.strict {
-                    value["strict"] = json!(strict);
-                }
                 value
                     .as_object_mut()
                     .expect("function")

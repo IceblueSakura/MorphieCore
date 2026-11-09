@@ -505,7 +505,14 @@ fn deepseek_bindings_keep_bailian_identity_controls_and_strictness_boundary() {
             let strict = client(api)
                 .decode_client_request(wire.to_string().as_bytes())
                 .unwrap();
-            assert!(target.encode_request_with_rules(&strict).is_err());
+            let (prepared, rules) = target.encode_request_with_rules(&strict).unwrap();
+            let tool = if api == GenerationApi::Chat {
+                &prepared["tools"][0]["function"]
+            } else {
+                &prepared["tools"][0]
+            };
+            assert!(tool.get("strict").is_none());
+            assert!(rules.contains(&"bailian.relax-function-strictness.v1"));
         }
     }
 }
@@ -514,32 +521,115 @@ fn response_request() -> Value {
             "tools":[{"type":"function","name":"lookup","description":"lookup value","parameters":{"type":"object"}}]})
 }
 #[test]
-fn chat_strictness_is_rendered_from_the_effective_binding_contract() {
-    let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiChat);
-    for strict in [Some(true), Some(false), None] {
-        let mut body = chat();
-        body["tools"] = json!([{"type":"function","function":{
-            "name":"lookup","description":"Look up a value",
-            "parameters":{"type":"object","properties":{"key":{"type":"string"}},"required":["key"],"additionalProperties":false}
-        }}]);
-        if let Some(strict) = strict {
-            body["tools"][0]["function"]["strict"] = json!(strict);
+fn bailian_unverified_strictness_is_relaxed_without_changing_schemas_or_source() {
+    let schema = json!({"type":"object","properties":{"key":{"type":"string","minLength":5}},
+        "required":["key"],"additionalProperties":false});
+    for inline in [false, true] {
+        for strict in [Some(true), Some(false), None] {
+            let mut function = json!({"type":"function","name":"lookup","description":"Look up a value",
+                "parameters":schema});
+            if let Some(strict) = strict {
+                function["strict"] = json!(strict);
+            }
+            let mut body = json!({"model":"public","input":"go","tools":[function]});
+            if inline {
+                body.as_object_mut().unwrap().remove("tools");
+                body["input"] = json!([
+                    {"type":"additional_tools","role":"developer","tools":[function]},
+                    {"role":"user","content":"go"}
+                ]);
+            }
+            let source = client(GenerationApi::Responses)
+                .decode_client_request(body.to_string().as_bytes())
+                .unwrap();
+            let before = source.clone();
+            for prefix in ["dashscope-flash", "dashscope-glm", "tokenplan-max"] {
+                for protocol in [
+                    GenerationProtocol::OpenAiChat,
+                    GenerationProtocol::OpenAiResponses,
+                ] {
+                    let target = endpoint(prefix, protocol);
+                    let (wire, rules) = target.encode_request_with_rules(&source).unwrap();
+                    let tools = wire
+                        .get("tools")
+                        .and_then(Value::as_array)
+                        .or_else(|| {
+                            wire["input"]
+                                .as_array()
+                                .and_then(|items| {
+                                    items.iter().find(|item| item["type"] == "additional_tools")
+                                })
+                                .and_then(|batch| batch["tools"].as_array())
+                        })
+                        .unwrap();
+                    let actual = if protocol == GenerationProtocol::OpenAiChat {
+                        &tools[0]["function"]
+                    } else {
+                        &tools[0]
+                    };
+                    assert_eq!(actual["parameters"], schema);
+                    if inline && protocol == GenerationProtocol::OpenAiResponses {
+                        // Standard retained batches spell their non-strict default explicitly.
+                        assert_eq!(actual["strict"], false);
+                    } else {
+                        assert!(actual.get("strict").is_none());
+                    }
+                    assert_eq!(
+                        rules.contains(&"bailian.relax-function-strictness.v1"),
+                        strict != Some(false)
+                    );
+                    let morphiecore::lowering::target::TargetContract::OpenAi(contract) =
+                        &target.representation
+                    else {
+                        panic!("OpenAI contract")
+                    };
+                    let profile = if protocol == GenerationProtocol::OpenAiChat {
+                        GenerationApi::Chat
+                    } else {
+                        GenerationApi::Responses
+                    };
+                    let lowered = morphiecore::protocol::openai::lowering::lower_request(
+                        &source.task.semantic,
+                        &source.task.fidelity,
+                        profile,
+                        (**contract).clone(),
+                    )
+                    .unwrap();
+                    let direct = if profile == GenerationApi::Chat {
+                        morphiecore::protocol::openai::chat::encode_generation(&lowered).unwrap()
+                    } else {
+                        morphiecore::protocol::openai::responses::encode_generation(&lowered)
+                            .unwrap()
+                    };
+                    assert_eq!(direct.get("tools"), wire.get("tools"));
+                    assert_eq!(source, before);
+                }
+            }
+            let standard = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+                .encode_request(&source, "public", &TargetContract::full())
+                .unwrap();
+            let expected = if inline {
+                &standard["input"][0]["tools"][0]
+            } else {
+                &standard["tools"][0]
+            };
+            assert_eq!(expected.get("strict"), function.get("strict"));
         }
-        let source = client(GenerationApi::Chat)
-            .decode_client_request(body.to_string().as_bytes())
-            .unwrap();
-        let before = source.clone();
-        let (wire, rules) = target.encode_request_with_rules(&source).unwrap();
-        assert_eq!(wire["tools"], body["tools"]);
-        assert!(rules.is_empty());
-        assert_eq!(source, before);
     }
-    let source = client(GenerationApi::Responses).decode_client_request(
-        br#"{"model":"public","input":"go","tools":[{"type":"function","name":"lookup","description":"lookup",
-            "parameters":{"type":"object","properties":{},"required":[],"additionalProperties":false}}]}"#
-    ).unwrap();
-    let (wire, _) = target.encode_request_with_rules(&source).unwrap();
-    assert_eq!(wire["tools"][0]["function"]["strict"], true);
+    // A permissive direct contract or an unknown future model cannot opt in.
+    let source = client(GenerationApi::Responses)
+        .decode_client_request(
+            br#"{"model":"unqualified","input":"go","tools":[{"type":"function","name":"lookup",
+        "description":"lookup","strict":true,"parameters":{"type":"object"}}]}"#,
+        )
+        .unwrap();
+    for api in [GenerationApi::Chat, GenerationApi::Responses] {
+        let (wire, rules) = native(api)
+            .encode_request_with_rules(&source, "unqualified", &TargetContract::full())
+            .unwrap();
+        assert!(!wire.to_string().contains("\"strict\""));
+        assert!(rules.contains(&"bailian.relax-function-strictness.v1"));
+    }
 }
 
 #[test]
@@ -602,7 +692,7 @@ fn responses_non_strict_defaults_and_single_function_selection_have_native_oracl
     let (wire, rules) = target.encode_request_with_rules(&source).unwrap();
     assert_eq!(wire["tools"][0]["parameters"], json!({"type":"object"}));
     assert!(wire["tools"][0].get("strict").is_none());
-    assert_eq!(rules, ["openai.omit-conditional-tool-strictness.v1"]);
+    assert_eq!(rules, ["bailian.relax-function-strictness.v1"]);
     let lowered = morphiecore::protocol::openai::lowering::lower_request(
         &source.task.semantic,
         &source.task.fidelity,
@@ -1034,7 +1124,7 @@ fn responses_output_constraints_reach_preparation_without_losing_the_schema() {
 }
 
 #[test]
-fn responses_unlisted_guarantees_reject_without_weakening_constraints() {
+fn responses_unlisted_controls_project_without_changing_source() {
     let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses);
     for (patch, field) in [
         (json!({"reasoning":{"summary":null}}), "reasoning"),
@@ -1054,39 +1144,6 @@ fn responses_unlisted_guarantees_reject_without_weakening_constraints() {
         assert!(wire.get(field).is_none(), "{field}");
         assert_eq!(input, before);
     }
-    let mut wire = response_request();
-    wire["tools"][0]["strict"] = json!(true);
-    wire["tools"][0]["parameters"] =
-        json!({"type":"object","properties":{},"required":[],"additionalProperties":false});
-    let strict = client(GenerationApi::Responses)
-        .decode_client_request(wire.to_string().as_bytes())
-        .unwrap();
-    GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
-        .encode_request(&strict, "synthetic", &TargetContract::full())
-        .expect("valid strict schema has a standard carrier");
-    let mut direct_contract = TargetContract::full();
-    direct_contract.adaptation = native(GenerationApi::Responses).adaptation;
-    assert!(
-        morphiecore::protocol::openai::lowering::lower_request(
-            &strict.task.semantic,
-            &strict.task.fidelity,
-            GenerationApi::Responses,
-            direct_contract,
-        )
-        .is_err(),
-        "direct lowering must enforce the same strict guarantee boundary"
-    );
-    assert!(matches!(
-        target.encode_request_with_rules(&strict),
-        Err(ConversionFailure {
-            cause: morphiecore::protocol::ConversionCause::Representation(
-                morphiecore::protocol::conversion::generation::RepresentationError::Admission(
-                    Feature::StrictTools
-                )
-            ),
-            ..
-        })
-    ));
 }
 
 #[test]

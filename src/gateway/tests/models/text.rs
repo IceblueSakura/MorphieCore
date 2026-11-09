@@ -463,7 +463,7 @@ fn text_contract_uses_actual_dialect_checks_and_does_not_advertise_omitted_contr
     let value = descriptor(entry.clone());
     assert_eq!(
         value["features"]["strict_tool_schema"],
-        json!({"state":"faithful"})
+        json!({"state":"approved_adaptation","rules":["bailian.relax-function-strictness.v1"]})
     );
     assert_eq!(
         value["features"]["function_tools"],
@@ -475,16 +475,12 @@ fn text_contract_uses_actual_dialect_checks_and_does_not_advertise_omitted_contr
     );
     let mut delegated = entry.clone();
     let mut candidate = delegated.candidates[0].as_ref().clone();
-    candidate
-        .endpoint
-        .representation
-        .openai_mut()
-        .unwrap()
-        .dispositions
-        .set(
-            crate::semantic::task::generation::Feature::StrictTools,
-            crate::lowering::disposition::Disposition::Delegate,
-        );
+    let caps = candidate.endpoint.representation.openai_mut().unwrap();
+    caps.adaptation = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None).adaptation;
+    caps.dispositions.set(
+        crate::semantic::task::generation::Feature::StrictTools,
+        crate::lowering::disposition::Disposition::Delegate,
+    );
     delegated.candidates = vec![Arc::new(candidate)];
     assert_eq!(
         descriptor(delegated)["features"]["strict_tool_schema"],

@@ -349,12 +349,10 @@ impl<'a> Target<'a> {
                     }
                 }
                 if rules.bailian_requests {
-                    // Unlisted Responses fields are ignored upstream, so strict
-                    // tools have no guarantee carrier. All lowering entry points
-                    // derive this API disposition here before rendering.
-                    if api == GenerationApi::Responses {
-                        table.set_native(StrictTools, false);
-                    }
+                    table.set(
+                        StrictTools,
+                        crate::protocol::openai::dialect::bailian::function_strictness(model, api),
+                    );
                     if matches!(model, "glm-5.3" | "glm-5.3-prime")
                         && source.reasoning().activation.as_ref()
                             == Some(
@@ -1899,6 +1897,32 @@ fn project_semantic_with_table<'a>(
         semantic = Cow::Owned(crate::protocol::native::group_client_history(
             &semantic, true,
         )?);
+    }
+    if let Disposition::Approximate(rule) = table.get(Feature::StrictTools)
+        && semantic
+            .function_tools()
+            .any(|tool| tool.strict != FunctionStrictness::Omitted(StrictDefault::NonStrict))
+    {
+        let mut settings = semantic.settings().clone();
+        let mut items = semantic.items().to_vec();
+        let mut relaxed = false;
+        for_each_function_tool_mut(&mut settings, &mut items, |_, tool| {
+            relaxed |= matches!(
+                tool.strict,
+                FunctionStrictness::Explicit(true)
+                    | FunctionStrictness::Omitted(StrictDefault::Conditional)
+            );
+            tool.strict = FunctionStrictness::Omitted(StrictDefault::NonStrict);
+        });
+        semantic = Cow::Owned(
+            semantic
+                .into_owned()
+                .with_items_and_settings(items, settings)
+                .map_err(CodecError::from)?,
+        );
+        if relaxed {
+            evidence.push(rule.effect(ConversionBoundary::RequestProject));
+        }
     }
     if matches!(
         table.get(Feature::ConditionalToolStrictness),
