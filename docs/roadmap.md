@@ -5,23 +5,17 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 ## Contents
 
 - [Current status](#current-status)
-- [Remaining Agent qualification](#remaining-agent-qualification)
-  - [AR5 closure order](#ar5-closure-order)
-  - [Remaining observation dispositions](#remaining-observation-dispositions)
-    - [Tool invocation and argument guarantees](#tool-invocation-and-argument-guarantees)
-    - [History and replay carriers](#history-and-replay-carriers)
-    - [Instruction following and content recall](#instruction-following-and-content-recall)
-    - [Other qualification gates](#other-qualification-gates)
-    - [Partial-delivery exit](#partial-delivery-exit)
+- [Unscheduled issues](#unscheduled-issues)
+  - [Tool guarantees](#tool-guarantees)
+  - [History and replay](#history-and-replay)
+  - [Content and client qualification](#content-and-client-qualification)
+  - [Protocol boundaries](#protocol-boundaries)
 - [Cache-affinity qualification](#cache-affinity-qualification)
 - [Deferred protocol follow-ups](#deferred-protocol-follow-ups)
-  - [Endpoint qualification and emitter follow-ups](#endpoint-qualification-and-emitter-follow-ups)
   - [Conditional Stage-3 follow-ups](#conditional-stage-3-follow-ups)
     - [Tool verification and scope gates](#tool-verification-and-scope-gates)
   - [Retained rejections](#retained-rejections)
-  - [Remaining issue dispositions](#remaining-issue-dispositions)
 - [Planned order](#planned-order)
-  - [AR5 easy-to-hard route](#ar5-easy-to-hard-route)
   - [Execution sequence and work-package rules](#execution-sequence-and-work-package-rules)
   - [Stage 4 scope](#stage-4-scope)
     - [Decision API closure](#decision-api-closure)
@@ -37,6 +31,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
   - [IR and codec migration](#ir-and-codec-migration)
   - [Verification and integration boundary](#verification-and-integration-boundary)
 - [Integration handoff](#integration-handoff)
+  - [Partial-delivery exit](#partial-delivery-exit)
   - [P7 boundary review](#p7-boundary-review)
 - [Pending decisions](#pending-decisions)
   - [Ownership and projection decisions](#ownership-and-projection-decisions)
@@ -58,90 +53,72 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current status (2026-11-09):** Google no-call admission and bounded strict local references are implemented and qualified on both existing APIs. Current-Agent adaptation/pruning remains verified. The [remaining easy-to-hard route](#ar5-easy-to-hard-route) keeps guarantee enforcement decision-gated. R02/R06 are paused this stage; future design targets a client-retainable stateless carrier, not default managed-client integration. Neither boundary blocks handoff. [AR5 Review](ar5-review.md) owns evidence. Use the [partial-delivery exit](#partial-delivery-exit); Stage-4 selection and production activation remain separate.
+**Current status (2026-11-09):** AR5 has converged under the [partial-delivery exit](#partial-delivery-exit). Accepted contracts live in [Architecture](architecture.md); dated [qualification evidence](development.md#provider-qualification-evidence) and current-Agent checks live in Development. Residual limitations and prerequisites share the [unscheduled issue register](#unscheduled-issues), without a separate review repair queue. [Cache-affinity qualification](#cache-affinity-qualification) remains the selected gate before Stage 4. No deployment or new API activation is implied.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
-| AR5 handoff | Retain verified affected paths and the consolidated dispositions; complex follow-ups use the [repair route](#ar5-easy-to-hard-route) only after selection | Partial-delivery exit; decision-gated complex work is not a default blocker |
-| Cache affinity, after AR5 and before Stage 4 | [R09 independent-account failover](#cache-affinity-qualification); further test items await user supplementation | Selected cache-affinity acceptance, retaining real-account prerequisites |
-| Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default prerequisites for AR5 |
+| Cache affinity, before Stage 4 | [R09 independent-account failover](#cache-affinity-qualification); further test items await user supplementation | Selected cache-affinity acceptance, retaining real-account prerequisites |
+| Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default handoff prerequisites |
 | API expansion | Select and implement Stage-4 operation contracts | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Implement opt-in per-Agent JSONL session storage | Selected isolation and lifetime bounds |
 | Production preparation | Decide diagnostic packaging and deferred observability scope | Explicit deployer selection |
 
-## Remaining Agent qualification
+## Unscheduled issues
 
-**Concentrated review, 2026-11-09:** adapt only to the locally installed current Agents, with bounded real-Provider follow-up permitted. [AR5 Review](ar5-review.md#pending-observations) owns evidence; [Architecture](architecture.md) owns contracts. No historical-client compatibility, broad Provider sweep, account rewrite or Stage-4 activation is selected.
+This is the single register for unresolved Generation/client boundaries and qualification gaps. None is an active repair package or a prerequisite for the delivered baseline. Reopen only after a concrete unmet contract, target/profile, prerequisite and bounded acceptance plan are selected. Review IDs remain traceability labels, not a second phase queue. [Development](development.md#provider-qualification-evidence) owns dated verdicts; [Architecture](architecture.md) owns accepted contracts and service limitations.
 
-### AR5 closure order
+R02/R06 remain user-paused, with no repair or qualification until explicitly rescheduled. R04/R08 and Bailian structured-output variability remain excluded; do not substitute prompt/history rewriting or deduplication work. Accepted Bailian forcing and Grok content limitations are not reopened. R09 is separately [scheduled before Stage 4](#cache-affinity-qualification), not moved into this backlog.
 
-The **global → protocol → Provider/model** layers remain the diagnostic checklist: separate guarantees and replay/content owners, then locate the first divergence. **User-selected 2026-11-09:** implementation scheduling is simple before complex under the [repair route](#ar5-easy-to-hard-route), replacing analysis-layer order as a work queue. Neither order requires client × model × protocol sweeps.
+### Tool guarantees
 
-Reuse existing codecs, lowering/disposition owners, typed history, pinned SDKs and isolated current-client drivers. No new dependency, replay cache, retry layer or diagnostic platform is planned. Apply the [bounded real-Agent procedure](development.md#real-agent-scenario-selection); explicit further trials are permitted, each with a finite target/request/attempt/output/wire/deadline budget fixed before serial dispatch. Hidden retries remain off. Project-managed OAuth renewal remains authorized; credential lifecycle and routing constraints are unchanged.
-
-### Remaining observation dispositions
-
-**Five retained IDs, four boundaries.** Current evidence closes the R13 request-attribution gap and distinguishes R01 activation from protected-output availability. Neither requires another generic sweep. Keep exact content assertions and explicit guarantees.
-
-**Scope fence:** R17 and R18's strict-admission subcase are closed by the selected Bailian relaxation. R18's remaining thinking-enabled forcing and R21's Grok content behavior are accepted service limitations, with no further follow-up scheduled. R04/R08 and Bailian structured-output variability remain removed; do not substitute gateway omission, history-equivalence or deduplication work. R09 is separately scheduled [after AR5 and before Stage 4](#cache-affinity-qualification). These dispositions do not approve new bindings, signature loss or deployment.
-
-#### Tool invocation and argument guarantees
-
-| Boundary | Current disposition | Next work / re-entry |
+| Issue | Current boundary | Re-entry / decision |
 |---|---|---|
-| **R05 — Google strict profile** | The selected [subset](architecture.md#google-strict-function-arguments), including nullable fields, bounded root-definition references and native no-call equivalence, is qualified. Full current-Agent profiles are not. | Length/pattern/general-composition and serial guarantees still reject when calls are enabled. Further enforcement and wider reference semantics require a concrete current-Agent need and the [decision-gated route](#ar5-easy-to-hard-route); no schema deletion, strictness disabling or general resolver is selected. |
+| Google strict function guarantees (R05) | The [qualified subset](architecture.md#google-strict-function-arguments) includes nullable fields, bounded local references and no-call equivalence. Enabled-call length/pattern/general-composition and serial guarantees still reject; full current-Agent profiles remain unqualified. | A concrete current-Agent need and native carrier evidence first. Gateway argument validation or a call-publication barrier needs explicit selection of failure semantics and streaming latency before implementation. No argument repair, automatic retry, schema deletion or strictness disabling. Broader reference semantics need their own bounded design. |
+| Effective output ceilings and recovery | Non-Qwen Bailian reply-ceiling enforcement and Haiku same-process cap-switch recovery remain unqualified; preparation receipts and GLM JSON smoke do not close them. | Select the exact client/model/control transition and a bounded real enforcement/recovery story; preserve independent byte/time bounds and honest length terminals. |
 
-#### History and replay carriers
+### History and replay
 
-| Boundary | Current disposition | Next work / re-entry |
+| Issue | Current boundary | Re-entry / decision |
 |---|---|---|
-| **R02 / R06 — Google ordinary attachments** | **User-paused this stage, 2026-11-09.** The stateless limitation remains; existing managed Responses continuation stays qualified and available. | Future design targets a client-retainable stateless ordinary text/call signature carrier. This supersedes managed-client integration as the preferred next repair. No further repair or qualification runs this stage; resume only after explicit scheduling and carrier/client-retention contract selection. Never delete signatures or move ordinary content into reasoning; no client extension, new Google API or implementation is activated. |
-| **R01 — Real Haiku protected output** | Unavailable sample prerequisite. Current OpenCode's original Chat loop passes without protected output; a separate explicit adaptive/medium discriminator also produces none. Carrier repair remains qualified. | Resume when the same profile actually yields protected output. The missing-activation hypothesis alone does not justify another carrier repair or automatic effort-to-activation mapping. Preserve signatures, replay guards and original assertions. |
+| Google stateless ordinary-signature carrier (R02/R06) | **User-paused, 2026-11-09.** Current stateless Clients have no qualified ordinary text/call carrier; existing managed Responses continuation remains available. | Future design targets a client-retainable stateless carrier, not default managed-client integration. Resume only after explicit scheduling and carrier/client-retention contract selection. No signature deletion, synthetic reasoning owner, client extension or new API is selected; no repair or qualification while unscheduled. |
+| Real Haiku protected output (R01) | Current OpenCode's original Chat loop and an explicit adaptive/medium discriminator produce no protected owners; existing carrier repair remains verified. | Resume when the same profile actually yields protected output. Missing activation alone does not justify another repair or automatic effort-to-activation mapping. |
+| Interactions signed-call replay | No signed-call sample was independently observed in the retained profile qualification; thought replay does not close that cell. | Obtain an actual signed-call sample for the selected profile and verify exact feedback/continuation; do not infer it from a generic managed-loop success. |
 
-#### Instruction following and content recall
+### Content and client qualification
 
-| Boundary | Current disposition | Next work / re-entry |
+| Issue | Current boundary | Re-entry / decision |
 |---|---|---|
-| **R13 — Messages literal-label recall** | Scoped upstream content omission. The unchanged five-request audit preserves full ordered request history/instructions/tools/effort and establishes complete native/delivered text agreement on a failing recall. | No further recall sweep or prompt/history rewrite is scheduled. Re-enter only for a concrete new project-owned divergence; retain exact-label failure and distinguish HTTP/incomplete-capture outcomes. |
+| Messages literal-label recall (R13) | Scoped upstream omission: the unchanged five-request audit preserves ordered instructions/history/tools/effort, and complete native text equals delivered/client text on the failed recall. | No further recall sweep or prompt/history rewrite. Re-enter only on concrete new project-owned divergence; preserve the exact-label failure and distinguish incomplete captures from verified attribution. |
+| Luna router endpoints | Endpoint contracts remain unqualified. Existing registered-binding and Agent evidence does not qualify additional router endpoints. | Select the exact endpoint/profile and independent full-loop acceptance; no new binding or activation is implied. |
 
-#### Other qualification gates
+### Protocol boundaries
 
-These previously retained, unnumbered profile gates are separate from the five AR5 observation IDs. They are not new scheduled tasks or prerequisites requiring another broad sweep; resume only when separately selected.
+The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-boundaries.md#follow-up-source-and-feasibility-review-2026-10-28) supports these retained dispositions. Current strict parsing, resource, replay and terminal guarantees remain in force.
 
-| Function | Retained gate |
-|---|---|
-| Replay carriers | Interactions signed-call replay remains unqualified because no signed call was observed. Thought-replay acceptance does not close this call-signature cell. |
-| Output ceilings and recovery | Effective non-Qwen Bailian reply-ceiling enforcement and Haiku same-process cap-switch recovery remain unqualified. Native-ceiling preparation receipts and GLM JSON smoke do not close them. |
-| Endpoint contracts | Luna router endpoints remain unqualified; SIWC retains its [inline-tool continuation follow-up](#endpoint-qualification-and-emitter-follow-ups). No new binding or endpoint activation is selected. |
-
-#### Partial-delivery exit
-
-**User-approved 2026-11-07:** principal workflows are usable, selected low-loss conversions record their losses, affected paths are verified, and remaining difficulties have explicit scope for next-stage analysis.
-
-1. Preserve the representative real tool/history paths across Haiku Messages, DeepSeek readable Chat and Grok Responses, plus the existing Qwen Responses coding path. Use installed pi/OpenCode for their affected client boundaries; reuse still-applicable evidence rather than requiring every client × model × protocol combination.
-2. Verify each selected repair before claiming it complete. A new ambiguity may defer its dependent subcase without delaying unrelated slices.
-3. Apply required offline and applicable SDK gates before publishing implementation. Recheck changed real workflows, including honest incomplete/cancelled delivery and continuation where affected. No broad re-sweep is required merely to preserve test counts.
-4. Classify each remaining observation as resolved, a scoped limitation, next-stage analysis, or an unavailable prerequisite. A recorded deferral is sufficient disposition; closing every R identifier is not an exit condition.
-5. Deferred AR5 analysis may be scheduled alongside relevant Stage-4 work; it does not make Stage 5 features or production activation implicit.
+| Issue | Current disposition | Reopen or complete when |
+|---|---|---|
+| Chat custom-tool SSE | Retain standard rejection; investigate upstream intake and downstream delivery separately | Official event contract resolves the disagreement, or a separately selected dialect/client contract supplies independent wire/consumer evidence |
+| SIWC Responses inline-tool continuation | Real endpoint acceptance for inline declarations and direct call/result history remains unqualified | Select the endpoint/profile and a bounded full-loop run; retain root namespace requirements |
+| Chat upstream final usage | Duplicate nonnull final reports remain unqualified at the emitter | A concrete upstream profile and independently observed report sequence |
+| Nonempty Messages tool opener plus nonempty fragments | Retain rejection, including a complete-fragment negative regression; complete opener plus zero-byte deltas remains supported | Authoritative replacement/merge semantics exist |
+| Bounded token-budget adjustment | Model-maximum clamp selected; broader formulas deferred; native effort and existing validation preserved | An authorized target plus failing request, limit provenance, useful reserve, finite maximum and infeasible behavior qualify a target-local rule |
+| `user:null`, Chat refusal requiredness, Responses image-detail default | Preserve current intake; image `detail:"auto"` already takes L2 | Service contract clarifies the discrepancy or a selected strict consumer exposes a concrete failure |
+| Legacy function carriers | Retained rejection | A real client needs a constrained association/default/conflict/history contract |
+| Broader settings echo and richer output grouping | Case-specific ladder application | A concrete failure has an exact mapping or a bounded approximation; preserve report authority and content-coordinate ownership |
+| Messages custom-input wrapping | Conditional Stage-3 follow-up S3-T6; not a core exit prerequisite | Declaration, arguments, return/history mapping and client execution expectations are selected together |
+| Token scope and SDK drift | Investigate only the selected target/field; no automatic source-pin promotion | A bounded budget rule or reviewed version change has independent expectations and a reachable target path |
 
 ## Cache-affinity qualification
 
-**User-selected 2026-11-09:** run this separate qualification stage **after AR5 and before Stage 4**. R09 is its initial item, preserving the original identifier and evidence; it is no longer an AR5 closure condition. Additional cache-affinity test items will be supplied later. Do not invent or launch that broader suite now. The routing freeze and credential-lifecycle authorization remain unchanged.
+**User-selected 2026-11-09:** this is the next selected qualification stage, after the delivered Generation baseline and before Stage 4. R09 is its initial item, preserving the original identifier and evidence. Additional cache-affinity test items will be supplied later; do not invent or launch that broader suite now. The routing freeze and credential-lifecycle authorization remain unchanged.
 
 | Item | Current evidence / prerequisite | Acceptance |
 |---|---|---|
-| **R09 — Real account-compatible failover** | [Real stateless JSON/SSE replay isolation passes](ar5-review.md#cache-affinity-qualification-evidence). The project loader reports one enabled declared account per Provider; no independent compatible pair is qualified. | With independent compatible accounts on one authorized same-model route, verify A success/affinity, a bounded A failure without switching inside that request, B selection on a new request with A-private replay omitted, then B success/stickiness. Define fault injection and budgets first; provisioning new credentials requires separate approval. Same-key aliases, different-model switching and synthetic authorities do not qualify this real-account gate. |
+| **R09 — Real account-compatible failover** | [Real stateless JSON/SSE replay isolation passes](development.md#replay-isolation-evidence). Earlier loader evidence reports one enabled declared account per Provider; no independent compatible pair is qualified. | With independent compatible accounts on one authorized same-model route, verify A success/affinity, a bounded A failure without switching inside that request, B selection on a new request with A-private replay omitted, then B success/stickiness. Define fault injection and budgets first; provisioning new credentials requires separate approval. Same-key aliases, different-model switching and synthetic authorities do not qualify this real-account gate. |
 
 ## Deferred protocol follow-ups
 
-Only unresolved endpoint qualification and protocol compatibility follow-ups are listed here. Apply the accepted [conversion ladder](architecture.md#conversion-ladder), [field handling](architecture.md#field-handling), [projection principles](architecture.md#clientir-projection-principles) and [stream normalization](architecture.md#semantic-stream-normalization).
-
-### Endpoint qualification and emitter follow-ups
-
-| Boundary | Remaining work | Entry condition |
-|---|---|---|
-| SIWC Responses inline-tool continuation | Real endpoint acceptance for inline declarations and direct call/result history | Select the endpoint/profile and a bounded full-loop run; retain root namespace requirements |
-| Chat upstream usage | Qualify duplicate nonnull final reports at the emitter | A concrete upstream profile and independently observed report sequence |
+Conditional tool packages and retained rejection boundaries are collected here; all unscheduled qualification issues live in the [shared register](#unscheduled-issues). Apply the accepted [conversion ladder](architecture.md#conversion-ladder), [field handling](architecture.md#field-handling), [projection principles](architecture.md#clientir-projection-principles) and [stream normalization](architecture.md#semantic-stream-normalization).
 
 ### Conditional Stage-3 follow-ups
 
@@ -174,7 +151,7 @@ Tool discovery, hosted/programmatic execution, new endpoints and Google expansio
 
 ### Retained rejections
 
-These L5 boundaries and invariant guards constrain future work. Endpoint-specific qualification follows the [remaining scope](#endpoint-qualification-and-emitter-follow-ups).
+These L5 boundaries and invariant guards constrain future work. Endpoint-specific entry conditions live in the [issue register](#protocol-boundaries).
 
 | Boundary | Retained |
 |---|---|
@@ -187,45 +164,20 @@ These L5 boundaries and invariant guards constrain future work. Endpoint-specifi
 
 The [pinned Anthropic SDK](../tests/upstream/sources.lock.json) types already include `between_tools`, optional-nullable output configuration and zero-token cache prewarming; their rejections are capability-selection gaps, not invalid syntax. Nonempty Messages tool openers followed by nonempty fragments concern native upstream SSE intake, not Client request intake.
 
-### Remaining issue dispositions
-
-The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-boundaries.md#follow-up-source-and-feasibility-review-2026-10-28) supports these retained dispositions. Reopen only a selected target or field with a concrete unmet contract.
-
-| Issue | Current disposition | Reopen or complete when |
-|---|---|---|
-| Chat custom-tool SSE | Retain standard rejection; investigate upstream intake and downstream delivery separately | Official event contract resolves the disagreement, or a separately selected dialect/client contract supplies independent wire/consumer evidence |
-| Nonempty Messages tool opener plus nonempty fragments | Retain rejection, including a complete-fragment negative regression; complete opener plus zero-byte deltas remains supported | Authoritative replacement/merge semantics exist |
-| Bounded token-budget adjustment | Model-maximum clamp selected; broader formulas deferred; native effort and existing validation preserved | An authorized target plus failing request, limit provenance, useful reserve, finite maximum and infeasible behavior qualify a target-local rule |
-| `user:null`, Chat refusal requiredness, Responses image-detail default | Preserve current intake; image `detail:"auto"` already takes L2 | Service contract clarifies the discrepancy or a selected strict consumer exposes a concrete failure |
-| Legacy function carriers | Retained rejection | A real client needs a constrained association/default/conflict/history contract |
-| Broader settings echo and richer output grouping | Case-specific ladder application | A concrete failure has an exact mapping or a bounded approximation; preserve report authority and content-coordinate ownership |
-| Messages custom-input wrapping | Conditional Stage-3 follow-up S3-T6; not a core exit prerequisite | Declaration, arguments, return/history mapping and client execution expectations are selected together |
-| Token scope and SDK drift | Investigate only the selected target/field; no automatic source-pin promotion | A bounded budget rule or reviewed version change has independent expectations and a reachable target path |
-
 ## Planned order
 
-The small local AR5 repairs are complete; use partial-delivery handoff, with [remaining complex proposals](#ar5-easy-to-hard-route) separately decision-gated. Stage 4 follows that handoff and the selected [cache-affinity qualification](#cache-affinity-qualification). Stage-4 families retain equal priority and advance as contracts are selected. Conditional tool packages keep their own policy gates; Stage 5 remains unscheduled.
+The Generation review baseline is delivered under the [partial-delivery contract](#partial-delivery-exit). Stage 4 follows the selected [cache-affinity qualification](#cache-affinity-qualification); [unscheduled issues](#unscheduled-issues) do not become implicit prerequisites. Stage-4 families retain equal priority and advance as contracts are selected. Conditional tool packages keep their own policy gates; Stage 5 remains unscheduled.
 
 | Stage | Goal | Exit evidence |
 |---|---|---|
 | **3 — Conditional compatibility follow-ups** | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, plain custom wrappers and examples projection | Separate policy selection and affected full-loop verification; not default blockers for Stage 4 or optional Agent qualification |
-| **Pre-4 — Cache affinity** | [Cache-affinity qualification](#cache-affinity-qualification), after AR5; R09 first, additional items await user supplementation | Independent-account affinity/failover acceptance and the subsequently selected cache tests |
+| **Pre-4 — Cache affinity** | [Cache-affinity qualification](#cache-affinity-qualification); R09 first, additional items await user supplementation | Independent-account affinity/failover acceptance and the subsequently selected cache tests |
 | **4 — Modalities, Decision & file resources** | Decision, Embedding extensions, Audio (Speech/Transcription/Translation), Images, Files/Uploads, and Video at equal priority | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
 | **5 — Unscheduled follow-ups** | Citations, tool discovery, hosted tools, server-side compaction, Batch, and Realtime | Requires explicit per-slice design selection and scheduling prior to implementation |
 
-### AR5 easy-to-hard route
-
-**Selected scheduling, 2026-11-09:** maintain only current local Agents, prune low-value tests and fix independently decidable boundaries before complex integration. The local no-call/reference repairs have exited to the [accepted contract](architecture.md#google-strict-function-arguments) and [passing evidence](ar5-review.md#selected-root-repairs-and-qualification-2026-11-09). Reuse existing schema, lowering, execution, typed history and isolated drivers; no new dependency or test framework is selected.
-
-| Order / entry | Files and deliverable | Exit check / stop condition |
-|---|---|---|
-| **1 — Complex guarantee design** / only for a concrete remaining current-Agent need | Evaluate native carriers first for residual R05 length/pattern/serial guarantees. If none can enforce them, present a named gateway-validation/publication-barrier option with a minimal counterexample. Likely owners are existing request lowering and execution/delivery, not semantic IR execution state. | **Decision required before implementation:** whether fail-on-invalid arguments and withholding executable calls until cardinality is known satisfy the intended strict contract and acceptable streaming latency. No argument repair, automatic retry or invented success. Existing rejection stays until selection; this is not a prerequisite for partial delivery. |
-
-Keep **R01** parked on actual protected-output availability and **R13** on its attributed upstream-content disposition; neither is a serial repair task. Other unnumbered qualification cells remain separately selected, not an automatic sweep. Use partial delivery and enter R09 only when its independent-account prerequisite exists; its missing prerequisite does not authorize new credentials, complex AR5 implementation or Stage-4 activation.
-
 ### Execution sequence and work-package rules
 
-Every work package follows this lifecycle:
+Prefer small, independently decidable repairs before complex integration; diagnostic global → protocol → Provider/model layers are not a mandatory work queue or cross-product sweep. Reuse existing schema, lowering, execution, typed history and isolated current-client drivers. Every selected work package follows this lifecycle:
 1. **Entry:** Pin source revisions, dialect rules, target profiles, and unresolved decisions. Document protocol findings in `docs/refs/`.
 2. **Delivery:** Implement one coherent request/result/stream/history slice. Resolve unselected structures with a minimal counterexample and options before proceeding.
 3. **Invariants:** Maintain immutable source IR and fresh per-attempt decoder state. Native/equivalent history projections preserve earlier turns; selected lossy projections record rendered-prefix/cache changes under the [candidate-local contract](architecture.md#candidate-local-projection).
@@ -333,6 +285,16 @@ The [stable routing baseline](architecture.md#failover) remains frozen unless it
 
 Carrier availability in codecs does not imply public route admission. Route admission is controlled by explicit target binding policy in [topology compilation](../src/topology/compile.rs).
 
+### Partial-delivery exit
+
+**User-approved 2026-11-07:** principal workflows are usable, selected low-loss conversions record their losses, affected paths are verified, and remaining difficulties have explicit scope for next-stage analysis.
+
+1. Preserve the representative real tool/history paths across Haiku Messages, DeepSeek readable Chat and Grok Responses, plus the existing Qwen Responses coding path. Use installed pi/OpenCode for their affected client boundaries; reuse still-applicable evidence rather than requiring every client × model × protocol combination.
+2. Verify each selected repair before claiming it complete. A new ambiguity may defer its dependent subcase without delaying unrelated slices.
+3. Apply required offline and applicable SDK gates before publishing implementation. Recheck changed real workflows, including honest incomplete/cancelled delivery and continuation where affected. No broad re-sweep is required merely to preserve test counts.
+4. Classify each remaining observation as resolved, a scoped limitation, next-stage analysis, or an unavailable prerequisite. A recorded deferral is sufficient disposition; closing every R identifier is not an exit condition.
+5. Unscheduled issues may be selected alongside relevant Stage-4 work; it does not make Stage 5 features or production activation implicit.
+
 ### P7 boundary review
 
 Prerequisites for activating newly implemented codec carriers on public routes:
@@ -369,7 +331,7 @@ Prerequisites for activating newly implemented codec carriers on public routes:
 
 ### Google API pause
 
-Further general Google API expansion is paused; this is not a pause on consolidated AR5 analysis of existing Google paths, strict guarantees or replay carriers. Those boundaries follow the same global → protocol → dialect order as every other retained AR5 issue. Preserve the existing [terminal-report exceptions](architecture.md#service-policies-and-reports) and [native text Embedding path](architecture.md#independent-embedding-path). General multimodal input, native client intake, custom tools, unified error parsing and broader probability reports remain excluded from this work.
+Further general Google API expansion remains paused. Maintenance of qualified existing paths needs a concrete selected defect; residual strict/replay boundaries follow the [unscheduled issue register](#unscheduled-issues), including the explicit stateless-carrier pause. Preserve the existing [terminal-report exceptions](architecture.md#service-policies-and-reports) and [native text Embedding path](architecture.md#independent-embedding-path). General multimodal input, native client intake, custom tools, unified error parsing and broader probability reports remain excluded.
 
 ### Deferred Generation semantics
 - Turn-scoped system messages (`clear_at`).

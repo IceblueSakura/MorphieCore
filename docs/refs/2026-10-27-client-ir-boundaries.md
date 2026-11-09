@@ -244,7 +244,7 @@ Previously approved usage completion, phase/report omission, reasoning concatena
 
 ## Follow-up source and feasibility review (2026-10-28)
 
-Rechecked implementation **`1e3fdca`**, including `c8d0c96` and `14bddfe`, against public release checkouts: OpenAI Python **3.39.0** (`f97798bc86e41f4a5d18644113ef94cf58722778`), Node **7.45.0** (`af8336b8c13bd5402868cf2ca0d9c64530c3848f`), Anthropic Python **2.3.0** (`202db72c87d7c6eaa72129c67ce67fd343a3a20c`) and TypeScript **1.3.0** (`cb5fba419808e3844fa6407e59577ab7ba346b79`). Service references were rechecked on this date. No test pins, dependencies, bindings or runtime behavior changed. [Development](../development.md#verification-gates) records executed probes; [Roadmap](../roadmap.md#remaining-issue-dispositions) owns scheduling and reopening conditions.
+Rechecked implementation **`1e3fdca`**, including `c8d0c96` and `14bddfe`, against public release checkouts: OpenAI Python **3.39.0** (`f97798bc86e41f4a5d18644113ef94cf58722778`), Node **7.45.0** (`af8336b8c13bd5402868cf2ca0d9c64530c3848f`), Anthropic Python **2.3.0** (`202db72c87d7c6eaa72129c67ce67fd343a3a20c`) and TypeScript **1.3.0** (`cb5fba419808e3844fa6407e59577ab7ba346b79`). Service references were rechecked on this date. No test pins, dependencies, bindings or runtime behavior changed. [Development](../development.md#verification-gates) records executed probes; [Roadmap](../roadmap.md#protocol-boundaries) owns scheduling and reopening conditions.
 
 ### Messages scheduling evidence
 
@@ -264,7 +264,7 @@ For the next implementation, the existing [OpenAI event projection](../../src/pr
 
 The review recommended codec-local owner/part serialization with incremental head delivery and bounded successor storage. The implemented follow-up is owned by [semantic stream normalization](../architecture.md#semantic-stream-normalization); [Development](../development.md#sdk-loopback-gate) records the actual Python/TypeScript callback and history checks. Delayed successors remain necessary when earlier content or signatures have not finished.
 
-The scheduling review exposed two pre-existing boundaries. The subsequent 2026-10-28 lifecycle repair closes remaining wire text blocks on an observed `ItemFinished(Incomplete)`, matching existing static and terminal-only delivery without completing source parts. Required Responses `metadata:null` also caused setup rejection through actual Attempt/ResponseDelivery. The user separately selected Messages JSON/SSE null-only omission on 2026-10-28; [Architecture](../architecture.md#conversion-ladder) owns that rule, not an implicit extension of Chat's omission. [Development](../development.md#sdk-loopback-gate) owns lifecycle, metadata and SDK/history evidence. Maps and other unsupported execution hints remain in [Roadmap](../roadmap.md#remaining-issue-dispositions).
+The scheduling review exposed two pre-existing boundaries. The subsequent 2026-10-28 lifecycle repair closes remaining wire text blocks on an observed `ItemFinished(Incomplete)`, matching existing static and terminal-only delivery without completing source parts. Required Responses `metadata:null` also caused setup rejection through actual Attempt/ResponseDelivery. The user separately selected Messages JSON/SSE null-only omission on 2026-10-28; [Architecture](../architecture.md#conversion-ladder) owns that rule, not an implicit extension of Chat's omission. [Development](../development.md#sdk-loopback-gate) owns lifecycle, metadata and SDK/history evidence. Maps and other unsupported execution hints remain in [Roadmap](../roadmap.md#protocol-boundaries).
 
 ### Budget feasibility evidence
 
@@ -272,7 +272,7 @@ The scheduling review exposed two pre-existing boundaries. The subsequent 2026-1
 - [Generic settings validation](../../src/semantic/task/generation/request/settings.rs) enforces numeric budget no greater than output ceiling. [Effort conversion](../../src/protocol/reasoning.rs) validates both source and derived settings. The existing synthetic `xhigh` preset of `16384` with an explicit `4096` ceiling rejects after derivation; that is a policy edge, not evidence of a live model failure.
 - [Messages defaults](../../src/protocol/anthropic/messages/target.rs) apply on the candidate copy after selected reasoning conversion. Existing native-control tests distinguish `2048` thinking with a default ceiling of `2048` (reject) from `2049` (syntactically valid). One answer token does not establish a useful reserve.
 - [Go/Haiku](../../src/topology/catalog/messages.rs) already selects `32000` and disables manual thinking. [Startup](../../src/gateway/startup/models.rs) currently exposes configured effort-to-budget conversion only for generateContent. No generally applicable fix follows from raising the Haiku default or deleting the semantic guard.
-- The follow-up catalog/example review found no qualified active conflict. [Startup regression](../../src/gateway/startup/bootstrap/tests.rs) preserves native medium effort and explicit output `6000` even with a configured preset of `7000`. The [advanced example](../../config/models.advanced.example.json) selects budget-to-effort for Haiku, not a numeric thinking allocation under its smaller output default. Private deployment activation was not inspected; [Roadmap](../roadmap.md#remaining-issue-dispositions) records deferral and target-specific reopening requirements.
+- The follow-up catalog/example review found no qualified active conflict. [Startup regression](../../src/gateway/startup/bootstrap/tests.rs) preserves native medium effort and explicit output `6000` even with a configured preset of `7000`. The [advanced example](../../config/models.advanced.example.json) selects budget-to-effort for Haiku, not a numeric thinking allocation under its smaller output default. Private deployment activation was not inspected; [Roadmap](../roadmap.md#protocol-boundaries) records deferral and target-specific reopening requirements.
 - [Model limits](../../src/protocol/model_limits.rs) distinguish output maxima from defaults; context/input capacities are planning metadata, not input-token enforcement. Unknown maxima cannot justify unlimited expansion. [Independent-ceiling alternatives](../api-expansion-design.md#independent-output-ceilings-unselected) retain the reply-versus-total counterexample and the smaller target-qualified candidates.
 
 ### Remaining source distinctions
@@ -287,7 +287,7 @@ Legacy `role:function` results identify a name rather than a modern call ID; two
 
 ## Agent-default production probe (2026-10-28)
 
-Rechecked implementation **`b5094d6`** with disposable, uncommitted probes; no Provider calls. [Roadmap](../roadmap.md#endpoint-qualification-and-emitter-follow-ups) owns the resulting dispositions and order; selections remain pending.
+Rechecked implementation **`b5094d6`** with disposable, uncommitted probes; no Provider calls. [Roadmap](../roadmap.md#protocol-boundaries) owns retained dispositions; selections remain pending.
 
 ### Method
 
@@ -494,7 +494,7 @@ The structural causes are test-side:
 
 ## Conversion-ladder inventory (2026-10-30)
 
-Code-traced at **`61d478d`** by three read-only sweeps (client intake, planning/target encoding, delivery/history), with key sites spot-checked. No probes, tests or Provider calls were run; tiers are classifications for the [migration](../roadmap.md#remaining-issue-dispositions), not verified behavior. [Architecture](../architecture.md#conversion-ladder) owns the ladder; opencode observations come from a 2026-10-11 source clone, not the installed 2.0.32 binary.
+Code-traced at **`61d478d`** by three read-only sweeps (client intake, planning/target encoding, delivery/history), with key sites spot-checked. No probes, tests or Provider calls were run; tiers are classifications for the [migration](../roadmap.md#protocol-boundaries), not verified behavior. [Architecture](../architecture.md#conversion-ladder) owns the ladder; opencode observations come from a 2026-10-11 source clone, not the installed 2.0.32 binary.
 
 ### Structural causes
 
@@ -511,7 +511,7 @@ The [bounded execution reuse](../architecture.md#request-conversion-reuse) now c
 
 An interim byte-cache implementation exposed two regressions with the locked `serde_json` 1.0.154 features: generic `Value` reconstruction rejected a schema annotation `{"$serde_json::private::Number":"not-a-number"}`, and reconstructed `{"$serde_json::private::Number":"1"}` as numeric `1`, colliding with a genuinely numeric annotation in prefix hashing. The [existing exact-number parser check](../../src/protocol/json.rs) already preserves such ordinary object keys. New preparation and affinity regressions reproduced both failures before reconstruction was removed; final bytes, header projections and digests are derived while the original encoded `Value` still exists, without adding another parser or narrower intake limits.
 
-The retention audit also reproduced an undercharge after filtering effects left spare vector slots. [Evidence accounting](../../src/protocol/conversion/generation/evidence.rs) now includes that capacity. Focused checks cover the exact spare-capacity miss, retention exhaustion across 64 admitted candidates, cached/recomputed preparation agreement, candidate/credential/evidence pairing after reordering and unchanged source requests. The [verification record](../development.md#sdk-loopback-gate) includes the full offline, SDK and installed-client gates. This completes execution reuse only; the [R1 owner and field migration](../roadmap.md#remaining-issue-dispositions) remain open.
+The retention audit also reproduced an undercharge after filtering effects left spare vector slots. [Evidence accounting](../../src/protocol/conversion/generation/evidence.rs) now includes that capacity. Focused checks cover the exact spare-capacity miss, retention exhaustion across 64 admitted candidates, cached/recomputed preparation agreement, candidate/credential/evidence pairing after reordering and unchanged source requests. The [verification record](../development.md#sdk-loopback-gate) includes the full offline, SDK and installed-client gates. This completes execution reuse only; the [R1 owner and field migration](../roadmap.md#protocol-boundaries) remain open.
 
 ### Reachable sites by slice
 
@@ -601,7 +601,7 @@ Independent wire-to-IR and IR-to-wire checks cover null/default normalization, e
 
 ## Native-default installed-Agent characterization (2026-11-03)
 
-Scope: current installed pi/pi-ai **1.5.0** and OpenCode **2.0.32**, isolated test-owned homes and synthetic authorities through the real gateway CLI/account loader. No personal Agent state, private credentials or real Provider was inspected. These client versions remain independent of protocol source pins. The [procedure and observed lane table](../development.md#installed-client-synthetic-recovery) distinguish full loops from reproduced blockers; [Roadmap](../roadmap.md#remaining-agent-qualification) owns remaining work.
+Scope: current installed pi/pi-ai **1.5.0** and OpenCode **2.0.32**, isolated test-owned homes and synthetic authorities through the real gateway CLI/account loader. No personal Agent state, private credentials or real Provider was inspected. These client versions remain independent of protocol source pins. The [procedure and observed lane table](../development.md#installed-client-synthetic-recovery) distinguish full loops from reproduced blockers; [Roadmap](../roadmap.md#unscheduled-issues) owns remaining work.
 
 The public installed pi sources inspected were `pi-coding-agent/dist/core/{defaults,tools/read}.js`, `pi-ai/dist/providers/data/{deepseek,opencode,opencode-go}.json`, `pi-ai/dist/models.js` and `pi-ai/dist/api/{constrained-sampling,openai-completions,openai-responses,openai-responses-shared}.js`. OpenCode's public bundled model snapshot and native DeepSeek/OpenAI serializers were inspected in its installed executable, then exercised without variants or request rewriting. Only transport selection changes OpenCode Responses from its built-in WebSocket default to the gateway's HTTP ingress.
 
@@ -765,7 +765,7 @@ Collision-dependent transformations remain unqualified; collision-free native ba
 
 ## Current-Agent tool exit recheck (2026-11-05)
 
-Inspected the current installed public pi 1.5.0 package and OpenCode 2.0.32 against the production CLI loader at the S3-T4 working slice based on `058ab08`. All authorities, keys, homes and files are synthetic and test-owned; no personal configuration, credential caches or real Providers were read or called. [Development](../development.md#installed-client-synthetic-recovery) owns execution evidence; [Roadmap](../roadmap.md#endpoint-qualification-and-emitter-follow-ups) owns the remaining exit.
+Inspected the then-current installed public pi 1.5.0 package and OpenCode 2.0.32 against the production CLI loader at the S3-T4 working slice based on `058ab08`. All authorities, keys, homes and files are synthetic and test-owned; no personal configuration, credential caches or real Providers were read or called. [Development](../development.md#installed-client-synthetic-recovery) owns execution evidence; [Roadmap](../roadmap.md#unscheduled-issues) owns subsequent scoped follow-ups.
 
 ### Artifact-qualified producer changes
 

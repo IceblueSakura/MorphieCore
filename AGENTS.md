@@ -3,7 +3,7 @@
 ## Project and sources of truth
 
 - MorphieCore hides Provider differences behind one typed IR. pi and opencode are the primary clients. Routing is cache-affine failover, not load balancing.
-- [README](README.md#documentation-map) is the document entry point. [Architecture](docs/architecture.md) owns accepted principles and decisions; [Roadmap](docs/roadmap.md) owns scope, execution dependencies, repair/defer dispositions and gates; the user-requested [AR5 review](docs/ar5-review.md) separately owns observations and concise passing-test evidence; [API expansion design](docs/api-expansion-design.md) owns unselected proposals; [Usage](docs/usage.md) and [Development](docs/development.md) own procedures. Code and tests describe current behavior, not authority over official protocols; read catalogs and startup code for current Providers, models and bindings.
+- [README](README.md#documentation-map) is the document entry point. [Architecture](docs/architecture.md) owns accepted principles and decisions; [Roadmap](docs/roadmap.md) owns scope, execution dependencies, the unified unscheduled issue register and gates; [API expansion design](docs/api-expansion-design.md) owns unselected proposals; [Usage](docs/usage.md) owns operating procedures; [Development](docs/development.md) owns verification procedures and concise domain-organized acceptance evidence. Code and tests describe current behavior, not authority over official protocols; read catalogs and startup code for current Providers, models and bindings.
 
 ## Working approach
 
@@ -11,7 +11,7 @@
 - Investigate proactively: trace actual client workflows, primary protocol sources and existing implementations. Challenge weak premises, compare alternatives and recommend simpler designs with concrete trade-offs.
 - Own implementation choices within the agreed scope. Explore and propose architectural improvements; when a semantic or structural decision is unresolved, show a minimal counterexample and a recommendation for user selection. Continue independent work meanwhile. Research does not reopen frozen implementation scope.
 - Develop small, coherent slices. State consequential behavior goals and exit conditions in the roadmap, but choose the investigation, prototyping and verification sequence that fits the uncertainty. Do not turn every change into a test-first ritual or a new framework.
-- Follow the user-approved [partial-delivery exit](docs/roadmap.md#partial-delivery-exit): usable principal workflows, recorded low-loss conversions and verified affected paths. Explicitly defer uncertain cells to next-stage analysis rather than requiring every AR5 observation to close.
+- Follow the user-approved [partial-delivery exit](docs/roadmap.md#partial-delivery-exit): usable principal workflows, recorded low-loss conversions and verified affected paths. Keep uncertain cells in the [unscheduled issue register](docs/roadmap.md#unscheduled-issues) rather than requiring every observation to close.
 
 ## Authorization
 
@@ -51,6 +51,6 @@
 
 ## Documentation
 
-Keep the document set: `README.md`, `AGENTS.md`, `docs/{architecture,roadmap,usage,development,references}.md`, the user-requested [AR5 review](docs/ar5-review.md), the [API expansion design](docs/api-expansion-design.md), the separately requested [Provider account plan](docs/provider-account-redesign-plan.md), `docs/openapi.json`, and sourced, dated protocol notes in `docs/refs/`. The AR5 review remains a separate collection of observations and passing evidence; repair plans and deferrals belong in the roadmap, and accepted adaptations in the architecture. The Provider account plan collects requirements for a later rewrite, not implementation approval. Do not add run reports or history pages. Remove finished roadmap slices and record meaningful decisions in the architecture decision table.
+Keep the document set: `README.md`, `AGENTS.md`, `docs/{architecture,roadmap,usage,development,references}.md`, the [API expansion design](docs/api-expansion-design.md), the separately requested [Provider account plan](docs/provider-account-redesign-plan.md), `docs/openapi.json`, and sourced, dated protocol notes in `docs/refs/`. Development owns concise dated acceptance evidence; unresolved issues and repair/defer dispositions have one home in the roadmap, and accepted adaptations belong in the architecture. Do not retain phase-specific review pages or add run reports/history pages. The Provider account plan collects requirements for a later rewrite, not implementation approval. Remove finished roadmap slices and record meaningful decisions in the architecture decision table.
 
 Organize each document by domain with shared rules above specialized branches. Keep one authoritative home per topic and link to it instead of maintaining duplicate plans or specifications. Separate proposed design, accepted decisions, implementation status and acceptance evidence; a structural edit grants no approval. Preserve source dates in research notes and use [References](docs/references.md#research-notes) as their index.
