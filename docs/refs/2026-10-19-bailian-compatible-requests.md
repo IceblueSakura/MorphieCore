@@ -1,6 +1,6 @@
 # Bailian compatible-request subset
 
-Baseline checked **2026-10-19**, with source corrections on **2026-10-29** and **2026-11-08** below. These are mutable official definitions, not a complete DashScope API implementation. Accepted decisions belong to [Architecture](../architecture.md#shared-aliyun-billing-dialect); independent-ceiling proposals belong to [API expansion design](../api-expansion-design.md#independent-output-ceilings-unselected).
+Baseline checked **2026-10-19**, with source corrections on **2026-10-29**, **2026-11-08** and **2026-11-09** below. These are mutable official definitions, not a complete DashScope API implementation. Accepted decisions belong to [Architecture](../architecture.md#shared-aliyun-billing-dialect); independent-ceiling proposals belong to [API expansion design](../api-expansion-design.md#independent-output-ceilings-unselected).
 
 ## Primary sources
 
@@ -59,3 +59,17 @@ The same international Responses reference lists `parallel_tool_calls` with defa
 Bounded China-Provider controls separate the guarantees. Qwen Flash and GLM, each with native low effort, return one call when asked for two under `parallel_tool_calls:false`. With a conflicting no-tool prompt, both return zero calls under `allowed_tools/required`; string `required` independently returns zero calls in an initial sample and all three explicit repeats per model. All twelve sends return HTTP 200. Field echo and a completed terminal alone do not establish forced invocation.
 
 The selected implementation carries the parallel boolean, keeps Kimi serial rejection, and rejects default/enabled-thinking forcing for those two exact models. Other model/mode cells remain independently scoped. [AR5](../ar5-review.md#tool-policy-and-grok-request-qualification-2026-11-08) owns counts and passing-loop evidence; [Architecture](../architecture.md#shared-aliyun-billing-dialect) owns the contract.
+
+## Function-guarantee recheck, 2026-11-09
+
+Re-read the current official service references separately from SDK types; source/package locks are unchanged.
+
+| Primary reference | Exact contract distinction |
+|---|---|
+| [Chat reference](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions), function definition and returned arguments | Lists `name`, `description`, `parameters`; no function-level strict guarantee. Warns that generated arguments may not match the function signature and must be validated. Its documented `strict` belongs to `response_format.json_schema`, a different guarantee |
+| [Responses reference](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-responses), compatibility and tools | Processes only explicitly listed parameters and ignores unlisted OpenAI fields. Custom functions list `type`, `name`, `description`, `parameters`, without `strict`. String `required` and `allowed_tools.mode:required` require exactly one declaration in the request's `tools`, not merely one reference in the allowed list |
+| [Chat reference](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions), `tool_choice`; [GLM guide](https://help.aliyun.com/zh/model-studio/glm), quick start | Thinking models do not support forced named Chat selection. GLM **5.3** is thinking-only; disabling thinking is not an equivalent repair. GLM 5.2 is a distinct hybrid model, outside this target qualification |
+
+The Responses singleton restriction permits the already selected [allowed-inventory projection](../architecture.md#ordered-tool-availability): collapse determinate ordered declarations and filter to the one selected original function, retaining schema, history, required invocation and seriality. A bare `required` choice over several eligible functions supplies no singleton identity and retains rejection. Thinking-profile enforcement is a separate check.
+
+Native argument discriminators independently show GLM 5.3 Chat `strict:true` returning out-of-enum integer/string values, and Qwen 3.8 Flash Responses doing so with thinking disabled under both strict values and a qualified required-subset carrier. This supports continued strict rejection rather than schema deletion or a text-output wrapper. [AR5 evidence](../ar5-review.md#bailian-function-guarantee-follow-up-2026-11-09) owns the runs and [Roadmap](../roadmap.md#tool-invocation-and-argument-guarantees) owns residual scope.

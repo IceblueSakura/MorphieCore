@@ -615,6 +615,111 @@ fn responses_non_strict_defaults_and_single_function_selection_have_native_oracl
     assert_eq!(source, before);
 }
 #[test]
+fn responses_forced_subset_filters_inventory_without_rewriting_history_or_schema() {
+    use morphiecore::protocol::conversion::generation::RepresentationError;
+    let selected = json!({"type":"function","name":"lookup","description":"lookup value",
+        "strict":false,"parameters":{"type":"object","properties":{"code":{"type":"integer","enum":[7]}},
+        "required":["code"],"additionalProperties":false}});
+    let decoy = json!({"type":"function","name":"decoy","description":"previous operation",
+        "strict":false,"parameters":{"type":"object"}});
+    let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses);
+    let morphiecore::lowering::target::TargetContract::OpenAi(contract) = &target.representation
+    else {
+        panic!("OpenAI contract")
+    };
+    for inline in [false, true] {
+        for choice in [
+            json!({"type":"function","name":"lookup"}),
+            json!({"type":"allowed_tools","mode":"required","tools":[{"type":"function","name":"lookup"}]}),
+        ] {
+            let mut body = json!({"model":"public","reasoning":{"effort":"none"},
+                "tools":[selected,decoy],"tool_choice":choice,"parallel_tool_calls":false,
+                "input":[{"role":"user","content":"previous"},
+                    {"type":"function_call","id":"old-item","call_id":"old-call",
+                     "name":"decoy","arguments":"{ \"old\": 1 }"},
+                    {"type":"function_call_output","call_id":"old-call","output":"previous result"},
+                    {"role":"user","content":"next"}]});
+            if inline {
+                let tools = body.as_object_mut().unwrap().remove("tools").unwrap();
+                body["input"].as_array_mut().unwrap().insert(
+                    0,
+                    json!({"type":"additional_tools","role":"developer","tools":tools}),
+                );
+            }
+            let source = client(GenerationApi::Responses)
+                .decode_client_request(body.to_string().as_bytes())
+                .unwrap();
+            let before = source.clone();
+            let (wire, rules) = target.encode_request_with_rules(&source).unwrap();
+            let mut expected = selected.clone();
+            expected.as_object_mut().unwrap().remove("strict");
+            assert_eq!(wire["tools"], json!([expected]));
+            assert_eq!(
+                wire["tool_choice"],
+                json!({"type":"allowed_tools","mode":"required","tools":[{"type":"function","name":"lookup"}]})
+            );
+            assert_eq!(wire["parallel_tool_calls"], false);
+            assert_eq!(wire["enable_thinking"], false);
+            assert!(rules.contains(&"generation.filter-allowed-inventory.v1"));
+            let history = wire["input"].as_array().unwrap();
+            assert!(
+                !history
+                    .iter()
+                    .any(|item| item["type"] == "additional_tools")
+            );
+            let call = history
+                .iter()
+                .find(|item| item["type"] == "function_call")
+                .unwrap();
+            assert_eq!(call["call_id"], "old-call");
+            assert_eq!(call["name"], "decoy");
+            assert_eq!(call["arguments"], "{ \"old\": 1 }");
+            assert!(
+                history
+                    .iter()
+                    .any(|item| item["type"] == "function_call_output"
+                        && item["call_id"] == "old-call"
+                        && item["output"] == "previous result")
+            );
+            let lowered = morphiecore::protocol::openai::lowering::lower_request(
+                &source.task.semantic,
+                &source.task.fidelity,
+                GenerationApi::Responses,
+                (**contract).clone(),
+            )
+            .unwrap();
+            let direct =
+                morphiecore::protocol::openai::responses::encode_generation(&lowered).unwrap();
+            assert_eq!(direct["tools"], wire["tools"]);
+            assert_eq!(direct["tool_choice"], wire["tool_choice"]);
+            assert_eq!(source, before);
+
+            // Inventory reduction cannot supply a missing thinking-mode guarantee.
+            body["reasoning"] = json!({"effort":"low"});
+            let thinking = client(GenerationApi::Responses)
+                .decode_client_request(body.to_string().as_bytes())
+                .unwrap();
+            body["reasoning"] = json!({"effort":"none"});
+            body["tool_choice"] = json!("required");
+            let unrestricted = client(GenerationApi::Responses)
+                .decode_client_request(body.to_string().as_bytes())
+                .unwrap();
+            for rejected in [thinking, unrestricted] {
+                assert!(matches!(
+                    target.encode_request(&rejected),
+                    Err(ConversionFailure {
+                        cause: morphiecore::protocol::ConversionCause::Representation(
+                            RepresentationError::Admission(Feature::ToolChoice)
+                        ),
+                        ..
+                    })
+                ));
+            }
+        }
+    }
+}
+
+#[test]
 fn responses_serial_auto_tools_keep_the_native_control_and_source() {
     let mut wire = response_request();
     wire.as_object_mut().unwrap().remove("max_output_tokens");

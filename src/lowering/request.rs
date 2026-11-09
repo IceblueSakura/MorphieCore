@@ -1752,6 +1752,22 @@ fn project_semantic_with_table<'a>(
     // inventory filtering. Projections act on this candidate copy only.
     let ordered = ordered_tool_declarations(semantic.items());
     let allowed_choice = matches!(semantic.tool_choice(), Some(ToolChoice::Allowed { .. }));
+    // Bailian's required carrier needs a singleton request inventory, not only
+    // a singleton allowed list. Reuse the selected declaration-visibility loss.
+    let bailian_subset = matches!(target, Target::OpenAi(GenerationApi::Responses, contract)
+        if contract.adaptation.rules.bailian_requests)
+        && semantic.available_tool_count().is_ok_and(|count| count > 1)
+        && match semantic.tool_choice() {
+            Some(ToolChoice::Specific(_)) => true,
+            Some(ToolChoice::Allowed {
+                required: true,
+                tools,
+            }) => {
+                matches!(tools.as_slice(), [reference]
+                    if reference.kind == ToolKind::Function && reference.namespace.is_none())
+            }
+            _ => false,
+        };
     if ordered && !table.accepts(Feature::ToolChanges) {
         return Err(
             crate::protocol::conversion::generation::RepresentationError::Admission(
@@ -1760,10 +1776,12 @@ fn project_semantic_with_table<'a>(
             .into(),
         );
     }
-    if ordered || matches!(target, Target::Messages(_)) && allowed_choice {
+    if ordered || matches!(target, Target::Messages(_)) && allowed_choice || bailian_subset {
         let carrier = match target {
             Target::OpenAi(GenerationApi::Chat, _) => super::tool_set::OrderedCarrier::None,
-            Target::OpenAi(GenerationApi::Responses, _) => super::tool_set::OrderedCarrier::Batches,
+            Target::OpenAi(GenerationApi::Responses, _) if !bailian_subset => {
+                super::tool_set::OrderedCarrier::Batches
+            }
             Target::Messages(c) => {
                 let native = c.dispositions.native(Feature::ToolChanges);
                 if native && !allowed_choice {
@@ -1825,12 +1843,19 @@ fn project_semantic_with_table<'a>(
                 );
             }
         }
-        if let Target::Messages(_) = target
-            && let Some(ToolChoice::Allowed {
-                required,
-                tools: references,
-            }) = &settings.tool_choice
-        {
+        if matches!(target, Target::Messages(_)) && allowed_choice || bailian_subset {
+            let (required, references) = match settings.tool_choice.as_ref() {
+                Some(ToolChoice::Specific(name)) => (
+                    true,
+                    vec![ToolReference {
+                        kind: ToolKind::Function,
+                        name: name.clone(),
+                        namespace: None,
+                    }],
+                ),
+                Some(ToolChoice::Allowed { required, tools }) => (*required, tools.clone()),
+                _ => unreachable!("inventory filtering requires a selected subset"),
+            };
             if references.iter().any(|r| r.namespace.is_some()) {
                 return Err(
                     crate::protocol::conversion::generation::RepresentationError::Admission(
@@ -1843,16 +1868,18 @@ fn project_semantic_with_table<'a>(
             // invocation survive while filtered definitions lose visibility.
             let filtered = super::tool_set::filter_allowed(
                 settings.tools.take().unwrap_or_default(),
-                references,
+                &references,
             );
             settings.tools = (!filtered.is_empty()).then_some(filtered);
             // An empty intersection keeps the required meaning instead of
             // silently becoming `auto`; revalidation rejects it.
-            settings.tool_choice = Some(if *required {
-                ToolChoice::Required
-            } else {
-                ToolChoice::Auto
-            });
+            if matches!(target, Target::Messages(_)) {
+                settings.tool_choice = Some(if required {
+                    ToolChoice::Required
+                } else {
+                    ToolChoice::Auto
+                });
+            }
             evidence.push(
                 super::disposition::FILTER_ALLOWED_INVENTORY
                     .effect(ConversionBoundary::RequestProject),
