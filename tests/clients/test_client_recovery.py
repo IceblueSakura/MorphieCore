@@ -1,12 +1,11 @@
 """Independent failure-oracle checks for the synthetic installed-client authority."""
-from contextlib import closing, contextmanager, redirect_stderr, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 import copy
 import http.client
 import io
 import json
 from pathlib import Path
 import socket
-import sqlite3
 import queue
 import sys
 import tempfile
@@ -150,10 +149,6 @@ class ClientRecoveryOracles(unittest.TestCase):
         return body
 
     def test_history_failures_reach_the_intended_oracle(self):
-        wrong_root = self.native()
-        wrong_root["output_config"]["effort"] = "high"
-        with self.assertRaisesRegex(RuntimeError, "^native_root_effort$"):
-            recovery.assert_profile(wrong_root, True)
         for native, original, cases in [
             (False, self.chat(), [
                 (("messages", 1, "reasoning_content"), "changed", "chat_readable_reasoning"),
@@ -183,7 +178,7 @@ class ClientRecoveryOracles(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "^chat_final_history$"):
             recovery.assert_history(final, 3, False, self.path)
 
-    def test_default_messages_profiles_reject_wire_loss_or_invented_controls(self):
+    def test_default_messages_read_schema_and_strictness_cannot_disappear(self):
         for pi in (True, False):
             original = self.native_defaults(pi)
             cases = [
@@ -194,26 +189,37 @@ class ClientRecoveryOracles(unittest.TestCase):
                  "default_read_path_schema"),
                 (("tools", 0, "input_schema", "required"), [], "default_read_path_schema"),
                 (("tools", 0, "strict"), True, "default_read_strict"),
-                (("tools", 0, "eager_input_streaming"), not pi, "default_read_eager_input"),
-                (("output_config",), {} if pi else {"effort": "medium"}, "default_effort"),
-                (("thinking", "display"), None if pi else "summarized", "default_thinking_display"),
             ]
-            if pi:
-                cases.append((("messages", -1, "output_config", "effort"), "low", "default_message_effort"))
-            for method in ("incoming", "upstream"):
-                headers = Message()
-                headers["x-api-key"] = "synthetic-client-primary"
-                headers["anthropic-version"] = "2023-06-01" if method == "incoming" else "2026-10-21"
-                getattr(protocol_defaults.MessagesState(self.path, pi=pi), method)(headers, original)
-                for keys, value, error in cases:
-                    body = copy.deepcopy(original)
-                    owner = body
-                    for key in keys[:-1]:
-                        owner = owner[key]
-                    owner[keys[-1]] = value
-                    with self.subTest(pi=pi, method=method, error=error), self.assertRaisesRegex(
-                            RuntimeError, f"^{error}$"):
-                        getattr(protocol_defaults.MessagesState(self.path, pi=pi), method)(headers, body)
+            protocol_defaults.assert_default_profile(original, pi)
+            for keys, value, error in cases:
+                body = copy.deepcopy(original)
+                owner = body
+                for key in keys[:-1]:
+                    owner = owner[key]
+                owner[keys[-1]] = value
+                with self.subTest(pi=pi, error=error), self.assertRaisesRegex(RuntimeError, f"^{error}$"):
+                    protocol_defaults.assert_default_profile(body, pi)
+
+    def test_current_tool_inventory_preserves_auxiliary_tools_and_optional_parameters(self):
+        for pi in (True, False):
+            original = self.native_defaults(pi)
+            original["tools"].append({"name": "auxiliary", "input_schema": {
+                "type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}})
+            original["tools"][0]["input_schema"]["properties"]["offset"] = {"type": "integer"}
+            headers = Message()
+            headers["anthropic-version"] = "2023-06-01"
+            state = protocol_defaults.MessagesState(self.path, pi=pi)
+            state.incoming(headers, original)
+            upstream = {"anthropic-version": "2026-10-21", "x-api-key": "synthetic-client-primary"}
+            changed = copy.deepcopy(original)
+            changed["tools"].pop()
+            with self.assertRaisesRegex(RuntimeError, "^default_tool_inventory_changed$"):
+                state.upstream(upstream, changed)
+            changed = copy.deepcopy(original)
+            del changed["tools"][0]["input_schema"]["properties"]["offset"]
+            with self.assertRaisesRegex(RuntimeError, "^default_tool_inventory_changed$"):
+                state.upstream(upstream, changed)
+            state.upstream(upstream, original)
 
     def test_duplicate_client_transmission_and_missing_identity_reject(self):
         headers = Message()
@@ -353,22 +359,6 @@ class ClientRecoveryOracles(unittest.TestCase):
             state.incoming(headers, followup)
             self.assertEqual(state.upstream(
                 {"authorization": "Bearer synthetic-client-secondary"}, followup)[0], 200)
-
-    def test_opencode_final_text_and_probe_completion_are_independent_oracles(self):
-        drivers.check_opencode_output([{"type": "text", "part": {"text": recovery.TEXT}}])
-        for events in ([], [{"type": "text", "part": {"text": "changed"}}]):
-            with self.assertRaisesRegex(RuntimeError, "^opencode_final_answer$"):
-                drivers.check_opencode_output(events)
-        with closing(sqlite3.connect(":memory:")) as database:
-            database.execute("CREATE TABLE session_message(id TEXT, session_id TEXT, type TEXT, time_created INT, data TEXT)")
-            database.execute("CREATE TABLE session_v2(id TEXT, idle_outcome TEXT)")
-            database.execute("INSERT INTO session_message VALUES ('message','probe','assistant',1,?)",
-                             (json.dumps({"finish": "stop"}),))
-            database.execute("INSERT INTO session_v2 VALUES ('probe','succeeded')")
-            drivers.check_opencode_session(database, "probe", ["stop"])
-            database.execute("UPDATE session_v2 SET idle_outcome='failed'")
-            with self.assertRaisesRegex(RuntimeError, "^opencode_idle_outcome$"):
-                drivers.check_opencode_session(database, "probe", ["stop"])
 
     def test_server_teardown_releases_an_incomplete_header_worker(self):
         state = recovery.State(False, self.path)

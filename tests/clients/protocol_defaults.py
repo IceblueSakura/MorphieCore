@@ -1,6 +1,7 @@
 """Installed native protocol defaults through the CLI, without reasoning/compat overrides."""
 from contextlib import ExitStack, closing
 import base64
+import copy
 import json
 from pathlib import Path
 import queue
@@ -29,6 +30,7 @@ class DefaultState(RecoveryState):
         super().__init__(native, path)
         self.pi = pi
         self.deliveries = []
+        self.tool_inventories = {}
 
     def observe_response(self, body, status, content_type, payload):
         check(status == 200, "default_delivery_status")
@@ -43,7 +45,8 @@ def assert_default_profile(body, pi):
     thinking = body.get("thinking", {})
     check(thinking.get("type") == "adaptive", "default_adaptive_thinking")
     check(body["max_tokens"] == 2048, "default_operational_output_cap")
-    read = [tool for tool in body.get("tools", []) if tool.get("name") == "read"]
+    tools = body.get("tools", [])
+    read = [tool for tool in tools if tool.get("name") == "read"]
     check(len(read) == 1, "default_read_tool_declaration")
     tool = read[0]
     schema = tool.get("input_schema", {})
@@ -61,6 +64,7 @@ def assert_default_profile(body, pi):
               "output_config": {"effort": "medium"}}, "default_message_effort")
     check(thinking.get("display") == "summarized" if pi else "display" not in thinking,
           "default_thinking_display")
+    return tools
 
 
 class MessagesState(DefaultState):
@@ -72,8 +76,9 @@ class MessagesState(DefaultState):
     def incoming(self, headers, body):
         phase = stage(body)
         check(headers.get_all("anthropic-version") == ["2023-06-01"], "default_messages_version")
-        assert_default_profile(body, self.pi)
+        tools = assert_default_profile(body, self.pi)
         with self.lock:
+            self.tool_inventories[phase] = copy.deepcopy(tools)
             self.beta_seen |= bool(headers.get("anthropic-beta"))
             self.block_binding_seen |= "block_binding" in body.get("thinking", {})
             self.ingress.append(phase)
@@ -84,10 +89,11 @@ class MessagesState(DefaultState):
         phase = stage(body)
         check(headers.get("x-api-key") == "synthetic-client-primary", "default_upstream_credential")
         check(headers.get("anthropic-version") == "2026-10-21", "trusted_upstream_version")
-        assert_default_profile(body, self.pi)
+        tools = assert_default_profile(body, self.pi)
         check("block_binding" not in body["thinking"], "client_binding_not_omitted")
         assert_history(body, phase, True, self.path, profile=False)
         with self.lock:
+            check(tools == self.tool_inventories.get(phase), "default_tool_inventory_changed")
             self.attempts.append(phase)
             check(len(self.attempts) <= 3 and self.attempts == [1, 2, 3][:len(self.attempts)],
                   "default_extra_or_reordered_upstream_attempt")
@@ -207,6 +213,7 @@ def assert_chat_profile(body, pi, *, upstream=False, gateway_profile=False):
     check(schema.get("type") == "object"
           and schema.get("properties", {}).get("path", {}).get("type") == "string"
           and "path" in schema.get("required", []), "default_read_path_schema")
+    return tools
 
 
 class ChatState(DefaultState):
@@ -217,10 +224,11 @@ class ChatState(DefaultState):
         self.upstream_endpoint_path = "/beta/chat/completions" if pi else "/v1/chat/completions"
 
     def incoming(self, headers, body):
-        assert_chat_profile(body, self.pi, gateway_profile=self.gateway_profile)
+        tools = assert_chat_profile(body, self.pi, gateway_profile=self.gateway_profile)
         phase = stage(body)
         assert_history(body, phase, False, self.path, profile=False)
         with self.lock:
+            self.tool_inventories[phase] = copy.deepcopy(tools)
             self.ingress.append(phase)
             check(len(self.ingress) <= 3 and self.ingress == [1, 2, 3][:len(self.ingress)],
                   "default_extra_or_reordered_client_request")
@@ -228,10 +236,11 @@ class ChatState(DefaultState):
     def upstream(self, headers, body):
         check(headers.get("authorization") == "Bearer synthetic-client-primary",
               "default_upstream_credential")
-        assert_chat_profile(body, self.pi, upstream=True)
+        tools = assert_chat_profile(body, self.pi, upstream=True)
         phase = stage(body)
         assert_history(body, phase, False, self.path, profile=False)
         with self.lock:
+            check(tools == self.tool_inventories.get(phase), "default_tool_inventory_changed")
             self.attempts.append(phase)
             check(len(self.attempts) <= 3 and self.attempts == [1, 2, 3][:len(self.attempts)],
                   "default_extra_or_reordered_upstream_attempt")
@@ -345,6 +354,7 @@ def assert_responses_profile(body, pi):
     check(schema.get("type") == "object"
           and schema.get("properties", {}).get("path", {}).get("type") == "string"
           and "path" in schema.get("required", []), "default_read_path_schema")
+    return tools
 
 
 def assert_responses_history(body, phase, path, *, pi=False, upstream=False):
@@ -397,10 +407,11 @@ class ResponsesState(DefaultState):
         super().__init__(False, path, pi=pi)
 
     def incoming(self, headers, body):
-        assert_responses_profile(body, self.pi)
+        tools = assert_responses_profile(body, self.pi)
         phase = responses_stage(body)
         assert_responses_history(body, phase, self.path, pi=self.pi)
         with self.lock:
+            self.tool_inventories[phase] = copy.deepcopy(tools)
             self.ingress.append(phase)
             check(len(self.ingress) <= 3 and self.ingress == [1, 2, 3][:len(self.ingress)],
                   "default_extra_or_reordered_client_request")
@@ -408,10 +419,11 @@ class ResponsesState(DefaultState):
     def upstream(self, headers, body):
         check(headers.get("authorization") == "Bearer synthetic-client-primary",
               "default_upstream_credential")
-        assert_responses_profile(body, self.pi)
+        tools = assert_responses_profile(body, self.pi)
         phase = responses_stage(body)
         assert_responses_history(body, phase, self.path, pi=self.pi, upstream=True)
         with self.lock:
+            check(tools == self.tool_inventories.get(phase), "default_tool_inventory_changed")
             self.attempts.append(phase)
             check(len(self.attempts) <= 3 and self.attempts == [1, 2, 3][:len(self.attempts)],
                   "default_extra_or_reordered_upstream_attempt")

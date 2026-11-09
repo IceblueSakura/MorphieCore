@@ -21,6 +21,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
   - [Retained rejections](#retained-rejections)
   - [Remaining issue dispositions](#remaining-issue-dispositions)
 - [Planned order](#planned-order)
+  - [AR5 easy-to-hard route](#ar5-easy-to-hard-route)
   - [Execution sequence and work-package rules](#execution-sequence-and-work-package-rules)
   - [Stage 4 scope](#stage-4-scope)
     - [Decision API closure](#decision-api-closure)
@@ -57,11 +58,11 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current status (2026-11-09):** The concentrated AR5 slice has verified current-client adaptation, repaired Google nullable strict admission, and completed the ordered R13 request-attribution check. Remaining schema analysis, stateless carrier limits and unavailable protected-output samples have [explicit dispositions](#remaining-observation-dispositions). Use the [partial-delivery exit](#partial-delivery-exit) for handoff; no additional broad sweep or external-client repair is scheduled. [AR5 Review](ar5-review.md) owns evidence. Stage-4 selection and production activation remain separate.
+**Current status (2026-11-09):** Current-Agent acceptance compares complete observed tool inventories/schemas; low-value mirror tests are pruned. Next follows the [easy-to-hard repair route](#ar5-easy-to-hard-route): local no-call admission, then bounded strict-reference support. Complex guarantee enforcement and client continuation require their own decisions. The preceding concentrated review qualified nullable strict arguments and R13 attribution; [AR5 Review](ar5-review.md) owns evidence. Sample-blocked and accepted upstream limitations do not delay the [partial-delivery exit](#partial-delivery-exit). Stage-4 selection and production activation remain separate.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
-| AR5 handoff | Retain the consolidated boundary dispositions and verified affected paths | Partial-delivery exit; closing every observation is not required |
+| AR5 local repairs, simple first | Follow the [repair route](#ar5-easy-to-hard-route), retaining consolidated dispositions | Independent verification per repair, then partial-delivery handoff; decision-gated complex work is not a default blocker |
 | Cache affinity, after AR5 and before Stage 4 | [R09 independent-account failover](#cache-affinity-qualification); further test items await user supplementation | Selected cache-affinity acceptance, retaining real-account prerequisites |
 | Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default prerequisites for AR5 |
 | API expansion | Select and implement Stage-4 operation contracts | Per-operation lifecycle, protocol and SDK acceptance |
@@ -74,7 +75,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ### AR5 closure order
 
-Retain the selected **global → protocol → Provider/model** order: separate tool guarantees, ordinary signatures, protected reasoning and request/content fidelity; identify the first divergent owner; then isolate residual dialect behavior. These are analysis layers, not mandatory client × model × protocol sweeps.
+The **global → protocol → Provider/model** layers remain the diagnostic checklist: separate guarantees and replay/content owners, then locate the first divergence. **User-selected 2026-11-09:** implementation scheduling is simple before complex under the [repair route](#ar5-easy-to-hard-route), replacing analysis-layer order as a work queue. Neither order requires client × model × protocol sweeps.
 
 Reuse existing codecs, lowering/disposition owners, typed history, pinned SDKs and isolated current-client drivers. No new dependency, replay cache, retry layer or diagnostic platform is planned. Apply the [bounded real-Agent procedure](development.md#real-agent-scenario-selection); explicit further trials are permitted, each with a finite target/request/attempt/output/wire/deadline budget fixed before serial dispatch. Hidden retries remain off. Project-managed OAuth renewal remains authorized; credential lifecycle and routing constraints are unchanged.
 
@@ -88,7 +89,7 @@ Reuse existing codecs, lowering/disposition owners, typed history, pinned SDKs a
 
 | Boundary | Current disposition | Next work / re-entry |
 |---|---|---|
-| **R05 — Google strict profile** | The selected [closed-object subset](architecture.md#google-strict-function-arguments), including required nullable fields, is qualified. Full current-Agent profiles are not. | Retain length/pattern/general-composition and serial rejection. Native local-reference/inline samples now pass; strict reference admission remains next-stage schema analysis, not an established upstream impossibility. Separately review conservative strict/serial checks under no-call selection. Broaden only for a concrete supported carrier with directional and affected-path evidence; do not delete schemas or disable strictness. |
+| **R05 — Google strict profile** | The selected [closed-object subset](architecture.md#google-strict-function-arguments), including required nullable fields, is qualified. Full current-Agent profiles are not. | Follow local no-call admission, then bounded reference work in the [repair route](#ar5-easy-to-hard-route). Native reference/inline samples pass; references are a local admission boundary, not an established upstream impossibility. Other length/pattern/general-composition and serial rejections remain. Broaden only for a concrete supported carrier with directional and affected-path evidence; do not delete schemas or disable strictness. |
 
 #### History and replay carriers
 
@@ -203,7 +204,7 @@ The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-bounda
 
 ## Planned order
 
-Stage 4 follows AR5 and the separately scheduled [cache-affinity qualification](#cache-affinity-qualification). Its API families have equal priority and advance as their operation contracts are selected. Conditional compatibility packages need their own policy selection and are not default prerequisites. Remaining Agent limitations may be qualified alongside relevant work; Stage 5 remains unscheduled.
+After current-Agent adaptation/pruning, follow the [AR5 local repair route](#ar5-easy-to-hard-route). Stage 4 follows the partial-delivery handoff and separately scheduled [cache-affinity qualification](#cache-affinity-qualification); complex decision-gated AR5 proposals need not block that handoff. Stage-4 families retain equal priority and advance as contracts are selected. Conditional tool packages keep their own policy gates; Stage 5 remains unscheduled.
 
 | Stage | Goal | Exit evidence |
 |---|---|---|
@@ -211,6 +212,19 @@ Stage 4 follows AR5 and the separately scheduled [cache-affinity qualification](
 | **Pre-4 — Cache affinity** | [Cache-affinity qualification](#cache-affinity-qualification), after AR5; R09 first, additional items await user supplementation | Independent-account affinity/failover acceptance and the subsequently selected cache tests |
 | **4 — Modalities, Decision & file resources** | Decision, Embedding extensions, Audio (Speech/Transcription/Translation), Images, Files/Uploads, and Video at equal priority | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
 | **5 — Unscheduled follow-ups** | Citations, tool discovery, hosted tools, server-side compaction, Batch, and Realtime | Requires explicit per-slice design selection and scheduling prior to implementation |
+
+### AR5 easy-to-hard route
+
+**Selected scheduling, 2026-11-09:** first maintain only current local Agents and prune low-value tests, then fix the smallest independently decidable boundary. Adaptation keeps the real client's complete tool inventory/schema through preparation, not a snapshot of auxiliary tool names. Reuse `SchemaDocument`, existing Google writers/shared lowering, typed history and current isolated drivers; no new dependency or test framework is selected.
+
+| Order / entry | Files and deliverable | Exit check / stop condition |
+|---|---|---|
+| **1 — Small local repair: no-call admission** | `src/lowering/request.rs`, `src/protocol/google/strict_tools.rs`, both Google request writers; `tests/semantic/google.rs`. Reproduce valid declarations with `tool_choice:none` plus unsupported strict vocabulary or serial intent. Determine which guarantees are vacuous when no call is permitted, then change the shared admission owner and keep direct writers consistent. | A failing-before/passing-after directional case on both APIs, with complete unchanged schema and native none mode. Paired auto/required requests retain unsupported-guarantee rejection; malformed known input, trust and history checks remain. Run focused Google/lowering checks, affected SDK/current-Agent gates and one bounded native none control per API. If none itself cannot be guaranteed, stop rather than omit declarations or relax it. |
+| **2 — Bounded schema repair: strict local references** / after 1 | Existing `SchemaDocument` and Google strict gate, shared lowering and `tests/semantic/google.rs`; reuse SDK managed-history fixtures. Start with the already-observed local root reference to a supported closed object and its inline equivalent. Inspect the referenced constraints while preserving the original document on the wire and immutable source IR. | Independent reference/inline wire expectations and real strict managed-continuation loops on both APIs, followed by the current-Agent profile that actually needs the shape. Broken/remote/cyclic references, sibling-keyword semantics and traversal bounds must be explicit. If a general resolver, rewriting, new dependency or new composition semantics is needed, bound a source/library investigation first; do not silently broaden this slice. |
+| **3 — Complex guarantee design** / only if a concrete current-Agent need remains after 2 | Evaluate native carriers first for residual R05 length/pattern/serial guarantees. If none can enforce them, present a named gateway-validation/publication-barrier option with a minimal counterexample. Likely owners are existing request lowering and execution/delivery, not semantic IR execution state. | **Decision required before implementation:** whether fail-on-invalid arguments and withholding executable calls until cardinality is known satisfy the intended strict contract and acceptable streaming latency. No argument repair, automatic retry or invented success. Existing rejection stays until selection; this is not a prerequisite for partial delivery. |
+| **4 — Complex continuation integration design** / separate client-scope selection | R02/R06: prefer existing managed Responses history over inventing an ordinary-signature carrier. Inspect only current Agent integration points plus `src/gateway/ingress/admission.rs`, `src/protocol/openai/responses/managed.rs` and the existing history store. Start with one supported current client/API. | **Decision required before implementation:** permit that client integration and choose ownership for branches, edits, compaction, expiry/restart and model/account changes. Then require an actual signed text/call → feedback → continuation loop. No new replay cache, signature deletion or conversion into reasoning. External-client repairs are not activated by this plan. |
+
+Keep **R01** parked on actual protected-output availability and **R13** on its attributed upstream-content disposition; neither is a serial repair task. Other unnumbered qualification cells remain separately selected, not an automatic sweep. After the local repair slices, use partial delivery and enter R09 only when its independent-account prerequisite exists; its missing prerequisite does not authorize new credentials, complex AR5 implementation or Stage-4 activation.
 
 ### Execution sequence and work-package rules
 

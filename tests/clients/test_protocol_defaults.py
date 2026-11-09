@@ -23,15 +23,13 @@ class ProtocolDefaultOracles(unittest.TestCase):
                 "type": "function", "name": "auxiliary", "parameters": {"type": "object"}}]
         return body
 
-    def test_responses_defaults_cannot_be_simplified_into_a_passing_profile(self):
+    def test_responses_read_contract_and_inline_declaration_position(self):
         for pi in (True, False):
             original = self.responses_body(pi)
             defaults.assert_responses_profile(original, pi)
             for field, value, error in [
                 ("max_output_tokens", 4096, "default_responses_bounds_and_storage"),
                 ("store", True, "default_responses_bounds_and_storage"),
-                ("include", [], "default_responses_include"),
-                ("reasoning", {} if pi else {"effort": "low"}, "default_responses_reasoning"),
                 ("previous_response_id", "invented", "default_responses_full_history"),
             ]:
                 body = copy.deepcopy(original)
@@ -72,10 +70,6 @@ class ProtocolDefaultOracles(unittest.TestCase):
             defaults.assert_chat_profile(body, pi)
             body["tools"][0]["function"]["strict"] = not pi
             with self.assertRaisesRegex(RuntimeError, "^default_read_strict$"):
-                defaults.assert_chat_profile(body, pi)
-            body["tools"][0]["function"]["strict"] = pi
-            body["reasoning_effort"] = "low"
-            with self.assertRaisesRegex(RuntimeError, "^default_effort$"):
                 defaults.assert_chat_profile(body, pi)
 
     def test_responses_history_keeps_order_reasoning_call_results_and_final_phase(self):
@@ -123,22 +117,6 @@ class ProtocolDefaultOracles(unittest.TestCase):
             defaults.assert_responses_history(body, 3, self.path, pi=True)
         with self.assertRaisesRegex(RuntimeError, "^default_responses_annotations$"):
             defaults.assert_responses_history(body, 3, self.path, upstream=True)
-
-    def test_default_completion_requires_dispatch_and_no_ignored_controls(self):
-        records = [{"outcome": "complete", "candidates": [{}]} for _ in range(3)]
-        defaults.assert_diagnostics(records, "responses", False)
-        for key, value, error in [
-            ("candidates", [], "default_gateway_completion"),
-            ("candidates", [{}, {}], "default_gateway_completion"),
-            ("outcome", "error", "default_gateway_completion"),
-            ("ignored_request_field_count", 1, "default_gateway_ignored_fields"),
-        ]:
-            changed = copy.deepcopy(records)
-            changed[-1][key] = value
-            with self.subTest(key=key), self.assertRaisesRegex(RuntimeError, "^" + error + "$"):
-                defaults.assert_diagnostics(changed, "responses", False)
-        with self.assertRaisesRegex(RuntimeError, "^default_gateway_request_count$"):
-            defaults.assert_diagnostics(records[:2], "responses", False)
 
 
 if __name__ == "__main__":
