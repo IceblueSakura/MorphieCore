@@ -414,6 +414,8 @@ SIWC (Sign-in with ChatGPT) and Grok use Responses endpoints with stateless upst
 - Prompt cache keys mapped via `prompt_cache_key`.
 - Streaming intake required for all client requests; terminal output reconstructed from event state.
 
+The qualified Grok recovery profiles retain upstream literal-label omissions and tool selection contrary to prompt-only prohibitions as scoped service limitations ([evidence](ar5-review.md#r21-write-feedback-qualification-2026-11-08)). Preserve request text/order and explicit tool policy; prose does not synthesize `tool_choice:none`. Retain honest interruption, execution/feedback identities and original content assertions. No strictness relaxation, role/history rewrite, argument repair or retry is selected for these symptoms.
+
 #### Field handling
 
 Known fields follow the [conversion ladder](#conversion-ladder); this table states how intake classes enter it.
