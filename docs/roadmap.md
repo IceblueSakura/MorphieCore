@@ -78,9 +78,9 @@ The remaining AR5 boundaries are the current priority. [AR5 Review](ar5-review.m
 
 | Order | Analysis scope | Required result |
 |---|---|---|
-| **1 — Global** | Across all seven IDs: tool identity/cardinality/seriality versus argument guarantees (R05/R18); ordinary attachments versus protected reasoning and replay trust (R01/R02/R06); instruction preservation, upstream content attribution and cancellation/feedback ownership (R13/R21) | Identify the authoritative IR/execution owner, first divergent boundary and shared cause or evidence gap. Keep genuinely different guarantees separate even when they share an investigation. |
+| **1 — Global** | Across all six IDs: tool identity/cardinality/seriality versus argument guarantees (R05); ordinary attachments versus protected reasoning and replay trust (R01/R02/R06); instruction preservation, upstream content attribution and cancellation/feedback ownership (R13/R21) | Identify the authoritative IR/execution owner, first divergent boundary and shared cause or evidence gap. Keep genuinely different guarantees separate even when they share an investigation. |
 | **2 — Protocol** | Compare Chat, Responses, Messages, generateContent and Interactions against their primary contracts, client-retainable carriers and existing SDK/client evidence, including Google and strict semantics | Record exact/equivalent/lossy/omitted/rejected dispositions and minimal counterexamples. Resolve shared carrier choices before adding target exceptions; unsupported mappings retain honest rejection pending selection. |
-| **3 — Provider/model dialect** | Investigate only residual differences after the global/protocol review: Qwen/GLM forcing and strict behavior, real Haiku protected output and remaining scoped upstream content limitations | Qualify the exact model/mode/binding with bounded discriminators, or record attribution/unavailable prerequisites. R21-specific retest/repair still needs separate selection; no repeated broad sweep. |
+| **3 — Provider/model dialect** | Investigate only residual differences after the global/protocol review: remaining Google Agent profiles, real Haiku protected output and remaining scoped upstream content limitations | Qualify the exact model/mode/binding with bounded discriminators, or record attribution/unavailable prerequisites. R21-specific retest/repair still needs separate selection; no repeated broad sweep. |
 
 These are analysis layers, not three new implementation packages or mandatory all-cell test sweeps. Reuse the existing evidence across the functional dispositions below. A blocked live prerequisite does not prevent source/code analysis or work on another shared boundary. Completed carrier repairs and the Qwen thinking-off JSON/SSE qualification belong to [Architecture](architecture.md#google-strict-function-arguments) and [AR5 evidence](ar5-review.md), not another queued target sweep.
 
@@ -88,7 +88,9 @@ Reuse the existing lowering/disposition owners, codecs, pinned SDKs and isolated
 
 ### Remaining observation dispositions
 
-There are **seven retained observation IDs across three functional domains**, matching the [AR5 inventory](ar5-review.md#pending-observations). They form one analysis backlog under the global → protocol → dialect order above; the domains below locate detailed dispositions, not separate priority queues. Status and re-entry are attributes of each boundary, not separate copies of its plan. R18 retains its forcing boundary; the selected [Bailian strictness policy](architecture.md#shared-aliyun-billing-dialect) closes R17 and R18's strict-admission subcase. R02/R06 share one carrier problem across client protocols. **User-selected 2026-11-09:** R09 moves out of AR5 into [cache-affinity qualification](#cache-affinity-qualification), after AR5 and before Stage 4. The existing Readable Chat carrier extension is selected in [Architecture](architecture.md#chat-reasoning-extensions); this reorganization selects no deployment, new binding or additional content/signature loss.
+There are **six retained observation IDs across three functional domains**, matching the [AR5 inventory](ar5-review.md#pending-observations). They form one analysis backlog under the global → protocol → dialect order above; the domains below locate detailed dispositions, not separate priority queues. Status and re-entry are attributes of each boundary, not separate copies of its plan. The selected [Bailian strictness policy](architecture.md#shared-aliyun-billing-dialect) closes R17 and R18's strict-admission subcase. R02/R06 share one carrier problem across client protocols. **User-selected 2026-11-09:** R09 moves out of AR5 into [cache-affinity qualification](#cache-affinity-qualification), after AR5 and before Stage 4. The existing Readable Chat carrier extension is selected in [Architecture](architecture.md#chat-reasoning-extensions); this reorganization selects no deployment, new binding or additional content/signature loss.
+
+**User-selected closure, 2026-11-09:** Remove **R18** from AR5 follow-up. Local repairs and thinking-off forcing qualification are complete; remaining unsupported thinking-enabled forcing is an accepted [service limitation](architecture.md#shared-aliyun-billing-dialect), with existing rejection unchanged. No further R18 investigation, retest or repair is scheduled. Native counterexamples and passing evidence remain in [AR5 Review](ar5-review.md#bailian-function-guarantee-follow-up-2026-11-09).
 
 **User-selected scope, 2026-11-08:** Bailian structured-output variability and its associated envelope/failed-stream observations are removed from AR5 follow-up. No further investigation, retest or repair is scheduled for that issue; existing format carriage and envelope normalization remain unchanged.
 
@@ -110,7 +112,6 @@ Invocation identity, seriality, argument-schema guarantees and terminal spelling
 
 | Boundary | Current disposition | Next work and exit / re-entry condition |
 |---|---|---|
-| **R18 — Forced invocation** | Explicit thinking-off Qwen Responses forcing is qualified in JSON/SSE, including a singleton forced subset drawn from multiple declarations using the selected inventory-filtering rule. Known unsupported thinking profiles keep their selection rejection. | Re-enter those rejected profiles for a concrete contract/model change or new local divergence. Invocation, cardinality and seriality stay independent of the selected Bailian strict relaxation. No repeated thinking/serial/call-terminal sweep. |
 | **R05 — Google strict profile** | [Closed-object argument subset selected](architecture.md#google-strict-function-arguments) on existing APIs; full original Agent profiles remain unqualified outside that schema/control subset. | Broaden only for a concrete supported constraint/carrier with independent evidence. Length/pattern/reference/composition constraints and Google serial intent remain rejected; do not opt out of strictness or delete schemas to qualify an Agent. Ordinary attachment carriage in R02/R06 remains separate. |
 
 #### History and replay carriers
@@ -133,7 +134,7 @@ Keep upstream content attribution separate from request preservation, tool polic
 
 #### Other qualification gates
 
-These previously retained, unnumbered profile gates are separate from the seven AR5 observation IDs. They are not new scheduled tasks or prerequisites requiring another broad sweep; resume only when separately selected.
+These previously retained, unnumbered profile gates are separate from the six AR5 observation IDs. They are not new scheduled tasks or prerequisites requiring another broad sweep; resume only when separately selected.
 
 | Function | Retained gate |
 |---|---|
