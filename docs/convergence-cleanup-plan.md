@@ -1,6 +1,6 @@
 # Convergence cleanup plan
 
-**Status: next-stage priority selected on 2026-11-10; implementation not started.** The user requested this separate plan after selecting coarser configuration errors and OTel WARN/ERROR diagnostics with request/response context, without requiring JSONL storage. This document plans the replacement; it does not claim deployed behavior or authorize deployment, credential changes or private-data export.
+**Status: implementation in progress, 2026-11-10.** Configuration-error simplification is delivered; the remaining tasks below implement OTel WARN/ERROR diagnostics with request/response context, without requiring JSONL storage. This document does not authorize deployment, credential changes or private-data export.
 
 [Roadmap](roadmap.md#convergence-cleanup) owns priority and stage dependencies. [Architecture](architecture.md#observability) owns implemented contracts and the selected diagnostic goal. [Development](development.md#verification-gates) owns verification procedures and dated acceptance. Keep the detailed cleanup sequence here rather than duplicating it in those documents. Remove completed tasks during execution; retain meaningful decisions in Architecture and concise results in Development.
 
@@ -69,13 +69,6 @@ Inspect complete callers before deleting fields. In particular, `Report::notice/
 
 Each task is a coherent verified slice. Update affected tests and documentation with that task, not in a final catch-up phase. Do not introduce a legacy/new runtime mode or retain production JSONL solely for test readers.
 
-### 1. Simplify configuration diagnostics
-
-- **Files:** `src/configuration.rs`, startup/account tests, `Cargo.toml`, `Cargo.lock`.
-- **Consumes:** existing bounded private-file reads, strict JSON parsing and typed configuration.
-- **Produces:** domain/reason errors with a root location only; rejected values and private map keys never escape.
-- Delete the manual field inventory and path walker. Remove `serde_path_to_error` if no remaining consumer exists. Retain unknown-field, duplicate-key, type and security rejection.
-- **Verify:** `cargo test --locked --offline --lib account::tests`, `cargo test --locked --offline --lib gateway::startup`, and `cargo test --locked --offline --test gateway`. A malformed secret-bearing field still rejects without its value; only path precision is withdrawn.
 
 ### 2. Deliver one actionable OTel failure end to end
 

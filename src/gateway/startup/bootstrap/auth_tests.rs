@@ -68,7 +68,6 @@ fn auth_file_is_required_private_strict_and_versioned() {
         .unwrap(),
     );
     let error = Bootstrap::from_directory(root).err().unwrap().diagnostic();
-    assert_eq!(error["field"], "agents[0].key");
     assert!(!error.to_string().contains(FIRST));
     assert!(!error.to_string().contains("private-value"));
     write_private(&path, br#"{"version":1,"version":1,"agents":[]}"#);

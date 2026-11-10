@@ -1015,6 +1015,8 @@ Configured via [`DeltaCoalescing`](../src/execution/delivery/coalescing.rs#L17) 
 
 ### Observability
 
+Configuration intake reports a domain and fixed safe reason, with a root location for schema/type errors. It does not traverse Serde paths or emit rejected values or private map keys. Semantic validation may retain its schema-owned field/index attribution.
+
 **Next-stage goal selected 2026-11-10:** use OTel WARN/ERROR diagnostics with explicitly enabled private request/response context to locate failures; precise configuration-error paths and application-owned JSONL storage are not required. The [cleanup plan](convergence-cleanup-plan.md) owns the planned replacement and acceptance. The following bullets and capture section describe the implemented baseline until that replacement lands.
 
 - **Tracing stack:** `tracing` / `tracing-subscriber` for spans, `tracing-opentelemetry` for traces, and `opentelemetry-appender-tracing` for structured logs.

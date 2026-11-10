@@ -53,7 +53,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current status (2026-11-10):** AR5 has converged under the [partial-delivery exit](#partial-delivery-exit). [Convergence cleanup](#convergence-cleanup) is the next primary task, with its separately requested implementation plan; no implementation of that plan has started. Accepted contracts live in [Architecture](architecture.md); dated [qualification evidence](development.md#provider-qualification-evidence) and current-Agent checks live in Development. Residual limitations and prerequisites share the [unscheduled issue register](#unscheduled-issues), without a separate review repair queue. [Cache-affinity qualification](#cache-affinity-qualification) remains required before Stage 4. No deployment or new API activation is implied.
+**Current status (2026-11-10):** AR5 has converged under the [partial-delivery exit](#partial-delivery-exit). [Convergence cleanup](#convergence-cleanup) is the primary task in progress; configuration-error simplification is delivered and the separate plan tracks remaining diagnostics work. Accepted contracts live in [Architecture](architecture.md); dated [qualification evidence](development.md#provider-qualification-evidence) and current-Agent checks live in Development. Residual limitations and prerequisites share the [unscheduled issue register](#unscheduled-issues), without a separate review repair queue. [Cache-affinity qualification](#cache-affinity-qualification) remains required before Stage 4. No deployment or new API activation is implied.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
