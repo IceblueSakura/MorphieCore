@@ -1015,6 +1015,8 @@ Configured via [`DeltaCoalescing`](../src/execution/delivery/coalescing.rs#L17) 
 
 ### Observability
 
+**Next-stage goal selected 2026-11-10:** use OTel WARN/ERROR diagnostics with explicitly enabled private request/response context to locate failures; precise configuration-error paths and application-owned JSONL storage are not required. The [cleanup plan](convergence-cleanup-plan.md) owns the planned replacement and acceptance. The following bullets and capture section describe the implemented baseline until that replacement lands.
+
 - **Tracing stack:** `tracing` / `tracing-subscriber` for spans, `tracing-opentelemetry` for traces, and `opentelemetry-appender-tracing` for structured logs.
 - **Local writer:** Asynchronous, non-blocking worker writing structured JSONL log records to rotating 1 MiB files.
 - **Privacy:** Operational logs are strictly body-free; prompts, completions, and secrets are excluded.
@@ -1046,6 +1048,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | DeepSeek parallel-tool admission | 2026-10-25 | Rejects serial tool intent; omits parallel permission with evidence on DeepSeek targets |
 | Messages signed delivery | 2026-10-27 | Enforces native thinking signatures; revised 2026-10-30: unsigned thinking is omitted, never signed |
 | Local telemetry wiring | 2026-10-25 | Native structured logs via tracing/OTel without global runtime locks |
+| Diagnostic convergence goal | 2026-11-10 | Next-stage priority is actionable OTel WARN/ERROR with opt-in private request/response context. Coarse domain/reason configuration errors are sufficient; JSONL persistence is not required. The [cleanup plan](convergence-cleanup-plan.md) describes the replacement; current runtime behavior and deployment remain unchanged |
 | Minimal diagnostic attribution | 2026-10-25 | Admission-owned Agent and request nonces tag traces and capture logs |
 | Unified Generation evidence | 2026-10-24 | Replaces separate audit logs with `EvidenceDelta` and `Conversion<T>` |
 | Standards reset & redesign | 2026-10-23 | Pinned official standards and upstream test suites; its exact-first fallback is superseded by the conversion ladder |
