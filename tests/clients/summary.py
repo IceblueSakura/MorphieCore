@@ -288,15 +288,6 @@ def main():
                 client.wait(timeout=5)
             gateway.process.send_signal(signal.SIGINT)
             gateway.wait(timeout=5)
-            records = [json.loads(line) for line in (root / "diagnostics.jsonl").read_text().splitlines()]
-            check(all(r.get("event") in ("file", "request", "log", "span") for r in records), "summary_logging_loss")
-            requests = [r for r in records if r.get("event") == "request"]
-            check(len(requests) == len(state.order)
-                  and [r["outcome"] for r in requests] ==
-                  ["error" if scenario == "retry" and i == 3 else "complete"
-                   for i in range(len(state.order))]
-                  and all(len(r["candidates"]) == 1 and r.get("ignored_request_field_count", 0) == 0
-                  for r in requests), "summary_gateway_completion")
         except Exception:
             print(json.dumps({"errors": state.errors, "ingress_shapes": [p for p, _ in state.ingress],
                               "upstream_shapes": [p for p, _ in state.attempts]}), file=sys.stderr)

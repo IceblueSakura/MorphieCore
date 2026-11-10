@@ -335,6 +335,7 @@ impl ApiError {
             "cache-control",
             axum::http::HeaderValue::from_static("no-store"),
         );
+        response.extensions_mut().insert(self);
         response
     }
     /// Anthropic's status and `{"type":"error","error":…}` body.
@@ -412,6 +413,7 @@ impl IntoResponse for ApiError {
                 axum::http::HeaderValue::from_static("Bearer"),
             );
         }
+        response.extensions_mut().insert(self);
         response
     }
 }

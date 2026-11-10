@@ -105,15 +105,8 @@ async fn shared_receiver_validates_declared_lengths_and_actual_eof() {
 
 #[tokio::test]
 async fn shared_capture_redacts_json_and_declares_binary_omission() {
-    let directory = crate::test_files::private_directory();
-    let path = directory.path().join("exchange.jsonl");
-    let sink = crate::gateway::capture::Sink::open(
-        serde_json::from_value(serde_json::json!({
-            "path":path, "upstream_response":{"body":true}
-        }))
-        .unwrap(),
-    )
-    .unwrap();
+    let sink = crate::gateway::capture::Sink::new(16 << 10);
+    let mut captured = String::new();
     for (media, bytes) in [
         (
             "Application/JSON",
@@ -126,12 +119,8 @@ async fn shared_capture_redacts_json_and_declares_binary_omission() {
         ("audio/mpeg", b"synthetic-binary-secret".as_slice()),
     ] {
         let mut trace = Trace::new(None);
-        trace.capture = Some(sink.exchange(
-            None,
-            &crate::gateway::ingress::auth::AuthenticatedAgent {
-                agent_id: "fixture-agent".into(),
-            },
-        ));
+        trace.capture = Some(sink.exchange());
+        trace.begin_candidate(1);
         let (sender, upstream, dropped) = source(200, media);
         sender
             .send(Ok(Bytes::copy_from_slice(bytes)))
@@ -141,11 +130,9 @@ async fn shared_capture_redacts_json_and_declares_binary_omission() {
         let receiver = Receiver::new(upstream, 4096, &mut trace).unwrap();
         assert_eq!(receiver.collect(&mut trace).await.unwrap(), bytes);
         dropped.await.unwrap();
+        captured.push_str(&format!("{:?}", trace.capture.as_ref().unwrap().context()));
     }
-    sink.flush().await;
-    let captured = std::fs::read_to_string(path).unwrap();
-    assert_eq!(captured.matches("\"status\":\"body_unit\"").count(), 2);
-    assert_eq!(captured.matches("\"status\":\"source_eof\"").count(), 2);
+
     assert!(captured.contains("unsupported_body"));
     assert!(
         !captured.contains("synthetic-secret") && !captured.contains("synthetic-binary-secret")

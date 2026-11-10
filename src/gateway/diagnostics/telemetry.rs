@@ -1,222 +1,247 @@
-//! Scoped application instrumentation. Only local exporters are constructed here.
-use super::{Outcome, Record, writer::Output};
+//! Native failure logs. The SDK owns batching; the receiver owns persistence.
 use opentelemetry::{
-    logs::{LogRecord as _, Logger as _, LoggerProvider as _, Severity},
-    trace::{Status, TraceContextExt, TracerProvider as _},
+    KeyValue,
+    logs::{AnyValue, LogRecord as _, Logger as _, LoggerProvider as _, Severity},
 };
-use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
+use opentelemetry_otlp::{Protocol, WithExportConfig, WithHttpConfig};
 use opentelemetry_sdk::{
     Resource,
-    logs::{SdkLogger, SdkLoggerProvider},
-    trace::{Sampler, SdkTracerProvider, SpanLimits},
+    error::OTelSdkResult,
+    logs::{
+        BatchConfigBuilder, BatchLogProcessor, LogBatch, LogExporter, SdkLogger, SdkLoggerProvider,
+    },
 };
-use std::{sync::Arc, time::SystemTime};
-use tracing_opentelemetry::OpenTelemetrySpanExt;
-use tracing_subscriber::{Layer as _, layer::SubscriberExt};
-#[cfg(test)]
-mod tests;
+use serde::{Deserialize, Serialize};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, SystemTime},
+};
+use tracing::instrument::WithSubscriber;
+use tracing_subscriber::{Layer, layer::SubscriberExt};
 
-pub(super) const TARGET: &str = "morphiecore.telemetry";
-const ATTEMPT_FINISHED: &str = "gateway.attempt.finished";
-
-pub(super) struct Telemetry {
-    dispatch: tracing::Dispatch,
-    logger: SdkLogger,
-    // Retained until all request/body owners release their Sink.
-    logger_provider: SdkLoggerProvider,
-    tracer_provider: SdkTracerProvider,
-    output: Output,
+/// Trusted deployment destination; no business input participates in this configuration.
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DiagnosticsConfig {
+    /// Complete OTLP/HTTP Logs URL, including `/v1/logs`.
+    pub endpoint: String,
+    /// Explicit opt-in for sanitized business payload snippets on failures.
+    #[serde(default)]
+    pub private_bodies: bool,
+    /// Shared retained-body budget across the four HTTP boundaries.
+    #[serde(default = "body_bytes")]
+    pub body_bytes: usize,
 }
-impl Telemetry {
-    pub(super) fn new(output: Output) -> Arc<Self> {
-        // SDK builders still read discarded environment defaults internally. Never
-        // let their diagnostics use an ambient subscriber or their defaults win.
-        tracing::dispatcher::with_default(&tracing::Dispatch::none(), || {
-            let resource = Resource::builder_empty()
-                .with_service_name("morphiecore")
-                .with_attribute(opentelemetry::KeyValue::new(
-                    "service.version",
-                    env!("CARGO_PKG_VERSION"),
-                ))
-                .build();
-            let tracer_provider = SdkTracerProvider::builder()
-                .with_resource(resource.clone())
-                .with_sampler(Sampler::AlwaysOn)
-                .with_span_limits(SpanLimits {
-                    max_events_per_span: 0,
-                    max_attributes_per_span: 16,
-                    max_links_per_span: 0,
-                    max_attributes_per_event: 0,
-                    max_attributes_per_link: 0,
-                })
-                .with_simple_exporter(super::export::LocalExporter::new(output.clone()))
-                .build();
-            let logger_provider = SdkLoggerProvider::builder()
-                .with_resource(resource)
-                .with_simple_exporter(super::export::LocalExporter::new(output.clone()))
-                .build();
-            let traces = tracing_opentelemetry::layer()
-                .with_tracer(tracer_provider.tracer("morphiecore.gateway"))
-                .with_error_events_to_status(false)
-                .with_error_events_to_exceptions(false)
-                .with_error_fields_to_exceptions(false)
-                .with_error_records_to_exceptions(false)
-                .with_location(false)
-                .with_threads(false)
-                .with_level(false)
-                .with_filter(tracing_subscriber::filter::filter_fn(|m| {
-                    m.is_span() && m.target() == TARGET && matches!(m.name(), "request" | "attempt")
-                }));
-            let logs = OpenTelemetryTracingBridge::new(&logger_provider).with_filter(
-                tracing_subscriber::filter::filter_fn(|m| {
-                    m.is_event() && m.target() == TARGET && m.name() == ATTEMPT_FINISHED
-                }),
-            );
-            let dispatch =
-                tracing::Dispatch::new(tracing_subscriber::registry().with(traces).with(logs));
-            Arc::new(Self {
-                dispatch,
-                logger: logger_provider.logger("morphiecore.gateway"),
-                logger_provider,
-                tracer_provider,
-                output,
-            })
-        })
+fn body_bytes() -> usize {
+    16 << 10
+}
+impl DiagnosticsConfig {
+    pub(crate) fn validate(&self) -> std::io::Result<()> {
+        if !(1024..=64 << 10).contains(&self.body_bytes) {
+            return Err(std::io::Error::other("invalid diagnostic body bounds"));
+        }
+        let url = url::Url::parse(&self.endpoint)
+            .map_err(|_| std::io::Error::other("invalid diagnostics endpoint"))?;
+        if !matches!(url.scheme(), "http" | "https")
+            || url.host_str().is_none()
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            return Err(std::io::Error::other("invalid diagnostics endpoint"));
+        }
+        // The exporter merges ambient headers even when with_headers is empty.
+        // Collector authentication is not an alternate credential-loading path.
+        if [
+            "OTEL_EXPORTER_OTLP_HEADERS",
+            "OTEL_EXPORTER_OTLP_LOGS_HEADERS",
+        ]
+        .iter()
+        .any(|name| std::env::var_os(name).is_some())
+        {
+            return Err(std::io::Error::other(
+                "ambient OTLP authentication is not supported",
+            ));
+        }
+        Ok(())
     }
-    pub(super) fn request(self: &Arc<Self>, id: &str, agent: Option<&str>) -> Request {
-        let root = tracing::dispatcher::with_default(
-            &self.dispatch,
-            || tracing::info_span!(target: TARGET, parent: None, "request", request_id = id, agent_id = agent),
-        );
-        Request {
-            telemetry: self.clone(),
-            root: Some(root),
-            attempt: None,
-            request_id: id.to_owned(),
-            agent_id: agent.map(str::to_owned),
+}
+struct Warning(Arc<AtomicBool>);
+impl<S: tracing::Subscriber> Layer<S> for Warning {
+    fn on_event(&self, event: &tracing::Event<'_>, _: tracing_subscriber::layer::Context<'_, S>) {
+        let metadata = event.metadata();
+        if metadata.target().starts_with("opentelemetry")
+            && *metadata.level() <= tracing::Level::WARN
+        {
+            self.0.store(true, Ordering::Relaxed);
         }
     }
 }
+#[derive(Debug)]
+struct Exporter {
+    inner: opentelemetry_otlp::LogExporter,
+    warning: Arc<AtomicBool>,
+    dispatch: tracing::Dispatch,
+}
+impl LogExporter for Exporter {
+    async fn export(&self, batch: LogBatch<'_>) -> OTelSdkResult {
+        let result = self
+            .inner
+            .export(batch)
+            .with_subscriber(self.dispatch.clone())
+            .await;
+        if self.warning.swap(false, Ordering::Relaxed) {
+            eprintln!("MorphieCore telemetry queue warning; records may be lost");
+        }
+        if result.is_err() {
+            eprintln!("MorphieCore telemetry export failed; records may be lost");
+            // SDK diagnostics must not echo a Collector's response data.
+            return Err(opentelemetry_sdk::error::OTelSdkError::InternalFailure(
+                "OTLP log export failed".into(),
+            ));
+        }
+        result
+    }
+    fn set_resource(&mut self, resource: &Resource) {
+        self.inner.set_resource(resource);
+    }
+    fn shutdown_with_timeout(&self, timeout: Duration) -> OTelSdkResult {
+        self.inner.shutdown_with_timeout(timeout)
+    }
+}
+struct Telemetry {
+    logger: SdkLogger,
+    provider: SdkLoggerProvider,
+    warnings: tracing::Dispatch,
+}
 impl Drop for Telemetry {
     fn drop(&mut self) {
-        // These local simple exporters only enqueue. No HTTP, retries or blocking
-        // file flush occurs in SDK shutdown; the writer drains after its senders go.
-        tracing::dispatcher::with_default(&tracing::Dispatch::none(), || {
-            if self
-                .logger_provider
-                .shutdown_with_timeout(std::time::Duration::from_millis(100))
-                .is_err()
-            {
-                self.output.encoding_failed();
-            }
-            if self
-                .tracer_provider
-                .shutdown_with_timeout(std::time::Duration::from_millis(100))
-                .is_err()
-            {
-                self.output.encoding_failed();
-            }
+        // Explicit flush owns draining; a last request/body owner must never wait on export.
+        tracing::dispatcher::with_default(&self.warnings, || {
+            let _ = self.provider.shutdown_with_timeout(Duration::ZERO);
         });
     }
 }
-
-pub(super) struct Request {
-    telemetry: Arc<Telemetry>,
-    root: Option<tracing::Span>,
-    attempt: Option<(tracing::Span, usize)>,
-    request_id: String,
-    agent_id: Option<String>,
-}
-impl Request {
-    pub(super) fn begin(&mut self, ordinal: usize) {
-        self.end(Some("interrupted"), false);
-        let attribute_ordinal = i64::try_from(ordinal).unwrap_or(i64::MAX);
-        self.attempt = Some((
-            tracing::dispatcher::with_default(
-                &self.telemetry.dispatch,
-                || tracing::info_span!(target: TARGET, parent: self.root.as_ref().unwrap(), "attempt", attempt = attribute_ordinal, request_id = self.request_id.as_str(), agent_id = self.agent_id.as_deref()),
-            ),
-            ordinal,
-        ));
-    }
-    pub(super) fn end(&mut self, code: Option<&'static str>, advanced: bool) {
-        let Some((attempt, ordinal)) = self.attempt.take() else {
-            return;
-        };
-        tracing::dispatcher::with_default(&self.telemetry.dispatch, || {
-            let ordinal = i64::try_from(ordinal).unwrap_or(i64::MAX);
-            attempt.set_status(match code {
-                Some(code) => Status::error(code),
-                None => Status::Ok,
-            });
-            attempt.in_scope(|| {
-                tracing::info!(name: "gateway.attempt.finished", target: TARGET,
-                    request_id = self.request_id.as_str(),
-                    agent_id = self.agent_id.as_deref(),
-                    attempt = ordinal,
-                    outcome = if code.is_some() {"failed"} else {"succeeded"},
-                    error_type = code, advanced);
-            });
-            drop(attempt);
-        });
-    }
-    pub(super) fn finish(mut self, record: &Record) {
-        self.end(Some("interrupted"), false);
-        let Some(root) = self.root.take() else {
-            return;
-        };
-        tracing::dispatcher::with_default(&self.telemetry.dispatch, || {
-            let complete = matches!(record.outcome, Outcome::Complete);
-            root.set_status(if complete {
-                Status::Ok
-            } else {
-                Status::error(record.outcome.label())
-            });
-            // Use the native log API for a structured body: the tracing bridge
-            // formats complex Debug values as strings. No second report is emitted.
-            let body = serde_json::to_value(record)
-                .ok()
-                .and_then(|v| super::export::body(v).ok());
-            if let Some(body) = body {
-                let mut log = self.telemetry.logger.create_log_record();
-                log.set_event_name(if record.generation.is_some() {
-                    "generation.request.finished"
-                } else {
-                    "gateway.request.finished"
-                });
-                log.set_target(TARGET);
-                log.set_timestamp(SystemTime::now());
-                log.set_severity_number(if complete {
-                    Severity::Info
-                } else {
-                    Severity::Error
-                });
-                log.set_severity_text(if complete { "INFO" } else { "ERROR" });
-                log.set_body(body);
-                log.add_attribute(
-                    "morphiecore.body.encoding",
-                    "json_optional_nulls_omitted_wide_uint_decimal",
+#[derive(Clone)]
+pub(in crate::gateway) struct Sink(Arc<Telemetry>);
+impl Sink {
+    pub(in crate::gateway) fn open(config: &DiagnosticsConfig) -> std::io::Result<Self> {
+        config.validate()?;
+        let endpoint = config.endpoint.clone();
+        // reqwest's blocking client must be constructed outside a Tokio runtime.
+        std::thread::spawn(move || {
+            tracing::dispatcher::with_default(&tracing::Dispatch::none(), || {
+                let client = reqwest::blocking::Client::builder()
+                    .no_proxy()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .timeout(Duration::from_secs(2))
+                    .build()
+                    .map_err(|_| std::io::Error::other("diagnostics HTTP client"))?;
+                let exporter = opentelemetry_otlp::LogExporter::builder()
+                    .with_http()
+                    .with_endpoint(endpoint)
+                    .with_protocol(Protocol::HttpJson)
+                    .with_timeout(Duration::from_secs(2))
+                    .with_http_client(client)
+                    .with_retry_policy(
+                        opentelemetry_otlp::RetryPolicy::default().with_max_retries(0),
+                    )
+                    .with_max_request_body_size(1 << 20)
+                    .build()
+                    .map_err(|_| std::io::Error::other("diagnostics exporter"))?;
+                let warning = Arc::new(AtomicBool::new(false));
+                let dispatch = tracing::Dispatch::new(
+                    tracing_subscriber::registry().with(Warning(warning.clone())),
                 );
-                let context = root.context();
-                let span = context.span();
-                let sc = span.span_context();
-                log.set_trace_context(sc.trace_id(), sc.span_id(), Some(sc.trace_flags()));
-                self.telemetry.logger.emit(log);
+                let processor = BatchLogProcessor::builder(Exporter {
+                    inner: exporter,
+                    warning: warning.clone(),
+                    dispatch,
+                })
+                .with_batch_config(
+                    BatchConfigBuilder::default()
+                        .with_max_queue_size(64)
+                        .with_max_export_batch_size(4)
+                        .with_scheduled_delay(Duration::from_millis(100))
+                        .build(),
+                )
+                .build();
+                Ok(Self::from_provider(
+                    SdkLoggerProvider::builder()
+                        .with_resource(
+                            Resource::builder_empty()
+                                .with_service_name("morphiecore")
+                                .with_attribute(KeyValue::new(
+                                    "service.version",
+                                    env!("CARGO_PKG_VERSION"),
+                                ))
+                                .build(),
+                        )
+                        .with_log_processor(processor)
+                        .build(),
+                    warning,
+                ))
+            })
+        })
+        .join()
+        .map_err(|_| std::io::Error::other("diagnostics initialization"))?
+    }
+    fn from_provider(provider: SdkLoggerProvider, warning: Arc<AtomicBool>) -> Self {
+        let logger = provider.logger("morphiecore.gateway");
+        Self(Arc::new(Telemetry {
+            logger,
+            provider,
+            warnings: tracing::Dispatch::new(tracing_subscriber::registry().with(Warning(warning))),
+        }))
+    }
+    #[cfg(test)]
+    pub(in crate::gateway) fn memory() -> (Self, opentelemetry_sdk::logs::InMemoryLogExporter) {
+        let exporter = opentelemetry_sdk::logs::InMemoryLogExporter::default();
+        (
+            Self::from_provider(
+                SdkLoggerProvider::builder()
+                    .with_resource(Resource::builder_empty().build())
+                    .with_simple_exporter(exporter.clone())
+                    .build(),
+                Arc::new(AtomicBool::new(false)),
+            ),
+            exporter,
+        )
+    }
+    pub(in crate::gateway) fn emit(
+        &self,
+        name: &'static str,
+        severity: Severity,
+        attributes: Vec<(opentelemetry::Key, AnyValue)>,
+        body: AnyValue,
+    ) {
+        tracing::dispatcher::with_default(&self.0.warnings, || {
+            let mut record = self.0.logger.create_log_record();
+            record.set_event_name(name);
+            record.set_target("morphiecore.gateway");
+            record.set_timestamp(SystemTime::now());
+            record.set_severity_number(severity);
+            record.set_severity_text(if severity == Severity::Warn {
+                "WARN"
             } else {
-                self.telemetry.output.encoding_failed();
-            }
-            drop(root);
+                "ERROR"
+            });
+            record.add_attributes(attributes);
+            record.set_body(body);
+            self.0.logger.emit(record);
         });
     }
-}
-impl Drop for Request {
-    fn drop(&mut self) {
-        self.end(Some("interrupted"), false);
-        if let Some(root) = self.root.take() {
-            tracing::dispatcher::with_default(&self.telemetry.dispatch, || {
-                root.set_status(Status::error("interrupted"));
-                drop(root);
-            });
+    pub(in crate::gateway) async fn flush(&self) {
+        let provider = self.0.provider.clone();
+        if !matches!(
+            tokio::task::spawn_blocking(move || provider.force_flush()).await,
+            Ok(Ok(()))
+        ) {
+            eprintln!("MorphieCore telemetry flush incomplete; records may be lost");
         }
     }
 }

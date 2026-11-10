@@ -459,37 +459,28 @@ async fn read_only_validation_checks_observation_configuration_without_creating_
     let root = boot.directory();
     let store = root.join("credentials");
     super::Bootstrap::validate(&root.join("gateway.json"), Some(&store), None).unwrap();
-    let owned = b"{\"kind\":\"morphiecore_diagnostics\",\"version\":1,\"event\":\"file\"}\n{\"unfinished\":";
-    super::test_support::write_private(&root.join("owned.jsonl"), owned);
-    super::test_support::write_private(&root.join("foreign.jsonl"), b"unrelated synthetic file");
+    let collector = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    collector.set_nonblocking(true).unwrap();
+    let endpoint = format!("http://{}/v1/logs", collector.local_addr().unwrap());
+    let mut config = json!({"version":1,"auth_file":"auth.json","diagnostics":{"endpoint":endpoint,"private_bodies":true}});
     super::test_support::write_private(
         &root.join("gateway.json"),
-        &serde_json::to_vec(&json!({
-            "version":1,"auth_file":"auth.json","diagnostics":"owned.jsonl"
-        }))
-        .unwrap(),
+        &serde_json::to_vec(&config).unwrap(),
     );
     super::Bootstrap::validate(&root.join("gateway.json"), Some(&store), None).unwrap();
-    assert_eq!(
-        std::fs::read(root.join("owned.jsonl")).unwrap(),
-        owned,
-        "validation must not repair a partial tail"
+    let explanation =
+        super::Bootstrap::explain(&root.join("gateway.json"), Some(&store), None).unwrap();
+    assert!(!explanation.to_string().contains(&endpoint));
+    assert!(
+        matches!(collector.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock)
     );
-    assert!(!root.join("owned.jsonl.lock").exists());
     for invalid in [
-        json!({"diagnostics":""}),
-        json!({"diagnostics":"missing-directory/events.jsonl"}),
-        json!({"diagnostics":"credentials"}),
-        json!({"diagnostics":"foreign.jsonl"}),
-        json!({"capture":{"path":"capture.jsonl","client_request":{"headers":true},"max_unit_bytes":0}}),
-        json!({"capture":{"path":"foreign.jsonl","client_request":{"headers":true}}}),
-        json!({"capture":{"path":"missing-directory/capture.jsonl","client_request":{"headers":true}}}),
+        json!({"endpoint":"file:///private/diagnostics"}),
+        json!({"endpoint":"https://user:password@example.invalid/v1/logs"}),
+        json!({"endpoint":"https://example.invalid/v1/logs?token=private"}),
+        json!({"endpoint":endpoint,"body_bytes":0}),
     ] {
-        let mut config = json!({"version":1,"auth_file":"auth.json","bind":"127.0.0.1:0"});
-        config
-            .as_object_mut()
-            .unwrap()
-            .extend(invalid.as_object().unwrap().clone());
+        config["diagnostics"] = invalid;
         super::test_support::write_private(
             &root.join("gateway.json"),
             &serde_json::to_vec(&config).unwrap(),
@@ -497,14 +488,7 @@ async fn read_only_validation_checks_observation_configuration_without_creating_
         assert!(
             super::Bootstrap::validate(&root.join("gateway.json"), Some(&store), None).is_err()
         );
-        assert!(super::Bootstrap::from_directory(root).is_err());
     }
-    assert!(!root.join("capture.jsonl").exists());
-    assert!(!root.join("missing-directory").exists());
-    assert_eq!(
-        std::fs::read(root.join("foreign.jsonl")).unwrap(),
-        b"unrelated synthetic file"
-    );
 }
 #[test]
 fn account_names_cannot_duplicate_one_security_target() {

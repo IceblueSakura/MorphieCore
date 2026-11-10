@@ -38,6 +38,7 @@ async fn catalog_inspection_needs_neither_home_nor_credentials() {
 #[cfg(unix)]
 #[tokio::test]
 async fn fresh_account_setup_live_runner_and_diagnostics_share_the_production_loader() {
+    let collector = crate::telemetry::Collector::start().await;
     use axum::{Json, http::HeaderMap, routing::post};
     use std::{
         io::Write,
@@ -177,8 +178,8 @@ import json, sys
 from pathlib import Path
 sys.path.insert(0, "tests/sdk")
 from messages_inputs_live import Gateway, GateError, MODEL, CAP
-root, accounts, store = map(Path, sys.argv[2:])
-gateway = Gateway(Path(sys.argv[1]), root, 1, accounts=accounts, store=store)
+root, accounts, store = map(Path, sys.argv[2:5])
+gateway = Gateway(Path(sys.argv[1]), root, 1, accounts=accounts, store=store, diagnostics=sys.argv[5])
 try:
     try:
         gateway.generate({"model":MODEL,"messages":[{"role":"user","content":"synthetic"}],
@@ -189,16 +190,13 @@ try:
         raise AssertionError("synthetic failure was hidden")
 finally:
     gateway.close()
-records = [json.loads(line) for line in (root / "diagnostics.jsonl").read_text().splitlines()]
-requests = [r for r in records if r.get("event") == "request"]
-assert len(requests) == 1 and requests[0]["outcome"] == "error"
-assert len(requests[0]["candidates"]) == 1
 "#,
         ])
         .arg(env!("CARGO_BIN_EXE_morphiecore"))
         .arg(&run)
         .arg(&accounts)
-        .arg(&store);
+        .arg(&store)
+        .arg(&collector.endpoint);
     let result = child_process::run(&mut command, b"", Duration::from_secs(15), 16 << 10)
         .await
         .unwrap();
@@ -210,15 +208,10 @@ assert len(requests[0]["candidates"]) == 1
     assert_eq!(calls.lock().unwrap().len(), 1);
     assert_eq!(calls.lock().unwrap()[0].0, "synthetic-primary");
     assert_eq!(calls.lock().unwrap()[0].1["max_tokens"], 2048);
-    let diagnostics = std::fs::read(run.join("diagnostics.jsonl")).unwrap();
-    let mut config: Value =
-        serde_json::from_slice(&std::fs::read(run.join("gateway.json")).unwrap()).unwrap();
-    config["capture"]["path"] = json!(run.join("validation-capture.jsonl"));
-    std::fs::write(
-        run.join("gateway.json"),
-        serde_json::to_vec(&config).unwrap(),
-    )
-    .unwrap();
+    let exported = collector
+        .wait(|logs| logs.iter().any(|log| log["eventName"] == "gateway.failure"))
+        .await
+        .len();
     let mut validation = tokio::process::Command::new(env!("CARGO_BIN_EXE_morphiecore"));
     validation.env_clear().args([
         "--config",
@@ -234,11 +227,7 @@ assert len(requests[0]["candidates"]) == 1
         serde_json::from_slice::<Value>(&validated.stdout).unwrap(),
         json!({"valid":true})
     );
-    assert_eq!(
-        std::fs::read(run.join("diagnostics.jsonl")).unwrap(),
-        diagnostics
-    );
-    assert!(!run.join("validation-capture.jsonl").exists());
+    assert_eq!(collector.records().len(), exported);
     let mut explanation = tokio::process::Command::new(env!("CARGO_BIN_EXE_morphiecore"));
     explanation.env_clear().args([
         "--config",
@@ -255,9 +244,9 @@ assert len(requests[0]["candidates"]) == 1
         String::from_utf8_lossy(&explained.stderr)
     );
     let effective: Value = serde_json::from_slice(&explained.stdout).unwrap();
-    assert_eq!(effective["capture"]["enabled"], true);
-    assert_eq!(effective["capture"]["upstream_request"]["body"], true);
-    assert!(effective["capture"].get("path").is_none());
+    assert_eq!(effective["diagnostics_enabled"], true);
+    assert_eq!(effective["diagnostics"]["private_bodies"], false);
+    assert!(effective["diagnostics"].get("endpoint").is_none());
     assert_eq!(effective["selections"][0]["account"], "primary");
     assert_eq!(effective["selections"][1]["account"], "backup");
     assert_eq!(
@@ -278,11 +267,7 @@ assert len(requests[0]["candidates"]) == 1
         1,
         "explanation must not send or probe"
     );
-    assert_eq!(
-        std::fs::read(run.join("diagnostics.jsonl")).unwrap(),
-        diagnostics
-    );
-    assert!(!run.join("validation-capture.jsonl").exists());
+    assert_eq!(collector.records().len(), exported);
     let status = child_process::run(
         &mut auth(&["status"]),
         b"",
@@ -543,263 +528,102 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
     process.kill().await.unwrap();
     process.wait().await.unwrap();
 }
-#[cfg(unix)]
 #[tokio::test]
-async fn cli_diagnostics_rotate_recover_and_refuse_unowned_files_before_listening() {
-    const SECOND_KEY: &str = "synthetic-second-agent-client-key-0001";
-    use morphiecore::credential::{CredentialManager, Secret};
-    use std::{
-        io::Write,
-        os::unix::fs::OpenOptionsExt,
-        process::Stdio,
-        sync::atomic::{AtomicUsize, Ordering},
-    };
+async fn private_failure_context_reaches_otlp_with_trusted_identity_and_redacted_bodies() {
+    use axum::{Json, routing::post};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tower::ServiceExt;
+    let collector = crate::telemetry::Collector::start().await;
     let calls = Arc::new(AtomicUsize::new(0));
     let observed = calls.clone();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let origin = format!("http://{}", listener.local_addr().unwrap());
     let _upstream = Guard(tokio::spawn(async move {
-        axum::serve(listener, Router::new().route("/v1/chat/completions", axum::routing::post(move || {
-            observed.fetch_add(1, Ordering::SeqCst);
-            async { axum::Json(json!({"id":"synthetic","object":"chat.completion","created":1,
-                "model":"qwen3.8-flash","choices":[{"index":0,"message":{"role":"assistant","content":"done"},
-                    "finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}})) }
+        axum::serve(listener, Router::new().route("/chat/completions", post(move || {
+            let calls = observed.clone();
+            async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                (StatusCode::BAD_REQUEST, Json(json!({"error":{"message":"synthetic business failure","api_key":"upstream-secret"}})))
+            }
         }))).await.unwrap();
     }));
-    let directory = filesystem::private_directory();
-    let root = directory.path();
-    let write = |name: &str, bytes: &[u8]| {
-        std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(root.join(name))
-            .unwrap()
-            .write_all(bytes)
-            .unwrap();
-    };
-    let manager = CredentialManager::new(root.join("credentials"), vec![]).unwrap();
-    manager
-        .add_api_key(
-            "aliyun-dashscope-cn",
-            "one",
-            Secret::new("synthetic-rotation-upstream".into()).unwrap(),
-        )
+    let gate = support::gateway(&origin, Default::default())
+        .with_diagnostics(morphiecore::gateway::DiagnosticsConfig {
+            endpoint: collector.endpoint.clone(),
+            private_bodies: true,
+            body_bytes: 4096,
+        })
         .unwrap();
-    write("accounts.json",&serde_json::to_vec(&json!({"version":1,"providers":{"aliyun-dashscope-cn":{"accounts":[{
-        "name":"primary","enabled":true,"credential":{"alias":"one"},"base_url":format!("{origin}/v1")
-    }]}}})).unwrap());
-    write(
-        "auth.json",
-        &serde_json::to_vec(&json!({"version":1,"agents":[
-            {"agent_id":"fixture-agent","key":support::CLIENT_KEY},
-            {"agent_id":"second-agent","name":"Private display label","key":SECOND_KEY,
-                "desc":"Private maintenance note"}
-        ]}))
-        .unwrap(),
-    );
-    let mut config = json!({"version":1,"auth_file":"auth.json","bind":"127.0.0.1:0",
-        "models_file":"models.json","diagnostics":"diagnostics.jsonl","delivery":{"exchange_timeout_ms":5000}});
-    write("gateway.json", &serde_json::to_vec(&config).unwrap());
-    write(
-        "models.json",
-        &serde_json::to_vec(&json!({"version":1,"models":{"qwen3.8-flash":{
-        "candidates":[{"binding":"dashscope-flash-chat"}]}}}))
-        .unwrap(),
-    );
-    let header = b"{\"kind\":\"morphiecore_diagnostics\",\"version\":1,\"event\":\"file\"}\n";
-    let start =
-        b"{\"kind\":\"morphiecore_diagnostics\",\"version\":1,\"event\":\"file\",\"padding\":\"";
-    let mut seed = header.to_vec();
-    seed.extend(start);
-    seed.extend(vec![b'x'; (1 << 20) - header.len() - start.len() - 3]);
-    seed.extend(b"\"}\n");
-    assert_eq!(seed.len(), 1 << 20);
-    write("diagnostics.jsonl", &seed);
-    let command = || {
-        let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_morphiecore"));
-        child
-            .arg("--config")
-            .arg(root.join("gateway.json"))
-            .arg("--credentials-dir")
-            .arg(root.join("credentials"))
-            .env_clear()
-            .env("HOME", root)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        child
-    };
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .timeout(Duration::from_secs(3))
-        .build()
+    let request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions?api_key=query-secret")
+        .header("authorization", format!("Bearer {}", support::CLIENT_KEY))
+        .header("x-private", "private-header")
+        .header("x-request-id", "forged-request")
+        .header("agent_id", "forged-agent")
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(
+            json!({"model":"public-model",
+            "messages":[{"role":"user","content":"business-prompt"}],"api_key":"client-secret"})
+            .to_string(),
+        ))
         .unwrap();
-    let path = root.join("diagnostics.jsonl");
-    for run in 0..2 {
-        if run == 1 {
-            std::fs::OpenOptions::new()
-                .append(true)
-                .open(&path)
-                .unwrap()
-                .write_all(b"{\"event\":")
-                .unwrap();
-        }
-        let mut child = command().spawn().unwrap();
-        let mut output = tokio::io::BufReader::new(child.stdout.take().unwrap());
-        let ready = match child_line::read_line(&mut output, Duration::from_secs(3), 127).await {
-            Ok(line) => line,
-            Err(error) => {
-                use tokio::io::AsyncReadExt;
-                let mut message = Vec::new();
-                tokio::time::timeout(
-                    Duration::from_secs(3),
-                    child
-                        .stderr
-                        .take()
-                        .unwrap()
-                        .take(4096)
-                        .read_to_end(&mut message),
-                )
-                .await
-                .unwrap()
-                .unwrap();
-                panic!(
-                    "synthetic CLI {error}: {}",
-                    String::from_utf8_lossy(&message)
-                );
-            }
-        };
-        let base = ready
-            .trim()
-            .strip_prefix("MorphieCore listening on http://127.0.0.1:")
-            .unwrap();
-        assert!(!base.is_empty() && base.bytes().all(|b| b.is_ascii_digit()));
-        let response = client
-            .post(format!("http://127.0.0.1:{base}/v1/chat/completions"))
-            .bearer_auth(if run == 0 {
-                support::CLIENT_KEY
-            } else {
-                SECOND_KEY
-            })
-            .header("x-morphiecore-agent-id", "forged-agent")
-            .header("x-private-business", "synthetic-arbitrary-header-marker")
-            .json(&json!({"model":"qwen3.8-flash","max_completion_tokens":32,
-                "reasoning_effort":"none",
-                "messages":[{"role":"user","content":"synthetic-private-prompt-marker"}]}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), 200);
-        assert_eq!(
-            response.json::<Value>().await.unwrap()["choices"][0]["message"]["content"],
-            "done"
-        );
-        assert_eq!(
-            unsafe { libc::kill(child.id().unwrap() as libc::pid_t, libc::SIGINT) },
-            0
-        );
-        assert!(
-            tokio::time::timeout(Duration::from_secs(5), child.wait())
-                .await
-                .unwrap()
-                .unwrap()
-                .success()
-        );
-        for file in [&path, &root.join("diagnostics.jsonl.1")] {
-            let data = std::fs::read(file).unwrap();
-            assert!(data.len() <= 1 << 20);
-            for line in data
-                .split(|byte| *byte == b'\n')
-                .filter(|line| !line.is_empty())
-            {
-                serde_json::from_slice::<Value>(line).unwrap();
-            }
-            let data = String::from_utf8(data).unwrap();
-            for marker in [
-                support::CLIENT_KEY,
-                SECOND_KEY,
-                "Private display label",
-                "Private maintenance note",
-                "forged-agent",
-                "synthetic-rotation-upstream",
-                "synthetic-private-prompt-marker",
-                "synthetic-arbitrary-header-marker",
-            ] {
-                assert!(!data.contains(marker));
-            }
-        }
-    }
-    assert_eq!(calls.load(Ordering::SeqCst), 2);
-    let records: Vec<Value> = std::fs::read_to_string(&path)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
-    let requests: Vec<_> = records.iter().filter(|r| r["event"] == "request").collect();
-    assert_eq!(requests.len(), 2);
-    assert!(
-        requests
-            .iter()
-            .all(|r| r["outcome"] == "complete" && r["candidates"].as_array().unwrap().len() == 1)
-    );
-    assert_eq!(requests[0]["agent_id"], "fixture-agent");
-    assert_eq!(requests[1]["agent_id"], "second-agent");
-    assert_ne!(
-        requests[0]["request_id"]
-            .as_str()
-            .unwrap()
-            .split(':')
-            .next(),
-        requests[1]["request_id"]
-            .as_str()
-            .unwrap()
-            .split(':')
-            .next()
-    );
-    let health = records
+    let response = gate.router().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), 502);
+    axum::body::to_bytes(response.into_body(), 65536)
+        .await
+        .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    gate.flush_diagnostics().await;
+    let logs = collector
+        .wait(|logs| {
+            logs.iter()
+                .any(|log| log["eventName"] == "gateway.failure.response")
+        })
+        .await;
+    let failure = logs
         .iter()
-        .find(|r| r["event"] == "logging_status")
+        .find(|log| log["eventName"] == "gateway.failure")
         .unwrap();
-    assert_eq!(health["recovered_tail_bytes"], 9);
-    for counter in ["dropped", "failed", "flush_incomplete"] {
-        assert_eq!(health[counter], 0);
-    }
-    assert_eq!(health["writer_failed"], false);
+    assert_eq!(failure["severityText"], "WARN");
     assert_eq!(
-        std::fs::read(root.join("diagnostics.jsonl.1")).unwrap(),
-        seed
+        crate::telemetry::attribute(failure, "http.response.status_code")["intValue"],
+        "400"
     );
-    for capture in [false, true] {
-        if capture {
-            write("capture.jsonl", b"synthetic-existing-capture");
-            config["capture"] =
-                json!({"path":root.join("capture.jsonl"),"client_request":{"headers":true}});
-            config["diagnostics"] = json!("diagnostics.jsonl");
-        } else {
-            write("foreign.log", b"synthetic-unrelated-file");
-            config["diagnostics"] = json!("foreign.log");
-        }
-        write("gateway.json", &serde_json::to_vec(&config).unwrap());
-        let output = child_process::run(&mut command(), b"", Duration::from_secs(5), 16 << 10)
-            .await
-            .unwrap();
-        assert!(!output.status.success() && output.stdout.is_empty());
-        let (name, sentinel) = if capture {
-            ("capture.jsonl", b"synthetic-existing-capture".as_slice())
-        } else {
-            ("foreign.log", b"synthetic-unrelated-file".as_slice())
-        };
-        assert_eq!(std::fs::read(root.join(name)).unwrap(), sentinel);
-        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        crate::telemetry::attribute(failure, "agent_id")["stringValue"],
+        "fixture-agent"
+    );
+    let id = crate::telemetry::attribute(failure, "request_id")["stringValue"]
+        .as_str()
+        .unwrap();
+    assert_ne!(id, "forged-request");
+    for log in &logs {
+        assert_eq!(
+            crate::telemetry::attribute(log, "request_id")["stringValue"],
+            id
+        );
+    }
+    let text = serde_json::to_string(&logs).unwrap();
+    assert!(text.contains("business-prompt") && text.contains("synthetic business failure"));
+    for secret in [
+        support::CLIENT_KEY,
+        "synthetic-upstream-credential-0001",
+        "client-secret",
+        "upstream-secret",
+        "query-secret",
+        "private-header",
+        "forged-agent",
+    ] {
+        assert!(!text.contains(secret), "{secret}");
     }
 }
 
 #[tokio::test]
-async fn capture_retention_saturation_keeps_http_healthy_and_auth_redacted() {
+async fn unavailable_or_stalled_export_cannot_block_admission_or_a_healthy_generation() {
+    use axum::{Json, body::Body, response::IntoResponse, routing::post};
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use tower::ServiceExt;
     let calls = Arc::new(AtomicUsize::new(0));
     let observed = calls.clone();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -807,68 +631,104 @@ async fn capture_retention_saturation_keeps_http_healthy_and_auth_redacted() {
     let _upstream = Guard(tokio::spawn(async move {
         axum::serve(
             listener,
-            Router::new().fallback(move || {
-                observed.fetch_add(1, Ordering::SeqCst);
-                async { StatusCode::BAD_GATEWAY }
-            }),
+            Router::new().route(
+                "/chat/completions",
+                post(move |Json(request): Json<Value>| {
+                    let calls = observed.clone();
+                    async move {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        if request["stream"] == true {
+                            let wire = crate::chat_wire::events(2)
+                                .iter()
+                                .map(|event| format!("data: {event}\n\n"))
+                                .collect::<String>()
+                                + "data: [DONE]\n\n";
+                            ([("content-type", "text/event-stream")], wire).into_response()
+                        } else {
+                            Json(crate::chat_wire::response(2)).into_response()
+                        }
+                    }
+                }),
+            ),
         )
         .await
         .unwrap();
     }));
-    let directory = filesystem::private_directory();
-    let path = directory.path().join("capture.jsonl");
-    let gate = support::gateway(&origin, Default::default())
-        .with_capture(
-            serde_json::from_value(json!({"path":path,"client_request":{"headers":true},
-            "max_unit_bytes":1024,"max_exchange_bytes":1024,"max_total_bytes":1024}))
-            .unwrap(),
-        )
-        .unwrap();
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let origin = format!("http://{}", listener.local_addr().unwrap());
-    let (shutdown, stopped) = tokio::sync::oneshot::channel();
-    let server = gate.clone().serve(listener, async {
-        let _ = stopped.await;
-    });
-    let mut serving = Guard(tokio::spawn(async move { server.await.unwrap() }));
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .timeout(Duration::from_secs(3))
-        .build()
-        .unwrap();
-    for _ in 0..8 {
-        let response = client
-            .get(format!("{origin}/v1/models"))
-            .bearer_auth(support::CLIENT_KEY)
-            .send()
-            .await
+    for stalled in [false, true] {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/v1/logs", listener.local_addr().unwrap());
+        let _collector = if stalled {
+            Some(Guard(tokio::spawn(async move {
+                axum::serve(
+                    listener,
+                    Router::new().route(
+                        "/v1/logs",
+                        post(|| async { std::future::pending::<StatusCode>().await }),
+                    ),
+                )
+                .await
+                .unwrap();
+            })))
+        } else {
+            drop(listener);
+            None
+        };
+        let gate = support::gateway(&origin, Default::default())
+            .with_diagnostics(morphiecore::gateway::DiagnosticsConfig {
+                endpoint,
+                private_bodies: false,
+                body_bytes: 1024,
+            })
             .unwrap();
-        assert_eq!(response.status(), 200);
-        response.bytes().await.unwrap();
-        gate.flush_diagnostics().await;
-    }
-    let data = std::fs::read_to_string(&path).unwrap();
-    assert!(
-        data.len() <= 1024 && data.contains("[REDACTED]") && !data.contains(support::CLIENT_KEY)
-    );
-    let records: Vec<Value> = data
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
-    assert!(!records.is_empty() && records.len() < 8);
-    assert!(
-        records
-            .iter()
-            .all(|record| record["boundary"] == "client_request")
-    );
-    let status = gate.capture_status().unwrap();
-    assert_eq!(status.queue_dropped, 0);
-    assert!(!status.write_failed);
-    assert_eq!(status.retention_dropped, 8 - records.len() as u64);
-    assert_eq!(calls.load(Ordering::SeqCst), 0);
-    shutdown.send(()).unwrap();
-    tokio::time::timeout(Duration::from_secs(3), &mut serving.0)
+        // More failure events than the bounded SDK queue, while its exporter is stalled.
+        for _ in 0..80 {
+            let response = tokio::time::timeout(
+                Duration::from_secs(5),
+                gate.router().oneshot(
+                    axum::http::Request::builder()
+                        .method("POST")
+                        .uri("/v1/chat/completions")
+                        .header("authorization", format!("Bearer {}", support::CLIENT_KEY))
+                        .header("content-type", "application/json")
+                        .body(Body::from("invalid JSON"))
+                        .unwrap(),
+                ),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(response.status(), 400);
+            axum::body::to_bytes(response.into_body(), 4096)
+                .await
+                .unwrap();
+        }
+        let response = tokio::time::timeout(
+            Duration::from_secs(5),
+            gate.router().oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("authorization", format!("Bearer {}", support::CLIENT_KEY))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"model":"public-model","messages":[{"role":"user","content":"ok"}]})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            ),
+        )
         .await
         .unwrap()
         .unwrap();
+        assert_eq!(response.status(), 200);
+        let body: Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), 65536)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(body["choices"][0]["message"]["content"], "old 🧪");
+        gate.shutdown();
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
 }

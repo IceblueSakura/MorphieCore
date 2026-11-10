@@ -123,7 +123,7 @@ async fn produce(
 ) -> Result<Completion, ApiError> {
     let retry_after = crate::gateway::error::retry_after(upstream.headers());
     let json = attempt.static_body().is_some();
-    let mut capture = trace.capture.as_ref().and_then(|capture| {
+    let mut capture = trace.capture.as_ref().map(|capture| {
         capture.body(
             crate::gateway::capture::Boundary::UpstreamResponse,
             Some(trace.capture_attempt),
@@ -173,7 +173,7 @@ async fn produce(
             .store(false, std::sync::atomic::Ordering::Release);
         let Some(chunk) = chunk else { break };
         trace.stage(Stage::Intake);
-        trace.received(chunk.len());
+
         if !json && let Some(capture) = &mut capture {
             capture.feed(&chunk);
         }
@@ -236,19 +236,11 @@ async fn produce(
                 }
             }
             let evidence = attempt.take_evidence();
-            trace.events(&events, &evidence);
-            if let Some(report) = attempt.pending_source_usage_report() {
-                trace.report.source_usage(report, &evidence);
-            }
+
             trace
                 .report
                 .accept(crate::execution::report::View::SourceIntake, evidence);
-            trace.ignored_events(attempt.ignored_events());
-            trace.reported_settings(
-                attempt
-                    .metadata()
-                    .and_then(|metadata| metadata.context.settings()),
-            );
+
             if let Some(failure) = retry_failure {
                 return Err(failure);
             }
@@ -333,23 +325,10 @@ async fn produce(
     let evidence = attempt.take_evidence();
     // Stream reports were observed with their source-unit provenance. Re-reading
     // the materialized response after draining those deltas would lose that basis.
-    if json && let Ok(response) = attempt.response() {
-        for report in response.semantic.usage_reports().reports() {
-            trace.report.source_usage(report, &evidence);
-        }
-    }
     trace
         .report
         .accept(crate::execution::report::View::SourceIntake, evidence);
-    trace.report.update(|a| {
-        a.source_eof = true;
-        a.task_outcome = attempt.response().ok().map(|r| r.semantic.outcome().into());
-    });
-    trace.reported_settings(
-        attempt
-            .metadata()
-            .and_then(|metadata| metadata.context.settings()),
-    );
+
     // A valid failed task still established source facts and EOF. Client error
     // presentation must not erase them or become the authoritative source cause.
     let mut failure = None;
@@ -406,9 +385,6 @@ async fn produce(
         let frames = frames.map_err(projection_failed(trace, ConversionBoundary::EventEncode))?;
         (frames, None)
     } else {
-        if let Some(usage) = attempt.response().ok().and_then(|r| r.semantic.usage()) {
-            trace.reported_usage(usage);
-        }
         let snapshot = delivery.encode_json_snapshot(attempt);
 
         let (response, batch) =
@@ -456,7 +432,7 @@ async fn error_body(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     let json = content_type.starts_with("application/json");
-    let mut capture = trace.capture.as_ref().and_then(|capture| {
+    let mut capture = trace.capture.as_ref().map(|capture| {
         capture.body(
             crate::gateway::capture::Boundary::UpstreamResponse,
             Some(trace.capture_attempt),
@@ -509,15 +485,7 @@ pub(in crate::gateway) async fn produce_candidate(
 ) -> Result<Produced, ApiError> {
     trace.stage(Stage::ResponseHead);
     let status = upstream.status().as_u16();
-    trace.head(status, upstream.headers());
-    if let Some(capture) = &trace.capture {
-        capture.head(
-            crate::gateway::capture::Boundary::UpstreamResponse,
-            Some(trace.capture_attempt),
-            upstream.headers(),
-            None,
-        );
-    }
+    trace.head(status);
     if !(200..300).contains(&status) {
         let class = match crate::provider::classify_status(status) {
             crate::provider::StatusClass::Failure(c) => c,
@@ -686,7 +654,6 @@ pub(in crate::gateway) async fn produce_candidate(
         trace,
     )
     .await;
-    trace.coalescing_peak(delivery.coalescing_peak_bytes());
 
     if result.is_err() {
         // An unpublished failed attempt must not acquire commitment by flushing.
@@ -720,7 +687,7 @@ mod tests {
     use futures_util::StreamExt;
 
     #[tokio::test]
-    async fn retryable_failed_terminal_records_its_usage_before_discarding_output() {
+    async fn retryable_failed_terminal_stops_before_output_publication() {
         let response = serde_json::json!({"id":"failed-attempt","object":"response","created_at":1,
             "model":"fixture-model","status":"failed","output":[],
             "error":{"code":"server_error","message":"synthetic failure"},
@@ -764,7 +731,7 @@ mod tests {
             None,
             &axum::extract::Request::new(axum::body::Body::empty()),
         );
-        trace.report.begin(1);
+        trace.report.begin();
         let error = produce(
             upstream,
             "chatgpt",
@@ -782,9 +749,6 @@ mod tests {
         .unwrap();
         assert!(error.recovery.retryable);
         assert_eq!(error.retry_after, Some(7));
-        let usage = serde_json::to_value(trace.report.attempt().source_usage).unwrap();
-        assert_eq!(usage["reports"][0]["counts"]["input_tokens"], 7);
-        assert_eq!(usage["reports"][0]["counts"]["output_tokens"], 3);
         assert!(!state.published.load(std::sync::atomic::Ordering::Acquire));
     }
 

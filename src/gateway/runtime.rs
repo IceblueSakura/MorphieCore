@@ -129,7 +129,7 @@ impl BoundEntry {
     }
 }
 pub(super) struct Runtime {
-    pub(super) oauth_accounts: Vec<crate::credential::AccessBinding>,
+    pub(super) oauth_accounts: Vec<credentials::RenewalAccount>,
     pub(super) history: Arc<crate::gateway::generation::history::Store>,
     pub(super) diagnostics: Option<diagnostics::Sink>,
     pub(super) capture: Option<super::capture::Sink>,

@@ -36,27 +36,5 @@
     "history_ttl_ms": 1800000
   },
   "diagnostics": null,
-  "capture": {
-    "path": "capture/exchanges.jsonl",
-    "client_request": {
-      "headers": false,
-      "body": false
-    },
-    "upstream_request": {
-      "headers": false,
-      "body": false
-    },
-    "upstream_response": {
-      "headers": false,
-      "body": false
-    },
-    "client_response": {
-      "headers": false,
-      "body": false
-    },
-    "max_unit_bytes": 262144,
-    "max_exchange_bytes": 4194304,
-    "max_total_bytes": 67108864
-  },
   "accounts_file": "accounts.json"
 }

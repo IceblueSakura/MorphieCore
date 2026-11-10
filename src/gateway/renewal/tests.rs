@@ -364,7 +364,7 @@ async fn listener_cancellation_stops_inflight_renewal_without_reusing_consumed_m
 }
 #[tokio::test(start_paused = true)]
 async fn renewal_timeout_is_bounded_and_never_retried() {
-    let (_dir, gate, manager, calls, _) = setup(
+    let (_dir, mut gate, manager, calls, _) = setup(
         true,
         Limits {
             oauth_renewal_timeout: std::time::Duration::from_secs(2),
@@ -372,11 +372,28 @@ async fn renewal_timeout_is_bounded_and_never_retried() {
         },
     )
     .await;
+    let (sink, exporter) = crate::gateway::diagnostics::Sink::memory();
+    let state = Arc::get_mut(&mut gate.state).unwrap();
+    state.diagnostics = Some(sink);
+    state.oauth_accounts[0].name = Some("configured-account".into());
     let mut maintenance = Box::pin(gate.renew_credentials());
     poll_maintenance(&mut maintenance).await;
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     tokio::time::advance(gate.state.limits.oauth_renewal_timeout).await;
     poll_maintenance(&mut maintenance).await;
+    let logs = exporter.get_emitted_logs().unwrap();
+    assert_eq!(logs.len(), 1);
+    assert_eq!(
+        logs[0].record.severity_number(),
+        Some(opentelemetry::logs::Severity::Warn)
+    );
+    assert!(
+        logs[0]
+            .record
+            .attributes_iter()
+            .any(|(key, value)| key.as_str() == "account"
+                && *value == opentelemetry::logs::AnyValue::from("configured-account"))
+    );
     assert_eq!(
         manager.list(None).unwrap()[0].state,
         AccountState::NeedsReauthorization

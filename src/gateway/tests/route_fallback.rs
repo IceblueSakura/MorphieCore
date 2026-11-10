@@ -195,8 +195,6 @@ async fn selected_target_never_changes_after_dispatch() {
             crate::topology::ModelMetadata::new(1, "Synthetic Developer").unwrap(),
         )])
         .unwrap();
-        let diagnostics = crate::test_files::private_directory();
-        let diagnostic_path = diagnostics.path().join("events.jsonl");
         let mut gateway = Gateway::new(
             topology,
             TaskEntries {
@@ -225,7 +223,7 @@ async fn selected_target_never_changes_after_dispatch() {
         .unwrap();
         if status == 503 && !stream {
             Arc::get_mut(&mut gateway.state).unwrap().diagnostics =
-                Some(crate::gateway::diagnostics::Sink::open(&diagnostic_path).unwrap());
+                Some(crate::gateway::diagnostics::Sink::memory().0);
         }
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();

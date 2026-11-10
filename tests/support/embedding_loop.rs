@@ -21,7 +21,6 @@ use std::{
 use tokio::net::TcpListener;
 pub const CLIENT_KEY: &str = "synthetic-embedding-client-key-0001";
 pub struct Fixture {
-    pub gateway: Gateway,
     pub base: String,
     pub seen: Arc<Mutex<Vec<Value>>>,
     tasks: Vec<tokio::task::AbortHandle>,
@@ -171,42 +170,23 @@ async fn answer(
         .unwrap()
 }
 impl Fixture {
-    pub async fn start(
-        encodings: EncodingSupport,
-        capture: Option<&std::path::Path>,
-        diagnostics: Option<&std::path::Path>,
-    ) -> Self {
-        Self::start_with_dimensions(encodings, 2, 4, capture, diagnostics).await
+    pub async fn start(encodings: EncodingSupport) -> Self {
+        Self::start_with_dimensions(encodings, 2, 4).await
     }
     pub async fn start_with_dimensions(
         encodings: EncodingSupport,
         default_dimensions: usize,
         max_inputs: usize,
-        capture: Option<&std::path::Path>,
-        diagnostics: Option<&std::path::Path>,
     ) -> Self {
-        Self::start_profile(
-            encodings,
-            default_dimensions,
-            max_inputs,
-            capture,
-            diagnostics,
-            false,
-        )
-        .await
+        Self::start_profile(encodings, default_dimensions, max_inputs, false).await
     }
-    pub async fn start_google(
-        capture: Option<&std::path::Path>,
-        diagnostics: Option<&std::path::Path>,
-    ) -> Self {
-        Self::start_profile(EncodingSupport::Float, 2, 4, capture, diagnostics, true).await
+    pub async fn start_google() -> Self {
+        Self::start_profile(EncodingSupport::Float, 2, 4, true).await
     }
     async fn start_profile(
         encodings: EncodingSupport,
         default_dimensions: usize,
         max_inputs: usize,
-        capture: Option<&std::path::Path>,
-        diagnostics: Option<&std::path::Path>,
         google: bool,
     ) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -265,7 +245,7 @@ impl Fixture {
                 ModelMetadata::new(1, "Synthetic").unwrap(),
             )])
             .unwrap();
-        let mut gateway = Gateway::new(
+        let gateway = Gateway::new(
             topology,
             TaskEntries {
                 embeddings: vec![EmbeddingEntry {
@@ -285,14 +265,6 @@ impl Fixture {
             None,
         )
         .unwrap();
-        if let Some(path) = capture {
-            gateway = gateway.with_capture(serde_json::from_value(json!({"path":path,
-            "client_request":{"headers":true,"body":true},"upstream_request":{"headers":true,"body":true},
-            "upstream_response":{"headers":true,"body":true},"client_response":{"headers":true,"body":true}})).unwrap()).unwrap();
-        }
-        if let Some(path) = diagnostics {
-            gateway = gateway.with_diagnostics(path).unwrap();
-        }
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let serving = gateway.clone();
@@ -303,7 +275,6 @@ impl Fixture {
                 .unwrap()
         });
         Self {
-            gateway,
             base,
             seen,
             tasks: vec![upstream.abort_handle(), server.abort_handle()],

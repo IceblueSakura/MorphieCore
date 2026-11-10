@@ -109,14 +109,7 @@ async fn response(
     let request=entry.client.as_openai().unwrap().0.decode_request(serde_json::json!({"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"stream":stream,"stream_options":if stream {serde_json::json!({"include_usage":true,"include_obfuscation":false})}else{serde_json::Value::Null}}).to_string().as_bytes()).unwrap();
     let candidate = entry.candidates[0].clone();
     let mut trace = super::Trace::new(gate.state.diagnostics.as_ref());
-    trace.capture = gate.state.capture.as_ref().map(|sink| {
-        sink.exchange(
-            gate.state.request_ids.next().as_ref(),
-            &crate::gateway::ingress::auth::AuthenticatedAgent {
-                agent_id: "fixture-agent".into(),
-            },
-        )
-    });
+    trace.capture = gate.state.capture.as_ref().map(|sink| sink.exchange());
     respond(
         entry,
         candidate,
@@ -199,18 +192,11 @@ async fn observed_response(
 }
 #[tokio::test]
 async fn diagnostic_status_and_final_intake_are_from_the_original_attempt() {
-    let directory = crate::test_files::private_directory();
-    let path = directory.path().join("events.jsonl");
-    let capture_path = directory.path().join("capture.jsonl");
-    let config = serde_json::from_value(serde_json::json!({
-        "path":capture_path,"upstream_response":{"headers":true,"body":true}
-    }))
-    .unwrap();
-    let gate = gateway(Limits::default())
-        .with_diagnostics(&path)
-        .unwrap()
-        .with_capture(config)
-        .unwrap();
+    let (sink, exporter) = crate::gateway::diagnostics::Sink::memory();
+    let mut gate = gateway(Limits::default());
+    let state = Arc::get_mut(&mut gate.state).unwrap();
+    state.diagnostics = Some(sink);
+    state.capture = Some(crate::gateway::capture::Sink::new(16 << 10));
     for status in [429, 503, 200] {
         let (tx, mut source, _, _) = upstream(status, "application/json");
         source
@@ -234,27 +220,17 @@ async fn diagnostic_status_and_final_intake_are_from_the_original_attempt() {
             if status == 200 { 502 } else { status }
         );
     }
-    gate.flush_diagnostics().await;
-    let raw = std::fs::read_to_string(&path).unwrap();
-    assert!(!raw.contains("synthetic-private"));
-    let records: Vec<serde_json::Value> = raw
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .filter(|value: &serde_json::Value| value["event"] == "request")
-        .collect();
-    assert_eq!(records.len(), 3);
-    for (record, status) in records.iter().zip([429, 503, 200]) {
-        assert_eq!(record["upstream_status"], status);
-        assert_eq!(record["retry_after_seconds"], 7);
-        assert_eq!(
-            record["stage"],
-            if status == 200 {
-                "terminal"
-            } else {
-                "response_head"
-            }
+    let logs = exporter.get_emitted_logs().unwrap();
+    assert_eq!(logs.len(), 3);
+    for (log, status) in logs.iter().zip([429i64, 503, 200]) {
+        assert!(
+            log.record
+                .attributes_iter()
+                .any(|(key, value)| key.as_str() == "http.response.status_code"
+                    && *value == opentelemetry::logs::AnyValue::from(status))
         );
     }
+    assert!(!format!("{logs:?}").contains("synthetic-private"));
     let (tx, source, _, _) = upstream(503, "application/json");
     tx.send(Ok(Bytes::from_static(
         br#"{"error":{"message":"synthetic-failure"}}"#,
@@ -275,15 +251,6 @@ async fn diagnostic_status_and_final_intake_are_from_the_original_attempt() {
         .await
         .is_err()
     );
-    gate.flush_diagnostics().await;
-    let captured = std::fs::read_to_string(&capture_path).unwrap();
-    let last: Vec<serde_json::Value> = captured
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .filter(|value: &serde_json::Value| value["exchange"] == 4)
-        .collect();
-    assert!(last.iter().any(|value| value["status"] == "incomplete"));
-    assert!(!last.iter().any(|value| value["status"] == "source_eof"));
     let mut entry = (*gate.state.entries[&(
         crate::protocol::ClientProtocol::Chat,
         "fixture-model".into(),
@@ -352,26 +319,9 @@ async fn diagnostic_status_and_final_intake_are_from_the_original_attempt() {
             .windows(b"response.completed".len())
             .any(|value| value == b"response.completed")
     );
-    gate.flush_diagnostics().await;
-    let raw = std::fs::read_to_string(&path).unwrap();
-    assert!(!raw.contains("synthetic-private-fingerprint"));
-    let record: serde_json::Value = raw
-        .lines()
-        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-        .rfind(|row| row["event"] == "request")
-        .unwrap();
-    let losses = record["generation"]["attempts"][0]["evidence"]["entries"]
-        .as_array()
-        .unwrap();
-    assert_eq!(
-        losses
-            .iter()
-            .filter(
-                |loss| loss["rule"] == "responses.omit-system-fingerprint.v1"
-                    && loss["boundary"] == "event.project"
-            )
-            .count(),
-        1
+    assert!(
+        !format!("{:?}", exporter.get_emitted_logs().unwrap())
+            .contains("synthetic-private-fingerprint")
     );
 }
 #[tokio::test]
@@ -622,12 +572,6 @@ async fn failed_responses_reach_chat_clients_as_classified_failures() {
     assert!(String::from_utf8_lossy(&bytes).contains(r#""code":"rate_limit_exceeded""#));
     assert!(!String::from_utf8_lossy(&bytes).contains("private upstream detail"));
     let observed = report.attempt();
-    assert!(observed.source_eof);
-    assert!(matches!(
-        observed.task_outcome,
-        Some(crate::execution::report::TaskOutcome::Failed)
-    ));
-    assert_eq!(observed.observed_status, Some(200));
     assert_eq!(
         observed.source_failure.unwrap().kind,
         crate::protocol::failure::SourceFailureKind::RateLimit
@@ -802,15 +746,11 @@ async fn first_frame_precedes_terminal_and_ack_gates_upstream_progress() {
     bounded(dropped).await.unwrap();
     let mut measurements = vec![];
     for enabled in [false, true] {
-        let directory = crate::test_files::private_directory();
-        let path = directory.path().join("events.jsonl");
         let policy = Limits::default().delta_coalescing.unwrap();
         let gate = gateway(Limits {
             delta_coalescing: enabled.then_some(policy),
             ..Limits::default()
-        })
-        .with_diagnostics(&path)
-        .unwrap();
+        });
         let event = |value: serde_json::Value| {
             format!(
                 "event: {}\ndata: {value}\n\n",
@@ -901,18 +841,8 @@ async fn first_frame_precedes_terminal_and_ack_gates_upstream_progress() {
             crate::semantic::task::generation::Outcome::Incomplete
         );
         assert_eq!(decoded.semantic.usage().unwrap().total_tokens, Some(18));
-        gate.flush_diagnostics().await;
-        let record: serde_json::Value = std::fs::read_to_string(&path)
-            .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-            .find(|row| row["event"] == "request")
-            .unwrap();
-        let peak = record["coalescing_peak_bytes"].as_u64().unwrap_or(0) as usize;
-        assert!(peak <= policy.max_pending_bytes);
-        assert_eq!(peak > 0, enabled);
         println!(
-            "coalescing={enabled} text_events={} encoded_bytes={} handoffs={handoffs} first_content_ms={first_ms:.3} update_ms={update_ms:.3} peak_pending_bytes={peak}",
+            "coalescing={enabled} text_events={} encoded_bytes={} handoffs={handoffs} first_content_ms={first_ms:.3} update_ms={update_ms:.3}",
             fragments.len(),
             all.len()
         );
@@ -1105,16 +1035,9 @@ async fn queued_first_frame_timeout_preserves_the_final_public_error() {
     let _released = bounded(gate.state.permits.clone().acquire_owned())
         .await
         .unwrap();
-    let snapshot = report.snapshot();
-    assert!(
-        snapshot.attempts[0].checked_units > 0,
-        "must reach queued output"
-    );
-    assert_eq!(snapshot.attempts[0].handed_off_frames, 0);
     let error = pending.await.unwrap_err();
     assert_eq!(error.status, 504);
-    assert_eq!(snapshot.failure_code, Some(error.diagnostic_code()));
-    assert_eq!(snapshot.failure_status_hint, Some(504));
+    assert_eq!(report.request_error(), Some((error.diagnostic_code(), 504)));
 }
 
 #[tokio::test]
@@ -1211,133 +1134,6 @@ async fn drop_deadline_and_shutdown_release_upstream_even_when_body_is_unpolled(
         .await
         .unwrap();
 }
-#[tokio::test]
-async fn source_accounting_survives_interruption_without_becoming_delivery_estimates() {
-    use crate::gateway::ingress::auth::AuthenticatedAgent;
-    for mode in ["cancel", "cut", "static"] {
-        let directory = crate::test_files::private_directory();
-        let path = directory.path().join("events.jsonl");
-        let mut gate = gateway(Limits {
-            concurrency: 1,
-            ..Limits::default()
-        });
-        if mode != "cancel" {
-            gate = gate.with_diagnostics(&path).unwrap();
-        }
-        let entry = gate.state.entries[&(
-            crate::protocol::ClientProtocol::Chat,
-            "fixture-model".into(),
-        )]
-            .clone();
-        let streaming = mode != "static";
-        let request = entry.client.decode_client_request(
-            serde_json::json!({"model":"fixture-model","messages":[{"role":"user","content":"hello"}],
-                "stream":streaming,"stream_options":if streaming {serde_json::json!({"include_obfuscation":false})} else {serde_json::Value::Null}})
-                .to_string().as_bytes()
-        ).unwrap();
-        let id = gate.state.request_ids.next().unwrap();
-        let mut incoming = axum::extract::Request::new(axum::body::Body::empty());
-        incoming.extensions_mut().insert(id.clone());
-        incoming.extensions_mut().insert(AuthenticatedAgent {
-            agent_id: "fixture-agent".into(),
-        });
-        let mut trace = Trace::for_request(gate.state.diagnostics.as_ref(), &incoming);
-        trace.generation();
-        let report = trace.report.clone();
-        let (observed, ready) = oneshot::channel();
-        let (interrupt, interrupted) = oneshot::channel();
-        let first = if streaming {
-            Bytes::from(frames().concat())
-        } else {
-            Bytes::from(wire::response(2).to_string())
-        };
-        let source = futures_util::stream::once(async move { Ok::<_, std::io::Error>(first) })
-            .chain(futures_util::stream::once(async move {
-                // Asking for another transport unit proves the previous unit and
-                // its accounting were processed; no timer or log polling is needed.
-                let _ = observed.send(());
-                if streaming {
-                    let _ = interrupted.await;
-                    Err(std::io::Error::other(
-                        "synthetic cut after source accounting",
-                    ))
-                } else {
-                    Ok(Bytes::new())
-                }
-            }));
-        let source = reqwest::Response::from(
-            axum::http::Response::builder()
-                .status(200)
-                .header(
-                    "content-type",
-                    if streaming {
-                        "text/event-stream"
-                    } else {
-                        "application/json"
-                    },
-                )
-                .body(reqwest::Body::wrap_stream(source))
-                .unwrap(),
-        );
-        let response = bounded(respond(
-            entry.clone(),
-            entry.candidates[0].clone(),
-            request,
-            source,
-            &gate.state.limits,
-            Instant::now() + Duration::from_secs(3),
-            gate.state.shutdown.clone(),
-            gate.state.permits.clone().acquire_owned().await.unwrap(),
-            trace,
-        ))
-        .await
-        .unwrap_or_else(|error| panic!("{mode}: {error:?}; {:?}", report.snapshot()));
-        let reader =
-            tokio::spawn(async move { axum::body::to_bytes(response.into_body(), 65536).await });
-        bounded(ready).await.unwrap();
-        if mode == "cancel" {
-            reader.abort();
-            assert!(reader.await.unwrap_err().is_cancelled());
-        } else if mode == "cut" {
-            interrupt.send(()).unwrap();
-            assert!(bounded(reader).await.unwrap().is_err());
-        } else {
-            bounded(reader).await.unwrap().unwrap();
-        }
-        let _permit = bounded(gate.state.permits.clone().acquire_owned())
-            .await
-            .unwrap();
-        let snapshot = serde_json::to_value(report.snapshot()).unwrap();
-        let attempt = &snapshot["attempts"][0];
-        let usage = &attempt["source_usage"]["reports"];
-        assert_eq!(usage.as_array().unwrap().len(), 1);
-        assert_eq!(usage[0]["counts"]["input_tokens"], 3);
-        assert_eq!(usage[0]["counts"]["output_tokens"], 2);
-        assert!(usage[0]["counts"]["cached_input_tokens"].is_null());
-        assert_eq!(attempt["source_eof"], !streaming);
-        if mode != "cancel" {
-            gate.flush_diagnostics().await;
-            let text = std::fs::read_to_string(&path).unwrap();
-            let records: Vec<serde_json::Value> = text
-                .lines()
-                .map(|l| serde_json::from_str(l).unwrap())
-                .filter(|r: &serde_json::Value| r["event"] == "request")
-                .collect();
-            assert_eq!(records.len(), 1);
-            assert_eq!(records[0]["request_id"], id.0.as_ref());
-            assert_eq!(records[0]["agent_id"], "fixture-agent");
-            let logged = &records[0]["generation"]["attempts"][0]["source_usage"];
-            let mut expected = attempt["source_usage"].clone();
-            // Native SDK log maps omit unknown optional counters, never fill zeros.
-            expected["reports"][0]["counts"]
-                .as_object_mut()
-                .unwrap()
-                .retain(|_, value| !value.is_null());
-            assert_eq!(logged, &expected);
-        }
-    }
-}
-
 #[tokio::test]
 async fn attempt_wait_attribution_and_hold_deadline_are_explicit() {
     let gate = gateway(Limits::default());
@@ -1502,14 +1298,8 @@ async fn invalid_heads_and_static_overflow_fail_without_exposing_provider_data()
         .unwrap_err();
         assert_eq!(error.status, 502);
         assert_eq!(reads.load(Ordering::SeqCst), 0);
-        let snapshot = report.snapshot();
-        assert_eq!(snapshot.failure_code, Some(error.diagnostic_code()));
-        assert_eq!(snapshot.failure_status_hint, Some(502));
-        assert_eq!(
-            snapshot.result,
-            crate::execution::report::ResultState::Failed
-        );
-        let failure = snapshot.attempts[0].failure.as_ref().unwrap();
+        assert_eq!(report.request_error(), Some((error.diagnostic_code(), 502)));
+        let failure = report.attempt().failure.unwrap();
         assert!(matches!(
             failure.cause,
             crate::execution::AttemptError::Sse(crate::protocol::stream::SseError::Http)

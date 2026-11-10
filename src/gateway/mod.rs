@@ -23,7 +23,7 @@ use crate::protocol::openai::TargetContract;
 use crate::provider::ProviderDefinition;
 #[cfg(test)]
 use crate::provider::SecretMaterial;
-pub use capture::{CaptureConfig, CaptureStatus, Selection as CaptureSelection};
+pub use diagnostics::DiagnosticsConfig;
 use error::ApiError;
 use runtime::{BoundCandidate, BoundEntry, Runtime};
 pub use startup::credentials::Credentials;
@@ -45,41 +45,21 @@ pub struct Gateway {
 }
 /// Optional observation sinks, installed before the gateway is shared.
 impl Gateway {
-    pub fn with_capture(
-        mut self,
-        config: crate::gateway::CaptureConfig,
-    ) -> Result<Self, StartupError> {
-        let state = Arc::get_mut(&mut self.state).ok_or(StartupError::Environment)?;
-        if config.enabled() {
-            state.capture = Some(
-                crate::gateway::capture::Sink::open(config)
-                    .map_err(|_| StartupError::Environment)?,
-            );
-        } else {
-            state.capture = None;
-        }
-        Ok(self)
-    }
-    pub fn capture_status(&self) -> Option<crate::gateway::CaptureStatus> {
-        self.state
-            .capture
-            .as_ref()
-            .map(crate::gateway::capture::Sink::status)
-    }
-    /// Enable bounded metadata in a new private operator file, before sharing the gateway.
-    pub fn with_diagnostics(mut self, path: &std::path::Path) -> Result<Self, StartupError> {
+    /// Enable bounded failure logs at a trusted OTLP receiver before sharing the gateway.
+    pub fn with_diagnostics(mut self, config: DiagnosticsConfig) -> Result<Self, StartupError> {
         let state = Arc::get_mut(&mut self.state).ok_or(StartupError::Environment)?;
         state.diagnostics = Some(
-            crate::gateway::diagnostics::Sink::open(path).map_err(|_| StartupError::Environment)?,
+            crate::gateway::diagnostics::Sink::open(&config)
+                .map_err(|_| StartupError::Environment)?,
         );
+        state.capture = config
+            .private_bodies
+            .then(|| capture::Sink::new(config.body_bytes));
         Ok(self)
     }
     /// Best-effort bounded drain, for an owner shutting down its test listener.
     pub async fn flush_diagnostics(&self) {
         if let Some(sink) = &self.state.diagnostics {
-            sink.flush().await;
-        }
-        if let Some(sink) = &self.state.capture {
             sink.flush().await;
         }
     }

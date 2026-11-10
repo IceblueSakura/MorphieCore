@@ -150,7 +150,7 @@ fn report(
                     "providers",
                     "proxy_source",
                     "diagnostics_enabled",
-                    "capture",
+                    "diagnostics",
                 ] {
                     if let Some(settings) = value.get(section) {
                         println!(

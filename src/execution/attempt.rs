@@ -302,7 +302,6 @@ pub(crate) struct EncodedRequest {
     headers: Vec<(String, String)>,
     // Filled only by gateway lookup materialization, never by direct preparation.
     pub(crate) prefixes: Option<Vec<[u8; 32]>>,
-    pub(crate) cache_key_sent: bool,
 }
 impl EncodedRequest {
     pub(crate) fn retained_bytes(&self) -> usize {
@@ -360,9 +359,6 @@ pub(crate) fn encode_projection(
             body,
             headers: endpoint.request_headers(request, &value)?,
             prefixes: None,
-            cache_key_sent: value
-                .get("prompt_cache_key")
-                .is_some_and(serde_json::Value::is_string),
         },
         evidence: projection.evidence,
     })
@@ -585,14 +581,7 @@ impl Attempt {
             _ => None,
         }
     }
-    pub(crate) fn pending_source_usage_report(
-        &self,
-    ) -> Option<&crate::semantic::task::generation::UsageReport> {
-        match &self.intake {
-            Intake::Stream { decoder, .. } => decoder.pending_usage_report(),
-            _ => None,
-        }
-    }
+
     pub fn fidelity(&self) -> Option<&FidelityRecords> {
         match &self.intake {
             Intake::Finished { decoded, .. } => Some(&decoded.fidelity),
@@ -720,60 +709,6 @@ mod identity_tests {
         semantic::context::StreamOptions,
     };
     use serde_json::{Value, json};
-
-    #[test]
-    fn pending_google_accounting_is_observable_before_terminal_but_rejected_units_are_not() {
-        let mut attempt = Attempt::new(
-            UpstreamAdapter::GoogleGenerateContent {
-                target: ReplayTarget::new("synthetic", "model").unwrap(),
-            },
-            4096,
-            SseLimits::default(),
-        );
-        attempt.begin(200, "text/event-stream").unwrap();
-        let report = crate::execution::report::Report::default();
-        report.begin(1);
-        let wire = format!(
-            "data: {}\n\n",
-            json!({
-                "responseId":"reported","modelVersion":"model",
-                "usageMetadata":{"promptTokenCount":17,"candidatesTokenCount":3,"totalTokenCount":20},
-                "candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]}}]
-            })
-        );
-        let (_, events) = attempt.push(wire.as_bytes()).unwrap();
-        assert!(
-            !events
-                .iter()
-                .any(|e| matches!(e, StreamEvent::UsageReport(_)))
-        );
-        report.source_usage(
-            attempt.pending_source_usage_report().unwrap(),
-            &Default::default(),
-        );
-        let wire = format!(
-            "data: {}\n\n",
-            json!({
-                "responseId":"reported","modelVersion":"model",
-                "usageMetadata":{"promptTokenCount":999,"candidatesTokenCount":0,"totalTokenCount":999},
-                "candidates":[{"content":{"role":"model","parts":[{"unknown":"invalid"}]}}]
-            })
-        );
-        assert!(attempt.push(wire.as_bytes()).is_err());
-        assert!(attempt.pending_source_usage_report().is_none());
-        let value = serde_json::to_value(report.snapshot()).unwrap();
-        let usage = &value["attempts"][0]["source_usage"]["reports"][0];
-        assert_eq!(usage["counts"]["input_tokens"], 17);
-        assert_eq!(usage["counts"]["output_relation"], "excludes_reasoning");
-        assert_eq!(usage["accounting"]["tool_input_relation"], "additional");
-        assert!(
-            usage["details"]["defaulted"]
-                .as_array()
-                .unwrap()
-                .contains(&json!("reasoning"))
-        );
-        assert_eq!(value["attempts"][0]["source_eof"], false);
-    }
 
     #[test]
     fn absent_upstream_id_is_filled_only_on_the_stable_delivery_copy() {

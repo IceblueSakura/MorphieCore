@@ -183,19 +183,10 @@ pub(in crate::gateway) fn choose(
     candidate: &crate::gateway::BoundCandidate,
     request: &crate::protocol::GenerationRequestEnvelope,
     prefixes: Option<&[[u8; 32]]>,
-    trace: &mut crate::gateway::diagnostics::Trace,
 ) -> Option<Selection> {
     use sha2::{Digest as _, Sha256};
     let endpoint = &candidate.endpoint;
-    let (_, profile_id) = match lookup_profile(index, endpoint, request) {
-        Ok(profile) => profile,
-        Err(reason) => {
-            if let Some(reason) = reason {
-                trace.affinity(reason, false, false);
-            }
-            return None;
-        }
-    };
+    let (_, profile_id) = lookup_profile(index, endpoint, request).ok()?;
     let context = request.conversation.as_ref()?;
     let scope = candidate.cache_scope();
     let mut hash = Sha256::new();
@@ -205,27 +196,15 @@ pub(in crate::gateway) fn choose(
         hash.update(value.as_bytes());
     }
     let scope: Digest = hash.finalize().into();
-    let Some(prefixes) = prefixes else {
-        trace.affinity("unsupported", false, false);
-        return None;
-    };
-    let (lookup, existing) = index.lookup(scope, prefixes, Instant::now());
+    let prefixes = prefixes?;
+    let (_, existing) = index.lookup(scope, prefixes, Instant::now());
     let mut fresh = Sha256::new();
     fresh.update(b"MorphieCore.cache-group.v1\0");
     fresh.update(scope);
     fresh.update(context.id().as_bytes());
     let group: Group =
         existing.unwrap_or_else(|| fresh.finalize()[..16].try_into().expect("digest"));
-    trace.affinity(
-        match lookup {
-            Lookup::Miss => "miss",
-            Lookup::Hit => "hit",
-            Lookup::Ambiguous => "ambiguous",
-            Lookup::Unavailable => "unavailable",
-        },
-        false,
-        false,
-    );
+
     Some(Selection {
         scope,
         prefix: *prefixes.last()?,
@@ -287,15 +266,10 @@ mod tests {
         request.conversation = Some(ConversationContext::independent_request(seed).unwrap());
         request
     }
-    fn trace() -> crate::gateway::diagnostics::Trace {
-        crate::gateway::diagnostics::Trace::new(None)
-    }
-
     fn choose(
         index: &Index,
         candidate: &crate::gateway::BoundCandidate,
         request: &crate::protocol::GenerationRequestEnvelope,
-        trace: &mut crate::gateway::diagnostics::Trace,
     ) -> Option<Selection> {
         let projection = index
             .materialize(
@@ -310,7 +284,6 @@ mod tests {
             candidate,
             request,
             projection.value.prefixes.as_deref(),
-            trace,
         )
     }
 
@@ -331,7 +304,7 @@ mod tests {
                         .to_string().as_bytes(),
                 ).unwrap();
                 request.conversation = Some(ConversationContext::independent_request("one").unwrap());
-                choose(&gate.state.affinity, candidate, &request, &mut trace()).unwrap().prefix
+                choose(&gate.state.affinity, candidate, &request).unwrap().prefix
             }).collect();
         assert_ne!(prefixes[0], prefixes[1]);
     }
@@ -346,7 +319,7 @@ mod tests {
         let candidate = &entry.candidates[0];
         let first = request(entry, "one");
         let saved = first.clone();
-        let selection = choose(&gate.state.affinity, candidate, &first, &mut trace()).unwrap();
+        let selection = choose(&gate.state.affinity, candidate, &first).unwrap();
         assert!(
             selection
                 .project(candidate, &first, &entry.client)
@@ -355,7 +328,7 @@ mod tests {
         selection.publish(&gate.state.affinity, candidate, None, &entry.client);
         let second = request(entry, "two");
         assert_eq!(
-            choose(&gate.state.affinity, candidate, &second, &mut trace())
+            choose(&gate.state.affinity, candidate, &second)
                 .unwrap()
                 .hint,
             selection.hint
@@ -380,7 +353,7 @@ mod tests {
                 .unwrap()
                 .task;
             assert_ne!(
-                choose(&gate.state.affinity, candidate, &edited, &mut trace())
+                choose(&gate.state.affinity, candidate, &edited)
                     .unwrap()
                     .hint,
                 selection.hint
@@ -388,7 +361,7 @@ mod tests {
         }
         let mut explicit = second.clone();
         explicit.conversation = Some(ConversationContext::conversation("explicit").unwrap());
-        assert!(choose(&gate.state.affinity, candidate, &explicit, &mut trace()).is_none());
+        assert!(choose(&gate.state.affinity, candidate, &explicit).is_none());
         let mut other = candidate.as_ref().clone();
         let original = other.endpoint.encode_request(&first).unwrap();
         other.endpoint.execution.request_body_limit =
@@ -400,17 +373,13 @@ mod tests {
             crate::semantic::value::ReplayOrigin::new("other-principal-or-key-epoch").unwrap(),
         );
         assert_ne!(
-            choose(&gate.state.affinity, &other, &second, &mut trace())
-                .unwrap()
-                .hint,
+            choose(&gate.state.affinity, &other, &second).unwrap().hint,
             selection.hint
         );
         other.endpoint = candidate.endpoint.clone();
         other.endpoint.upstream_model = "other-model".into();
         assert_ne!(
-            choose(&gate.state.affinity, &other, &second, &mut trace())
-                .unwrap()
-                .hint,
+            choose(&gate.state.affinity, &other, &second).unwrap().hint,
             selection.hint
         );
         other.endpoint = candidate.endpoint.clone();
@@ -422,9 +391,7 @@ mod tests {
             .adaptation
             .profile_id = "projection-v2";
         assert_ne!(
-            choose(&gate.state.affinity, &other, &second, &mut trace())
-                .unwrap()
-                .hint,
+            choose(&gate.state.affinity, &other, &second).unwrap().hint,
             selection.hint
         );
     }

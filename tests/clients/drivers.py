@@ -47,7 +47,7 @@ def gateway_configuration(root, native, origin, *, credential_root=None,
                           recovery=None, accounts=("primary",),
                           total_timeout_ms=8000, exchange_timeout_ms=10000,
                           concurrency=None, model=None, provider=None, binding=None,
-                          api_root="/v1"):
+                          api_root="/v1", diagnostics=None):
     """Current production-loader inputs with explicitly local synthetic accounts."""
     target = urlsplit(origin)
     check(target.scheme == "http" and target.hostname == "127.0.0.1"
@@ -66,7 +66,9 @@ def gateway_configuration(root, native, origin, *, credential_root=None,
     service = {"version": 1, "auth_file": "auth.json", "bind": "127.0.0.1:0",
         "accounts_file": "accounts.json", "models_file": "models.json",
         "credentials_dir": str((credential_root or root) / "credentials"),
-        "delivery": {"exchange_timeout_ms": exchange_timeout_ms}, "diagnostics": "diagnostics.jsonl"}
+        "delivery": {"exchange_timeout_ms": exchange_timeout_ms}}
+    if diagnostics is not None:
+        service["diagnostics"] = {"endpoint": diagnostics}
     if concurrency is not None:
         service["resources"] = {"concurrency": concurrency}
     private_json(root / "gateway.json", service)

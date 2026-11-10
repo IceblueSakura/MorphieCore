@@ -167,7 +167,7 @@ impl ResponseDelivery {
     ) -> Self {
         client.bind_replay_origin(&crate::protocol::replay_envelope::CLIENT_ORIGIN);
         let report = Report::default();
-        report.begin(1);
+        report.begin();
         Self {
             content_ready: false,
             report,
@@ -270,6 +270,7 @@ impl ResponseDelivery {
             .as_ref()
             .and_then(coalescing::Coalescer::deadline)
     }
+    #[cfg(test)]
     pub(crate) fn coalescing_peak_bytes(&self) -> usize {
         self.coalescer.as_ref().map_or(0, |c| c.peak_bytes)
     }
@@ -493,7 +494,6 @@ impl ResponseDelivery {
                 self.checked_snapshot(attempt, View::DownstreamJson)?;
             self.rendered = true;
             self.phase = ProjectionPhase::Finalized;
-            self.report.update(|a| a.encoding_finalized = true);
             let batch = self
                 .report
                 .batch(View::DownstreamJson, vec![Bytes::from(bytes)], evidence);
@@ -743,7 +743,6 @@ impl ResponseDelivery {
             if let Some(c) = &mut self.coalescer {
                 c.close();
             }
-            self.report.update(|a| a.encoding_finalized = true);
             Ok(self.checked_output(frames, evidence))
         })();
         if result.is_err() {
@@ -1116,7 +1115,6 @@ impl ResponseDelivery {
             ));
         }
         self.lifecycle.terminal()?;
-        self.report.update(|a| a.delivery_complete = true);
         Ok(())
     }
     pub fn cancel(&mut self) {

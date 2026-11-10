@@ -136,7 +136,7 @@ async fn produce_one(
     let projected =
         crate::protocol::image::projection::project_response(&response, entry.route.accounting)
             .map_err(|_| ApiError::upstream())?;
-    trace.image_accounting(response.usage.value(), projected.loss);
+
     let value = images::encode_response(&projected.response).map_err(|_| ApiError::upstream())?;
     crate::semantic::value::json_size(&value, runtime.limits.response_bytes)
         .map_err(|_| ApiError::upstream())?;
@@ -187,6 +187,10 @@ impl body::Produce for Exchange {
             prepared,
         } = self;
         trace.begin_candidate(1);
+        trace.models(
+            entry.route.model.as_str(),
+            &entry.route.endpoint.upstream_model,
+        );
         let result = produce_one(&runtime, &entry, &request, prepared, deadline, lane, trace).await;
         trace.end_candidate(result.as_ref().err().map(|e| e.diagnostic_code()), false);
         result

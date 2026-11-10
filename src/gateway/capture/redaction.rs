@@ -1,4 +1,4 @@
-//! Pure credential redaction for opt-in capture, before any unit is queued.
+//! Pure credential redaction before private-context retention and export.
 use serde_json::{Value, json};
 
 pub(super) fn authentication(name: &str) -> bool {

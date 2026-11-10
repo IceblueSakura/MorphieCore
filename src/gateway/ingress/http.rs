@@ -156,38 +156,51 @@ pub(in crate::gateway) async fn authenticate(
     if let Some(id) = &request_id {
         request.extensions_mut().insert(id.clone());
     }
-    let Some(sink) = &state.capture else {
+    let Some(diagnostics) = &state.diagnostics else {
         return next.run(request).await;
     };
+    let emitted = crate::gateway::diagnostics::Emitted::default();
+    request.extensions_mut().insert(emitted.clone());
+    let operation = crate::gateway::diagnostics::operation(request.uri().path());
+    let capture = state.capture.as_ref().map(|sink| sink.exchange());
     use crate::gateway::capture::Boundary;
-    let capture = sink.exchange(request_id.as_ref(), &agent);
-    capture.head(
-        Boundary::ClientRequest,
-        None,
-        request.headers(),
-        request.uri().query(),
-    );
-    let content_type = request
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_owned();
-    request.extensions_mut().insert(capture.clone());
-    if let Some(body_capture) = capture.body(Boundary::ClientRequest, None, &content_type) {
+    if let Some(capture) = &capture {
+        let content_type = request
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let observation = capture.body(Boundary::ClientRequest, None, content_type);
+        request.extensions_mut().insert(capture.clone());
         let (parts, body) = request.into_parts();
-        request = Request::from_parts(parts, crate::gateway::capture::observe(body, body_capture));
+        request = Request::from_parts(parts, crate::gateway::capture::observe(body, observation));
     }
     let response = next.run(request).await;
-    capture.head(Boundary::ClientResponse, None, response.headers(), None);
+    let error = response.extensions().get::<ApiError>();
+    if response.status().as_u16() >= 400
+        && !emitted.observed()
+        && !error.is_some_and(|error| error.kind == crate::gateway::error::ErrorKind::Shutdown)
+    {
+        Trace::rejected(
+            diagnostics,
+            request_id.as_ref(),
+            &agent,
+            capture.clone(),
+            operation,
+            error.map_or("gateway.http_rejected", ApiError::diagnostic_code),
+            response.status().as_u16(),
+        );
+    }
     let content_type = response
         .headers()
         .get("content-type")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let body_capture = capture.body(Boundary::ClientResponse, None, content_type);
+    let observation = capture
+        .as_ref()
+        .map(|capture| capture.body(Boundary::ClientResponse, None, content_type));
     let (parts, body) = response.into_parts();
-    let body = match body_capture {
+    let body = match observation {
         Some(capture) => crate::gateway::capture::observe(body, capture),
         None => body,
     };
@@ -300,7 +313,7 @@ pub(in crate::gateway) async fn handle(
     request: Request,
 ) -> Result<Response, ApiError> {
     let mut trace = Trace::for_request(state.diagnostics.as_ref(), &request);
-    trace.generation();
+
     let Admitted {
         permit,
         conversation,
@@ -310,6 +323,9 @@ pub(in crate::gateway) async fn handle(
     } = match admit(&state, protocol, request, &mut trace).await {
         Ok(admitted) => admitted,
         Err(error) => {
+            if error.kind == crate::gateway::error::ErrorKind::Shutdown {
+                trace.outcome(crate::gateway::diagnostics::Outcome::Shutdown);
+            }
             trace
                 .report
                 .request_failure(error.diagnostic_code(), error.status.as_u16());
@@ -317,7 +333,8 @@ pub(in crate::gateway) async fn handle(
         }
     };
     semantic.conversation = Some(conversation);
-    trace.ignored_fields(std::mem::take(&mut semantic.ignored_fields));
+    semantic.ignored_fields.clear();
+
     let timeout = entry
         .policy
         .total_timeout_ms

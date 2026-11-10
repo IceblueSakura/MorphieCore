@@ -201,12 +201,8 @@ impl Bootstrap {
             "delivery":configuration.delivery,"resources":configuration.resources,
             "proxy_source":if proxy.is_some() {"cli"} else if configuration.proxy.is_some() {"config"} else {"environment"},
             "diagnostics_enabled":configuration.diagnostics.is_some(),
-            "capture":configuration.capture.as_ref().map(|capture| serde_json::json!({
-                "enabled":capture.enabled(),
-                "client_request":capture.client_request,"upstream_request":capture.upstream_request,
-                "upstream_response":capture.upstream_response,"client_response":capture.client_response,
-                "max_unit_bytes":capture.max_unit_bytes,"max_exchange_bytes":capture.max_exchange_bytes,
-                "max_total_bytes":capture.max_total_bytes
+            "diagnostics":configuration.diagnostics.as_ref().map(|diagnostics| serde_json::json!({
+                "private_bodies":diagnostics.private_bodies,"body_bytes":diagnostics.body_bytes
             })),
             "providers":limits.provider_recovery,
             "selections":plan.explanation,
@@ -221,23 +217,12 @@ impl Bootstrap {
             proxy.or(configuration.proxy.as_deref()),
             environment,
         )?;
-        if let Some(path) = configuration.diagnostics {
-            let path = relative(parent, &path)?;
-            crate::gateway::diagnostics::Sink::validate(&path)
+        if let Some(diagnostics) = configuration.diagnostics {
+            diagnostics
+                .validate()
                 .map_err(|_| StartupError::Environment)?;
             if activate {
-                gateway = gateway.with_diagnostics(&path)?;
-            }
-        }
-        if let Some(mut capture) = configuration.capture {
-            capture.path = relative(parent, &capture.path)?;
-            if capture.enabled() {
-                capture
-                    .validate()
-                    .map_err(|_| StartupError::Configuration("capture"))?;
-            }
-            if activate {
-                gateway = gateway.with_capture(capture)?;
+                gateway = gateway.with_diagnostics(diagnostics)?;
             }
         }
         Ok(Self {

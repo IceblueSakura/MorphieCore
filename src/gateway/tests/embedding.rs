@@ -106,28 +106,10 @@ async fn embedding_body_requires_eof_and_rejects_bad_heads_reads_and_limits() {
 }
 #[tokio::test]
 async fn cancelled_embedding_intake_releases_its_body_without_a_result() {
-    let directory = crate::test_files::private_directory();
-    let path = directory.path().join("capture.jsonl");
-    let sink = crate::gateway::capture::Sink::open(
-        serde_json::from_value(serde_json::json!({
-            "path":path,"upstream_response":{"body":true}
-        }))
-        .unwrap(),
-    )
-    .unwrap();
+    let sink = crate::gateway::capture::Sink::new(16 << 10);
     let mut trace = Trace::new(None);
-    trace.capture = Some(
-        sink.exchange(
-            crate::gateway::ingress::correlation::RequestIds::new()
-                .unwrap()
-                .next()
-                .as_ref(),
-            &crate::gateway::ingress::auth::AuthenticatedAgent {
-                agent_id: "fixture-agent".into(),
-            },
-        ),
-    );
-    trace.capture_attempt = 1;
+    trace.capture = Some(sink.exchange());
+    trace.begin_candidate(1);
     let (tx, response, dropped) = source(200, "application/json");
     tx.send(Ok(Bytes::from_static(RESULT))).await.unwrap();
     let mut pending = Box::pin(crate::gateway::tasks::embeddings::receive(
@@ -143,8 +125,7 @@ async fn cancelled_embedding_intake_releases_its_body_without_a_result() {
         .await
         .unwrap()
         .unwrap();
-    sink.flush().await;
-    let capture = std::fs::read_to_string(path).unwrap();
-    assert!(capture.contains("\"status\":\"incomplete\""));
-    assert!(!capture.contains("source_eof") && !capture.contains("body_unit"));
+    let context = format!("{:?}", trace.capture.as_ref().unwrap().context());
+    assert!(context.contains("incomplete"));
+    assert!(!context.contains("source_eof"));
 }

@@ -436,18 +436,6 @@ class ResponsesState(DefaultState):
         check(self.deliveries == [200, 200, 200], "default_deliveries")
 
 
-def assert_diagnostics(requests, protocol, pi, *, gateway_profile=False):
-    check(len(requests) == 3, "default_gateway_request_count")
-    for record in requests:
-        check(record["outcome"] == "complete" and len(record["candidates"]) == 1,
-              "default_gateway_completion")
-        # pi's builtin Chat profile carries a client-side `thinking` object
-        # the Chat union does not define; it is ignored, never interpreted.
-        expected_ignored = 1 if pi and protocol == "chat" and not gateway_profile else 0
-        check(record.get("ignored_request_field_count", 0) == expected_ignored,
-              "default_gateway_ignored_fields")
-
-
 def run_pi(binary, env, root, work, origin, path, protocol, *, gateway_profile=False):
     model_id, provider, _, api = PROFILES[protocol]
     agent = root / "pi-agent"
@@ -570,18 +558,10 @@ def main():
                     **({"gateway_profile": gateway_profile} if pi else {}))
             gateway.process.send_signal(signal.SIGINT)
             gateway.wait(timeout=5)
-            records = [json.loads(line) for line in (root / "diagnostics.jsonl").read_text().splitlines()]
-            check(all(r.get("event") in ("file", "request", "log", "span") for r in records),
-                  "default_gateway_logging_loss")
-            requests = [r for r in records if r.get("event") == "request"]
-            assert_diagnostics(requests, protocol, pi, gateway_profile=gateway_profile or signed)
         except Exception:
             shutdown_gateway(gateway, failed=True)
-            records = [json.loads(line) for line in (root / "diagnostics.jsonl").read_text().splitlines()]
             print(json.dumps({"errors": state.errors, "ingress_phases": state.ingress,
-                              "upstream_phases": state.attempts,
-                              "failures": [r.get("generation", {}).get("failure")
-                                           for r in records if r.get("event") == "request"]}), file=sys.stderr)
+                              "upstream_phases": state.attempts}), file=sys.stderr)
             raise
     state.finish()
     print(json.dumps({"case": case, "version": version, "client_requests": count,

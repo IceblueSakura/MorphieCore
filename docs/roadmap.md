@@ -5,7 +5,6 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 ## Contents
 
 - [Current status](#current-status)
-- [Convergence cleanup](#convergence-cleanup)
 - [Unscheduled issues](#unscheduled-issues)
   - [Tool guarantees](#tool-guarantees)
   - [History and replay](#history-and-replay)
@@ -53,20 +52,15 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current status (2026-11-10):** AR5 has converged under the [partial-delivery exit](#partial-delivery-exit). [Convergence cleanup](#convergence-cleanup) is the primary task in progress; configuration-error simplification is delivered and the separate plan tracks remaining diagnostics work. Accepted contracts live in [Architecture](architecture.md); dated [qualification evidence](development.md#provider-qualification-evidence) and current-Agent checks live in Development. Residual limitations and prerequisites share the [unscheduled issue register](#unscheduled-issues), without a separate review repair queue. [Cache-affinity qualification](#cache-affinity-qualification) remains required before Stage 4. No deployment or new API activation is implied.
+**Current status (2026-11-10):** AR5 has converged under the [partial-delivery exit](#partial-delivery-exit). Configuration/diagnostic cleanup is delivered under [Observability](architecture.md#observability); remaining external gates and unselected simplifications stay in the [cleanup plan](convergence-cleanup-plan.md). Accepted contracts live in [Architecture](architecture.md); dated [qualification evidence](development.md#provider-qualification-evidence) and current-Agent checks live in Development. Residual limitations and prerequisites share the [unscheduled issue register](#unscheduled-issues), without a separate review repair queue. [Cache-affinity qualification](#cache-affinity-qualification) remains required before Stage 4. No deployment or new API activation is implied.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
-| Next-stage primary task | [Convergence cleanup plan](convergence-cleanup-plan.md): coarse configuration errors and actionable OTel WARN/ERROR diagnostics with opt-in private body context | Verified affected paths, standard export, removed obsolete storage/report machinery and retained execution guarantees |
 | Cache affinity, before Stage 4 | [R09 independent-account failover](#cache-affinity-qualification); further test items await user supplementation | Selected cache-affinity acceptance, retaining real-account prerequisites |
 | Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default handoff prerequisites |
 | API expansion | Select and implement Stage-4 operation contracts | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Implement opt-in per-Agent JSONL session storage | Selected isolation and lifetime bounds |
 | Production preparation | Select real diagnostic receiver/storage and deferred cluster observability scope | Explicit deployer selection; cleanup implementation does not deploy a Collector or backend |
-
-## Convergence cleanup
-
-**User-selected 2026-11-10:** the [separate cleanup plan](convergence-cleanup-plan.md) is the next-stage main task. It owns the detailed sequence, file boundaries, deletion scope and acceptance for configuration-error simplification and Logs-first private failure diagnostics; it does not schedule every earlier cleanup finding. Preserve the [routing freeze](#temporary-routing-freeze), public adaptation semantics and the [partial-delivery boundary](#partial-delivery-exit). R09 remains an independent pre-Stage-4 qualification gate, not an acceptance requirement for the logging rewrite.
 
 ## Unscheduled issues
 
@@ -104,6 +98,7 @@ The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-bounda
 |---|---|---|
 | Chat custom-tool SSE | Retain standard rejection; investigate upstream intake and downstream delivery separately | Official event contract resolves the disagreement, or a separately selected dialect/client contract supplies independent wire/consumer evidence |
 | SIWC Responses inline-tool continuation | Real endpoint acceptance for inline declarations and direct call/result history remains unqualified | Select the endpoint/profile and a bounded full-loop run; retain root namespace requirements |
+| Request adaptation notice after same-target retry | Pre-existing gap: starting a fresh attempt while reusing prepared wire can lose its upstream-request effects from the public notice | Select a focused repair that reapplies immutable preparation evidence per send; do not restore historical diagnostic reports |
 | Chat upstream final usage | Duplicate nonnull final reports remain unqualified at the emitter | A concrete upstream profile and independently observed report sequence |
 | Nonempty Messages tool opener plus nonempty fragments | Retain rejection, including a complete-fragment negative regression; complete opener plus zero-byte deltas remains supported | Authoritative replacement/merge semantics exist |
 | Bounded token-budget adjustment | Model-maximum clamp selected; broader formulas deferred; native effort and existing validation preserved | An authorized target plus failing request, limit provenance, useful reserve, finite maximum and infeasible behavior qualify a target-local rule |
@@ -115,7 +110,7 @@ The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-bounda
 
 ## Cache-affinity qualification
 
-**User-selected 2026-11-09:** this remains the selected qualification stage after the delivered Generation baseline and before Stage 4; the newly selected [cleanup task](#convergence-cleanup) is the next implementation priority. R09 is its initial item, preserving the original identifier and evidence. Additional cache-affinity test items will be supplied later; do not invent or launch that broader suite now. The routing freeze and credential-lifecycle authorization remain unchanged.
+**User-selected 2026-11-09:** this remains the selected qualification stage after the delivered Generation/configuration/diagnostic baseline and before Stage 4. R09 is its initial item, preserving the original identifier and evidence. Additional cache-affinity test items will be supplied later; do not invent or launch that broader suite now. The routing freeze and credential-lifecycle authorization remain unchanged.
 
 | Item | Current evidence / prerequisite | Acceptance |
 |---|---|---|
@@ -171,11 +166,10 @@ The [pinned Anthropic SDK](../tests/upstream/sources.lock.json) types already in
 
 ## Planned order
 
-The Generation review baseline is delivered under the [partial-delivery contract](#partial-delivery-exit). [Convergence cleanup](#convergence-cleanup) is the next primary task. Stage 4 still follows the selected [cache-affinity qualification](#cache-affinity-qualification); [unscheduled issues](#unscheduled-issues) do not become implicit prerequisites. Stage-4 families retain equal priority and advance as contracts are selected. Conditional tool packages keep their own policy gates; Stage 5 remains unscheduled.
+The Generation review baseline is delivered under the [partial-delivery contract](#partial-delivery-exit). Stage 4 still follows the selected [cache-affinity qualification](#cache-affinity-qualification); [unscheduled issues](#unscheduled-issues) do not become implicit prerequisites. Stage-4 families retain equal priority and advance as contracts are selected. Conditional tool packages keep their own policy gates; Stage 5 remains unscheduled.
 
 | Stage | Goal | Exit evidence |
 |---|---|---|
-| **Next — Convergence cleanup** | [Detailed plan](convergence-cleanup-plan.md); configuration diagnostics and OTel failure-context replacement | Affected behavior and exporter acceptance, with obsolete runtime/test machinery removed |
 | **3 — Conditional compatibility follow-ups** | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, plain custom wrappers and examples projection | Separate policy selection and affected full-loop verification; not default blockers for Stage 4 or optional Agent qualification |
 | **Pre-4 — Cache affinity** | [Cache-affinity qualification](#cache-affinity-qualification); R09 first, additional items await user supplementation | Independent-account affinity/failover acceptance and the subsequently selected cache tests |
 | **4 — Modalities, Decision & file resources** | Decision, Embedding extensions, Audio (Speech/Transcription/Translation), Images, Files/Uploads, and Video at equal priority | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
@@ -254,7 +248,7 @@ The test strategy uses pinned upstream assets and standard SDK consumers rather 
 
 ### Observability follow-up
 
-The selected [cleanup plan](convergence-cleanup-plan.md) now schedules application-side OTel failure diagnostics, private body context and removal of custom file persistence. Real receiver/backend activation, centralized cluster topology, public diagnostic schema stabilization and metrics aggregation still await production packaging.
+Application-side [failure diagnostics](architecture.md#observability), bounded private body context and custom-file removal are delivered. Real receiver/backend activation, centralized cluster topology, public diagnostic schema stabilization and metrics aggregation still await production packaging.
 
 Safe-to-ignore diagnostic extensions may be added without dedicated extension tests. That exception does not waive the selected logger/capture replacement's behavior, redaction, bounds, cancellation and exporter checks. Further aggregation remains deferred; existing standard Agent-loop and authoritative evidence checks remain required.
 

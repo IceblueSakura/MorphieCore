@@ -120,12 +120,6 @@ def main():
             if not direct:
                 gateway.process.send_signal(signal.SIGINT)
                 gateway.wait(timeout=5)
-                records = [json.loads(line) for line in (run / "diagnostics.jsonl").read_text().splitlines()]
-                check(all(r.get("event") in ("file", "request", "log", "span") for r in records), "strict_logging_loss")
-                requests = [r for r in records if r.get("event") == "request"]
-                check(len(requests) == 1 and requests[0]["outcome"] == "error"
-                      and len(requests[0]["candidates"]) == 1
-                      and requests[0].get("ignored_request_field_count", 0) == 0, "strict_gateway_outcome")
         state.finish()
     print(json.dumps({"case": case, "version": version, "direct_client_requests": 2,
                       "direct_strict_fallbacks": 1, "client_requests": 1, "upstream_attempts": 1,

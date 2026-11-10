@@ -19,7 +19,13 @@ pub(in crate::gateway) enum Source {
 pub struct Credentials {
     bindings: BTreeMap<CredentialBindingId, Binding>,
     task_accounts: BTreeMap<String, CredentialBindingId>,
-    pub(in crate::gateway) oauth_accounts: Vec<AccessBinding>,
+    pub(in crate::gateway) oauth_accounts: Vec<RenewalAccount>,
+}
+#[derive(Clone)]
+pub(in crate::gateway) struct RenewalAccount {
+    pub binding: AccessBinding,
+    pub provider: Option<String>,
+    pub name: Option<String>,
 }
 pub(in crate::gateway) struct Binding {
     pub source: Source,
@@ -52,7 +58,11 @@ impl From<&BoundAccounts> for Credentials {
         let mut credentials = Self::new();
         for account in accounts.all() {
             if let AccountCredential::OAuth(binding) = &account.credential {
-                credentials.retain_oauth(binding);
+                credentials.retain_oauth(
+                    binding,
+                    Some(account.provider.id.as_str()),
+                    Some(&account.name),
+                );
             }
             if account.enabled {
                 credentials.insert_configured(account.binding_id(), account);
@@ -74,17 +84,26 @@ impl Credentials {
             .insert(id, Binding::single(Source::ManagedKey(binding)));
     }
     pub fn insert_account(&mut self, id: CredentialBindingId, binding: AccessBinding) {
-        self.retain_oauth(&binding);
+        self.retain_oauth(&binding, None, None);
         self.bindings
             .insert(id, Binding::single(Source::Account(binding)));
     }
-    fn retain_oauth(&mut self, binding: &AccessBinding) {
+    fn retain_oauth(
+        &mut self,
+        binding: &AccessBinding,
+        provider: Option<&str>,
+        name: Option<&str>,
+    ) {
         if !self
             .oauth_accounts
             .iter()
-            .any(|other| binding.same_account(other))
+            .any(|other| binding.same_account(&other.binding))
         {
-            self.oauth_accounts.push(binding.clone());
+            self.oauth_accounts.push(RenewalAccount {
+                binding: binding.clone(),
+                provider: provider.map(str::to_owned),
+                name: name.map(str::to_owned),
+            });
         }
     }
     fn insert_configured(&mut self, id: CredentialBindingId, account: &BoundAccount) {

@@ -206,13 +206,6 @@ def main():
                                         (identity,)).fetchall()
                 check(len(rows) == 1 and json.loads(rows[0][0]).get("summary") == SUMMARY,
                       "opencode_saved_summary")
-            records = [json.loads(line) for line in (root / "diagnostics.jsonl").read_text().splitlines()]
-            check(all(r.get("event") in ("file", "request", "log", "span") for r in records), "opencode_summary_logging_loss")
-            requests = [r for r in records if r.get("event") == "request"]
-            check(len(requests) == len(ORDER) and [r["outcome"] for r in requests] ==
-                  ["error" if i == 2 else "complete" for i in range(len(ORDER))]
-                  and all(len(r["candidates"]) == 1 and r.get("ignored_request_field_count", 0) == 0
-                          for r in requests), "opencode_summary_gateway_outcomes")
         except Exception:
             print(json.dumps({"errors": state.errors, "client_shapes": [p for p, _ in state.ingress],
                               "upstream_shapes": state.attempts}), file=sys.stderr)

@@ -2,12 +2,13 @@
 #[cfg(test)]
 mod tests;
 use super::Gateway;
-use crate::credential::AccessBinding;
+use super::startup::credentials::RenewalAccount;
+use opentelemetry::logs::{AnyValue, Severity};
 use tokio::time::{Instant, MissedTickBehavior};
 
 impl Gateway {
     pub(super) async fn renew_credentials(&self) {
-        let mut accounts: Vec<(AccessBinding, Instant)> = self
+        let mut accounts: Vec<(RenewalAccount, Instant)> = self
             .state
             .oauth_accounts
             .iter()
@@ -35,7 +36,7 @@ impl Gateway {
             if self.state.shutdown.is_cancelled() {
                 return;
             }
-            for (binding, next_attempt) in &mut accounts {
+            for (account, next_attempt) in &mut accounts {
                 if Instant::now() < *next_attempt {
                     continue;
                 }
@@ -44,26 +45,71 @@ impl Gateway {
                     _ = self.state.shutdown.cancelled() => return,
                     result = tokio::time::timeout(
                         policy.oauth_renewal_timeout,
-                        binding.refresh_if_due(policy.oauth_refresh_ahead_seconds),
+                        account.binding.refresh_if_due(policy.oauth_refresh_ahead_seconds),
                     ) => result,
                 };
                 match result {
                     Ok(Ok(true)) => {
                         // Short-lived replacement grants must not cause a refresh storm.
                         *next_attempt = Instant::now() + policy.oauth_minimum_renewal_interval;
-                        tracing::info!("OAuth credential automatically renewed");
                     }
                     Ok(Ok(false)) => {}
                     Ok(Err(crate::credential::CredentialError::Busy)) => {
                         *next_attempt = Instant::now() + policy.oauth_failed_renewal_delay;
                     }
-                    Ok(Err(_)) | Err(_) => {
+                    failure @ (Ok(Err(_)) | Err(_)) => {
                         // A delay never restores uncertain material or resumes pending
                         // verification. Only the lifecycle owner authorizes reuse.
                         *next_attempt = Instant::now() + policy.oauth_failed_renewal_delay;
-                        tracing::warn!(
-                            "OAuth automatic renewal failed; inspect morphiecore-auth status"
-                        );
+                        use crate::credential::CredentialError as Error;
+                        let (severity, code) = match failure {
+                            Err(_) | Ok(Err(Error::Timeout)) => {
+                                (Severity::Warn, "oauth.renewal_timeout")
+                            }
+                            Ok(Err(Error::Network)) => (Severity::Warn, "oauth.renewal_network"),
+                            Ok(Err(Error::IdentityMismatch)) => {
+                                (Severity::Error, "oauth.identity_mismatch")
+                            }
+                            Ok(Err(Error::PersistenceUncertain | Error::Storage)) => {
+                                (Severity::Error, "oauth.persistence")
+                            }
+                            Ok(Err(
+                                Error::InvalidGrant
+                                | Error::GrantExpired
+                                | Error::GrantReused
+                                | Error::GrantRevoked
+                                | Error::LoginRequired,
+                            )) => (Severity::Error, "oauth.login_required"),
+                            Ok(Err(_)) => (Severity::Error, "oauth.renewal_rejected"),
+                            Ok(Ok(_)) => unreachable!("successful renewal handled"),
+                        };
+                        if let Some(sink) = &self.state.diagnostics {
+                            let mut attributes = vec![
+                                ("error.type".into(), AnyValue::from(code)),
+                                ("stage".into(), AnyValue::from("credential_renewal")),
+                                (
+                                    "profile".into(),
+                                    AnyValue::from(account.binding.profile().to_owned()),
+                                ),
+                            ];
+                            if let Some(provider) = &account.provider {
+                                attributes
+                                    .push(("provider".into(), AnyValue::from(provider.clone())));
+                            }
+                            if let Some(name) = &account.name {
+                                attributes.push(("account".into(), AnyValue::from(name.clone())));
+                            }
+                            sink.emit(
+                                "gateway.credential.failure",
+                                severity,
+                                attributes,
+                                AnyValue::from(code),
+                            );
+                        } else {
+                            eprintln!(
+                                "OAuth automatic renewal failed; inspect morphiecore-auth status"
+                            );
+                        }
                     }
                 }
             }

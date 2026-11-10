@@ -87,10 +87,6 @@ class ClientRecoveryOracles(unittest.TestCase):
         gateway.first_line = queue.Queue()
         gateway.first_line.put(b"MorphieCore listening on http://127.0.0.1:1\n")
         with tempfile.TemporaryDirectory() as directory:
-            records = [{"event": "request", "outcome": "complete", "candidates": [
-                {"recovery_probe": False} for _ in range(count)]} for count in (1, 2, 1, 1)]
-            (Path(directory) / "diagnostics.jsonl").write_text(
-                "".join(json.dumps(record) + "\n" for record in records))
             output = io.StringIO()
             with patch.object(recovery.sys, "argv", ["recovery.py", "pi-chat", directory, "/gateway", "/pi"]), \
                     patch.object(recovery, "Child", side_effect=[version, gateway]), \
@@ -311,21 +307,6 @@ class ClientRecoveryOracles(unittest.TestCase):
         state.wires[2] = (b"feedback", 1.9)
         with self.assertRaisesRegex(RuntimeError, "^retry_hint_not_waited$"):
             state.finish(("original", "probe"))
-
-    def test_cancellation_waits_for_the_correlated_gateway_terminal_receipt(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            path = root / "diagnostics.jsonl"
-            path.write_text(json.dumps({"event": "request", "request_id": "other",
-                                        "outcome": "abandoned"}) + "\n")
-            predicate = lambda r: r.get("event") == "request" and r.get("request_id") == "cancelled"
-            with self.assertRaisesRegex(RuntimeError, "^missing_terminal$"):
-                recovery_boundary.wait_for_diagnostic(root, predicate, 0, "missing_terminal")
-            expected = {"event": "request", "request_id": "cancelled", "outcome": "abandoned"}
-            with path.open("a") as file:
-                file.write(json.dumps(expected) + "\n" + '{"unfinished":')
-            self.assertEqual(recovery_boundary.wait_for_diagnostic(
-                root, predicate, 0, "missing_terminal"), expected)
 
     def test_gateway_shutdown_preserves_an_active_failure_but_is_otherwise_fatal(self):
         child = MagicMock()

@@ -54,16 +54,15 @@ The [stable-release protocol recheck](refs/2026-10-23-stable-protocol-contracts.
 
 ### Telemetry dependency selection
 
-Resolved from crates.io release metadata on **2026-10-24**:
+Resolved from crates.io release metadata on **2026-10-24**, with native Logs transport selection rechecked on **2026-11-10**:
 
 | Packages | Selected release / source revision | License |
 |---|---|---|
 | `tracing` | 0.1.44 / [`2d55f6f`](https://github.com/tokio-rs/tracing/tree/2d55f6faf9be83e7e4634129fb96813241aac2b8/tracing) | MIT |
 | `tracing-subscriber` | 0.3.23 / [`54ede4d`](https://github.com/tokio-rs/tracing/tree/54ede4d5d85a536aed5485c5213011d9ec961935/tracing-subscriber) | MIT |
-| `tracing-opentelemetry` | 0.34.0 / [`8c1a02d`](https://github.com/tokio-rs/tracing-opentelemetry/tree/8c1a02d68034de317607ada0b1dd0d98abefd6cd) | MIT |
-| `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-appender-tracing`; `opentelemetry-otlp` reference only | 0.33.1 / [`372ebbc`](https://github.com/open-telemetry/opentelemetry-rust/tree/372ebbc74d4dba71bb9820732f57f7316b4e7a1e) | Apache-2.0 |
+| `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp` | 0.33.1 / [`372ebbc`](https://github.com/open-telemetry/opentelemetry-rust/tree/372ebbc74d4dba71bb9820732f57f7316b4e7a1e) | Apache-2.0 |
 
-Primary contract entry points: [OTLP HTTP/runtime/configuration](https://docs.rs/opentelemetry-otlp/0.33.1/opentelemetry_otlp/), [log bridge mapping](https://docs.rs/opentelemetry-appender-tracing/0.33.1/opentelemetry_appender_tracing/), [trace bridge configuration](https://docs.rs/tracing-opentelemetry/0.34.0/tracing_opentelemetry/struct.OpenTelemetryLayer.html), and [batch log processor source](https://github.com/open-telemetry/opentelemetry-rust/blob/372ebbc74d4dba71bb9820732f57f7316b4e7a1e/opentelemetry-sdk/src/logs/batch_log_processor.rs). The dependency-only OTLP prototype is removed; [Development](development.md#diagnostics-behavior-checks) owns current production-boundary checks.
+Primary contract entry points: [OTLP HTTP/runtime/configuration](https://docs.rs/opentelemetry-otlp/0.33.1/opentelemetry_otlp/), [native Logs API](https://docs.rs/opentelemetry/0.33.1/opentelemetry/logs/), and [batch log processor source](https://github.com/open-telemetry/opentelemetry-rust/blob/372ebbc74d4dba71bb9820732f57f7316b4e7a1e/opentelemetry-sdk/src/logs/batch_log_processor.rs). Trace/appender bridges and the dependency-only prototype are removed; [Development](development.md#diagnostics-behavior-checks) owns actual native export and gateway-boundary checks.
 
 Historical revisions remain next to the specific dated observations that need them, not in a second version catalog. The SDK loopback gate uses `tests/sdk/uv.lock`; source pins and package execution locks are distinct. Passing old scenarios under a new SDK does not accept new protocol semantics.
 

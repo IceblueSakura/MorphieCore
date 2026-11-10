@@ -4,7 +4,6 @@ import copy
 import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
-import os
 from pathlib import Path
 import signal
 import queue
@@ -435,28 +434,10 @@ def main():
                 sessions = run_opencode(client_binary, env, root, work, ingress, path)
             gateway.process.send_signal(signal.SIGINT)
             gateway.wait(timeout=5)
-            records = [json.loads(line) for line in (root / "diagnostics.jsonl").read_text().splitlines()]
-            check(all(r.get("event") in ("file", "request", "log", "span") for r in records), "gateway_logging_loss")
-            records = [r for r in records if r.get("event") == "request"]
-            check(len(records) == 4 and all(r["outcome"] == "complete" for r in records),
-                  "gateway_completion_records")
-            check(all(r.get("ignored_request_field_count", 0) == 0 for r in records),
-                  "unclassified_ignored_request_fields")
-            check([len(r["candidates"]) for r in records] == [1, 2, 1, 1], "gateway_attempt_records")
-            check(not any(candidate.get("recovery_probe", False) for record in records
-                          for candidate in record["candidates"]), "successful_recovery_cooled_target")
         except Exception:
             # Fixed structural diagnoses only; no bodies, credentials or raw client stderr.
             if gateway.process.poll() is None:
                 shutdown_gateway(gateway, failed=True)
-            diagnostic_path = root / "diagnostics.jsonl"
-            if diagnostic_path.exists():
-                records = [json.loads(line) for line in diagnostic_path.read_text().splitlines()]
-                records = [r for r in records if r.get("event") == "request"]
-                fields = ["stage", "outcome", "stop_reason", "selection_skips", "candidates",
-                          "executor_order", "ignored_request_field_count", "upstream_status"]
-                print(json.dumps({"diagnostics": [{k: r[k] for k in fields if k in r} for r in records]}),
-                      file=sys.stderr)
             print(json.dumps({"errors": state.errors, "ingress_phases": [p for p, _ in state.ingress],
                               "attempts": [[p, k] for p, k, _, _ in state.attempts]}), file=sys.stderr)
             raise

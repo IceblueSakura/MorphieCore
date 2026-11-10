@@ -105,7 +105,7 @@ async fn produce_one(
 ) -> Result<(), ApiError> {
     let expectation = prepared.expectation;
     let delivery = prepared.delivery;
-    trace.embedding_adaptations(&prepared.adaptations);
+
     let upstream = super::exchange::send(runtime, entry, prepared.request, deadline, trace).await?;
     let response = receive(
         upstream,
@@ -124,7 +124,7 @@ async fn produce_one(
     trace.stage(Stage::Projection);
     let projected = crate::protocol::embedding::projection::project_response(&response, &delivery)
         .map_err(|_| ApiError::upstream())?;
-    trace.embedding_adaptations(&projected.adaptations);
+
     let value = codec::encode_response_as(&projected.response, delivery.encoding)
         .map_err(|_| ApiError::upstream())?;
     crate::semantic::value::json_size(&value, runtime.limits.response_bytes)
@@ -171,6 +171,10 @@ impl body::Produce for Exchange {
             prepared,
         } = self;
         trace.begin_candidate(1);
+        trace.models(
+            entry.route.model.as_str(),
+            &entry.route.endpoint.upstream_model,
+        );
         let result = produce_one(&runtime, &entry, prepared, deadline, lane, trace).await;
         trace.end_candidate(result.as_ref().err().map(|e| e.diagnostic_code()), false);
         result

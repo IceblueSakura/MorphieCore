@@ -28,6 +28,8 @@ mod openai_tool_loop;
 mod responses_wire;
 #[path = "support/gateway.rs"]
 mod support;
+#[path = "support/telemetry.rs"]
+mod telemetry;
 
 #[path = "gateway/anthropic.rs"]
 mod anthropic;

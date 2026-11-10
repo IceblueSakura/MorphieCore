@@ -3,10 +3,7 @@ from contextlib import contextmanager
 import copy
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
-from pathlib import Path
-import tempfile
 import threading
-from types import SimpleNamespace
 import unittest
 from urllib.parse import urlsplit
 from unittest.mock import patch
@@ -42,37 +39,6 @@ def authority(status, reply):
 
 
 class MessagesInputRunnerOracles(unittest.TestCase):
-    def test_exact_capture_requires_unredacted_distinct_exchanges(self):
-        with tempfile.TemporaryDirectory() as directory:
-            gateway = live.Gateway.__new__(live.Gateway)
-            gateway.root = Path(directory)
-            gateway.process = SimpleNamespace(returncode=0)
-            gateway.requests = [{}]
-            gateway.budget = 1
-            diagnostic = {"event": "request", "outcome": "complete", "candidates": [{}]}
-            capture = {"exchange": "synthetic-1", "attempt": 1, "boundary": "upstream_request",
-                       "status": "body_unit", "dropped_before": 0, "redacted": False, "value": {}}
-            diagnostic_path = gateway.root / "diagnostics.jsonl"
-            diagnostics = json.dumps(diagnostic) + '\n{"event":"log"}\n{"event":"span"}\n'
-            diagnostic_path.write_text(diagnostics)
-            path = gateway.root / "capture.jsonl"
-            path.write_text(json.dumps(capture) + "\n")
-            self.assertEqual(gateway.verify(exact=True), [{}])
-            for event in ["logging_status", "unknown"]:
-                diagnostic_path.write_text(diagnostics + json.dumps({"event": event}) + "\n")
-                with self.assertRaisesRegex(live.GateError, "^diagnostic_loss$"):
-                    gateway.verify(exact=True)
-            diagnostic_path.write_text(diagnostics)
-            path.write_text(json.dumps({**capture, "redacted": True}) + "\n")
-            with self.assertRaisesRegex(live.GateError, "^redacted_history_observation$"):
-                gateway.verify(exact=True)
-            gateway.requests *= 2
-            gateway.budget = 2
-            (gateway.root / "diagnostics.jsonl").write_text((json.dumps(diagnostic) + "\n") * 2)
-            path.write_text((json.dumps(capture) + "\n") * 2)
-            with self.assertRaisesRegex(live.GateError, "^duplicate_captured_exchange$"):
-                gateway.verify(exact=True)
-
     def gateway(self, address):
         gateway = live.Gateway.__new__(live.Gateway)
         gateway.address = address
@@ -130,19 +96,6 @@ class MessagesInputRunnerOracles(unittest.TestCase):
         with self.assertRaisesRegex(live.GateError, "^cache_ttl_write_class_not_observed$"):
             live.automatic_cache(missing)
         self.assertEqual(len(missing.requests), 2)
-
-    def test_cache_controls_allow_only_the_documented_five_minute_default(self):
-        wires = [{"cache_control": {"type": "ephemeral"}},
-                 {"cache_control": {"type": "ephemeral", "ttl": "5m"}},
-                 {"cache_control": {"type": "ephemeral", "ttl": "1h"}},
-                 {"cache_control": {"type": "ephemeral", "ttl": "1h"}}]
-        live.verify_cache_controls(wires)
-        for changed in [None, {"type": "ephemeral"}, {"type": "ephemeral", "ttl": None},
-                        {"type": "ephemeral", "ttl": "1h", "extra": True}]:
-            broken = copy.deepcopy(wires)
-            broken[-1]["cache_control"] = changed
-            with self.assertRaisesRegex(live.GateError, "^automatic_cache_ttl_changed$"):
-                live.verify_cache_controls(broken)
 
 
 if __name__ == "__main__":

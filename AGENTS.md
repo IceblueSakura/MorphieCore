@@ -22,7 +22,7 @@
 ## Security
 
 - Access credentials only through the project loader. Never inspect `.env`, private configuration, OAuth files or third-party auth caches as investigation/test input, or print environment values.
-- Keep credentials, private config and business payloads out of source, public fixtures and tool output. The single deployer owns every downstream client and authorizes sensitive business headers/bodies in explicitly enabled, bounded [private exchange capture](docs/architecture.md#configurable-exchange-capture). Authentication is always redacted before capture; ordinary telemetry stays body-free. Private capture is not permission to publish payloads or use them as protocol fixtures.
+- Keep credentials, private config and business payloads out of source, public fixtures and tool output. The single deployer owns every downstream client and authorizes sensitive business headers/bodies in explicitly enabled, bounded [private failure context](docs/architecture.md#configurable-exchange-capture). Authentication is always redacted before capture; ordinary telemetry stays body-free. Private capture is not permission to publish payloads or use them as protocol fixtures.
 - Preserve loopback-only ingress, fail-closed auth and trusted target selection. Business data cannot choose origins, credentials or auth/proxy headers; credential locators and trusted origins never reach clients. Bound resources and time, release upstreams on cancellation, and never replay after publication or fabricate successful termination.
 
 ## Engineering

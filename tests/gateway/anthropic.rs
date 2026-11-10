@@ -309,12 +309,9 @@ struct NativeFixture {
     seen: Arc<Mutex<Vec<Value>>>,
     control: Arc<Control>,
     replay_origin: morphiecore::semantic::value::ReplayOrigin,
-    gateway: Gateway,
-    diagnostics: std::path::PathBuf,
     client: reqwest::Client,
     _gateway_task: Guard,
     _upstream: Guard,
-    _directory: tempfile::TempDir,
 }
 
 async fn native_fixture() -> NativeFixture {
@@ -372,8 +369,6 @@ async fn native_fixture() -> NativeFixture {
     .unwrap()
     .with_model_metadata([(model, ModelMetadata::new(1, "Synthetic").unwrap())])
     .unwrap();
-    let directory = tempfile::tempdir().unwrap();
-    let diagnostics = directory.path().join("diagnostics.jsonl");
     let gate = Gateway::new(
         topology,
         morphiecore::gateway::TaskEntries {
@@ -407,10 +402,7 @@ async fn native_fixture() -> NativeFixture {
         Limits::default(),
         None,
     )
-    .unwrap()
-    .with_diagnostics(&diagnostics)
     .unwrap();
-    let diagnostic_owner = gate.clone();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let gateway_task = Guard(tokio::spawn(async move {
@@ -427,12 +419,9 @@ async fn native_fixture() -> NativeFixture {
         seen,
         control,
         replay_origin,
-        gateway: diagnostic_owner,
-        diagnostics,
         client,
         _gateway_task: gateway_task,
         _upstream: upstream,
-        _directory: directory,
     }
 }
 
@@ -474,11 +463,9 @@ async fn incomplete_native_tool_prefixes_survive_json_sse_and_stored_retrieval()
                 .await
                 .unwrap();
             if result.status() != 200 {
-                fixture.gateway.flush_diagnostics().await;
                 panic!(
-                    "responses={responses}, stream={stream}: {}; {}",
-                    result.text().await.unwrap(),
-                    std::fs::read_to_string(&fixture.diagnostics).unwrap()
+                    "responses={responses}, stream={stream}: {}",
+                    result.text().await.unwrap()
                 );
             }
             let delivered = if stream {
@@ -565,8 +552,6 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
     let base = &fixture.base;
     let seen = &fixture.seen;
     let replay_origin = fixture.replay_origin.clone();
-    let diagnostic_owner = &fixture.gateway;
-    let diagnostics = &fixture.diagnostics;
     let client = &fixture.client;
     let binding = &MESSAGES_BINDINGS[0];
     for profile in [GenerationApi::Responses, GenerationApi::Chat] {
@@ -606,27 +591,6 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 let error: Value = rejected.json().await.unwrap();
                 assert_eq!(error["error"]["code"], "invalid_request");
                 assert_eq!(seen.lock().unwrap().len(), count);
-                let report = tokio::time::timeout(Duration::from_secs(5), async {
-                    loop {
-                        diagnostic_owner.flush_diagnostics().await;
-                        let records = std::fs::read_to_string(diagnostics).unwrap();
-                        if let Some(report) = records
-                            .lines()
-                            .map(|line| serde_json::from_str::<Value>(line).unwrap())
-                            .find(|record| record["event"] == "request")
-                        {
-                            break report;
-                        }
-                        tokio::task::yield_now().await;
-                    }
-                })
-                .await
-                .expect("completed cache-retention rejection diagnostic");
-                assert_eq!(
-                    report["generation"]["planning_failure"]["reasons"],
-                    json!(["admission.cache_retention"])
-                );
-                assert_eq!(report["generation"]["attempts"], json!([]));
                 input["prompt_cache_retention"] = json!("24h");
             }
             // Codex always sends `client_metadata`, which no target takes.
@@ -668,11 +632,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 let status = result.status();
                 let body: Value = client_body(result, profile, stream).await;
                 if status != 200 {
-                    diagnostic_owner.flush_diagnostics().await;
-                    panic!(
-                        "{profile:?}: {body}; {}",
-                        std::fs::read_to_string(diagnostics).unwrap()
-                    );
+                    panic!("{profile:?}: {body}");
                 }
                 assert_eq!(body["model"], binding.model);
                 assert!(body["created_at"].as_u64().is_some());
@@ -1064,40 +1024,6 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
         }
     }
     assert_eq!(seen.lock().unwrap().len(), 36);
-    diagnostic_owner.flush_diagnostics().await;
-    let records = std::fs::read_to_string(diagnostics).unwrap();
-    let reports: Vec<Value> = records
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
-    assert!(reports.iter().any(|record| {
-        record["generation"]["attempts"]
-            .as_array()
-            .is_some_and(|attempts| {
-                attempts.iter().any(|attempt| {
-                    attempt["evidence"]["entries"]
-                        .as_array()
-                        .is_some_and(|entries| {
-                            [
-                                "generation.omit-cache-key.v1",
-                                "generation.omit-temperature.v1",
-                            ]
-                            .iter()
-                            .all(|rule| {
-                                entries.iter().any(|entry| {
-                                    entry["view"] == "upstream_request" && entry["rule"] == *rule
-                                })
-                            })
-                        })
-                })
-            })
-    }));
-    assert!(records.contains(r#""ignored_request_field_count":1"#));
-    assert!(!records.contains("client_metadata"));
-    assert!(!records.contains("messages.default-automatic-cache.v1"));
-    // Native adaptive intent stays adaptive, without a numeric-budget approximation.
-    assert!(!records.contains("messages.budget-as-effort.v1"));
-    assert!(!records.contains("0.375"));
 }
 
 #[tokio::test]

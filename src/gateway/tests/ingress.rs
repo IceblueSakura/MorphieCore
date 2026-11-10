@@ -71,10 +71,7 @@ fn client_profile_cannot_depend_on_candidate_order_or_select_responses_extension
 
 #[tokio::test]
 async fn source_decode_and_planning_failures_have_separate_boundaries_without_attempts() {
-    use crate::execution::{
-        plan::{PlanError, RejectionReason},
-        report::{Report, ResultState},
-    };
+    use crate::execution::report::Report;
     let mut gate = gateway(Limits::default());
     let state = Arc::get_mut(&mut gate.state).unwrap();
     let mut entry = state.entries.values().next().unwrap().as_ref().clone();
@@ -105,10 +102,6 @@ async fn source_decode_and_planning_failures_have_separate_boundaries_without_at
         &report,
     )
     .unwrap();
-    let snapshot = report.snapshot();
-    assert!(snapshot.intake.entries.is_empty());
-    assert!(snapshot.attempts.is_empty());
-    assert!(snapshot.failure.is_none());
     let mut invalid = wire.clone();
     invalid["tools"][0]["name"] = serde_json::Value::Null;
     let failed_decode = Report::default();
@@ -121,9 +114,8 @@ async fn source_decode_and_planning_failures_have_separate_boundaries_without_at
         )
         .is_err()
     );
-    assert!(failed_decode.snapshot().intake.entries.is_empty());
     assert_eq!(
-        failed_decode.snapshot().failure.unwrap().boundary,
+        failed_decode.cause().unwrap().boundary,
         Some(crate::protocol::conversion::generation::ConversionBoundary::RequestDecode)
     );
     let entry = Arc::make_mut(
@@ -142,7 +134,8 @@ async fn source_decode_and_planning_failures_have_separate_boundaries_without_at
             .execution
             .request_body_limit = 1;
     }
-    let trace = crate::gateway::diagnostics::Trace::generation_trace(None);
+    let (sink, exporter) = crate::gateway::diagnostics::Sink::memory();
+    let trace = crate::gateway::diagnostics::Trace::generation_trace(Some(&sink));
     let report = trace.report.clone();
     let (entry, request) = admission::prepare(
         state,
@@ -163,18 +156,10 @@ async fn source_decode_and_planning_failures_have_separate_boundaries_without_at
     .await
     .unwrap_err();
     assert_eq!(error.status, 400);
-    let snapshot = report.snapshot();
-    assert_eq!(snapshot.result, ResultState::Failed);
-    assert_eq!(snapshot.failure_code, Some(error.diagnostic_code()));
-    assert_eq!(snapshot.failure_status_hint, Some(400));
-    assert!(snapshot.attempts.is_empty());
-    assert!(snapshot.intake.entries.is_empty());
-    assert!(matches!(
-        snapshot.planning_failure,
-        Some(PlanError::CandidateRejected(RejectionReason::BodyLimit))
-            | Some(PlanError::NoCandidate { .. })
-    ));
-    let encoded = serde_json::to_string(&report.snapshot()).unwrap();
+    assert_eq!(report.request_error().unwrap().1, 400);
+    let logs = exporter.get_emitted_logs().unwrap();
+    assert_eq!(logs.len(), 1);
+    let encoded = format!("{logs:?}");
     assert!(!encoded.contains("fixture-chat"));
     assert!(!encoded.contains("prior"));
 }
@@ -434,20 +419,11 @@ async fn model_request_limits_do_not_suppress_client_reported_facts() {
 
 #[tokio::test]
 async fn diagnostics_only_record_authenticated_requests_and_never_expose_headers() {
-    let directory = crate::test_files::private_directory();
-    let path = directory.path().join("events.jsonl");
-    let capture_path = directory.path().join("capture.jsonl");
-    let config = serde_json::from_value(serde_json::json!({
-        "path":capture_path,
-        "client_request":{"headers":true,"body":true},
-        "client_response":{"headers":true,"body":true}
-    }))
-    .unwrap();
-    let gate = gateway(Limits::default())
-        .with_diagnostics(&path)
-        .unwrap()
-        .with_capture(config)
-        .unwrap();
+    let (sink, exporter) = crate::gateway::diagnostics::Sink::memory();
+    let mut gate = gateway(Limits::default());
+    let state = Arc::get_mut(&mut gate.state).unwrap();
+    state.diagnostics = Some(sink);
+    state.capture = Some(crate::gateway::capture::Sink::new(16 << 10));
     for authenticated in [false, true] {
         let mut request = HttpRequest::builder()
             .method("POST")
@@ -471,32 +447,26 @@ async fn diagnostics_only_record_authenticated_requests_and_never_expose_headers
             .await
             .unwrap();
     }
-    gate.flush_diagnostics().await;
-    let text = std::fs::read_to_string(&path).unwrap();
-    let records: Vec<serde_json::Value> = text
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .filter(|value: &serde_json::Value| value["event"] == "request")
-        .collect();
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0]["agent_id"], "fixture-agent");
-    let request_id = records[0]["request_id"].as_str().unwrap();
-    assert!(!request_id.is_empty());
-    assert!(!text.contains(KEY));
-    assert!(!text.contains("invalid json"));
-    assert!(text.contains("admission"));
-    let captured = std::fs::read_to_string(&capture_path).unwrap();
-    assert!(!captured.contains(KEY));
-    assert!(!captured.contains("synthetic-query-secret"));
-    assert!(!captured.contains("invalid json"));
-    assert!(captured.contains("synthetic-private-header"));
-    assert!(captured.contains("client_response"));
-    assert!(captured.lines().all(|line| {
-        let row: serde_json::Value = serde_json::from_str(line).unwrap();
-        row["exchange"] == 1
-            && row["request_id"] == request_id
-            && row["agent_id"] == records[0]["agent_id"]
-    }));
+    let logs = exporter.get_emitted_logs().unwrap();
+    assert!(!logs.is_empty());
+    for log in &logs {
+        assert!(
+            log.record
+                .attributes_iter()
+                .any(|(key, value)| key.as_str() == "agent_id"
+                    && *value == opentelemetry::logs::AnyValue::from("fixture-agent"))
+        );
+    }
+    let text = format!("{logs:?}");
+    for secret in [
+        KEY,
+        "synthetic-query-secret",
+        "synthetic-private-header",
+        "invalid json",
+    ] {
+        assert!(!text.contains(secret));
+    }
+    assert!(text.contains("client_response"));
 }
 #[tokio::test]
 async fn authenticated_agent_is_fixed_before_optional_capture() {
@@ -506,8 +476,7 @@ async fn authenticated_agent_is_fixed_before_optional_capture() {
     };
     use axum::extract::Extension;
     const OTHER: &str = "synthetic-second-client-token-00002";
-    for (diagnostics, capture) in [(false, false), (false, true), (true, false), (true, true)] {
-        let directory = crate::test_files::private_directory();
+    for (diagnostics, capture) in [(false, false), (true, false), (true, true)] {
         let mut gate = gateway(Limits::default());
         Arc::get_mut(&mut gate.state).unwrap().auth = Auth::new(BTreeMap::from([
             ("pi".into(), SecretMaterial::new(KEY).unwrap()),
@@ -515,20 +484,12 @@ async fn authenticated_agent_is_fixed_before_optional_capture() {
         ]))
         .unwrap();
         if diagnostics {
-            gate = gate
-                .with_diagnostics(&directory.path().join("events.jsonl"))
-                .unwrap();
+            Arc::get_mut(&mut gate.state).unwrap().diagnostics =
+                Some(crate::gateway::diagnostics::Sink::memory().0);
         }
         if capture {
-            gate = gate
-                .with_capture(
-                    serde_json::from_value(serde_json::json!({
-                        "path":directory.path().join("capture.jsonl"),
-                        "client_request":{"headers":true}
-                    }))
-                    .unwrap(),
-                )
-                .unwrap();
+            Arc::get_mut(&mut gate.state).unwrap().capture =
+                Some(crate::gateway::capture::Sink::new(16 << 10));
         }
         let app = Router::new()
             .fallback(
@@ -574,17 +535,6 @@ async fn authenticated_agent_is_fixed_before_optional_capture() {
             assert_ne!(id, "forged");
             assert!(references.insert(id.to_owned()));
         }
-        gate.flush_diagnostics().await;
-        if capture {
-            let captured = std::fs::read_to_string(directory.path().join("capture.jsonl")).unwrap();
-            for row in captured
-                .lines()
-                .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-            {
-                assert!(references.contains(row["request_id"].as_str().unwrap()));
-                assert!(matches!(row["agent_id"].as_str(), Some("pi" | "opencode")));
-            }
-        }
     }
 }
 
@@ -617,12 +567,6 @@ async fn authentication_runs_before_any_body_poll() {
         assert_eq!(body["type"], "error");
         assert_eq!(body["error"]["type"], kind);
     }
-    let directory = crate::test_files::private_directory();
-    let disabled = directory.path().join("disabled.jsonl");
-    let config = serde_json::from_value(serde_json::json!({"path":disabled})).unwrap();
-    let gate = gate.with_capture(config).unwrap();
-    assert!(gate.capture_status().is_none());
-    assert!(!disabled.exists());
     let app = Router::new()
         .fallback(|| async {
             panic!("unauthenticated handler ran");
@@ -1033,4 +977,102 @@ fn entries_cannot_escape_compiled_route_or_credential_ownership() {
         &scope,
         other.state.entries.values().next().unwrap().candidates[0].cache_scope()
     );
+}
+#[tokio::test]
+async fn normal_shutdown_is_not_reclassified_as_an_admission_error_by_middleware() {
+    use axum::{body::Body, http::Request};
+    for during_body in [false, true] {
+        let mut gate = gateway(Limits::default());
+        let (sink, exporter) = crate::gateway::diagnostics::Sink::memory();
+        Arc::get_mut(&mut gate.state).unwrap().diagnostics = Some(sink);
+        let started = Arc::new(tokio::sync::Notify::new());
+        let notification = started.clone();
+        let body = if during_body {
+            Body::from_stream(futures_util::stream::once(async move {
+                notification.notify_one();
+                std::future::pending::<Result<bytes::Bytes, std::io::Error>>().await
+            }))
+        } else {
+            gate.shutdown();
+            Body::empty()
+        };
+        let app = gate.router();
+        let task = tokio::spawn(async move {
+            app.oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("authorization", format!("Bearer {KEY}"))
+                    .header("content-type", "application/json")
+                    .body(body)
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+        });
+        if during_body {
+            tokio::time::timeout(std::time::Duration::from_secs(2), started.notified())
+                .await
+                .unwrap();
+            gate.shutdown();
+        }
+        let response = task.await.unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        axum::body::to_bytes(response.into_body(), 65536)
+            .await
+            .unwrap();
+        assert!(exporter.get_emitted_logs().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn standalone_admission_logs_closed_reasons_and_selected_error_status_without_bodies() {
+    use axum::{body::Body, http::Request};
+    let mut gate = gateway(Limits::default());
+    let (sink, exporter) = crate::gateway::diagnostics::Sink::memory();
+    Arc::get_mut(&mut gate.state).unwrap().diagnostics = Some(sink);
+    for (body, status) in [
+        ("invalid JSON", 400),
+        (
+            r#"{"model":"missing","input":"synthetic-private-prompt"}"#,
+            404,
+        ),
+    ] {
+        let response = gate
+            .router()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/embeddings")
+                    .header("authorization", format!("Bearer {KEY}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status().as_u16(), status);
+        axum::body::to_bytes(response.into_body(), 65536)
+            .await
+            .unwrap();
+    }
+    use opentelemetry::logs::AnyValue;
+    let logs = exporter.get_emitted_logs().unwrap();
+    assert_eq!(logs.len(), 2);
+    for (log, status) in logs.iter().zip([400, 404]) {
+        assert!(
+            log.record
+                .attributes_iter()
+                .any(|(key, value)| key.as_str() == "gateway.error.status_code"
+                    && *value == AnyValue::Int(status))
+        );
+        assert!(
+            log.record
+                .attributes_iter()
+                .any(|(key, value)| key.as_str() == "error.type"
+                    && *value != AnyValue::from("gateway.http_rejected"))
+        );
+    }
+    let text = format!("{logs:?}");
+    assert!(!text.contains("synthetic-private-prompt") && !text.contains("invalid JSON"));
 }

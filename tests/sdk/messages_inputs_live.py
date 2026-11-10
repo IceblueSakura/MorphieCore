@@ -43,23 +43,20 @@ def private_json(path, value):
 
 class Gateway:
     def __init__(self, binary, directory, budget, *, model=MODEL, binding=BINDING,
-                 accounts, store, chat_profile=None, capture_response=False):
+                 accounts, store, chat_profile=None, diagnostics=None):
         require(accounts.is_absolute() and store.is_absolute(), "explicit_account_paths")
         self.root = directory
         self.budget = budget
         self.requests = []
         self.key = secrets.token_urlsafe(32)
-        capture = {"path": str(directory / "capture.jsonl"),
-                   "upstream_request": {"body": True}, "max_unit_bytes": 1048576}
-        if capture_response:
-            capture["client_response"] = {"body": True}
-            capture["upstream_response"] = {"body": True}
         private_json(directory / "auth.json", {"version": 1, "agents": [{"agent_id": "fixture-agent", "key": self.key}]})
-        private_json(directory / "gateway.json", {
+        service = {
             "version": 1, "accounts_file": str(accounts), "credentials_dir": str(store),
             "auth_file": "auth.json", "bind": "127.0.0.1:0", "models_file": "models.json",
-            "delivery": {"exchange_timeout_ms": DEADLINE_MS}, "diagnostics": "diagnostics.jsonl",
-            "capture": capture})
+            "delivery": {"exchange_timeout_ms": DEADLINE_MS}}
+        if diagnostics is not None:
+            service["diagnostics"] = {"endpoint": diagnostics}
+        private_json(directory / "gateway.json", service)
         candidate = {"binding": binding, "maximum_output_tokens": CAP}
         if chat_profile is None:
             candidate["default_output_tokens"] = None
@@ -124,24 +121,10 @@ class Gateway:
         require(reply.get("stop_reason") in ("tool_use", "end_turn"), "incomplete_native_outcome")
         return reply
 
-    def verify(self, exact=False):
+    def verify(self):
         require(self.process.returncode == 0, "gateway_shutdown")
-        records = [json.loads(line) for line in (self.root / "diagnostics.jsonl").read_text().splitlines()]
-        require(all(record.get("event") in ("file", "request", "log", "span") for record in records), "diagnostic_loss")
-        requests = [record for record in records if record.get("event") == "request"]
-        require(len(requests) == len(self.requests) == self.budget, "actual_request_count")
-        require(all(record["outcome"] == "complete" and len(record["candidates"]) == 1
-                    and record.get("ignored_request_field_count", 0) == 0 for record in requests),
-                "gateway_outcome_or_attempt_count")
-        capture = [json.loads(line) for line in (self.root / "capture.jsonl").read_text().splitlines()]
-        require(all(record["dropped_before"] == 0 and record["status"] == "body_unit"
-                    and record["boundary"] == "upstream_request" for record in capture), "capture_incomplete")
-        require(len(capture) == self.budget, "captured_request_count")
-        require(len({record["exchange"] for record in capture}) == self.budget,
-                "duplicate_captured_exchange")
-        if exact:
-            require(all(record["redacted"] is False for record in capture), "redacted_history_observation")
-        return [record["value"] for record in capture]
+        require(len(self.requests) == self.budget, "client_request_count")
+
 
 
 def request(messages, tools=None):
@@ -254,17 +237,6 @@ def automatic_cache(gateway):
     return reports
 
 
-def verify_cache_controls(wires):
-    require(len(wires) == 4, "automatic_cache_request_count")
-    for wire, ttl in zip(wires, ["5m", "5m", "1h", "1h"], strict=True):
-        control = wire.get("cache_control")
-        # Native omission is the documented five-minute default, not an erased
-        # one-hour intent. Reject null, other values and unknown prepared keys.
-        require(isinstance(control, dict) and set(control) <= {"type", "ttl"}
-                and control.get("type") == "ephemeral" and control.get("ttl", "5m") == ttl,
-                "automatic_cache_ttl_changed")
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gateway-bin", type=Path, required=True)
@@ -281,33 +253,17 @@ def main():
                               accounts=args.accounts, store=args.store)
             try:
                 if args.case == "examples":
-                    root, inline = examples(gateway)
+                    examples(gateway)
                 elif args.case == "context":
-                    first, second, result = contexts(gateway)
+                    contexts(gateway)
                 else:
                     cache = automatic_cache(gateway)
                     report["cache_reports"] = cache
             finally:
                 gateway.close()
-            wires = gateway.verify()
-            if args.case == "examples":
-                require(all(wire["tools"][0] == root for wire in wires), "root_examples_or_schema_changed")
-                for wire in wires[1:]:
-                    additions = [block["tool"]["definition"] for message in wire["messages"]
-                                 for block in message["content"] if isinstance(block, dict)
-                                 and block.get("type") == "tool_addition"]
-                    require(additions == [inline], "inline_examples_or_schema_changed")
-                report.update(root_and_inline_examples=True, model_issued_tool_history=True)
-            elif args.case == "context":
-                require(wires[0]["messages"][0]["content"][:2] == [first, second], "direct_context_changed")
-                results = [block for message in wires[2]["messages"] for block in message["content"]
-                           if isinstance(block, dict) and block.get("type") == "tool_result"]
-                require(len(results) == 1 and results[0]["content"] == [result], "tool_context_changed")
-                report.update(per_use_document_context=True, model_issued_tool_history=True)
-            else:
-                verify_cache_controls(wires)
-                report.update(cache_reports=cache, retention_and_invoices="not_asserted")
-            report.update(status="passed", client_requests=BUDGETS[args.case], upstream_attempts=BUDGETS[args.case])
+            gateway.verify()
+            report.update(status="passed", client_requests=BUDGETS[args.case],
+                          upstream_wire_and_attempts="not_asserted")
     except Exception as error:
         report.update(status="failed", error=str(error) if isinstance(error, GateError) else type(error).__name__)
         print(json.dumps(report))

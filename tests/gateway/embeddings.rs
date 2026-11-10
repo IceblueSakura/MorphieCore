@@ -1,12 +1,9 @@
 //! Connected numeric delivery, EOF-gated failures and opt-in observation boundaries.
-use super::{
-    embedding_loop::{CLIENT_KEY, Fixture},
-    filesystem,
-};
+use super::embedding_loop::{CLIENT_KEY, Fixture};
 use morphiecore::protocol::embedding::projection::EncodingSupport;
 use serde_json::{Value, json};
 #[tokio::test]
-async fn embedding_encodings_receipts_capture_and_effective_width() {
+async fn embedding_encodings_and_effective_width() {
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(std::time::Duration::from_secs(5))
@@ -17,10 +14,7 @@ async fn embedding_encodings_receipts_capture_and_effective_width() {
         EncodingSupport::Base64,
         EncodingSupport::Both,
     ] {
-        let dir = filesystem::private_directory();
-        let capture_path = dir.path().join("capture.jsonl");
-        let diagnostic_path = dir.path().join("diagnostics.jsonl");
-        let fixture = Fixture::start(support, Some(&capture_path), Some(&diagnostic_path)).await;
+        let fixture = Fixture::start(support).await;
         let capabilities: Value = client
             .get(format!("{}/v1/morphiecore/capabilities", fixture.base))
             .bearer_auth(CLIENT_KEY)
@@ -125,120 +119,12 @@ async fn embedding_encodings_receipts_capture_and_effective_width() {
         assert_eq!(response.status(), 400);
         assert!(!response.headers().contains_key("x-morphiecore-adaptation"));
         assert_eq!(fixture.seen.lock().unwrap().len(), before);
-        fixture.gateway.flush_diagnostics().await;
-        let diagnostics = std::fs::read_to_string(diagnostic_path).unwrap();
-        let records: Vec<Value> = diagnostics
-            .lines()
-            .map(|line| serde_json::from_str(line).unwrap())
-            .collect();
-        let candidates: Vec<_> = records
-            .iter()
-            .filter_map(|r| r["candidates"].as_array())
-            .flatten()
-            .collect();
-        assert_eq!(
-            candidates.len(),
-            if support == EncodingSupport::Float {
-                5
-            } else {
-                4
-            }
-        );
-        for (index, candidate) in candidates.iter().take(3).enumerate() {
-            let mut expected =
-                vec![json!({"rule":"embedding.omit-response-id.v1","direction":"delivery"})];
-            if support == EncodingSupport::Float {
-                expected.push(json!({"rule":"embedding.input-from-input-only-total.v1","direction":"delivery","actions":["input_interpreted"]}));
-            }
-            if index == 2 && support == EncodingSupport::Float {
-                expected.push(
-                    json!({"rule":"embedding.float-json-to-binary32.v1","direction":"delivery"}),
-                );
-            }
-            assert_eq!(candidate["embedding_adaptations"], json!(expected));
-        }
-        assert!(
-            candidates
-                .iter()
-                .skip(3)
-                .all(|candidate| candidate.get("embedding_adaptations").is_none())
-        );
-        assert!(
-            !diagnostics.contains("\"first\"")
-                && !diagnostics.contains("zczMPQ")
-                && !diagnostics.contains("synthetic-id")
-        );
-        let capture = std::fs::read_to_string(capture_path).unwrap();
-        assert!(capture.contains("[REDACTED]"));
-        assert!(
-            !capture.contains(CLIENT_KEY)
-                && !capture.contains("synthetic-embedding-upstream-key-0001")
-        );
-        let captures: Vec<Value> = capture
-            .lines()
-            .map(|line| serde_json::from_str(line).unwrap())
-            .collect();
-        let delivery = captures
-            .iter()
-            .find(|r| {
-                r["boundary"] == "client_response"
-                    && r["value"]["data"][0]["embedding"] == "zczMPQAAAL4="
-            })
-            .unwrap();
-        let exchange = &delivery["exchange"];
-        let request_id = delivery["request_id"].as_str().unwrap();
-        let diagnostic = records
-            .iter()
-            .find(|r| r["request_id"] == request_id)
-            .unwrap();
-        assert_eq!(diagnostic["agent_id"], "fixture-agent");
-        assert_eq!(diagnostic["capture_exchange"], *exchange);
-        assert!(
-            captures
-                .iter()
-                .filter(|r| &r["exchange"] == exchange)
-                .all(|r| r["request_id"] == request_id && r["agent_id"] == "fixture-agent")
-        );
-        let ids: std::collections::BTreeSet<_> = records
-            .iter()
-            .filter(|r| r["event"] == "request")
-            .map(|r| r["request_id"].as_str().unwrap())
-            .collect();
-        assert_eq!(ids.len(), candidates.len() + 1);
-        for boundary in [
-            "client_request",
-            "upstream_request",
-            "upstream_response",
-            "client_response",
-        ] {
-            assert!(captures.iter().any(|r| &r["exchange"] == exchange
-                && r["boundary"] == boundary
-                && r["status"] == "body_unit"));
-        }
-        let upstream = captures
-            .iter()
-            .find(|r| {
-                &r["exchange"] == exchange
-                    && r["boundary"] == "upstream_request"
-                    && r["status"] == "body_unit"
-            })
-            .unwrap();
-        assert_eq!(upstream["attempt"], 1);
-        assert_eq!(
-            upstream["value"]["encoding_format"],
-            if support == EncodingSupport::Float {
-                "float"
-            } else {
-                "base64"
-            }
-        );
     }
 }
 
 #[tokio::test]
 async fn embedding_default_vector_budget_rejects_before_transport() {
-    let fixture =
-        Fixture::start_with_dimensions(EncodingSupport::Float, 1536, 128, None, None).await;
+    let fixture = Fixture::start_with_dimensions(EncodingSupport::Float, 1536, 128).await;
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(std::time::Duration::from_secs(5))
@@ -279,10 +165,7 @@ async fn embedding_default_vector_budget_rejects_before_transport() {
 
 #[tokio::test]
 async fn google_embedding_projection_reports_errors_and_one_attempt() {
-    let dir = filesystem::private_directory();
-    let capture = dir.path().join("capture.jsonl");
-    let diagnostics = dir.path().join("diagnostics.jsonl");
-    let fixture = Fixture::start_google(Some(&capture), Some(&diagnostics)).await;
+    let fixture = Fixture::start_google().await;
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(std::time::Duration::from_secs(5))
@@ -365,37 +248,4 @@ async fn google_embedding_projection_reports_errors_and_one_attempt() {
         .unwrap();
     assert_eq!(response.status(), 400);
     assert_eq!(fixture.seen.lock().unwrap().len(), before);
-    fixture.gateway.flush_diagnostics().await;
-    let records = std::fs::read_to_string(diagnostics).unwrap();
-    let records: Vec<Value> = records
-        .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect();
-    let candidates: Vec<_> = records
-        .iter()
-        .filter_map(|r| r["candidates"].as_array())
-        .flatten()
-        .collect();
-    assert_eq!(candidates.len(), 8);
-    for candidate in candidates.iter().take(2) {
-        let adaptations = candidate["embedding_adaptations"].as_array().unwrap();
-        for rule in [
-            "embedding.omit-user-hint.v1",
-            "embedding.bound-model-label.v1",
-            "embedding.input-only-total-from-prompt.v1",
-        ] {
-            assert_eq!(adaptations.iter().filter(|r| r["rule"] == rule).count(), 1);
-        }
-    }
-    let details = candidates[3]["embedding_adaptations"].as_array().unwrap();
-    assert!(
-        details
-            .iter()
-            .any(|r| r["rule"] == "embedding.estimate-missing-usage.v1"
-                && r["actions"]
-                    == json!(["input_estimated", "total_estimated", "details_omitted"]))
-    );
-    let capture = std::fs::read_to_string(capture).unwrap();
-    assert!(!capture.contains("synthetic-embedding-upstream-key-0001"));
-    assert!(capture.contains("[REDACTED]"));
 }

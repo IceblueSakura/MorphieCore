@@ -1017,24 +1017,24 @@ Configured via [`DeltaCoalescing`](../src/execution/delivery/coalescing.rs#L17) 
 
 Configuration intake reports a domain and fixed safe reason, with a root location for schema/type errors. It does not traverse Serde paths or emit rejected values or private map keys. Semantic validation may retain its schema-owned field/index attribution.
 
-**Next-stage goal selected 2026-11-10:** use OTel WARN/ERROR diagnostics with explicitly enabled private request/response context to locate failures; precise configuration-error paths and application-owned JSONL storage are not required. The [cleanup plan](convergence-cleanup-plan.md) owns the planned replacement and acceptance. The following bullets and capture section describe the implemented baseline until that replacement lands.
+Failure diagnostics use one runtime-owned native OpenTelemetry Logs provider, the standard bounded batch processor and official OTLP/HTTP JSON exporter. The receiver owns retention, indexing and optional durability. The application owns no diagnostic files, trace tree, successful-request archive or diagnostic usage ledger. Execution facts remain independent of optional export.
 
-- **Tracing stack:** `tracing` / `tracing-subscriber` for spans, `tracing-opentelemetry` for traces, and `opentelemetry-appender-tracing` for structured logs.
-- **Local writer:** Asynchronous, non-blocking worker writing structured JSONL log records to rotating 1 MiB files.
-- **Privacy:** Operational logs are strictly body-free; prompts, completions, and secrets are excluded.
+- **Population and severity:** recovered attempt failures and client/upstream 4xx rejection are WARN; unrecovered service, transport, decode and terminal failures are ERROR. HTTP-200 failed tasks use their source class. Ordinary cancellation/shutdown is not a default error; independently observed upstream failures survive it. Length stops, refusal, accepted adaptation and ignored fields do not generate warnings.
+- **Attribution:** closed reason codes, original source/conversion boundary, trusted Agent/request identity, operation, selected Provider/account, public/upstream model and attempt. HTTP status alone does not assign blame. `http.response.status_code` is the observed upstream head; `gateway.error.status_code` is the selected local error presentation. `client.handoff_complete:true` records acknowledged local delivery, not remote receipt or inference success.
+- **Lifecycle:** requests enqueue without waiting for export. Bounded SDK queue/batches, finite HTTP timeout and no export retries. Queue/export/flush problems produce fixed body-free stderr warnings without changing inference, routing, replay or credential state. Explicit flush runs off the async worker; last-owner destruction signals shutdown with no wait. Delivery and storage are best effort.
+- **Maintenance:** OAuth renewal uses the same logger with trusted account/profile and a closed category. Token replies, grants, credential locators and raw third-party errors are never diagnostic bodies.
+
+The public adaptation notice retains bounded semantic evidence across request intake and current-attempt/source/output views. Historical reports, diagnostic usage collection and per-frame/per-effect delivered counters are removed. Real oneshot acknowledgment, delivery commit, publication fences and history reservations remain execution responsibilities. Logs cannot prove execution counts; synthetic authorities and client outcomes are the acceptance oracle.
 
 ### Configurable exchange capture
 
-Opt-in diagnostic capture configured via [`gateway::capture::CaptureConfig`](../src/gateway/capture.rs#L34) records sanitized HTTP headers and bodies at four pipeline boundaries:
-1. Inbound client request (`client_request`)
-2. Outbound upstream request (`upstream_request`)
-3. Inbound upstream response (`upstream_response`)
-4. Outbound client response (`client_response`)
+Explicit `diagnostics.private_bodies` adds bounded sanitized business context to eligible WARN/ERROR logs, not a complete exchange archive. [Usage](usage.md#private-failure-context) owns configuration and limits.
 
-- **Sanitization:** Authorization headers, cookies, API keys, and query tokens are strictly redacted before enqueueing.
-- **Bounded quotas:** Configured per-unit (256 KiB), per-exchange (4 MiB), and total file quota (64 MiB).
-- **Isolation:** Best-effort asynchronous worker; buffer saturation or write failure never blocks inference.
-- **Partial streams:** One sticky gap marker records rejected JSON/argument fragments while later independently sanitizable SSE units remain capturable. Repeated fragments do not consume a record each. Framing failure stops capture permanently; skipped units, aborted sources and truncated EOF retain `incomplete`, even when a later business event reports completion.
+Four passive points observe client input, prepared upstream input, upstream output and polled client output. Each receives one quarter of the retained-text allowance and at most four recent safe units. Complete bounded JSON is sanitized before text extraction; SSE retains recent complete sanitized events. Truncation, incompleteness and omissions remain explicit. No parse-failed-to-raw fallback or argument reconstruction exists. Credential body fields and credential URL values are redacted before retention/export; headers and OAuth/token endpoints are excluded.
+
+Upstream context resets per attempt; late observers cannot pollute another send. A correlated `gateway.failure.response` can add client-output context after the trace ends without a completion barrier, prefetch or terminal wait. Disabled mode retains no diagnostic bodies. Standalone tasks leave failed-head bodies unread and provide metadata-only coverage; a finite error-body read policy remains unselected. Raw malformed/HTML/plain-text capture also remains unselected.
+
+Complete success-wire and exact live-attempt attestation are withdrawn. Offline directional fixtures, SDK consumers and test-owned upstream hooks retain independent protocol/count assertions; live scripts report observed client outcomes/counts only. Never publish, commit, print, replay or promote real private context into protocol fixtures.
 
 ## Settled decisions
 
@@ -1049,9 +1049,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Native model choices and pi capacity planning | 2026-11-10 | Models publishes native effort names in `values` and additional accepted names in `compatibility_values`, derived from actual candidate projection. Pi hides aliases, consumes declared context/output and uses input capacity only when total context is absent. Preserve explicit caps and native preference clamping; reconcile refreshed active metadata while idle. [Discovery contract](#generation-text-model-discovery) |
 | DeepSeek parallel-tool admission | 2026-10-25 | Rejects serial tool intent; omits parallel permission with evidence on DeepSeek targets |
 | Messages signed delivery | 2026-10-27 | Enforces native thinking signatures; revised 2026-10-30: unsigned thinking is omitted, never signed |
-| Local telemetry wiring | 2026-10-25 | Native structured logs via tracing/OTel without global runtime locks |
-| Diagnostic convergence goal | 2026-11-10 | Next-stage priority is actionable OTel WARN/ERROR with opt-in private request/response context. Coarse domain/reason configuration errors are sufficient; JSONL persistence is not required. The [cleanup plan](convergence-cleanup-plan.md) describes the replacement; current runtime behavior and deployment remain unchanged |
-| Minimal diagnostic attribution | 2026-10-25 | Admission-owned Agent and request nonces tag traces and capture logs |
+| Failure diagnostics convergence | 2026-11-10 | [Native failure Logs](#observability), trusted attribution and bounded opt-in body context replace local JSONL, spans and diagnostic delivery proof. Coarse configuration errors suffice; external retention and production activation remain separate |
 | Unified Generation evidence | 2026-10-24 | Replaces separate audit logs with `EvidenceDelta` and `Conversion<T>` |
 | Standards reset & redesign | 2026-10-23 | Pinned official standards and upstream test suites; its exact-first fallback is superseded by the conversion ladder |
 | Standard stream errors | 2026-10-24 | Standard Responses `error` events for classified stream failures |

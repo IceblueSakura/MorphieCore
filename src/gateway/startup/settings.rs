@@ -17,8 +17,7 @@ pub(super) struct Configuration {
     #[serde(default = "accounts_file")]
     pub accounts_file: PathBuf,
     pub proxy: Option<String>,
-    pub diagnostics: Option<PathBuf>,
-    pub capture: Option<crate::gateway::CaptureConfig>,
+    pub diagnostics: Option<crate::gateway::DiagnosticsConfig>,
     #[serde(default)]
     pub routing: Routing,
     #[serde(default)]

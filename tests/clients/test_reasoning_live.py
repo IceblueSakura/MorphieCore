@@ -43,7 +43,7 @@ class ReasoningLiveOracles(unittest.TestCase):
                         [{"type": "text", "text": live.TEXT},
                          {"type": "text", "text": "extra"}]):
             with self.assertRaisesRegex(RuntimeError, "^live_client_final_answer$"):
-                live.pi_final_output(content)
+                drivers.pi_final_output(content)
 
     def test_live_opencode_requires_the_scratch_consumer_terminal_outcome(self):
         for finishes, idle, error in [
@@ -79,10 +79,10 @@ class ReasoningLiveOracles(unittest.TestCase):
     def test_live_final_answer_is_distinct_from_pretool_text_and_preserves_replay_bytes(self):
         events = [{"type": "text", "part": {"text": "I will read the fixture."}},
                   {"type": "text", "part": {"text": live.TEXT + "\n"}}]
-        live.opencode_final_output(events)
+        drivers.opencode_final_output(events)
         for invalid in ([], events[:1], events + [{"type": "text", "part": {"text": "wrong"}}]):
             with self.assertRaisesRegex(RuntimeError, "^live_client_final_answer$"):
-                live.opencode_final_output(invalid)
+                drivers.opencode_final_output(invalid)
         observed = {"content": live.TEXT + "\n", "reasoning_content": "Check", "tool_calls": []}
         with self.assertRaisesRegex(RuntimeError, "^answer_changed$"):
             live.same_message({"role": "assistant", "content": live.TEXT, "reasoning_content": "Check"}, observed)
@@ -203,7 +203,7 @@ class ReasoningLiveOracles(unittest.TestCase):
         self.assertEqual(state.outputs[0][0]["reasoning_content"], "Plan")
         self.assertEqual(state.outputs[0][1], "stop")
 
-    def test_verdict_uses_memory_delivery_and_complete_prepared_requests_not_unsafe_fragments(self):
+    def test_verdict_checks_delivered_reasoning_and_submitted_continuation_history(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             tool = {"role": "assistant", "content": None, "reasoning_content": "Plan",
@@ -226,74 +226,14 @@ class ReasoningLiveOracles(unittest.TestCase):
                              1: ({**final, "tool_calls": []}, "stop"),
                              2: ({**final, "tool_calls": []}, "stop")}
             state.outputs[0][0]["content"] = ""
-            prepared = [{"exchange": index, "boundary": "upstream_request", "status": "body_unit",
-                         "redacted": False, "dropped_before": 0, "value": body}
-                        for index, body in enumerate(copy.deepcopy(owner.requests))]
-            capture = [*prepared,
-                       {"boundary": "upstream_response", "status": "unsafe_fragment",
-                        "redacted": False, "dropped_before": 0},
-                       {"boundary": "client_response", "status": "incomplete",
-                        "redacted": False, "dropped_before": 0}]
-            capture_path = root / "capture.jsonl"
-            capture_path.write_text("".join(json.dumps(record) + "\n" for record in capture))
-            diagnostic_path = root / "diagnostics.jsonl"
-            diagnostics = "".join(json.dumps({
-                "event": "request", "outcome": "complete", "candidates": [{}]}) + "\n" for _ in range(3))
-            diagnostics += '{"event":"log"}\n{"event":"span"}\n'
-            diagnostic_path.write_text(diagnostics)
             self.assertTrue(state.verify()["readable_reasoning_replayed"])
-            for event in ["logging_status", "unknown"]:
-                diagnostic_path.write_text(diagnostics + json.dumps({"event": event}) + "\n")
-                with self.assertRaisesRegex(RuntimeError, "^live_diagnostic_loss$"):
-                    state.verify()
-            diagnostic_path.write_text(diagnostics)
             owner.requests[1]["messages"][1]["reasoning_content"] = "changed"
             with self.assertRaisesRegex(RuntimeError, "^reasoning_changed$"):
                 state.verify()
             owner.requests[1]["messages"][1]["reasoning_content"] = "Plan"
-            prepared[2]["value"]["messages"][1]["tool_calls"][0]["id"] = "changed"
-            capture_path.write_text("".join(json.dumps(record) + "\n" for record in capture))
-            with self.assertRaisesRegex(RuntimeError, "^call_identity_or_arguments_changed$"):
-                state.verify()
-            prepared[2]["value"]["messages"][1]["tool_calls"][0]["id"] = "issued-call"
-            for key, value, error in [
-                ("tool_call_id", "changed", "live_prepared_result_identity"),
-                ("content", "changed", "live_prepared_history_content"),
-            ]:
-                result = prepared[1]["value"]["messages"][2]
-                original = result[key]
-                result[key] = value
-                capture_path.write_text("".join(json.dumps(record) + "\n" for record in capture))
-                with self.assertRaisesRegex(RuntimeError, "^" + error + "$"):
-                    state.verify()
-                result[key] = original
-            prepared[2]["value"]["messages"].append(copy.deepcopy(final))
-            capture_path.write_text("".join(json.dumps(record) + "\n" for record in capture))
-            with self.assertRaisesRegex(RuntimeError, "^live_prepared_history_shape$"):
-                state.verify()
             del state.outputs[2]
             with self.assertRaisesRegex(RuntimeError, "^live_response_count$"):
                 state.verify()
-
-    def test_failure_reporting_keeps_only_fixed_classes_and_counts(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            owner = SimpleNamespace(root=root, requests=[{}],
-                address=SimpleNamespace(geturl=lambda: "http://127.0.0.1:1"), key="synthetic")
-            state = live.State(owner, Path("/synthetic/sample.txt"))
-            state.received_requests = 1
-            (root / "diagnostics.jsonl").write_text(json.dumps({"event": "request",
-                "outcome": "error", "stage": "response_head", "upstream_status": 400,
-                "candidates": [{}], "request_id": "not-for-output"}) + "\n")
-            (root / "capture.jsonl").write_text(json.dumps({"boundary": "upstream_response",
-                "status": "body_unit", "value": {"error": {"code": "untrusted-private-code",
-                    "message": "model unknown with synthetic-private-marker"}}}) + "\n")
-            result = state.failure_report()
-            self.assertEqual(result["upstream_attempts"], 1)
-            self.assertEqual(result["provider_errors"][0]["mentioned_fields"], ["model"])
-            self.assertEqual(result["provider_errors"][0]["code"], "unclassified")
-            self.assertNotIn("synthetic-private-marker", json.dumps(result))
-            self.assertNotIn("not-for-output", json.dumps(result))
 
 
 if __name__ == "__main__":

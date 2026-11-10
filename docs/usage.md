@@ -12,10 +12,10 @@ This guide owns local setup, configuration and client-facing procedures for impl
 - [Configure the gateway](#configure-the-gateway)
   - [Configuration templates](#configuration-templates)
   - [Agent API keys](#agent-api-keys)
-  - [Body-free diagnostics](#body-free-diagnostics)
+  - [Failure diagnostics](#failure-diagnostics)
   - [Model configuration](#model-configuration)
   - [Delta coalescing](#delta-coalescing)
-  - [Private exchange capture](#private-exchange-capture)
+  - [Private failure context](#private-failure-context)
 - [Start the gateway](#start-the-gateway)
 - [Reverse-proxy deployment](#reverse-proxy-deployment)
 - [Send a request](#send-a-request)
@@ -252,7 +252,7 @@ The repository's [`config/`](../config/) directory contains public templates, no
 
 | Template | Purpose |
 |---|---|
-| [`gateway.example.json`](../config/gateway.example.json) | All current service fields, default 50 ms / 16 KiB coalescing, disabled diagnostics and all capture selections off |
+| [`gateway.example.json`](../config/gateway.example.json) | All current service fields, default 50 ms / 16 KiB coalescing, disabled failure diagnostics |
 | [`auth.example.json`](../config/auth.example.json) | Two independent Agent identities with deliberately too-short key placeholders; the unchanged file cannot start a gateway |
 | [`accounts.example.json`](../config/accounts.example.json) | Ordered named API-key accounts referencing protected credential aliases, independently of model activation |
 | [`models.example.json`](../config/models.example.json) | Narrow starting point: Qwen 3.8 Flash through the Token Plan Chat binding with readable Chat reasoning |
@@ -283,7 +283,7 @@ For a **new** Unix installation, run from the repository root. This refuses to o
 
 Replace **each** Agent-key placeholder with an independently generated high-entropy key of at least 32 printable non-space ASCII characters; keep values out of source and shell output. Provision every referenced account with `--accounts "$ROOT/accounts.json" --store "$ROOT/credentials"`. The shipped account template declares `primary` for `aliyun-tokenplan-cn`, `opencode-go`, `google` and `openrouter`; each references its Provider-local `example` alias. Remove unused Provider declarations before validation if those accounts will not be provisioned. Task models explicitly select `primary`. Templates are configuration examples, not live acceptance evidence.
 
-`proxy: null` leaves the documented environment-proxy fallback in effect; it does not force direct connections. To enable diagnostics, replace `null` with a private path whose parent already exists. Capture remains disabled until a header/body switch is explicitly enabled; then create its private parent and choose a fresh filename. Upstream credential stores are managed formats, not hand-edited templates. Provider metadata remains compiled into the program; there is no runtime `providers.json` template.
+`proxy: null` leaves the documented environment-proxy fallback in effect; it does not force direct connections. To enable failure diagnostics, replace `null` with the trusted destination object below; private body context remains off unless explicitly selected. Upstream credential stores are managed formats, not hand-edited templates. Provider metadata remains compiled into the program; there is no runtime `providers.json` template.
 
 Keep edited copies, credentials, certificates and captures outside the repository. Git ignores non-template files under `config/` as a secondary guard, not as permission to put secrets in public `*.example.*` files.
 
@@ -313,12 +313,11 @@ Keep edited copies, credentials, certificates and captures outside the repositor
 | `oauth` | Global credential-maintenance timing |
 | `delivery` | Post-admission exchange deadline and text batching |
 | `resources` | Concurrent exchanges, body budgets and Responses history retention |
-| `diagnostics` | Private bounded diagnostics path, reusable after a clean restart; no bodies are recorded. See [Body-free diagnostics](#body-free-diagnostics) |
-| `capture` | Optional private exchange capture; omitted or all-disabled selections record no content |
+| `diagnostics` | Optional trusted OTLP Logs destination and bounded private-body policy; see [Failure diagnostics](#failure-diagnostics) |
 
 Paths in the service file resolve relative to that file, not the process working directory. CLI paths remain explicit process-relative or absolute paths.
 
-The configuration uses **version 1**. Policy fields belong to the following objects. Omit a group or field to use its default. Groups and numeric/boolean fields reject `null`; `delivery.delta_coalescing:null` explicitly disables batching. Optional paths, proxy and capture retain their nullable form.
+The configuration uses **version 1**. Policy fields belong to the following objects. Omit a group or field to use its default. Groups and numeric/boolean fields reject `null`; `delivery.delta_coalescing:null` explicitly disables batching. Optional paths, proxy and diagnostics retain their nullable form.
 
 | Group | Fields and defaults | Bounds / effect |
 |---|---|---|
@@ -335,7 +334,7 @@ These are deployment budgets, not new protocol capabilities. Transcription retai
 
 Responses storage reserves capacity before final publication. A full history budget can therefore fail a stored response after upstream generation, rather than silently dropping history or claiming a successful stored result. Size these budgets for the intended stored-response workload.
 
-Inspect available bindings without configuration or credentials, then validate or explain an explicit setup without starting a listener, renewal, diagnostics or capture:
+Inspect available bindings without configuration or credentials, then validate or explain an explicit setup without starting a listener, renewal, diagnostics:
 
 ```sh
 morphiecore --catalog
@@ -344,7 +343,7 @@ morphiecore --config "$ROOT/gateway.json" --validate
 morphiecore --config "$ROOT/gateway.json" --explain --json
 ```
 
-Explanation uses the production loader and requires valid local credentials. It reports resolved service defaults, Provider recovery, ordered account selections (including disabled candidates), inherited/configured output defaults, resolved task bindings, endpoint limits and path-free diagnostics/capture state. It never prints keys, credential aliases, private paths, custom upstream model strings or target URLs. Context/input capacities are planning metadata; output maxima clamp a present ceiling and do not impose a universal token/spending budget. Only Messages defaults fill absent output ceilings. Errors identify the configuration domain and safe field/index location without echoing rejected values; numbered Provider/model maps follow sorted key order.
+Explanation uses the production loader and requires valid local credentials. It reports resolved service defaults, Provider recovery, ordered account selections (including disabled candidates), inherited/configured output defaults, resolved task bindings, endpoint limits and destination-free diagnostics state. It never prints keys, credential aliases, private paths, custom upstream model strings or target URLs. Context/input capacities are planning metadata; output maxima clamp a present ceiling and do not impose a universal token/spending budget. Only Messages defaults fill absent output ceilings. Errors identify the configuration domain and safe field/index location without echoing rejected values; numbered Provider/model maps follow sorted key order.
 
 ### Agent API keys
 
@@ -365,25 +364,33 @@ Use the Agent's `key` in the SDK. Authentication determines `agent_id`; request 
 
 All configured Agents share the current model and stored-response access policy, including deletion; this is not a per-Agent ACL or quota system. Keep `agent_id` unchanged when renaming an Agent or replacing its key. Remove a record to revoke access, then restart: running gateways retain their loaded keys and in-flight requests are not forcibly cancelled. There is no persistent identity registry or deletion tombstone; operators must not reuse a retired ID for a different Agent. OAuth, remote registration and credential-management APIs remain deferred.
 
-### Body-free diagnostics
+### Failure diagnostics
 
-Diagnostics remain opt-in, separate from [private exchange capture](#private-exchange-capture). Use an existing trusted directory that other users cannot modify; mode `0700` is recommended on Unix, and created files use mode `0600`. No parent directories are created implicitly.
+Diagnostics are opt-in. Set `diagnostics` to an explicit trusted OTLP/HTTP Logs destination:
 
-The configured path and `<path>.1` retain at most 1 MiB each. Rotation preserves complete JSONL records and discards only the oldest recognized archive. `<path>.lock` and `<path>.1.lock` are reserved zero-byte lock files; do not use either data slot as another active writer's base path. One writer holds both locks, including across rotation. Do not externally rotate, replace or edit these files while it runs.
+```json
+{
+  "diagnostics": {
+    "endpoint": "http://127.0.0.1:4318/v1/logs",
+    "private_bodies": false,
+    "body_bytes": 16384
+  }
+}
+```
 
-Each line has `kind:"morphiecore_diagnostics"` and `version:1`. The `event` is `file` for an ownership marker, `request` for the final metadata/report record, `log` for a scalar attempt-finished event, `span` for a completed request/attempt span, or `logging_status` for cumulative loss/failure/recovery counters. Readers counting requests must select `event:"request"`, not count all lines. Authenticated inference request rows include `agent_id`, fixed at admission; this does not add history-access auditing or usage aggregation. Request `request_id` is generated at admission from a runtime nonce plus sequence independently of either sink; its candidate ordinals identify attempts, not user sessions or routing authority.
+| Field | Contract |
+|---|---|
+| `endpoint` | Complete HTTP/HTTPS URL, including `/v1/logs`; no userinfo, query or fragment |
+| `private_bodies` | Default `false`; explicit opt-in for [private failure context](#private-failure-context) |
+| `body_bytes` | Shared retained-body allowance; default 16 KiB, accepted 1–64 KiB |
 
-The same path now enables scoped tracing/OpenTelemetry wiring. Request/log `telemetry` metadata includes event name, resource, scope, trace/span IDs and timestamps; span rows include their parent ID and final status. The report stays a structured `generation` object in the single request row. Unknown optional null map members are omitted; counters above signed 64-bit range use exact decimal strings, declared by `telemetry.body_encoding`. `gateway.attempt.finished` logs and request/attempt spans carry the trusted Agent and request association explicitly. A failed attempt can precede an `ok` request span after recovery.
+Omit `diagnostics` or set it to `null` to disable the pipeline. Export disables proxy inheritance and redirects; ambient `OTEL_EXPORTER_OTLP_HEADERS` and `OTEL_EXPORTER_OTLP_LOGS_HEADERS` are rejected rather than used as another authentication path. Use an existing trusted local Collector if backend authentication or persistent queuing is needed. This configuration does not deploy a receiver.
 
-`generation.attempts[].source_usage` holds bounded source observations, including failed/cancelled attempts: `reports` replace earlier observations of the same operation/step rather than summing them. Each report retains counters, source accounting premises, sparse details and source-default markers. An accounting `final` stage is not validated EOF or billing completeness. Missing counters remain unknown; downstream usage completion/estimates do not enter this source view. `cache_write_basis` identifies source versus selected-policy/unassessed cache writes; the latter two are unknown counters here, not source zeros. `omitted_observations` counts failed retention calls, not distinct upstream messages; a retained report with `latest:false` could not be replaced within its diagnostic allowance. See [the attribution contract](architecture.md#shared-history-and-usage-attribution). No usage aggregation, cost settlement or history-access audit is implied.
+Event names are `gateway.failure`, optional correlated `gateway.failure.response`, and background `gateway.credential.failure`. Query severity WARN/ERROR, then `request_id`, `agent_id`, `operation`, `provider`, `account`, `model`, `upstream_model`, `attempt`, `stage`, `error.type` and `retry.planned` when present. IDs are admission-generated runtime nonces/sequences, never caller identity/session/trace headers. `http.response.status_code` is the observed upstream head; `gateway.error.status_code` is the selected local error presentation. `client.handoff_complete:true` describes acknowledged local delivery of a failed task, not remote receipt or successful inference.
 
-This is local JSONL, not OTLP JSON or an automatic Collector configuration. No global subscriber, network exporter or metrics reader is installed. `OTEL_*` settings do not enable remote export or change this mode's explicit resource/sampling configuration. Collector wiring remains a later step; the existing private-file safety and retention behavior above is unchanged, with no new rotation/capacity mechanism.
+Normal successful requests have no archive entry. A failed attempt selected for recovery is WARN, not proof of recovery. Source failures inside HTTP 200 remain failures; ordinary disconnect/shutdown alone does not create an ERROR. Closed categories and source boundaries remain useful without bodies. [Architecture](architecture.md#observability) owns classification.
 
-The 64-record queue includes logs and completed spans; its loss counters count telemetry records, not complete requests. Enqueue never waits for file I/O. Queue/oversize losses, failed writes and incomplete flushes are counted. Nonzero health is written to a healthy diagnostics file; when file output fails, the background worker issues rate-limited fixed stderr warnings without paths, I/O error text or record contents. Logging failures do not change client results. Flush is best effort with a two-second acknowledgement bound, not `fsync` durability or a promise that dropped records were written.
-
-After the old process exits, reuse the same path. Valid records remain; a recognized incomplete final record is truncated and its lost byte count is reported. Unmarked, empty, aliased, oversized or unknown-version files are not adopted, including old-format diagnostics. Move those files aside or select a fresh path while stopped; an interrupted first ownership marker may also need this operator action. Persistent lock files need not be removed.
-
-`first_upstream_bytes_ms` and `first_upstream_delta_ms` are request-relative monotonic timings. A decoded nonempty text/reasoning/tool-argument delta is not a client-receive event, token count or provider-only latency; earlier attempts can contribute. Client-visible first-content acceptance uses the separate [production-profile procedure](development.md#production-profile-acceptance).
+The SDK queue holds 64 records, batches at most four and schedules a 100 ms flush. HTTP export has a two-second timeout, no retries and a 1 MiB request bound. Saturation/export/flush failures issue fixed body-free stderr warnings; inference does not wait or change behavior. Shutdown flush is best effort; last-owner drop does not wait for export. The receiver owns retention, access and durability. No local files, rotation, tail recovery, metrics pipeline or mandatory trace exporter are configured.
 
 ### Model configuration
 
@@ -506,38 +513,17 @@ Use eligible text-delta arrival cadence, not token rate alone. A Provider may pu
 
 Compression already removes repeated envelopes, so its benefit and coalescing's benefit are not additive. Larger windows can produce larger bursts and longer visible pauses. Coalescing reduces framing and delivery work; it does not reduce radio loss, repair disconnected requests, compress uploads or guarantee higher completion rates. See the [controlled timing check](development.md#reverse-proxy-delivery-gate) and keep its synthetic scope explicit.
 
-### Private exchange capture
+### Private failure context
 
-Capture is separate from body-free diagnostics and disabled by default. To enable it, add a `capture` object to the private gateway configuration:
+Set `diagnostics.private_bodies:true` only when the trusted receiver is approved to receive sensitive business payloads. Bodies attach only to eligible failure/warning records; successful exchanges are not archived.
 
-```json
-{
-  "capture": {
-    "path": "/path/to/private/exchanges.jsonl",
-    "client_request": {"headers": true, "body": true},
-    "upstream_request": {"headers": true, "body": true},
-    "upstream_response": {"headers": true, "body": true},
-    "client_response": {"headers": true, "body": true},
-    "max_unit_bytes": 262144,
-    "max_exchange_bytes": 4194304,
-    "max_total_bytes": 67108864
-  }
-}
-```
+Four keys describe context: `client_request`, `upstream_request`, `upstream_response`, `client_response`. Each has bounded `snippet`, `observed_bytes`, `retained_bytes`, `truncated`, `incomplete`, `redacted`, `eof` and optional `omission` facts. The shared retained-text allowance is divided across four boundaries, with at most four recent safe units each. Parser buffers are separately bounded by the configured allowance. Safe complete units may be clipped; oversized, malformed or incomplete JSON is omitted rather than exported raw.
 
-Each header/body switch is independent and defaults to `false`. The parent directory must already be private; the writer exclusively creates a new file with Unix mode `0600` and never replaces an existing file. Choose a new path for a new run. Capture may contain private business data: never commit it, print it, use it as a fixture or replay input, or export it remotely.
+Headers/cookies are not captured. Known credential body fields and credential URL values are always redacted before retention/export; no redaction-disable switch exists. SSE snippets are normalized safe events, not original bytes; partial tool arguments are omitted, never reconstructed. Unsupported binary, multipart and plain-text content carries omission facts. Token/OAuth endpoint bodies are excluded.
 
-Every capture row carries the authenticated `agent_id` and admission-generated `request_id`, including when body-free diagnostics are disabled. These references are not taken from inbound identity/trace headers or forwarded upstream. `exchange` remains local to its capture sink; use `request_id` to join different files/runtimes and `attempt` for request-local upstream attempts. An exhausted request sequence leaves that reference null rather than reusing it.
+Observation uses only already-read data and polled client output. It does not prefetch, drain, retry, wait for EOF or delay terminal publication. A later `gateway.failure.response` with the same request ID can add final/interrupted client output. Upstream context starts fresh per attempt; old observers cannot append to a later send. Standalone tasks return at a failed head without reading the error body, so that boundary remains metadata-only.
 
-| Bound | Default | Accepted range |
-|---|---|---|
-| Serialized unit | 256 KiB | 1 KiB–1 MiB; raw JSON/SSE parsing conservatively uses half |
-| Exchange, shared across attempts | 4 MiB | At least one unit, at most 64 MiB |
-| Aggregate file retention | 64 MiB | At least one exchange, at most 1 GiB |
-
-The writer queue holds at most 32 sanitized units. Authentication headers/cookies, credential query values and known authentication body fields are redacted before enqueueing. There is no redaction-disable switch. SSE is captured as normalized application units, not exact wire bytes. Unsafe argument fragments, URI headers and unsupported binary/multipart units are omitted or marked incomplete; large content is explicitly truncated rather than retained unboundedly.
-
-Authenticated client boundaries and Generation upstream I/O are instrumented. Frozen standalone-task upstreams are not. A prepared upstream request is not proof of network transmission, client body handoff is not remote receipt, and `source_eof` proves neither semantic success nor durable full retention. `dropped_before` reports observed exchange-local drops; the library's `Gateway::capture_status()` exposes queue/retention drops and writer failure. Status records can themselves be lost when storage is full or unavailable.
+Snippets/EOF flags do not establish a complete exchange, remote delivery, execution counts or backend persistence. Never publish, commit, print or replay real private context, or use it as protocol fixtures. Use independent synthetic upstream hooks for protocol/count qualification and client-side measurements for visible timing.
 
 ## Start the gateway
 
@@ -909,6 +895,6 @@ Messages maps exhausted quota to 402 and upstream overload to 529. Reported dela
 
 A Responses stream with gateway-classified context overflow or exhausted quota may return HTTP 200 with a standard standalone `error` event, not a fabricated `response.failed` object. Native upstream failed Responses remain a separate carrier. HTTP 200 alone does not mean success. After body publication, errors can only report failure or abort delivery; no candidate replay or fabricated success terminal is allowed.
 
-Body-free diagnostics carry the bounded `generation` execution report: checked conversion boundaries, typed failures, attempt observations and final request outcome. Public error classification is distinct from the actual upstream response head; failed attempts do not become successful-request errors. Private payloads and arbitrary error strings are excluded. See [typed failures](architecture.md#typed-conversion-failures); recording never changes routing or completion behavior.
+Failure diagnostics carry the bounded `generation` execution report: checked conversion boundaries, typed failures, attempt observations and final request outcome. Public error classification is distinct from the actual upstream response head; failed attempts do not become successful-request errors. Private payloads and arbitrary error strings are excluded. See [typed failures](architecture.md#typed-conversion-failures); recording never changes routing or completion behavior.
 
 Resource defaults and bounds are in [Limits](../src/gateway/startup/limits.rs). Configuration fields above do not expose every embedded-library limit.

@@ -34,12 +34,12 @@ pub(super) async fn send<R>(
             trace.report.failure(None, &error);
             ApiError::invalid()
         })?;
-    trace.report.update(|attempt| attempt.prepared = true);
+
     trace.stage(Stage::Connect);
     if let Some(capture) = &trace.capture {
         capture.upstream_request(&prepared, trace.capture_attempt);
     }
-    trace.report.update(|attempt| attempt.send_started = true);
+
     runtime
         .transport
         .send(prepared, deadline.saturating_duration_since(Instant::now()))
@@ -68,15 +68,7 @@ impl Receiver {
     ) -> Result<Self, ApiError> {
         trace.stage(Stage::ResponseHead);
         let status = upstream.status().as_u16();
-        trace.head(status, upstream.headers());
-        if let Some(capture) = &trace.capture {
-            capture.head(
-                Boundary::UpstreamResponse,
-                Some(trace.capture_attempt),
-                upstream.headers(),
-                None,
-            );
-        }
+        trace.head(status);
         if status != 200 {
             let source = SourceFailureEvidence::http(status, b"", Observation::IntentionallyUnread);
             trace.report.source_failure(source);
@@ -121,7 +113,7 @@ impl Receiver {
         let media: mime::Mime = media_type
             .parse()
             .map_err(|_| invalid(trace, ProtocolReason::UnexpectedResponseMediaType))?;
-        let capture = trace.capture.as_ref().and_then(|capture| {
+        let capture = trace.capture.as_ref().map(|capture| {
             capture.body(
                 Boundary::UpstreamResponse,
                 Some(trace.capture_attempt),
@@ -182,7 +174,7 @@ impl Receiver {
                         .failure(None, &AttemptError::Resource(Resource::Bytes));
                     ApiError::upstream()
                 })?;
-            trace.received(chunk.len());
+
             if self.stream_capture
                 && let Some(capture) = &mut self.capture
             {
@@ -200,7 +192,7 @@ impl Receiver {
                 );
                 return Err(ApiError::upstream());
             }
-            trace.report.update(|attempt| attempt.source_eof = true);
+
             if self.stream_capture
                 && let Some(capture) = &mut self.capture
             {

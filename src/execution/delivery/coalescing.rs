@@ -32,6 +32,7 @@ pub(super) struct Coalescer {
     seen_content: bool,
     closed: bool,
     pending: Option<PendingText>,
+    #[cfg(test)]
     pub(super) peak_bytes: usize,
 }
 struct PendingText {
@@ -162,6 +163,7 @@ impl Coalescer {
             seen_content: false,
             closed: false,
             pending: None,
+            #[cfg(test)]
             peak_bytes: 0,
         }
     }
@@ -255,7 +257,10 @@ impl Coalescer {
             pending.bytes += added;
             pending.evidence.extend(batch.evidence);
             pending.encoded_text += encoded;
-            self.peak_bytes = self.peak_bytes.max(pending.bytes);
+            #[cfg(test)]
+            {
+                self.peak_bytes = self.peak_bytes.max(pending.bytes);
+            }
             return ready;
         }
         ready.extend(self.flush());
@@ -266,7 +271,10 @@ impl Coalescer {
         if let Some(bytes) = bytes.filter(|bytes| *bytes <= self.policy.max_pending_bytes)
             && encoded <= frame_limit.saturating_sub(batch.context.frame_overhead())
         {
-            self.peak_bytes = self.peak_bytes.max(bytes);
+            #[cfg(test)]
+            {
+                self.peak_bytes = self.peak_bytes.max(bytes);
+            }
             let Some(StreamEvent::Delta { fragment, .. }) = batch.events.pop() else {
                 unreachable!("eligible text delta");
             };

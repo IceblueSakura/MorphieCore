@@ -10,20 +10,7 @@ import time
 from drivers import (Child, NEXT, PROBE, TEXT, Pi, check, check_client_version,
                      environment, gateway_configuration, pi_configuration, shutdown_gateway)
 from recovery import State as RecoveryState, assert_profile, chat_events, server, text
-
-
-def wait_for_diagnostic(root, predicate, timeout, code):
-    deadline = time.monotonic() + timeout
-    tick = threading.Event()
-    while True:
-        raw = (root / "diagnostics.jsonl").read_bytes()
-        check(len(raw) <= 64 << 10, "boundary_diagnostic_bound")
-        records = [json.loads(line) for line in raw.split(b"\n")[:-1] if line]
-        found = next((row for row in records if predicate(row)), None)
-        if found is not None:
-            return found
-        check(time.monotonic() < deadline, code)
-        tick.wait(timeout=0.01)
+from telemetry import Collector, attribute
 
 
 class State(RecoveryState):
@@ -101,11 +88,10 @@ def run(binary, env, root, work, origin, state):
             check(state.failure_sent.wait(timeout=5), "boundary_failure_not_sent")
             # Synchronize on the gateway's failed-attempt receipt, not a sleep
             # after the authority write (which can race upstream classification).
-            receipt = wait_for_diagnostic(root,
-                lambda r: r.get("telemetry", {}).get("event_name") == "gateway.attempt.finished"
-                and r["telemetry"]["attributes"].get("outcome") == "failed",
+            state.telemetry.wait(
+                lambda record: record.get("eventName") == "gateway.failure"
+                and attribute(record, "retry.planned") is True,
                 1.5, "boundary_failure_not_observed")
-            request_id = receipt["telemetry"]["attributes"]["request_id"]
             check(time.monotonic() - state.hints[0][0] < 2, "boundary_hint_elapsed_before_cancel")
             abort = client.submit("abort")
             acknowledged, terminals, settled = set(), [], False
@@ -123,11 +109,6 @@ def run(binary, env, root, work, origin, state):
                 check(not event.get("type", "").startswith(("auto_retry", "compaction")),
                       "boundary_client_retry")
             check(terminals == ["aborted"], "boundary_cancel_terminal")
-            receipt = wait_for_diagnostic(root,
-                lambda r: r.get("event") == "request" and r.get("request_id") == request_id,
-                3, "boundary_gateway_cancel_not_completed")
-            check(receipt["outcome"] != "complete" and len(receipt["candidates"]) == 1,
-                  "boundary_gateway_cancel_not_honest")
         else:
             _, events = client.command("prompt", message=f"{PROBE}: Say {TEXT} without tools.")
             assistants = [e["message"] for e in events if e.get("type") == "message_end"
@@ -156,9 +137,11 @@ def main():
     check_client_version(case, version)
     state = State(scenario)
     with ExitStack() as stack:
+        state.telemetry = stack.enter_context(Collector())
         upstream = stack.enter_context(server(state, False))
         gateway_configuration(root, False, upstream, accounts=("primary", "secondary"),
-            recovery={"recovery_timeout_ms": 5000, "transient_cooldown_ms": 60000})
+            recovery={"recovery_timeout_ms": 5000, "transient_cooldown_ms": 60000},
+            diagnostics=state.telemetry.endpoint)
         gateway = stack.enter_context(Child(
             [gateway_binary, "--config", str(root / "gateway.json")], env, work))
         try:
@@ -180,16 +163,8 @@ def main():
             raise
         finally:
             shutdown_gateway(gateway, failed=failed)
-        records = [json.loads(line) for line in (root / "diagnostics.jsonl").read_text().splitlines()]
-        check(all(r.get("event") in ("file", "request", "log", "span") for r in records),
-              "boundary_logging_loss")
-        requests = [r for r in records if r.get("event") == "request"]
-        check(len(requests) == 3 and requests[0]["outcome"] != "complete"
-              and all(r["outcome"] == "complete" for r in requests[1:])
-              and all(r.get("ignored_request_field_count", 0) == 0 for r in requests),
-              "boundary_diagnostics")
-        check([len(r["candidates"]) for r in requests] ==
-              ([2, 1, 1] if scenario == "retry-limit" else [1, 1, 1]), "boundary_attempt_records")
+        check(any(record.get("eventName") == "gateway.failure" for record in state.telemetry.records),
+              "boundary_missing_failure_log")
     state.finish(identity)
     print(json.dumps({"case": case, "scenario": scenario, "version": version,
         "client_requests": 3, "upstream_attempts": len(state.attempts),

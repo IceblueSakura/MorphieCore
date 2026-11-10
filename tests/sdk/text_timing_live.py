@@ -8,7 +8,7 @@ import tempfile
 import time
 from sdk_support import require_sdk
 
-from messages_capabilities_live import (anthropic, httpx, CAP, DEADLINE_MS, EFFORT, THINKING,
+from messages_capabilities_live import (anthropic, httpx, CAP, DEADLINE_MS, EFFORT,
     Gateway, MODEL, BINDING, GateError, answer, failure_summary, profile, require, user)
 
 
@@ -87,18 +87,12 @@ def main():
                     values = measure(gateway)
                 finally:
                     gateway.close()
-                wire, = gateway.verify()
-                require(wire["thinking"] == THINKING and wire["output_config"] == {"effort": "high"}
-                        and wire["tool_choice"] == {"type": "none"} and not wire.get("tools")
-                        and wire["messages"][-1] == EFFORT, "timing_profile_changed")
-                records = [json.loads(line) for line in (gateway.root / "diagnostics.jsonl").read_text().splitlines()]
-                request, = [record for record in records if record.get("event") == "request"]
-                report.update(values, source_first_delta_ms=request["first_upstream_delta_ms"],
-                              source_elapsed_ms=request["elapsed_ms"])
+                gateway.verify()
+                report.update(values)
             except Exception:
                 report.update(failure_summary(gateway))
                 raise
-        report.update(status="passed", client_requests=1, upstream_attempts=1,
+        report.update(status="passed", client_requests=1, upstream_wire_and_attempts="not_asserted",
                       surface="pinned_sdk_text_delta", real_cancellation_and_latency_slo="not_asserted")
     except Exception as error:
         report.update(status="failed", error=str(error) if isinstance(error, GateError) else type(error).__name__)

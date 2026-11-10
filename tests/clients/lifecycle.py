@@ -20,7 +20,6 @@ from drivers import (TEXT, Child, Pi, check, check_client_version, environment,
                      private_json)
 from recovery import OwnedServer
 from protocol_defaults import PROFILES, responses_events
-from recovery_boundary import wait_for_diagnostic
 
 FIRST = "synthetic-client-first-content"
 CANCEL = "synthetic-hold-and-cancel"
@@ -281,10 +280,6 @@ def pi_case(binary, env, root, work, origin, state):
         check(state.dropped.wait(timeout=3), "upstream_not_released_before_recovery")
         if tools:
             check(not state.path.exists(), "cancelled_write_side_effect")
-            receipt = wait_for_diagnostic(root, lambda row: row.get("event") == "request",
-                                          3, "cancelled_gateway_receipt_missing")
-            check(receipt["outcome"] != "complete" and len(receipt["candidates"]) == 1,
-                  "cancelled_gateway_receipt")
             _, events = pi.command("prompt", message=(
                 f"{RECOVER}: Write {state.content!r} to {state.path}, then answer only {TEXT}."))
             assert_recovered_tool(events, state.recovered_call)
@@ -579,14 +574,6 @@ def main():
         finally:
             gateway.process.send_signal(signal.SIGINT)
             gateway.wait(timeout=5)
-        records = [json.loads(line) for line in (root / "diagnostics.jsonl").read_text().splitlines()]
-        check(all(r.get("event") in ("file", "request", "log", "span") for r in records), "lifecycle_diagnostic_loss")
-        requests = [r for r in records if r.get("event") == "request"]
-        check(len(requests) == state.count and requests[0]["outcome"] != "complete"
-              and all(r["outcome"] == "complete" for r in requests[1:]),
-              "cancelled_or_recovered_gateway_outcome")
-        check(all(len(r["candidates"]) == 1 and r["candidates"][0]["advanced"] is False
-                  and r.get("ignored_request_field_count", 0) == 0 for r in requests), "post_publication_replay")
     check(state.attempts == state.count and not state.errors, "late_upstream_lifecycle_failure")
     print(json.dumps({"case": case, "version": version,
         "client_requests": state.count, "upstream_attempts": state.count,

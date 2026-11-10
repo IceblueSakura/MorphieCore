@@ -89,6 +89,15 @@ impl std::ops::Deref for Fixture {
     }
 }
 impl Fixture {
+    pub(super) fn record_failures(&mut self) -> opentelemetry_sdk::logs::InMemoryLogExporter {
+        let (sink, exporter) = crate::gateway::diagnostics::Sink::memory();
+        std::sync::Arc::get_mut(&mut self.boot.gateway.state)
+            .unwrap()
+            .diagnostics = Some(sink);
+        exporter
+    }
+}
+impl Fixture {
     pub(super) fn loopback_authority(&mut self, origin: &str) {
         let runtime = std::sync::Arc::get_mut(&mut self.boot.gateway.state)
             .expect("unshared fixture runtime");

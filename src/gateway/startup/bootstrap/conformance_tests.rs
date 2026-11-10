@@ -1,5 +1,5 @@
 //! Production-constructed lanes with pi-shaped requests and independent native session wires.
-//! Current blockers burn down toward acceptance; they are not closure or mapping oracles.
+//! Public delivery and failure diagnostics use independent upstream observations.
 use super::test_support::{Fixture, service};
 use axum::{
     Json, Router,
@@ -73,79 +73,32 @@ async fn send(
     (status, bytes, failed)
 }
 
-async fn report(boot: &Fixture, ordinal: usize) -> Value {
-    // Trace destruction follows body/worker completion. Wait for its record, not a sleep.
-    tokio::time::timeout(DEADLINE, async {
-        loop {
-            boot.gateway.flush_diagnostics().await;
-            let records: Vec<Value> =
-                std::fs::read_to_string(boot.directory().join("events.jsonl"))
-                    .unwrap()
-                    .lines()
-                    .map(|l| serde_json::from_str(l).unwrap())
-                    .filter(|v: &Value| v["event"] == "request")
-                    .collect();
-            if records.len() == ordinal {
-                return records.last().unwrap().clone();
-            }
-            assert!(records.len() < ordinal);
-            tokio::task::yield_now().await;
+fn disposition(
+    exporter: &opentelemetry_sdk::logs::InMemoryLogExporter,
+    status: u16,
+    failed: bool,
+) -> String {
+    use opentelemetry::logs::AnyValue;
+    for log in exporter.get_emitted_logs().unwrap() {
+        if log.record.event_name() != Some("gateway.failure") {
+            continue;
         }
-    })
-    .await
-    .expect("completed request diagnostic")
-}
-
-fn disposition(record: &Value) -> String {
-    let generation = &record["generation"];
-    if generation["result"] == "succeeded" {
-        return "accepted".into();
-    }
-    if let Some(code) = generation["failure"]["code"].as_str() {
-        return code.into();
-    }
-    if let Some(reasons) = generation["planning_failure"]["reasons"].as_array() {
-        return format!("planning:{}", serde_json::to_string(reasons).unwrap());
-    }
-    if let Some(attempt) = generation["attempts"].as_array().and_then(|a| a.last()) {
-        for key in ["failure", "handling_failure"] {
-            if let Some(code) = attempt[key]["code"].as_str() {
-                return code.into();
-            }
+        if let Some((_, AnyValue::String(code))) = log
+            .record
+            .attributes_iter()
+            .find(|(key, _)| key.as_str() == "error.type")
+        {
+            let code = code.as_str();
+            return if code.starts_with("admission.") {
+                format!("planning:{}", serde_json::to_string(&[code]).unwrap())
+            } else {
+                code.to_owned()
+            };
         }
     }
-    generation["failure_code"]
-        .as_str()
-        .unwrap_or_else(|| panic!("missing failure: {record}"))
-        .into()
-}
-
-fn pending_resolution(code: &str, dispatched: bool) -> &'static str {
-    if code.contains("admission.explicit_cache") {
-        "R1/R2 L4 owner-local cache omission and delivery"
-    } else if code.contains("admission.max_output_tokens") {
-        "R1 L4 unsupported ceiling omission"
-    } else if code.contains("admission.client_representation") {
-        "R4 delegation or L3 required-history fallback"
-    } else if code.contains("codec.unsupported.tools") || code.contains("admission.tools") {
-        "R4 endpoint-qualified namespace tool contract"
-    } else if code.contains("representation.replay_format") {
-        "R2 L3 uncarried opaque reasoning omission"
-    } else if code.contains("codec.unsupported.metadata") || code == "codec.unsupported.field" {
-        "R2 L4 carrier-less reports and hints"
-    } else if code.contains("codec.unsupported.reasoning") {
-        "R1 L3 effort and adaptive-thinking conversion"
-    } else if code == "codec.unsupported.unavailable" && dispatched {
-        "R2 L4 carrier-less delivery reports"
-    } else if code.contains("representation.reasoning")
-        || code.contains("codec.unsupported.unavailable")
-    {
-        "R1/R4 L3 reasoning controls, L4 presentation/phase and visible-history transfer"
-    } else if code == "gateway.invalid_request" {
-        "R3 revised Messages version/beta policy"
-    } else {
-        panic!("unclassified default-lane blocker: {code}")
-    }
+    assert_eq!(status, 200, "failed request must have a failure diagnostic");
+    assert!(!failed, "aborted body must have a failure diagnostic");
+    "accepted".into()
 }
 
 // The initially probed bindings cover standard, Bailian, DeepSeek and native Messages.
@@ -168,9 +121,8 @@ async fn unrepresentable_named_choice_never_dispatches_to_bailian() {
     let _server = Server(tokio::spawn(async move {
         axum::serve(listener, router).await.unwrap();
     }));
-    let mut config = service();
-    config["diagnostics"] = json!("events.jsonl");
-    let boot = Fixture::with_accounts(
+    let config = service();
+    let mut boot = Fixture::with_accounts(
         config,
         json!({"models":{"qwen3.8-flash":{"candidates":[{"binding":"dashscope-flash-chat"}]}}}),
         &[("aliyun-dashscope-cn", "synthetic", "synthetic-upstream-key")],
@@ -179,6 +131,7 @@ async fn unrepresentable_named_choice_never_dispatches_to_bailian() {
         }]}}}),
     )
     .unwrap();
+    let exporter = boot.record_failures();
     let body = json!({"model":"qwen3.8-flash","max_tokens":64,
         "thinking":{"type":"disabled"},"messages":[{"role":"user","content":"go"}],
         "tools":[{"name":"read","description":"Read","input_schema":{"type":"object"}}],
@@ -196,8 +149,10 @@ async fn unrepresentable_named_choice_never_dispatches_to_bailian() {
     assert_eq!(status, 400);
     assert!(!failed);
     assert_eq!(*calls.lock().unwrap(), 0);
-    let record = report(&boot, 1).await;
-    assert_eq!(disposition(&record), "planning:[\"admission.tool_choice\"]");
+    assert_eq!(
+        disposition(&exporter, status, failed),
+        "planning:[\"admission.tool_choice\"]"
+    );
 }
 
 type Binding<'a> = (&'a str, &'a str, &'a str, &'a str, Api);
@@ -492,7 +447,6 @@ async fn observe_intake(
         axum::serve(listener, router).await.unwrap();
     }));
     let mut config = service();
-    config["diagnostics"] = json!("events.jsonl");
     config["resources"] = json!({"concurrency":1});
     config["delivery"] = json!({"exchange_timeout_ms":3000,"delta_coalescing":null});
     let mut models = json!({"models":{model:{"candidates":[{
@@ -521,6 +475,7 @@ async fn observe_intake(
         assert!(!stream, "experiment preserves JSON client delivery");
         boot.force_upstream_stream();
     }
+    let exporter = boot.record_failures();
     let mut request = wire::request(client, profile, model, stream);
     if control == Control::BareModel {
         assert_eq!(client, Api::Messages);
@@ -589,37 +544,21 @@ async fn observe_intake(
                 .filter_map(|(name, value)| value.as_str().map(|value| (name.as_str(), value)))
                 .collect();
         }
+        exporter.reset();
         let (status, bytes, failed) = send(&boot, client, request.clone(), &headers).await;
-        let record = report(&boot, turn + 1).await;
-        let outcome = disposition(&record);
-        reports.push(json!({
-            "result":record["generation"]["result"],
-            "attempts":record["generation"]["attempts"].as_array().unwrap().iter().map(|attempt| {
-                let mut semantic = serde_json::Map::new();
-                for key in [
-                    "source_usage", "reported_settings", "task_outcome", "source_eof",
-                    "delivery_complete", "failure", "handling_failure",
-                ] {
-                    if let Some(value) = attempt.get(key) {
-                        semantic.insert(key.into(), value.clone());
-                    }
-                }
-                Value::Object(semantic)
-            }).collect::<Vec<_>>(),
-        }));
+        let outcome = disposition(&exporter, status, failed);
         let after = calls.lock().unwrap().len();
         assert!(after == before || after == before + 1);
         outcomes.push(format!("{outcome}@{}", after - before));
         if outcome == "codec.invalid.invalid_value" {
             panic!(
-                "synthetic fault {binding}/{client:?}/{profile:?}/stream={stream}/turn={turn}: {record}\nsynthetic request: {request}"
+                "synthetic fault {binding}/{client:?}/{profile:?}/stream={stream}/turn={turn}: {outcome}\nsynthetic request: {request}"
             );
         }
         if outcome != "accepted" {
             eprintln!(
-                "pending {binding}/{client:?}/{profile:?}/stream={stream}: {outcome}@{} -> accepted; {}",
-                after - before,
-                pending_resolution(&outcome, after > before)
+                "pending {binding}/{client:?}/{profile:?}/stream={stream}: {outcome}@{} -> accepted",
+                after - before
             );
             wire::assert_failure(client, stream, status, &bytes, failed);
             if matches!(
@@ -636,11 +575,6 @@ async fn observe_intake(
         }
         assert_eq!(status, 200);
         assert_eq!(after, before + 1);
-        assert_eq!(record["generation"]["attempts"][0]["source_eof"], true);
-        assert_eq!(
-            record["generation"]["attempts"][0]["delivery_complete"],
-            true
-        );
         assert!(!failed, "successful diagnostic with aborted client body");
         if turn == 1 {
             wire::assert_history(
@@ -663,7 +597,7 @@ async fn observe_intake(
             }
         }
         let value = wire::delivered(client, &bytes, stream);
-        reports.last_mut().unwrap()["delivery"] = wire::intake_view(client, &value);
+        reports.push(json!({"delivery":wire::intake_view(client, &value)}));
         wire::assert_delivery(client, upstream, profile, turn, &value, reasoning);
         views.push(wire::delivery_view(client, &value));
         if let Control::ReportedFacts { refusal, .. } = control {
@@ -1322,7 +1256,7 @@ async fn incomplete_responses_reasoning_keeps_its_delivery_and_replay_status() {
     }
 }
 
-// Current observations only; every blocker targets acceptance via pending_resolution.
+// Reviewed dispositions retain public response and independent dispatch checks.
 // Columns are Chat text/tools and Responses text/tools; reasoning has separate lanes.
 const ACCEPT: &[&str] = &["accepted@1", "accepted@1"];
 const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[

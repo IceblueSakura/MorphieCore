@@ -195,6 +195,10 @@ impl body::Produce for Exchange {
             prepared,
         } = self;
         trace.begin_candidate(1);
+        trace.models(
+            entry.route.model.as_str(),
+            &entry.route.endpoint.upstream_model,
+        );
         let result = produce_one(&runtime, &entry, prepared, deadline, lane, trace).await;
         trace.end_candidate(result.as_ref().err().map(|e| e.diagnostic_code()), false);
         result

@@ -3,7 +3,7 @@ use crate::{
     gateway::{
         ApiError, BoundEntry, Limits, Runtime,
         body::{self, Lane, Status},
-        diagnostics::{Stage, Trace},
+        diagnostics::{Outcome, Stage, Trace},
         generation::intake,
         routing::executors::BindingObservation,
     },
@@ -75,8 +75,6 @@ fn observe_binding(
 /// One candidate's prepared request on the wire, with the affinity projection it used.
 struct Prepared<'r> {
     wire: crate::execution::UpstreamRequest,
-    key_sent: bool,
-    session_sent: bool,
     request: Cow<'r, Request>,
     affinity: Option<crate::gateway::routing::prefix_cache::Selection>,
 }
@@ -122,7 +120,6 @@ async fn prepare_attempt<'r>(
         &candidate,
         request,
         projection.value.prefixes.as_deref(),
-        trace,
     );
     if let Some(selection) = &affinity {
         match selection.project(&candidate, request, client) {
@@ -133,7 +130,6 @@ async fn prepare_attempt<'r>(
             None => {
                 // A hint cannot invalidate the already accepted original body.
                 affinity = None;
-                trace.affinity("unavailable", false, false);
             }
         }
     }
@@ -168,7 +164,6 @@ async fn prepare_attempt<'r>(
     let upstream_request = &intake_request;
     #[cfg(not(test))]
     let upstream_request = &local;
-    let key_sent = projection.value.cache_key_sent;
     let conversion = crate::execution::attempt::prepare_retained(
         &candidate.endpoint,
         &candidate.provider,
@@ -188,15 +183,9 @@ async fn prepare_attempt<'r>(
         crate::execution::report::View::UpstreamRequest,
         conversion.evidence,
     );
-    trace.report.update(|a| a.prepared = true);
-    let session_sent = prepared
-        .safe_headers
-        .iter()
-        .any(|(name, _)| name == "x-opencode-session");
+
     Ok(Prepared {
         wire: prepared,
-        key_sent,
-        session_sent,
         request: local,
         affinity,
     })
@@ -205,7 +194,6 @@ async fn prepare_attempt<'r>(
 async fn usable_candidates(
     runtime: &Runtime,
     candidates: Vec<crate::gateway::runtime::PlannedCandidate>,
-    trace: &mut Trace,
 ) -> Result<Vec<crate::gateway::runtime::PlannedCandidate>, ApiError> {
     let mut usable = Vec::with_capacity(candidates.len());
     let mut unavailable = None;
@@ -220,7 +208,6 @@ async fn usable_candidates(
                 usable.push(planned);
             }
             Err(error) => {
-                trace.selection_skip("lifecycle");
                 unavailable = Some(error);
             }
         }
@@ -236,9 +223,8 @@ async fn select_candidates(
     candidates: Vec<crate::gateway::runtime::PlannedCandidate>,
     binding: Option<&BindingObservation>,
     deadline: Instant,
-    trace: &mut Trace,
 ) -> Result<Vec<crate::gateway::runtime::PlannedCandidate>, ApiError> {
-    let mut candidates = usable_candidates(runtime, candidates, trace).await?;
+    let mut candidates = usable_candidates(runtime, candidates).await?;
     if let Some(until) = runtime.executors.preferred_wait(
         binding,
         &candidates,
@@ -248,15 +234,15 @@ async fn select_candidates(
         tokio::time::sleep_until(until.min(deadline)).await;
         // Re-read lifecycle and material, then recheck health/probe ownership.
         // This request never waits through a second cooldown.
-        candidates = usable_candidates(runtime, candidates, trace).await?;
+        candidates = usable_candidates(runtime, candidates).await?;
     }
     if Instant::now() >= deadline {
         return Err(ApiError::timeout());
     }
-    let order = runtime
+    runtime
         .executors
         .order(binding, &mut candidates, Instant::now());
-    trace.executor_order(order);
+
     Ok(candidates)
 }
 pub(in crate::gateway) async fn produce_chain(
@@ -277,7 +263,7 @@ pub(in crate::gateway) async fn produce_chain(
             binding,
         } => {
             let candidates =
-                select_candidates(&runtime, candidates, binding.as_ref(), deadline, trace).await?;
+                select_candidates(&runtime, candidates, binding.as_ref(), deadline).await?;
             (Some(runtime), candidates, None, history, binding)
         }
         #[cfg(test)]
@@ -320,8 +306,7 @@ pub(in crate::gateway) async fn produce_chain(
                     if let Some(seconds) = observation.retry_after_seconds {
                         blocked_delay = Some(blocked_delay.map_or(seconds, |old| old.min(seconds)));
                     }
-                    trace.health(observation);
-                    trace.selection_skip(observation.reason);
+
                     continue;
                 }
             }
@@ -338,12 +323,14 @@ pub(in crate::gateway) async fn produce_chain(
         let mut planned = Some(planned);
         let mut recovery_deadline = None;
         let mut initial_failure = None;
-        let (error, stop_selection) = 'sends: {
+        let error = 'sends: {
             for ordinal in 1..=2 {
+                let mut send_started = false;
                 trace.begin_candidate(ordinal);
-                trace.probe(health.lease.as_ref().is_some_and(|lease| lease.probing));
+
                 trace.executor(candidate.provider.id.as_str());
                 trace.named_account(candidate.account.as_deref());
+                trace.models(entry.public.id.as_str(), &candidate.endpoint.upstream_model);
                 state.waiting_upstream.store(false, Ordering::Release);
                 state.recovery_ready.store(false, Ordering::Release);
                 let attempt_deadline = deadline.min(
@@ -389,13 +376,13 @@ pub(in crate::gateway) async fn produce_chain(
                             return Err(ApiError::timeout());
                         }
                         let ready = prepared.as_ref().expect("prepared request");
-                        trace.report.update(|a| a.prepared = true);
+
                         trace.stage(Stage::Connect);
                         if let Some(capture) = &trace.capture {
                             capture.upstream_request(&ready.wire, ordinal);
                         }
                         state.waiting_upstream.store(true, Ordering::Release);
-                        trace.report.update(|a| a.send_started = true);
+                        send_started = true;
                         let response = runtime
                             .transport
                             .send(
@@ -413,7 +400,7 @@ pub(in crate::gateway) async fn produce_chain(
                                 failure
                             })?;
                         state.waiting_upstream.store(false, Ordering::Release);
-                        trace.affinity_carriers(ready.key_sent, ready.session_sent);
+
                         response
                     };
                     let local = prepared
@@ -484,42 +471,34 @@ pub(in crate::gateway) async fn produce_chain(
                             intake::Completion::Eligible => {
                                 state.take_failures(None);
                                 if let Some(lease) = &health.lease {
-                                    let (_, commit) =
-                                        lease.completed(binding.as_ref(), Instant::now());
-                                    trace.affinity_commit(commit);
+                                    lease.completed(binding.as_ref(), Instant::now());
                                 }
                                 None
                             }
                             intake::Completion::Failed(error) => {
-                                record_failure(trace, error);
-                                if let Some(observation) = health.failed(error) {
-                                    trace.health(observation);
-                                }
+                                health.failed(error);
                                 Some(error.diagnostic_code())
                             }
                             intake::Completion::Neutral => {
                                 if let Some(lease) = &health.lease {
                                     let failures = state.take_failures(None);
-                                    if let Some(observation) =
-                                        lease.resolve_failures(&failures, Instant::now())
-                                    {
-                                        trace.health(observation);
-                                    }
+                                    lease.resolve_failures(&failures, Instant::now());
                                 }
                                 None
                             }
                         };
+                        trace.outcome(Outcome::Complete);
                         trace.end_candidate(failure, false);
                         return Ok(());
                     }
                     Err(mut error) => {
                         if ordinal == 2
-                            && !trace.report.attempt().send_started
+                            && !send_started
                             && error.kind == crate::gateway::error::ErrorKind::CredentialUnavailable
                         {
                             error = initial_failure.expect("retained initial failure");
                         }
-                        record_failure(trace, error);
+
                         // Anchor the recovery clock to observation, not error-body cleanup.
                         let observed_at = state
                             .failures
@@ -536,9 +515,16 @@ pub(in crate::gateway) async fn produce_chain(
                             && !recovery_budget.is_zero()
                             && !state.published.load(Ordering::Acquire)
                             && Instant::now() < until;
-                        trace.end_candidate(Some(error.diagnostic_code()), false);
+                        trace.end_candidate(
+                            Some(error.diagnostic_code()),
+                            retry
+                                && error.retry_after.is_none_or(|seconds| {
+                                    Duration::from_secs(seconds)
+                                        < until.saturating_duration_since(observed_at)
+                                }),
+                        );
                         if !retry {
-                            break 'sends (error, true);
+                            break 'sends error;
                         }
                         initial_failure = Some(error);
                         state.retain_attempt(error);
@@ -546,12 +532,12 @@ pub(in crate::gateway) async fn produce_chain(
                         if let Some(seconds) = error.retry_after {
                             let delay = Duration::from_secs(seconds);
                             if delay >= until.saturating_duration_since(observed_at) {
-                                break 'sends (error, false);
+                                break 'sends error;
                             }
                             tokio::time::sleep_until(observed_at + delay).await;
                         }
                         if Instant::now() >= until {
-                            break 'sends (error, false);
+                            break 'sends error;
                         }
                         recovery_deadline = Some(until);
                     }
@@ -559,24 +545,11 @@ pub(in crate::gateway) async fn produce_chain(
             }
             unreachable!("two sends are terminal");
         };
-        if let Some(observation) = health.failed(error) {
-            trace.health(observation);
-        }
-        if stop_selection {
-            trace.selection_stop(if state.published.load(Ordering::Acquire) {
-                "published"
-            } else {
-                "not_retryable"
-            });
-        }
+        health.failed(error);
         drop(health);
         return Err(downstream_failure(error, runtime.as_deref(), &route_targets, limits).await);
     }
-    trace.selection_stop(if any_blocked {
-        "unavailable"
-    } else {
-        "no_candidate"
-    });
+
     if any_blocked {
         let mut error = ApiError::new(
             if rate_only {
@@ -597,14 +570,6 @@ pub(in crate::gateway) async fn produce_chain(
     } else {
         Err(ApiError::upstream())
     }
-}
-fn record_failure(trace: &Trace, error: ApiError) {
-    trace.report.update(|a| {
-        a.failure_code = Some(error.diagnostic_code());
-        a.failure_status_hint = Some(error.status.as_u16());
-        a.policy_class = error.recovery.class;
-        a.health_failure = error.recovery.affects_health;
-    });
 }
 /// Health keeps upstream reset evidence; downstream hints describe the route.
 async fn downstream_failure(
@@ -706,10 +671,17 @@ pub(in crate::gateway) async fn run(
         .eligible(&request, &runtime.affinity)
         .map_err(|cause| {
             let error = ApiError::invalid();
-            trace.report.planning_failure(cause);
-            trace
-                .report
-                .request_failure(error.diagnostic_code(), error.status.as_u16());
+            use crate::execution::plan::PlanError;
+            let code = match cause {
+                PlanError::UnknownModel => "plan.unknown_model",
+                PlanError::InvalidRequest => "plan.invalid_request",
+                PlanError::CandidateLimit => "plan.candidate_limit",
+                PlanError::CandidateRejected(reason) => reason.code(),
+                PlanError::NoCandidate { rejections } => rejections
+                    .first()
+                    .map_or("plan.no_candidate", |r| r.reason.code()),
+            };
+            trace.report.request_failure(code, error.status.as_u16());
             trace.outcome(crate::gateway::diagnostics::Outcome::Error);
             error
         })?;
@@ -796,13 +768,8 @@ async fn bound_cooldown_wait_is_single_cancellable_and_deadline_clipped() {
             })
             .collect();
         let deadline = now + Duration::from_secs(if mode == "deadline" { 2 } else { 20 });
-        let mut trace = Trace::for_request(
-            None,
-            &axum::extract::Request::new(axum::body::Body::empty()),
-        );
         {
-            let selection =
-                select_candidates(runtime, candidates, binding.as_ref(), deadline, &mut trace);
+            let selection = select_candidates(runtime, candidates, binding.as_ref(), deadline);
             tokio::pin!(selection);
             let polled = futures_util::poll!(&mut selection);
             if matches!(mode, "ready" | "unbound" | "disabled" | "long") {

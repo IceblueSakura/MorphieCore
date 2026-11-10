@@ -9,7 +9,7 @@ async fn embeddings_sdk_default_float_and_base64() {
         EncodingSupport::Base64,
         EncodingSupport::Both,
     ] {
-        let fixture = Fixture::start(support, None, None).await;
+        let fixture = Fixture::start(support).await;
         let home = tempfile::tempdir().unwrap();
         let mut command = super::isolated_sdk_python(home.path());
         command.args([
@@ -32,7 +32,6 @@ async fn embeddings_sdk_default_float_and_base64() {
         );
         let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(report["requests"], 3);
-        fixture.gateway.flush_diagnostics().await;
         let seen = fixture.seen.lock().unwrap();
         assert_eq!(seen.len(), 3);
         let expected = match support {
@@ -51,9 +50,9 @@ async fn embeddings_sdk_default_float_and_base64() {
 async fn embeddings_google_reports_and_scoped_token_inputs() {
     for google in [true, false] {
         let fixture = if google {
-            Fixture::start_google(None, None).await
+            Fixture::start_google().await
         } else {
-            Fixture::start(EncodingSupport::Both, None, None).await
+            Fixture::start(EncodingSupport::Both).await
         };
         let home = tempfile::tempdir().unwrap();
         let mut command = super::isolated_sdk_python(home.path());

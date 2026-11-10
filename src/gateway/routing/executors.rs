@@ -385,6 +385,7 @@ impl Executors {
         state.next_ticket += 1;
         let ticket = state.next_ticket;
         let mut generations = [0; 2];
+        #[cfg(test)]
         let mut probing = false;
         let mut target_probe = false;
         for (index, key) in candidate.health.0.iter().enumerate() {
@@ -392,7 +393,10 @@ impl Executors {
             generations[index] = health.generation;
             if !health.constraints.is_empty() {
                 health.probe = Some(ticket);
-                probing = true;
+                #[cfg(test)]
+                {
+                    probing = true;
+                }
                 target_probe |= index == 1;
             }
         }
@@ -408,6 +412,7 @@ impl Executors {
             candidate,
             ticket,
             generations,
+            #[cfg(test)]
             probing,
             target_probe,
             sent_material: Mutex::new(None),
@@ -420,6 +425,7 @@ pub(in crate::gateway) struct Lease<'a> {
     candidate: &'a BoundCandidate,
     ticket: u64,
     generations: [u64; 2],
+    #[cfg(test)]
     pub probing: bool,
     target_probe: bool,
     sent_material: Mutex<Option<u64>>,
