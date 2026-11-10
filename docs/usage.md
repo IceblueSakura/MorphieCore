@@ -154,7 +154,7 @@ morphiecore-auth --accounts "$ROOT/accounts.json" --store "$ROOT/credentials" \
 - Grok device links prefill the code with `user_code`; confirm that it matches the CLI before approving.
 - `--consent` explicitly requests ChatGPT plan consent during login.
 - `--callback-port` sets the loopback callback port. Grok also accepts `--client-id`.
-- `--paste-callback` adds hidden terminal input for a full browser callback URL while keeping the loopback listener active. It requires browser login.
+- Browser login accepts either the HTTP callback or a full callback URL on stdin; the first valid result wins. No separate input mode is needed.
 - `logout --revoke` requests upstream revocation.
 - `login`, `refresh` and `logout` accept `--proxy`.
 
@@ -164,16 +164,9 @@ An Active account rejects another login; use `refresh`, or explicitly sign out b
 
 Callbacks listen on `127.0.0.1`. Login checks issuer, client and subject. Gateway inference never starts login or refresh.
 
-For an SSH/headless host, start the same managed login with manual callback input:
+For an SSH/headless host, run the same browser login and open the printed authorization URL on your computer. If the browser cannot reach the loopback callback, copy its **full URL** from the address bar and paste it into the waiting remote CLI, then press Enter. No SSH port forwarding or special flag is needed.
 
-```sh
-morphiecore-auth --accounts "$ROOT/accounts.json" --store "$ROOT/credentials" \
-  login --provider chatgpt --account personal --paste-callback
-```
-
-Open the printed authorization URL in a browser on your computer and finish sign-in. If the browser cannot reach the loopback callback, copy its **full URL** from the address bar and paste it into the waiting remote CLI, then press Enter. No SSH port forwarding is required for this input path; an ordinary browser callback or an existing SSH tunnel can still complete the same login.
-
-Paste only the callback URL from this login, including its query. Bare codes, API keys and access tokens are not accepted. The URL must match the prepared callback origin, port and path; the existing listener validates `state`, duplicate fields and issued client identity. PKCE, nonce, identity verification and the login deadline remain unchanged. Input is bounded to 8192 bytes and never echoed by the CLI. Closing stdin leaves the browser callback available; Ctrl-C cancels the login. Check the final CLI result, not merely receipt of the URL.
+Paste only the callback URL from this login, including its query. Bare codes, API keys and access tokens are not accepted. The URL must match the prepared callback origin, port and path; the existing listener validates `state`, duplicate fields and issued client identity. PKCE, nonce, identity verification and the login deadline remain unchanged. Input is an ordinary echoed line, bounded to 8192 bytes; the CLI does not manage terminal mode or partially typed input. Closing stdin leaves the browser callback available; Ctrl-C cancels the login. Check the final CLI result, not merely receipt of the URL.
 
 Automatic renewal runs in the background when running `morphiecore` (`Gateway::serve`):
 - Checks configured OAuth accounts independently of routes and enablement on startup and at `oauth.scan_interval_ms` (default 15000).

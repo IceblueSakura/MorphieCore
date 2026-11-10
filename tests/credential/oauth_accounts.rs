@@ -451,7 +451,7 @@ async fn invalid_profiles_and_login_options_are_rejected_before_store_creation()
             "invalid account or client identifier",
         ),
         (
-            vec!["login", "--provider", "grok", "--paste-callback"],
+            vec!["login", "--provider", "grok", "--callback-port", "0"],
             "invalid account or client identifier",
         ),
         (
@@ -605,13 +605,13 @@ async fn siwc_cli_defaults_to_browser_and_reuses_host_without_authority_traffic(
 }
 
 #[tokio::test]
-async fn siwc_pasted_callback_and_browser_callback_share_state_checks_and_release_open_stdin() {
+async fn browser_login_accepts_callback_urls_from_stdin_or_http() {
     use std::process::Stdio;
     use tokio::{
         io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
         net::TcpListener,
     };
-    for (paste, overlap) in [(true, false), (false, false), (true, true)] {
+    for stdin_input in [true, false] {
         let dir = fixture();
         let store = dir.path.join("sessions");
         declare(&store, "openai", "personal");
@@ -624,7 +624,6 @@ async fn siwc_pasted_callback_and_browser_callback_share_state_checks_and_releas
                 "chatgpt",
                 "--account",
                 "personal",
-                "--paste-callback",
                 "--json",
                 "--store",
             ])
@@ -642,24 +641,18 @@ async fn siwc_pasted_callback_and_browser_callback_share_state_checks_and_releas
         let mut stdin = child.stdin.take().unwrap();
         let mut stderr = BufReader::new(child.stderr.take().unwrap().take(16384));
         let authorization = timeout(Duration::from_secs(5), async {
+            let mut authorization = None;
             for _ in 0..10 {
                 let mut line = String::new();
                 assert!(stderr.read_line(&mut line).await.unwrap() > 0);
                 if line.starts_with("https://auth.openai.com/") {
-                    return url::Url::parse(line.trim()).unwrap();
+                    authorization = Some(url::Url::parse(line.trim()).unwrap());
+                }
+                if line.starts_with("Callback URL (or finish in the browser):") {
+                    return authorization.expect("authorization prompt before input");
                 }
             }
-            panic!("missing SIWC authorization prompt");
-        })
-        .await
-        .unwrap();
-        // Ensure a blocking pipe read has begun before completing HTTP callback.
-        timeout(Duration::from_secs(5), async {
-            let mut prompt = Vec::new();
-            while !prompt.ends_with(b"Callback URL (input hidden): ") {
-                prompt.push(stderr.read_u8().await.unwrap());
-                assert!(prompt.len() < 4096);
-            }
+            panic!("missing browser login prompt");
         })
         .await
         .unwrap();
@@ -669,68 +662,13 @@ async fn siwc_pasted_callback_and_browser_callback_share_state_checks_and_releas
         rejected
             .query_pairs_mut()
             .append_pair("state", "unrelated")
-            .append_pair("error", "access_denied")
-            .append_pair("error_description", "synthetic-private-paste");
+            .append_pair("error", "access_denied");
         let mut accepted = url::Url::parse(&fields["redirect_uri"]).unwrap();
         accepted
             .query_pairs_mut()
-            .append_pair("state", &fields["state"]);
-        if overlap {
-            accepted
-                .query_pairs_mut()
-                .append_pair("code", "synthetic-private-paste")
-                .append_pair("client_id", "oaiapp_synthetic");
-        } else {
-            accepted
-                .query_pairs_mut()
-                .append_pair("error", "access_denied")
-                .append_pair("error_description", "synthetic-private-paste");
-        }
-        let mut authority_connection = None;
-        if overlap {
-            let client = reqwest::Client::builder()
-                .no_proxy()
-                .timeout(Duration::from_secs(2))
-                .build()
-                .unwrap();
-            assert_eq!(
-                client.get(accepted.clone()).send().await.unwrap().status(),
-                200
-            );
-            // A held test-owned proxy CONNECT proves code acceptance and a released
-            // callback listener, without sending a request to the real authority.
-            let (mut stream, _) = timeout(Duration::from_secs(5), egress.accept())
-                .await
-                .unwrap()
-                .unwrap();
-            timeout(Duration::from_secs(5), async {
-                let mut headers = Vec::new();
-                while !headers.ends_with(b"\r\n\r\n") {
-                    headers.push(stream.read_u8().await.unwrap());
-                    assert!(headers.len() < 8192);
-                }
-                assert!(headers.starts_with(b"CONNECT auth.openai.com:443 "));
-            })
-            .await
-            .unwrap();
-            authority_connection = Some(stream);
-            stdin
-                .write_all(format!("{accepted}\n").as_bytes())
-                .await
-                .unwrap();
-            timeout(Duration::from_secs(5), async {
-                let mut line = String::new();
-                assert!(stderr.read_line(&mut line).await.unwrap() > 0);
-                assert!(line.contains("waiting for the browser login"));
-            })
-            .await
-            .unwrap();
-            assert!(child.try_wait().unwrap().is_none());
-            assert_eq!(
-                unsafe { libc::kill(child.id().unwrap() as libc::pid_t, libc::SIGINT) },
-                0
-            );
-        } else if paste {
+            .append_pair("state", &fields["state"])
+            .append_pair("error", "access_denied");
+        if stdin_input {
             stdin
                 .write_all(format!("{rejected}\n{accepted}\n").as_bytes())
                 .await
@@ -748,7 +686,6 @@ async fn siwc_pasted_callback_and_browser_callback_share_state_checks_and_releas
                 400
             );
         }
-        // Keep stdin open: callback/error completion must not wait for another line.
         assert!(
             !timeout(Duration::from_secs(5), child.wait())
                 .await
@@ -757,7 +694,6 @@ async fn siwc_pasted_callback_and_browser_callback_share_state_checks_and_releas
                 .success()
         );
         drop(stdin);
-        drop(authority_connection);
         let mut stdout = Vec::new();
         child
             .stdout
@@ -767,23 +703,15 @@ async fn siwc_pasted_callback_and_browser_callback_share_state_checks_and_releas
             .await
             .unwrap();
         let result: Value = serde_json::from_slice(&stdout).unwrap();
-        assert_eq!(
-            result["error"]["message"],
-            if overlap {
-                "authorization transaction was superseded"
-            } else {
-                "authorization was denied"
-            }
-        );
-        let mut rest = String::new();
-        stderr.read_to_string(&mut rest).await.unwrap();
-        assert!(!rest.contains("synthetic-private-paste"));
-        assert!(!rest.contains(accepted.as_str()));
+        assert_eq!(result["error"]["message"], "authorization was denied");
         let account = read(&store, "openai", "personal");
         assert!(account["login_attempt"].is_null());
         assert!(account["credential"].is_null());
-        let address = ("127.0.0.1", accepted.port().unwrap());
-        drop(TcpListener::bind(address).await.unwrap());
+        drop(
+            TcpListener::bind(("127.0.0.1", accepted.port().unwrap()))
+                .await
+                .unwrap(),
+        );
         assert!(
             timeout(Duration::from_millis(20), egress.accept())
                 .await

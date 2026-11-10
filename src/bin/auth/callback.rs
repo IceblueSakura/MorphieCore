@@ -1,17 +1,17 @@
-//! Optional CLI input transport; the existing callback owns OAuth validation.
+//! Browser login input; stdin and HTTP share the existing callback validation.
 use super::Error;
-use crossterm::terminal;
 use morphiecore::credential::SecretBytes;
-use std::io::{self, BufRead, IsTerminal, Write};
-use tokio::sync::oneshot;
+use std::io::{self, BufRead};
+use tokio::sync::{mpsc, oneshot};
 use url::Url;
 
 const INPUT_LIMIT: usize = 8192;
 
-pub(super) async fn paste(receiver: oneshot::Receiver<String>) -> Result<(), Error> {
+pub(super) async fn input(mut receiver: mpsc::Receiver<String>) -> Result<(), Error> {
     let redirect = receiver
+        .recv()
         .await
-        .map_err(|_| Error::CallbackInput("browser callback is unavailable"))?;
+        .ok_or(Error::CallbackInput("browser callback is unavailable"))?;
     let expected =
         Url::parse(&redirect).map_err(|_| Error::CallbackInput("browser callback is invalid"))?;
     let client = reqwest::Client::builder()
@@ -21,14 +21,9 @@ pub(super) async fn paste(receiver: oneshot::Receiver<String>) -> Result<(), Err
         .timeout(std::time::Duration::from_secs(5))
         .build()
         .map_err(|_| Error::CallbackInput("local callback client is unavailable"))?;
-    eprintln!(
-        "For headless login, open the authorization URL on your computer. After signing in, \
-         copy the full callback URL from the address bar even if the page cannot load. \
-         The browser callback remains active."
-    );
     loop {
+        eprintln!("Callback URL (or finish in the browser):");
         let Some(input) = read_input().await? else {
-            eprintln!("Input closed; still waiting for the browser callback.");
             return Ok(());
         };
         let Some(target) = callback_url(&input, &expected) else {
@@ -39,22 +34,15 @@ pub(super) async fn paste(receiver: oneshot::Receiver<String>) -> Result<(), Err
         };
         // Always use the prepared loopback target, never an input-selected origin.
         // State, duplicate fields and issued client binding keep their existing owner.
-        let response = match client.get(target).send().await {
-            Ok(response) => response,
-            Err(_) => {
-                // A browser may already have claimed the callback and released the
-                // listener while its code exchange is still pending. Only the
-                // managed operation may decide that login's result.
+        match client.get(target).send().await {
+            Ok(response) if !response.status().is_success() => {
                 eprintln!(
-                    "Local callback relay is unavailable; waiting for the browser login to finish. Ctrl-C cancels."
+                    "Callback rejected; check that the URL belongs to this login and try again."
                 );
-                return Ok(());
             }
-        };
-        if response.status().is_success() {
-            return Ok(());
+            // The shared callback owns the first accepted result and final login outcome.
+            _ => return Ok(()),
         }
-        eprintln!("Callback rejected; check that the URL belongs to this login and try again.");
     }
 }
 
@@ -82,39 +70,17 @@ fn callback_url(input: &[u8], expected: &Url) -> Option<Url> {
 }
 
 async fn read_input() -> Result<Option<SecretBytes>, Error> {
-    let terminal = io::stdin().is_terminal();
-    let _guard = if terminal {
-        terminal::enable_raw_mode()
-            .map_err(|_| Error::CallbackInput("could not hide terminal input"))?;
-        Some(TerminalGuard)
-    } else {
-        None
-    };
-    print_prompt()?;
     let (sender, receiver) = oneshot::channel();
-    // Unlike tokio::io::stdin, this process-owned reader cannot hold runtime
-    // shutdown open if the callback wins while a pipe remains open.
+    // A plain thread keeps a pending stdin read outside Tokio's shutdown-owned pool.
     std::thread::Builder::new()
         .name("oauth-callback-input".into())
         .spawn(move || {
-            let result = if terminal {
-                read_terminal_line(io::stdin().lock())
-            } else {
-                read_line(io::stdin().lock())
-            };
-            let _ = sender.send(result);
+            let _ = sender.send(read_line(io::stdin().lock()));
         })
         .map_err(|_| Error::CallbackInput("could not start input reader"))?;
     receiver
         .await
         .map_err(|_| Error::CallbackInput("input reader stopped"))?
-}
-
-fn print_prompt() -> Result<(), Error> {
-    eprint!("Callback URL (input hidden): ");
-    io::stderr()
-        .flush()
-        .map_err(|_| Error::CallbackInput("could not display input prompt"))
 }
 
 fn read_line(reader: impl BufRead) -> Result<Option<SecretBytes>, Error> {
@@ -136,48 +102,6 @@ fn read_line(reader: impl BufRead) -> Result<Option<SecretBytes>, Error> {
         return Err(Error::CallbackInput("callback URL exceeds 8192 bytes"));
     }
     Ok(Some(bytes))
-}
-
-struct TerminalGuard;
-impl Drop for TerminalGuard {
-    fn drop(&mut self) {
-        let _ = terminal::disable_raw_mode();
-        eprintln!();
-    }
-}
-
-fn read_terminal_line(mut reader: impl BufRead) -> Result<Option<SecretBytes>, Error> {
-    // Read bytes, not whole paste events: an unfinished escape/paste sequence
-    // must not accumulate an unbounded library buffer or swallow keyboard Ctrl-C.
-    let mut input = SecretBytes::new(Vec::new());
-    while let Some(byte) = reader
-        .fill_buf()
-        .map_err(|_| Error::CallbackInput("could not read terminal input"))?
-        .first()
-        .copied()
-    {
-        reader.consume(1);
-        match byte {
-            b'\r' | b'\n' => return Ok(Some(input)),
-            3 => return Err(morphiecore::credential::CredentialError::Superseded.into()),
-            4 if input.is_empty() => return Ok(None),
-            21 => input.clear(),
-            8 | 127 => {
-                while let Some(byte) = input.pop() {
-                    if byte & 0xc0 != 0x80 {
-                        break;
-                    }
-                }
-            }
-            _ => {
-                if input.len() == INPUT_LIMIT {
-                    return Err(Error::CallbackInput("callback URL exceeds 8192 bytes"));
-                }
-                input.push(byte);
-            }
-        }
-    }
-    Ok(if input.is_empty() { None } else { Some(input) })
 }
 
 #[cfg(test)]
@@ -210,7 +134,7 @@ mod tests {
     }
 
     #[test]
-    fn input_is_bounded_even_with_an_unfinished_terminal_escape_sequence() {
+    fn input_lines_are_bounded_and_accept_crlf() {
         assert!(read_line(io::Cursor::new([])).unwrap().is_none());
         assert_eq!(
             &*read_line(io::Cursor::new(b"callback\r\n"))
@@ -220,14 +144,5 @@ mod tests {
         );
         let oversized = vec![b'a'; INPUT_LIMIT + 4];
         assert!(read_line(io::Cursor::new(&oversized)).is_err());
-        let mut unfinished_paste = b"\x1b[200~".to_vec();
-        unfinished_paste.extend_from_slice(&oversized);
-        assert!(read_terminal_line(io::Cursor::new(unfinished_paste)).is_err());
-        assert!(matches!(
-            read_terminal_line(io::Cursor::new(b"\x1b[200~partial\x03")),
-            Err(Error::Credential(
-                morphiecore::credential::CredentialError::Superseded
-            ))
-        ));
     }
 }
