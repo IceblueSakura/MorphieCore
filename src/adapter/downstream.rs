@@ -45,6 +45,20 @@ impl ClientAdapter {
             Self::Messages => Err(CodecError::ProfileMismatch),
         }
     }
+    pub(crate) fn owner_replay(&self) -> bool {
+        matches!(self, Self::OpenAi { adapter, .. }
+            if adapter.protocol == GenerationApi::Responses
+                && adapter.adaptation.rules.responses_owner_replay)
+    }
+    pub(crate) fn enable_owner_replay(&mut self) -> Result<(), CodecError> {
+        match self {
+            Self::OpenAi { adapter, .. } if adapter.protocol == GenerationApi::Responses => {
+                adapter.adaptation.rules.responses_owner_replay = true;
+                Ok(())
+            }
+            _ => Err(CodecError::ProfileMismatch),
+        }
+    }
     fn omits_readable_reasoning(&self) -> bool {
         matches!(self, Self::OpenAi { adapter, .. }
             if crate::protocol::openai::lowering::readable_reasoning::selected(
@@ -90,13 +104,17 @@ impl ClientAdapter {
             .items()
             .iter()
             .any(|(_, item)| item.has_replay_attachment());
-        if hidden {
+        if hidden && !self.owner_replay() {
             return Err(CodecError::Unsupported(CarrierReason::Replay).into());
         }
         decoded
             .fidelity
             .check_attachment_bindings(decoded.semantic.items())?;
-        let mut wire = crate::protocol::replay_projection::strip(decoded, false)?;
+        let mut wire = if self.owner_replay() {
+            decoded.clone()
+        } else {
+            crate::protocol::replay_projection::strip(decoded, false)?
+        };
         let native = wire.semantic.progress() != crate::semantic::task::generation::InteractionProgress::Unreported
             || wire.semantic.items().iter().any(|(_, item)|
                 matches!(item, crate::semantic::task::generation::Item::ToolCall(c)

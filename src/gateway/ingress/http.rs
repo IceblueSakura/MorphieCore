@@ -229,12 +229,28 @@ async fn admit(
     if protocol == ClientProtocol::Messages {
         admission::messages_version(request.headers())?;
     }
+    let mut profiles = request
+        .headers()
+        .get_all(crate::protocol::openai::responses::owner_replay::HEADER)
+        .iter();
+    let owner_replay = if let Some(profile) = profiles.next() {
+        if protocol != ClientProtocol::Responses
+            || profiles.next().is_some()
+            || profile.as_bytes()
+                != crate::protocol::openai::responses::owner_replay::PROFILE.as_bytes()
+        {
+            return Err(ApiError::invalid());
+        }
+        true
+    } else {
+        false
+    };
     let conversation = admission::conversation(request.headers())?;
     let bytes = read_body(state, request.into_body(), trace).await?;
     let (entry, request, history) = match protocol {
         ClientProtocol::Responses => {
             let (entry, request, history) =
-                admission::prepare_responses(state, &bytes, &trace.report)?;
+                admission::prepare_responses(state, &bytes, &trace.report, owner_replay)?;
             (entry, request, Some(Box::new(history)))
         }
         protocol => {

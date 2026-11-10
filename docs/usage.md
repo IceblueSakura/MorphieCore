@@ -609,6 +609,8 @@ Both forms work at ingress. Repeated headers or both forms together are rejected
 
 When an admitted request includes `metadata`, Responses delivery can echo it if the upstream response omits that field. An upstream explicit null or object wins; maps are not merged. This is a request association, not proof of Provider storage or effective configuration. Send it again when needed on a later turn; stored history does not inherit it. See [delivery provenance and precedence](architecture.md#downstream-schema-completion).
 
+For stateless Google signed ordinary text/calls, adapted clients may select `X-MorphieCore-Responses-Profile: owner-replay-v1` and explicit `store:false`. Return the complete original output owners, their content-part boundaries and `morphiecore_replay` values unchanged in later input. The [owner-replay contract](architecture.md#responses-owner-replay) defines the fields and pi persistence behavior. Do not send `previous_response_id` with this profile; omitted/true/null storage and unknown or repeated profile headers reject. Stock clients that discard the fields need adaptation before using this lane.
+
 ### Chat Completions
 
 ```json
@@ -758,7 +760,7 @@ Use the returned `id` in the next request:
 
 For tool continuation, send only the new `function_call_output` or other admitted result. The stored call and reasoning remain in history. Existing carrier and replay checks still apply; a response reference does not bypass model admission or grant cross-Provider replay.
 
-Signed Google ordinary text/calls require managed continuation on Responses. Their hidden signatures remain in the stored typed history, not fabricated reasoning items or extra public fields. Use `previous_response_id`; copying creation/retrieval/input-list JSON is not an equivalent stateless export. `store: false` can read a predecessor, but a new response with such signatures rejects because its necessary continuation state would not be retained. Responses rejects legacy `mca1.` manifest input. Genuine native reasoning/compaction carriers keep their separate replay rules.
+Without the [stateless owner-replay profile](architecture.md#responses-owner-replay), signed Google ordinary text/calls require managed continuation on Responses. Their hidden signatures remain in the stored typed history. Use `previous_response_id`; copying creation/retrieval/input-list JSON is not an equivalent stateless export. `store: false` can read a predecessor, but a new unselected response with such signatures rejects because its necessary continuation state would not be retained. Responses rejects legacy `mca1.` manifest input. Genuine native reasoning/compaction carriers keep their separate replay rules.
 
 The existing Google bindings accept the [qualified strict function subset](architecture.md#google-strict-function-arguments). Repeat the tool declaration and controls on each managed request. For example, create with `store:true`, `tool_choice:"required"` and a strict function whose parameters are `{"type":"object","properties":{"label":{"type":"string","enum":["cedar"]}},"required":["label"],"additionalProperties":false}`. Continue with the returned `id`, a `function_call_output` for every delivered call, and `tool_choice:"none"` when no further calls are wanted. Do not add `parallel_tool_calls:false` or an OpenAI named forced choice: those request a single-call guarantee Google cannot carry. Unsupported strict constraints still reject; this is not unrestricted JSON Schema support.
 

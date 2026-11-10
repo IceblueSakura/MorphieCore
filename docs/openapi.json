@@ -396,8 +396,12 @@
     "/v1/responses": {
       "post": {
         "operationId": "response",
-        "parameters": [{"$ref": "#/components/parameters/ConversationId"}],
+        "parameters": [
+          {"$ref": "#/components/parameters/ConversationId"},
+          {"$ref": "#/components/parameters/ResponsesProfile"}
+        ],
         "summary": "Generate with full history or gateway-managed Responses",
+        "description": "Optional owner-replay-v1 is an explicit stateless extension for adapted clients. It requires store:false and no nonnull previous_response_id. The morphiecore_replay field remains on its original assistant text-part or function-call owner in JSON and item-done/terminal SSE; clients return it unchanged with original boundaries. Unselected clients keep the official baseline.",
         "requestBody": {
           "required": true,
           "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ResponsesRequest"}}}
@@ -501,6 +505,11 @@
       }
     },
     "parameters": {
+      "ResponsesProfile": {
+        "in": "header", "name": "X-MorphieCore-Responses-Profile", "required": false,
+        "schema": {"const": "owner-replay-v1"},
+        "description": "Explicit request-local stateless owner replay on POST /v1/responses only. Unknown/repeated values and stateful combinations reject. No Provider selection or server-side continuation authority."
+      },
       "ResponseId": {
         "in": "path", "name": "response_id", "required": true,
         "schema": {"type": "string", "minLength": 1},

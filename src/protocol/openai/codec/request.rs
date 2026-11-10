@@ -53,6 +53,13 @@ impl GenerationCodec {
         )>,
     ) -> Result<Request, CodecError> {
         let mut value = crate::protocol::json::decode(bytes)?;
+        let owner_replay = if self.protocol == GenerationApi::Responses
+            && self.adaptation.rules.responses_owner_replay
+        {
+            openai::responses::owner_replay::take(&mut value)?
+        } else {
+            vec![]
+        };
         if self.protocol == GenerationApi::Responses
             && self.adaptation.rules.responses_developer_is_user
             && let Some(items) = value.get_mut("input").and_then(Value::as_array_mut)
@@ -176,6 +183,7 @@ impl GenerationCodec {
                 }
             }
         };
+        openai::responses::owner_replay::restore(&mut request.task, owner_replay)?;
         if !native_controls.is_empty() || self.adaptation.rules.bailian_requests {
             let mut settings = request.task.semantic.settings().clone();
             openai::dialect::bailian::read_controls(

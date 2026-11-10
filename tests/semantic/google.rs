@@ -1034,6 +1034,50 @@ fn optional_token_probability_is_not_a_reported_zero() {
 }
 
 #[test]
+fn stream_accepts_missing_and_late_response_ids_but_rejects_invalid_or_changed_ids() {
+    // Google JS v2.31.0 declares responseId optional on GenerateContentResponse.
+    // https://github.com/googleapis/js-genai/blob/1748ce7031d2ab4f71c42e24f02a5a0fa6e43251/src/types.ts
+    let chunks = || {
+        vec![
+            json!({"modelVersion":"gemini-synthetic",
+                "candidates":[{"content":{"role":"model","parts":[{"text":"O"}]}}]}),
+            json!({"candidates":[{"content":{"role":"model","parts":[{"text":"K"}]},
+                "finishReason":"STOP"}]}),
+        ]
+    };
+    for late in [false, true] {
+        let mut input = chunks();
+        if late {
+            input[1]["responseId"] = json!("late-response");
+        }
+        let response = decode(&wire(&input)).unwrap();
+        assert_eq!(
+            response.metadata.id.as_deref(),
+            late.then_some("late-response")
+        );
+        let Item::Message(message) = &response.semantic.items()[0].1 else {
+            panic!("message");
+        };
+        let ContentPart::Text(text) = &message.parts[0].content else {
+            panic!("text");
+        };
+        assert_eq!(text.as_str(), "OK");
+    }
+    for id in [Value::Null, json!(7), json!(""), json!("x".repeat(257))] {
+        let mut input = chunks();
+        input[1]["responseId"] = id;
+        assert!(decode(&wire(&input)).is_err());
+    }
+    let mut changed = chunks();
+    changed.insert(1, json!({"responseId":"first"}));
+    changed[2]["responseId"] = json!("second");
+    assert!(matches!(
+        decode(&wire(&changed)),
+        Err(WireFailure::Codec(Failure::Invalid(Shape::Identity)))
+    ));
+}
+
+#[test]
 fn stream_rejects_unidentified_calls_late_chunks_and_unfinished_eof() {
     let mut missing_id = frames();
     missing_id[3]["candidates"][0]["content"]["parts"][1]["functionCall"]

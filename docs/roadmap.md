@@ -67,7 +67,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 This is the single register for unresolved Generation/client boundaries and qualification gaps. None is an active repair package or a prerequisite for the delivered baseline. Reopen only after a concrete unmet contract, target/profile, prerequisite and bounded acceptance plan are selected. Review IDs remain traceability labels, not a second phase queue. [Development](development.md#provider-qualification-evidence) owns dated verdicts; [Architecture](architecture.md) owns accepted contracts and service limitations.
 
-R02/R06 remain user-paused, with no repair or qualification until explicitly rescheduled. R04/R08 and Bailian structured-output variability remain excluded; do not substitute prompt/history rewriting or deduplication work. Accepted Bailian forcing and Grok content limitations are not reopened. R09 is separately [scheduled before Stage 4](#cache-affinity-qualification), not moved into this backlog.
+R02/R06's pi-first stateless carrier was selected on 2026-11-10; remaining client/Provider qualification stays here. R04/R08 and Bailian structured-output variability remain excluded; do not substitute prompt/history rewriting or deduplication work. Accepted Bailian forcing and Grok content limitations are not reopened. R09 is separately [scheduled before Stage 4](#cache-affinity-qualification), not moved into this backlog.
 
 ### Tool guarantees
 
@@ -80,7 +80,7 @@ R02/R06 remain user-paused, with no repair or qualification until explicitly res
 
 | Issue | Current boundary | Re-entry / decision |
 |---|---|---|
-| Google stateless ordinary-signature carrier (R02/R06) | **User-paused, 2026-11-09.** Current stateless Clients have no qualified ordinary text/call carrier; existing managed Responses continuation remains available. | Future design targets a client-retainable stateless carrier, not default managed-client integration. Resume only after explicit scheduling and carrier/client-retention contract selection. No signature deletion, synthetic reasoning owner, client extension or new API is selected; no repair or qualification while unscheduled. |
+| Google stateless ordinary-signature qualification (R02/R06) | **Pi-first carrier delivered, 2026-11-10.** The selected [Responses profile](architecture.md#responses-owner-replay) and pi save/resume/tool loop have synthetic acceptance. Standard unadapted clients still lack an ordinary text/call carrier. | OpenCode adaptation is deferred. Select the exact client/Provider lane and bounded real qualification separately; synthetic acceptance does not qualify real signed-call issuance or endpoint behavior. No signature deletion, synthetic reasoning owner or new Google API. |
 | Real Haiku protected output (R01) | Current OpenCode's original Chat loop and an explicit adaptive/medium discriminator produce no protected owners; existing carrier repair remains verified. | Resume when the same profile actually yields protected output. Missing activation alone does not justify another repair or automatic effort-to-activation mapping. |
 | Interactions signed-call replay | No signed-call sample was independently observed in the retained profile qualification; thought replay does not close that cell. | Obtain an actual signed-call sample for the selected profile and verify exact feedback/continuation; do not infer it from a generic managed-loop success. |
 

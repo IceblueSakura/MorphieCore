@@ -75,6 +75,7 @@ This page defines accepted principles, domain contracts, and architectural decis
   - [Reasoning replay](#reasoning-replay)
     - [Binding reasoning-history contract](#binding-reasoning-history-contract)
   - [Chat reasoning extensions](#chat-reasoning-extensions)
+  - [Responses owner replay](#responses-owner-replay)
   - [Compacted history](#compacted-history)
   - [Stateful history](#stateful-history)
   - [Agent session files](#agent-session-files)
@@ -387,7 +388,7 @@ Strict-tool admission follows the effective binding/API disposition in shared re
 - **Native no-call equivalence:** explicit `tool_choice:none` uses `NONE` / `none`, which prohibits every call and satisfies argument/cardinality guarantees vacuously. Shared admission and direct writers retain complete declarations/schemas, skip conditional-strict fallback and accept serial intent without requesting validated decoding. This does not relax auto/required selection or bypass known-field, bounds, trust, history or other declaration-carrier checks.
 - Parameter omission keeps the native parameterless declaration. No schema deletion, argument repair, inferred prompting or local retry supplies a missing guarantee. Serial intent still rejects when calls are enabled; one declared function can produce multiple calls.
 
-Ordinary Google text/call signatures currently use the existing managed Responses continuation contract. Clients use `store:true` and `previous_response_id`; Chat/Messages and manually reconstructed stateless Responses retain their unsupported attachment boundary. **Future direction selected 2026-11-09:** design a client-retainable stateless carrier rather than make managed-client integration the default repair. No concrete wire position, format or client extension is selected; the [roadmap disposition](roadmap.md#history-and-replay) owns the pause and re-entry gate. Existing managed continuation remains available. This selects no signature deletion, synthetic reasoning owner or new Google API.
+Ordinary Google text/call signatures use managed Responses continuation or the explicitly selected [stateless owner-replay profile](#responses-owner-replay). Standard stateless Responses and Chat/Messages retain their unsupported attachment boundary. Existing managed continuation remains available; neither path deletes signatures or creates surrogate reasoning owners.
 
 #### Protocol tree ownership
 
@@ -833,6 +834,21 @@ Clients must return the complete details sequence and envelope bytes unchanged. 
 
 Standard Chat omits unsigned readable reasoning under `chat.omit-readable-reasoning.v1`, matching official Chat, which exposes reasoning only through usage. Source parsing/reduction, accounting, visible content, tool links, and terminal authority remain intact; reasoning is never moved into visible text. Standard Chat has no carrier for replay-bearing reasoning, so delivery omits the owner under `chat.omit-uncarried-reasoning.v1`, preserving visible content and tool links without forging signatures. Declared `required_with_tools` Chat bindings apply the [fallback contract](#binding-reasoning-history-contract).
 
+### Responses owner replay
+
+**Selected 2026-11-10, pi first:** `POST /v1/responses` opts in with exactly one `X-MorphieCore-Responses-Profile: owner-replay-v1` header. Selection is request-local and independent of Provider dialects. Require explicit `store:false` and no nonnull `previous_response_id`; reject stateful combinations before history lookup or upstream I/O. Unselected clients keep the official baseline.
+
+The registered `morphiecore_replay` field lives on the actual completed/incomplete output item:
+
+| Owner | Field shape | Native purpose |
+|---|---|---|
+| Assistant `message` | `{"parts":[{"content_index":0,"token":"mc1.…"}]}` | Signature for that ordinary `output_text` part |
+| `function_call` | `{"token":"mc1.…"}` | Signature for that call, retaining its separate item/call identities and arguments |
+
+Use the existing opaque, format-tagged, deployment-bound `mc1.` envelope without decoding it in clients. Publish finalized attachments at `response.output_item.done` and identically in terminal output/JSON, not in text deltas or synthetic reasoning items. Text streams incrementally; no whole-response publication barrier is introduced. Delivery-generated profile IDs are compact, owner-distinct `msg_`/`fc_` carrier identities, never containers for signatures. Recognized malformed tokens, mixed attachment shapes, duplicate owner/part references, invalid indices/purposes and `in_progress` replay reject; unknown members are discarded. Replay opening and existing owner/dependency checks remain authoritative before native re-encoding.
+
+The workstation pi provider wraps its public Responses transport. It retains ordinary text replay and original part boundaries in `TextContent.textSignature`, and call replay in `ToolCall.thoughtSignature`. Native session save/resume persists these slots. Before serialization it restores the original parts and rejects edited text/calls or a changed gateway scope; cross-model history follows pi's ordinary signature-stripping path. It adds no server-side continuation state. OpenCode adaptation and real Provider qualification remain separately scheduled in the [issue register](roadmap.md#history-and-replay).
+
 ### Compacted history
 
 Compacted conversation summaries are preserved as distinct `Compaction` items with opaque payloads wrapped in `mc1.` envelopes. Compaction items are required context and reject if the target lacks a compaction carrier.
@@ -844,7 +860,7 @@ Gateway-managed continuation via `previous_response_id` on OpenAI Responses is m
 - Synchronous retrieval, deletion, and cursor-paginated input listing.
 - Upstream requests remain fully stateless (`store: false`).
 
-Google part/call thought signatures use this retained owner when the public protocol has no equivalent carrier. An explicit `store:true` and continuation through `previous_response_id` preserve them without exposing fabricated wire fields. Reconstructing stateless input from that signature-less wire view cannot restore those attachments; stateless delivery rejects rather than silently discarding replay authority.
+Google part/call thought signatures use this retained owner when the selected client protocol has no equivalent carrier. An explicit `store:true` and continuation through `previous_response_id` preserve them without exposing fabricated wire fields. Reconstructing stateless input from that signature-less wire view cannot restore those attachments; use the separately selected [owner-replay profile](#responses-owner-replay) for a stateless export.
 
 ### Agent session files
 
@@ -1133,7 +1149,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Binding-qualified Bailian reasoning domain | 2026-11-07 | DeepSeek Responses retains reasoning content rather than Qwen's summary-event alias; exact item snapshot validation remains intact. [Dialect boundary](#protocol-baselines-and-provider-dialects) |
 | Google ordered controls | 2026-11-07 | Extend source-timed configuration collapse and effective tool-set projection to existing generateContent/Interactions targets with the existing control/history/prefix losses; explicit strictness, seriality, selection and replay guards remain independent. [Tools](#ordered-tool-availability); [effort](#ordered-effort-repair-direction) |
 | Google function-argument validation | 2026-11-09 | Select closed objects, bounded nullable unions and read-only root-definition references through native request-wide validation. Native none satisfies strict/serial intent without dropping declarations or applying conditional fallback; enabled calls retain unsupported-constraint and serial rejection. Ordinary signatures use managed Responses, without stateless carrier fabrication; obsolete surrogate-signature migration is removed. [Contract](#google-strict-function-arguments) |
-| Google ordinary-signature continuation direction | 2026-11-09 | Retain implemented managed Responses and current stateless rejection; select a client-retainable stateless carrier as the future design direction instead of default managed-client integration. No concrete carrier or implementation is selected. [Contract](#google-strict-function-arguments); [scheduling](roadmap.md#history-and-replay) |
+| Google ordinary-signature stateless continuation | 2026-11-10 | Supersede the 2026-11-09 design-only direction with request-local `owner-replay-v1`, actual text-part/call attachments and pi's durable public signature slots. Require explicit stateless requests; keep managed continuation separate. OpenCode and real Provider qualification remain deferred. [Contract](#responses-owner-replay); [scheduling](roadmap.md#history-and-replay) |
 | Unified tool semantics | 2026-11-04 | Expand ordered-tool root repair to all nine Chat/Responses/Messages directions, including request, return and replay. Accept bounded semantic approximation as the design direction; evaluate concrete collapse/alias/wrapper policies with explicit losses before activation. Source history and safety remain intact; strictness/selection/cardinality cannot silently weaken. New Google APIs, discovery, hosted execution and Client-history annotations remain outside scope. [Contract](#ordered-tool-availability); [design](api-expansion-design.md#three-protocol-tool-conversion-design); [execution](roadmap.md#conditional-stage-3-follow-ups) |
 | Ordered definition batch ownership | 2026-11-04 | One typed batch owns definitions, role and position; codec fidelity owns the wire ID. Shared borrowed/mutable views include every declaration location without cloning or inventing schema precedence. Native Responses request/output/SSE/retained history share this owner; only developer batches can enter request history, and statusless batches require observed complete closure before stream finalization. [Contract](#ordered-tool-availability) |
 | Bounded tool-set projection | 2026-11-05 | Delivered through one shared owner: effective active-set collapse, target-native retained additions (with fresh converted identities and legal-position/capacity checks) and allowed-set inventory filtering. Accept their explicit historical-definition/timing/cache losses, not weaker tool guarantees or guessed collision precedence. [Contract](#ordered-tool-availability); Native batches bypass effective-set construction; mixed histories use indexed lookup |

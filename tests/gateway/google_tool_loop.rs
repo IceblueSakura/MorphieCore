@@ -3,14 +3,14 @@ use crate::google_tool_fixture as fixture;
 use morphiecore::protocol::openai::GenerationApi;
 use serde_json::{Value, json};
 
-async fn complete(client: &reqwest::Client, base: &str, body: &Value) -> Value {
-    let response = client
+async fn complete(client: &reqwest::Client, base: &str, body: &Value, owner_replay: bool) -> Value {
+    let mut request = client
         .post(format!("{base}/responses"))
-        .bearer_auth(fixture::KEY)
-        .json(body)
-        .send()
-        .await
-        .unwrap();
+        .bearer_auth(fixture::KEY);
+    if owner_replay {
+        request = request.header("x-morphiecore-responses-profile", "owner-replay-v1");
+    }
+    let response = request.json(body).send().await.unwrap();
     assert_eq!(response.status(), 200);
     if body["stream"] != true {
         return response.json().await.unwrap();
@@ -100,9 +100,11 @@ async fn exercise_rejected(api: fixture::Api, messages: bool) {
         );
     }
 }
-async fn exercise(api: fixture::Api) {
-    exercise_rejected(api, true).await;
-    exercise_rejected(api, false).await;
+async fn exercise(api: fixture::Api, owner_replay: bool) {
+    if !owner_replay {
+        exercise_rejected(api, true).await;
+        exercise_rejected(api, false).await;
+    }
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(std::time::Duration::from_secs(5))
@@ -118,11 +120,11 @@ async fn exercise(api: fixture::Api) {
                 let mut tool = function;
                 tool["type"] = json!("function");
                 json!({"model":"gemini-3.8-flash","input":[{"role":"user","content":"Read."}],
-                    "store":true,"max_output_tokens":256,"reasoning":{"effort":"low","summary":"auto"},
+                    "store":!owner_replay,"max_output_tokens":256,"reasoning":{"effort":"low","summary":"auto"},
                     "include":["reasoning.encrypted_content"],"tools":[tool],"stream":stream})
             };
             for turn in 1..=4 {
-                let response = complete(&client, &fixture.base, &body).await;
+                let response = complete(&client, &fixture.base, &body, owner_replay).await;
                 if api == fixture::Api::GenerateContent {
                     assert_eq!(response["usage"]["total_tokens"], 15);
                 } else {
@@ -167,13 +169,20 @@ async fn exercise(api: fixture::Api) {
                             .count(),
                         usize::from(api == fixture::Api::Interactions && turn <= 3)
                     );
-                    body["previous_response_id"] = response["id"].clone();
-                    body["input"] = json!([if turn <= 2 {
+                    let next = if turn <= 2 {
                         json!({"type":"function_call_output","call_id":format!("c{turn}"),
                             "output":if turn == 1 {fixture::ERROR} else {fixture::RESULT}})
                     } else {
                         json!({"role":"user","content":"Continue."})
-                    }]);
+                    };
+                    if owner_replay {
+                        let input = body["input"].as_array_mut().unwrap();
+                        input.extend(output.iter().cloned());
+                        input.push(next);
+                    } else {
+                        body["previous_response_id"] = response["id"].clone();
+                        body["input"] = json!([next]);
+                    }
                 }
             }
             assert_eq!(fixture.seen.lock().unwrap().len(), 4);
@@ -184,12 +193,69 @@ async fn exercise(api: fixture::Api) {
 
 #[tokio::test]
 async fn ordinary_stop_tool_error_correction_and_final_history() {
-    exercise(fixture::Api::GenerateContent).await;
+    exercise(fixture::Api::GenerateContent, false).await;
 }
 
 #[tokio::test]
 async fn interactions_tool_correction_and_signed_final_history() {
-    exercise(fixture::Api::Interactions).await;
+    exercise(fixture::Api::Interactions, false).await;
+}
+
+#[tokio::test]
+async fn stateless_owner_replay_preserves_google_tool_and_signed_text_history() {
+    exercise(fixture::Api::GenerateContent, true).await;
+    exercise(fixture::Api::Interactions, true).await;
+}
+
+#[tokio::test]
+async fn owner_replay_selection_is_stateless_and_rejects_before_upstream_dispatch() {
+    let fixture = fixture::start(
+        GenerationApi::Responses,
+        fixture::Api::GenerateContent,
+        false,
+    )
+    .await;
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let base = json!({"model":"gemini-3.8-flash","input":"Read."});
+    for storage in [
+        json!({}),
+        json!({"store":true}),
+        json!({"store":null}),
+        json!({"store":false,"previous_response_id":"resp_missing"}),
+    ] {
+        let mut body = base.clone();
+        body.as_object_mut()
+            .unwrap()
+            .extend(storage.as_object().unwrap().clone());
+        let response = client
+            .post(format!("{}/responses", fixture.base))
+            .bearer_auth(fixture::KEY)
+            .header("x-morphiecore-responses-profile", "owner-replay-v1")
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 400);
+    }
+    for profiles in [vec!["unknown"], vec!["owner-replay-v1", "owner-replay-v1"]] {
+        let mut request = client
+            .post(format!("{}/responses", fixture.base))
+            .bearer_auth(fixture::KEY);
+        for profile in profiles {
+            request = request.header("x-morphiecore-responses-profile", profile);
+        }
+        assert_eq!(
+            request
+                .json(&json!({"model":"gemini-3.8-flash","store":false,
+            "input":"Read."}))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            400
+        );
+    }
+    assert!(fixture.seen.lock().unwrap().is_empty());
 }
 
 #[tokio::test]

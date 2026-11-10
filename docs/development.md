@@ -399,7 +399,18 @@ The Embedding scenarios share `tests/support/embedding_loop.rs` and explicit syn
 
 `tests/support/openai_tool_loop.rs` owns fixture setup/teardown; its `chat.rs` and `responses.rs` children retain separate wire oracles. `messages_tool_loop.rs` owns the combined native tool/thinking/cache history fixture. Wire and SDK clients build continuation independently from delivered content; `messages_stream.rs` folds Messages SSE without production decoding or another test module.
 
-`tests/support/google_tool_loop.rs` selects one API/candidate and one attempt, so another API cannot mask failure. generateContent and Interactions keep independent signature/history oracles. Positive Router/SDK correction loops use managed Responses continuation; signed stateless Chat/Messages lanes verify standard errors or aborts without successful termination. Transmissions are counted and retries disabled. These are sequential single-call checks, not installed-client/Provider acceptance.
+`tests/support/google_tool_loop.rs` selects one API/candidate and one attempt, so another API cannot mask failure. generateContent and Interactions keep independent signature/history oracles. Positive Router correction loops cover managed Responses and explicit stateless owner replay; SDK correction loops use managed continuation. Unselected stateless Responses and signed Chat/Messages verify standard errors or aborts without successful termination. Transmissions are counted and retries disabled. These are sequential single-call checks, not installed-client/Provider acceptance.
+
+**Stateless owner replay, 2026-11-10:** independent native history checks pass for generateContent/Interactions JSON and SSE, including tool-error correction and signed final text. Delivery checks compare owner-local tokens across item-done, terminal JSON/SSE and next native input; repeated text, exact arguments, edited-owner rejection and baseline-client isolation are covered. Selected malformed/stateful requests reject before dispatch. The optional/late Google `responseId` regression retains stable downstream identities and rejects malformed/changed reports; the corrected `in_memory` negative reaches `admission.cache_retention` without an attempt.
+
+The installed pi **1.5.1** companion completed a real `read` tool loop, process exit/session resume and exact signed native-history replay with three client requests/three upstream attempts and no extras, with Google response IDs absent throughout. Its separate native-loader/SessionManager experiment preserves multiple identical Unicode text parts through pi's flattened text and durable signature slots, rejects edited text/arguments and changed gateway scope, strips foreign-model replay and releases the SDK reader after malformed attachment rejection. The full offline baseline passes. All authorities and credentials are synthetic; no real Provider, private configuration or host activation was used.
+
+```sh
+MORPHIECORE_PI_BIN=/absolute/path/to/current/unwrapped/pi \
+MORPHIECORE_PI_REPLAY_SOURCE=/absolute/path/to/morphiecore/replay.ts \
+  cargo test --locked --offline --test clients pi_responses_google_owner_replay \
+  -- --ignored --nocapture
+```
 
 The Google SDK managed loops use root-definition reference schemas for JSON and equivalent inline schemas for SSE, without expanding either document. Their final continuation keeps an otherwise-unqualified length constraint under explicit none plus serial intent; independent native wire authorities require NONE/none, the unchanged complete schema and the original signed history. Both APIs retain eight transmissions. Directional semantic and preparation tests separately cover referenced constraints, cycles/scopes, pointer escapes and cached path-depth bounds; source IR remains immutable.
 

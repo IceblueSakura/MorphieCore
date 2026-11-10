@@ -255,7 +255,8 @@ def handler(state, ingress, direct_client=False):
                     expected = getattr(state, "upstream_endpoint_path", expected)
                 route = urlsplit(self.path)
                 check(route.path == expected, "unexpected_http_path")
-                check(not route.query or ((ingress or direct_client) and state.native and route.query == "beta=true"),
+                check(route.query == ("" if ingress else getattr(state, "upstream_query", ""))
+                      or ((ingress or direct_client) and state.native and route.query == "beta=true"),
                       "unexpected_http_query")
                 length = int(self.headers.get("content-length", "0"))
                 check(0 < length <= 2 * 1024 * 1024, "request_body_limit")

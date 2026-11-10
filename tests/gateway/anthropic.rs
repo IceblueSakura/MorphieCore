@@ -593,7 +593,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             // in-memory-only retention cannot be replaced by an unknown policy.
             input["prompt_cache_key"] = json!("pi-session");
             if responses && !stream {
-                input["prompt_cache_retention"] = json!("in-memory");
+                input["prompt_cache_retention"] = json!("in_memory");
                 let count = seen.lock().unwrap().len();
                 let rejected = client
                     .post(format!("{base}{path}"))
@@ -606,6 +606,27 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 let error: Value = rejected.json().await.unwrap();
                 assert_eq!(error["error"]["code"], "invalid_request");
                 assert_eq!(seen.lock().unwrap().len(), count);
+                let report = tokio::time::timeout(Duration::from_secs(5), async {
+                    loop {
+                        diagnostic_owner.flush_diagnostics().await;
+                        let records = std::fs::read_to_string(diagnostics).unwrap();
+                        if let Some(report) = records
+                            .lines()
+                            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+                            .find(|record| record["event"] == "request")
+                        {
+                            break report;
+                        }
+                        tokio::task::yield_now().await;
+                    }
+                })
+                .await
+                .expect("completed cache-retention rejection diagnostic");
+                assert_eq!(
+                    report["generation"]["planning_failure"]["reasons"],
+                    json!(["admission.cache_retention"])
+                );
+                assert_eq!(report["generation"]["attempts"], json!([]));
                 input["prompt_cache_retention"] = json!("24h");
             }
             // Codex always sends `client_metadata`, which no target takes.

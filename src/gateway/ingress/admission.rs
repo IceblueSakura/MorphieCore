@@ -158,6 +158,7 @@ pub(in crate::gateway) fn prepare_responses(
     state: &Runtime,
     bytes: &[u8],
     report: &crate::execution::report::Report,
+    owner_replay: bool,
 ) -> Result<
     (
         Arc<BoundEntry>,
@@ -169,25 +170,39 @@ pub(in crate::gateway) fn prepare_responses(
     use crate::{gateway::generation::history::Pending, protocol::openai::responses::managed};
     let value = crate::protocol::json::decode(bytes).map_err(invalid_request(report))?;
     let options = managed::Options::read(&value).map_err(invalid_request(report))?;
+    if owner_replay && (options.store || options.previous.is_some()) {
+        return Err(ApiError::invalid());
+    }
     let previous = options
         .previous
         .as_ref()
         .map(|id| state.history.get(id, tokio::time::Instant::now()))
         .transpose()?;
     let mut input = None;
-    let (entry, request) = prepare_in(state, ClientProtocol::Responses, bytes, report, |entry| {
-        let (request, _) = managed::decode(
-            entry.client.as_openai()?.0,
-            bytes,
-            previous.as_ref().map(|old| (&old.input, &old.response)),
-        )?;
-        if options.store {
-            let mut retained = request.task.clone();
-            retained.evidence = Default::default();
-            input = Some(retained);
-        }
-        Ok(request)
-    })?;
+    let (mut entry, request) =
+        prepare_in(state, ClientProtocol::Responses, bytes, report, |entry| {
+            let mut client = entry.client.clone();
+            if owner_replay {
+                client.enable_owner_replay()?;
+            }
+            let (request, _) = managed::decode(
+                client.as_openai()?.0,
+                bytes,
+                previous.as_ref().map(|old| (&old.input, &old.response)),
+            )?;
+            if options.store {
+                let mut retained = request.task.clone();
+                retained.evidence = Default::default();
+                input = Some(retained);
+            }
+            Ok(request)
+        })?;
+    if owner_replay {
+        Arc::make_mut(&mut entry)
+            .client
+            .enable_owner_replay()
+            .map_err(invalid_request(report))?;
+    }
     let pending = Pending::new(options, input, state.history.clone())?;
     Ok((entry, request, pending))
 }

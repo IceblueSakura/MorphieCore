@@ -212,18 +212,26 @@ impl GenerationSseDecoder {
         }
         let id = string(o, "responseId")?;
         let model = string(o, "modelVersion")?;
-        if let Some(metadata) = &self.metadata {
-            if id.is_some_and(|id| Some(id) != metadata.id.as_deref())
-                || model.is_some_and(|model| model != metadata.model)
+        if let Some(metadata) = &mut self.metadata {
+            if id.is_some_and(|id| {
+                metadata
+                    .id
+                    .as_deref()
+                    .is_some_and(|previous| id != previous)
+            }) || model.is_some_and(|model| model != metadata.model)
             {
                 return Err(invalid(ShapeReason::Identity));
+            }
+            if metadata.id.is_none() {
+                metadata.id = id.map(str::to_owned);
+                metadata.validate()?;
             }
         } else {
             let metadata = ResponseMetadata {
                 source_failure: None,
                 delivery: None,
                 storage: None,
-                id: Some(id.ok_or_else(|| invalid(ShapeReason::InvalidValue))?.into()),
+                id: id.map(str::to_owned),
                 model: model
                     .ok_or_else(|| invalid(ShapeReason::InvalidValue))?
                     .into(),

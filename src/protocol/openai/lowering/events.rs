@@ -54,7 +54,21 @@ pub fn check_event(
             return Err(RepresentationError::ReplayFormat);
         }
         let format = replay.value.format();
-        if !matches!(
+        let call_attachment = profile == GenerationApi::Responses
+            && contract.adaptation.rules.responses_owner_replay
+            && match event {
+                StreamEvent::ItemStarted { kind, .. } => matches!(kind, ItemKind::ToolCall { .. }),
+                StreamEvent::ItemFinished { item, .. } => {
+                    matches!(state.item(*item)?.kind, ItemKind::ToolCall { .. })
+                }
+                _ => false,
+            };
+        if call_attachment {
+            replay
+                .value
+                .validate_call_attachment()
+                .map_err(|_| RepresentationError::ReplayFormat)?;
+        } else if !matches!(
             format,
             ReplayFormat::ResponsesEncrypted | ReplayFormat::ResponsesCompaction
         ) {
@@ -66,6 +80,18 @@ pub fn check_event(
             && replay.value.replay_token().is_some()
         {
             return Err(RepresentationError::ReplayPhase);
+        }
+    }
+    if let StreamEvent::PartReplay { replay, .. } = event
+        && profile == GenerationApi::Responses
+        && contract.adaptation.rules.responses_owner_replay
+    {
+        replay
+            .value
+            .validate_attachment()
+            .map_err(|_| RepresentationError::ReplayFormat)?;
+        if !replay.permits(contract.replay_origin.as_ref()) {
+            return Err(RepresentationError::ReplayOrigin);
         }
     }
     if super::readable_reasoning::selected(profile, &contract.adaptation.rules)

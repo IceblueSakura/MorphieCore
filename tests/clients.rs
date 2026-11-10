@@ -15,7 +15,9 @@ async fn installed_case(script: &str, case: &str, variable: &str, arguments: &[&
     let directory = filesystem::private_directory();
     let root = directory.path();
     let native = case.contains("messages");
-    let domain = if script == "protocol_defaults" && case.ends_with("-signed") {
+    let domain = if script == "google_owner_replay" {
+        "google"
+    } else if script == "protocol_defaults" && case.ends_with("-signed") {
         "opencode-go"
     } else if script == "protocol_defaults" && case.contains("chat") {
         // pi's builtin strict read tool routes through the beta endpoint binding.
@@ -75,6 +77,21 @@ async fn installed_case(script: &str, case: &str, variable: &str, arguments: &[&
     // The Python driver records the current host binary's actual version.
     assert!(report["version"].as_str().is_some_and(|v| !v.is_empty()));
     eprintln!("{report}");
+}
+
+#[tokio::test]
+#[ignore = "requires current pi and explicit replay extension source; native Google signatures and session resume"]
+async fn pi_responses_google_owner_replay() {
+    let source = std::env::var("MORPHIECORE_PI_REPLAY_SOURCE")
+        .expect("set the workstation replay.ts source path");
+    assert!(std::path::Path::new(&source).is_absolute());
+    installed_case(
+        "google_owner_replay",
+        "pi-responses-google-owner-replay",
+        "MORPHIECORE_PI_BIN",
+        &[&source],
+    )
+    .await;
 }
 
 #[tokio::test]

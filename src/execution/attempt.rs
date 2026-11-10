@@ -788,17 +788,12 @@ mod identity_tests {
         let wire = format!(
             "data: {}\n\n",
             json!({
-                "responseId":"reported","modelVersion":"model",
+                "modelVersion":"model",
                 "candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"MAX_TOKENS"}]
             })
         );
         let (_, events) = attempt.push(wire.as_bytes()).unwrap();
         attempt.finish().unwrap();
-        // Simulate a protocol that does not report response identity.
-        let Intake::Finished { decoded, .. } = &mut attempt.intake else {
-            panic!("finished attempt")
-        };
-        decoded.metadata.id = None;
         let observed = attempt.response().unwrap().clone();
         let delivery = || {
             ResponseDelivery::new(
@@ -854,23 +849,5 @@ mod identity_tests {
             )
             .is_err()
         );
-    }
-
-    #[test]
-    fn required_native_wire_id_is_not_repaired_by_delivery() {
-        let mut attempt = Attempt::new(
-            UpstreamAdapter::GoogleGenerateContent {
-                target: ReplayTarget::new("synthetic", "model").unwrap(),
-            },
-            4096,
-            SseLimits::default(),
-        );
-        attempt.begin(200, "text/event-stream").unwrap();
-        assert!(
-            attempt
-                .push(b"data: {\"modelVersion\":\"model\"}\n\n")
-                .is_err()
-        );
-        assert!(attempt.finish().is_err());
     }
 }
