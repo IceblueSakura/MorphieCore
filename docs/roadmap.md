@@ -35,7 +35,6 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
   - [P7 boundary review](#p7-boundary-review)
 - [Pending decisions](#pending-decisions)
   - [Ownership and projection decisions](#ownership-and-projection-decisions)
-  - [Scheduling and product decisions](#scheduling-and-product-decisions)
 - [Deferred work](#deferred-work)
   - [Google API pause](#google-api-pause)
   - [Deferred Generation semantics](#deferred-generation-semantics)
@@ -316,22 +315,11 @@ Prerequisites for activating newly implemented codec carriers on public routes:
 | Google error envelopes | Paused | Maintain per-API classification; avoid speculative unified parsing |
 | Google probability reports | Paused | Keep existing text-report exceptions; defer broader token scores |
 
-### Scheduling and product decisions
-
-| Area | Current policy | Scope |
-|---|---|---|
-| Target binding activation | Requires P7 review and verified preflight agreement | Target routes only |
-| Models discovery extensions | Generation Text active; other modalities schema-only | Discovery endpoint only |
-| Cache prewarming | Deferred; requires dedicated contract selection | Operation-specific |
-| Token counting | Deferred; upstream-first policy selected | `POST /v1/messages/count_tokens` |
-| API expansion | Stage-4 families have equal priority; Stage 5 remains unscheduled | Specific modalities |
-| Files & multipart uploads | Stage 4 priority; requires storage authority selection | File resource endpoints |
-
 ## Deferred work
 
 ### Google API pause
 
-Further general Google API expansion remains paused. Maintenance of qualified existing paths needs a concrete selected defect; residual strict/replay boundaries follow the [unscheduled issue register](#unscheduled-issues), including the explicit stateless-carrier pause. Preserve the existing [terminal-report exceptions](architecture.md#service-policies-and-reports) and [native text Embedding path](architecture.md#independent-embedding-path). General multimodal input, native client intake, custom tools, unified error parsing and broader probability reports remain excluded.
+Further general Google API expansion remains paused. Maintenance of qualified existing paths needs a concrete selected defect; residual strict/replay boundaries follow the [unscheduled issue register](#unscheduled-issues). The delivered pi-first stateless carrier leaves OpenCode adaptation and real-Provider qualification deferred. Preserve the existing [terminal-report exceptions](architecture.md#service-policies-and-reports) and [native text Embedding path](architecture.md#independent-embedding-path). General multimodal input, native client intake, custom tools, unified error parsing and broader probability reports remain excluded.
 
 ### Deferred Generation semantics
 - Turn-scoped system messages (`clear_at`).

@@ -1361,6 +1361,10 @@ async fn attempt_wait_attribution_and_hold_deadline_are_explicit() {
         let (tx, mut rx) = mpsc::channel(1);
         let mut trace = Trace::new(None);
         tokio::time::pause();
+        let lane = Lane {
+            tx: &tx,
+            state: &state,
+        };
         let work = produce_chain(
             Upstreams::Observed {
                 runtime: None,
@@ -1371,8 +1375,7 @@ async fn attempt_wait_attribution_and_hold_deadline_are_explicit() {
             &request,
             &gate.state.limits,
             Instant::now() + Duration::from_secs(60),
-            &tx,
-            &state,
+            &lane,
             &mut trace,
         );
         tokio::pin!(work);

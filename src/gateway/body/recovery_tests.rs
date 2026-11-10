@@ -148,6 +148,10 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
             Instant::now() + Duration::from_secs(if mode == "deadline" { 1 } else { 120 });
         let result;
         {
+            let lane = Lane {
+                tx: &tx,
+                state: &state,
+            };
             let producer = produce_chain(
                 Upstreams::Http {
                     runtime: gate.state.clone(),
@@ -159,8 +163,7 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
                 &request,
                 &limits,
                 deadline,
-                &tx,
-                &state,
+                &lane,
                 &mut trace,
             );
             tokio::pin!(producer);

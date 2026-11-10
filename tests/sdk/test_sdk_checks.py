@@ -86,7 +86,7 @@ client = MagicMock()
 client.__enter__.return_value = client
 client.responses.parse.return_value = SimpleNamespace(status="failed", usage=SimpleNamespace(total_tokens=8))
 client.chat.completions.parse.return_value = SimpleNamespace(choices=[], model="wrong", usage=SimpleNamespace(total_tokens=5))
-with patch.object(responses, "client_for", return_value=client), patch.object(chat, "client_for", return_value=client), patch.object(gateway.openai, "OpenAI", return_value=client):
+with patch.object(responses, "client_for", return_value=client), patch.object(chat, "client_for", return_value=client), patch.object(gateway, "client_for", return_value=client):
     for run in (lambda: responses.run("unused", False), lambda: chat.run("unused", False), lambda: gateway.run("http://127.0.0.1:1/v1")):
         try:
             run()

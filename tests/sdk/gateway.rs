@@ -15,7 +15,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tokio::{net::TcpListener, process::Command, sync::oneshot};
+use tokio::{net::TcpListener, sync::oneshot};
 
 #[tokio::test]
 #[ignore = "requires pinned OpenAI SDK; Readable Chat signed/opaque reasoning JSON/SSE tool history"]
@@ -278,17 +278,9 @@ async fn sdk_messages_completion_from_openai_sources() {
         let _ = stopped.await;
     }));
     let _server = ServerGuard(serving.abort_handle());
-    let mut command = Command::new(
-        std::env::var_os("MORPHIECORE_SDK_PYTHON").unwrap_or_else(|| "python3".into()),
-    );
     let home = tempfile::tempdir().unwrap();
-    command
-        .env_clear()
-        .env("PATH", std::env::var_os("PATH").unwrap())
-        .env("HOME", home.path());
-    command
-        .args(["tests/sdk/gateway_text_loop.py", &base, "messages"])
-        .current_dir(env!("CARGO_MANIFEST_DIR"));
+    let mut command = super::isolated_sdk_python(home.path());
+    command.args(["tests/sdk/gateway_text_loop.py", &base, "messages"]);
     let output = super::child_process::run(&mut command, b"", Duration::from_secs(20), 64 << 10)
         .await
         .unwrap();
@@ -794,18 +786,9 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
         let _ = stopped.await;
     }));
     let _server = ServerGuard(serving.abort_handle());
-    let mut command = Command::new(
-        std::env::var_os("MORPHIECORE_SDK_PYTHON").unwrap_or_else(|| "python3".into()),
-    );
-    command
-        .args(["tests/sdk/gateway_text_loop.py", &base])
-        .current_dir(env!("CARGO_MANIFEST_DIR"));
-    for (name, _) in std::env::vars_os() {
-        let text = name.to_string_lossy();
-        if text.starts_with("OPENAI_") || text.starts_with("MORPHIECORE_") {
-            command.env_remove(name);
-        }
-    }
+    let home = tempfile::tempdir().unwrap();
+    let mut command = super::isolated_sdk_python(home.path());
+    command.args(["tests/sdk/gateway_text_loop.py", &base]);
     let output = super::child_process::run(&mut command, b"", Duration::from_secs(35), 64 << 10)
         .await
         .expect("bounded SDK gateway process");

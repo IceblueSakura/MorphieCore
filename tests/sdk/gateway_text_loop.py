@@ -1,9 +1,8 @@
 """Exercise the production gateway Router against a synthetic HTTP Provider only."""
 import base64
-import ipaddress
 import json
 import sys
-from sdk_support import check, require_sdk
+from sdk_support import check, client_for, require_sdk
 from models_checks import check_models
 from speech_checks import check_speech
 from tokenplan_audio_checks import check_native_audio
@@ -16,23 +15,13 @@ from openai.types.responses import Response, ResponseErrorEvent
 
 def run(base_url: str) -> None:
     """Verify real SDK tools, reasoning replay and JSON/SSE consumption without retries."""
-    require_sdk("openai")
-    parsed = urlsplit(base_url)
-    if (parsed.scheme != "http"
-            or not parsed.hostname or not parsed.port
-            or not ipaddress.ip_address(parsed.hostname).is_loopback
-            or parsed.path != "/v1" or parsed.query or parsed.fragment
-            or parsed.username or parsed.password):
-        raise ValueError("pinned SDK and literal loopback /v1 required")
     schema = {"type": "object", "properties": {"n": {"type": "integer"}},
               "required": ["n"], "additionalProperties": False}
     function = {"name": "lookup", "parameters": schema, "strict": True}
     requests = 0
-    with openai.OpenAI(
+    with client_for(
         api_key="synthetic-gateway-client-token-0001", base_url=base_url,
-        organization="", project="", max_retries=0, timeout=5.0,
-        _strict_response_validation=True,
-        http_client=openai.DefaultHttpxClient(trust_env=False, follow_redirects=False),
+        timeout=5.0,
     ) as client:
         model_requests = check_models(client)
         speech_requests = check_speech(client)
@@ -88,7 +77,7 @@ def run(base_url: str) -> None:
                     history.append({"role": "tool", "tool_call_id": call.id, "content": '{"n":1}'})
                 else:
                     check(result.choices[0].finish_reason == "stop" and message.content == "old 🧪")
-        requests += check_chat_bridge(base_url, function)
+        requests += check_chat_bridge(client, function)
         for stream in (False, True):
             history = [{"role": "user", "content": [
                 {"type": "input_text", "text": "lookup"},

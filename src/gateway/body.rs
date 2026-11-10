@@ -138,7 +138,7 @@ impl Status {
     }
 }
 struct Output {
-    first: Option<Message>,
+    first: Option<Chunk>,
     rx: mpsc::Receiver<Message>,
     status: Arc<Status>,
     abort: AbortHandle,
@@ -155,7 +155,7 @@ impl Stream for Output {
             return Poll::Ready(Some(Err(std::io::Error::other("upstream stream failed"))));
         }
         let item = if let Some(first) = self.first.take() {
-            Poll::Ready(Some(first))
+            Poll::Ready(Some(Message::Chunk(first)))
         } else {
             self.rx.poll_recv(cx)
         };
@@ -397,7 +397,7 @@ pub(super) async fn respond_producer(
             if let Some(error) = *state.error.lock().expect("delivery status") {
                 return Err(error);
             }
-            Message::Chunk(chunk)
+            chunk
         }
         Some(Message::Error(error)) => return Err(error),
         _ => {
@@ -408,13 +408,10 @@ pub(super) async fn respond_producer(
                 .unwrap_or_else(ApiError::upstream));
         }
     };
-    let content_type = match (&response_type, &first) {
-        (ResponseType::Audio, Message::Chunk(chunk)) => {
-            chunk.audio_content_type.ok_or_else(ApiError::upstream)?
-        }
-        (ResponseType::Json, _) => "application/json",
-        (ResponseType::EventStream, _) => "text/event-stream",
-        _ => return Err(ApiError::upstream()),
+    let content_type = match response_type {
+        ResponseType::Audio => first.audio_content_type.ok_or_else(ApiError::upstream)?,
+        ResponseType::Json => "application/json",
+        ResponseType::EventStream => "text/event-stream",
     };
     // Conservatively freeze the candidate when HTTP response ownership leaves
     // this layer; encoding/queueing alone still never calls delivery.commit().

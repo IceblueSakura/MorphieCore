@@ -1,1 +1,1 @@
-{"name":"morphiecore-pi-carrier-probe","private":true,"type":"module","dependencies":{"@anthropic-ai/sdk":"1.1.0","openai":"7.43.0","partial-json":"0.1.7","typebox":"1.4.3"}}
+{"name":"morphiecore-pi-carrier-probe","private":true,"type":"module","dependencies":{"@anthropic-ai/sdk":"1.1.0"}}

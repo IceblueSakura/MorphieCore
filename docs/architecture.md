@@ -255,7 +255,7 @@ Project candidate copies only. Never expose never-activated/withdrawn tools, inf
 
 **Google extension selected 2026-11-07.** Existing generateContent and Interactions targets use the same effective active-set projection when ordered declarations have no native carrier. Historical call/result content and identities survive; old declaration visibility, insertion timing and prefix/cache stability take the existing `generation.collapse-tool-set.v1` loss. This adds no Google API, hosted execution, strict guarantee or serial carrier.
 
-Repair the shared tool contract rather than adding a decoder-only exception. Initial definitions, namespace leaves and ordered additions must receive consistent validation, selection resolution, feature accounting, bounds and target checks. Reuse existing semantic tools, request/delivery projection, fidelity and codecs; no gateway tool registry, executor or nine pair-specific adapters. [Design and conversion matrix](api-expansion-design.md#three-protocol-tool-conversion-design) owns proposed mappings; [dated evidence](refs/2026-10-27-client-ir-boundaries.md#nine-direction-tool-assessment-2026-11-04) owns findings; [Roadmap](roadmap.md#conditional-stage-3-follow-ups) owns execution gates. Client-history annotations use the separate [L2 contract](#semantic-equivalence-compatibility); discovery and hosted execution remain outside this work.
+Repair the shared tool contract rather than adding a decoder-only exception. Initial definitions, namespace leaves and ordered additions must receive consistent validation, selection resolution, feature accounting, bounds and target checks. Reuse existing semantic tools, request/delivery projection, fidelity and codecs; no gateway tool registry, executor or nine pair-specific adapters. [Unselected conversion designs](api-expansion-design.md#three-protocol-tool-conversion-design) owns proposed mappings; [dated evidence](refs/2026-10-27-client-ir-boundaries.md#nine-direction-tool-assessment-2026-11-04) owns findings; [Roadmap](roadmap.md#conditional-stage-3-follow-ups) owns execution gates. Client-history annotations use the separate [L2 contract](#semantic-equivalence-compatibility); discovery and hosted execution remain outside this work.
 
 Current shared validation separates intrinsic choice shape/count/uniqueness in settings from request-level membership in ordered availability. Deferred definitions stay withheld until surfaced; removal retains the identity for later re-addition. Current available identities have their own finite bound, independent of retained historical versions. Historical calls keep their original identity/arguments and are not validated against today's schema. Messages serial intent is emitted even for inline-only definitions, and candidate collapse updates history and settings atomically before validation.
 
@@ -644,13 +644,13 @@ Responses preserves `commentary` and `final_answer` labels. Targets without phas
 
 #### Lifecycle settings and service reports
 
-Responses and Interactions maintain separate opening and terminal reports validated by [`protocol::reports`](file:///home/sakura/development/MorphieCore/src/protocol/reports.rs). Cross-phase updates permit only evidenced runtime resolutions (e.g. `summary: auto → detailed` or `service: configured → standard`); conflicting drifts reject fail-closed.
+Responses and Interactions maintain separate opening and terminal reports validated by [`protocol::reports`](../src/protocol/reports.rs). Cross-phase updates permit only evidenced runtime resolutions (e.g. `summary: auto → detailed` or `service: configured → standard`); conflicting drifts reject fail-closed.
 
 Standard Responses permits opening `service_tier:auto` to resolve to terminal `default`, independently of Provider-specific reasoning-report rules. Preserve both observations; a changed same-phase report still rejects. The [official service-tier contract](https://developers.openai.com/api/reference/resources/responses/methods/create) distinguishes configured processing from the tier actually used.
 
 #### End-user attribution
 
-Opaque user attribution projects across protocols via [`protocol::attribution`](file:///home/sakura/development/MorphieCore/src/protocol/attribution.rs):
+Opaque user attribution projects across protocols via [`protocol::attribution`](../src/protocol/attribution.rs):
 - Projects between OpenAI `safety_identifier`, Anthropic `metadata.user_id`, and Google `labels.safety_identifier`.
 - Explicit safety identifiers take precedence over legacy `user` fields.
 - Non-authoritative metadata: never utilized for authentication or cache identity.
@@ -679,7 +679,7 @@ Existing Gemini 3.8 Flash bindings retain their narrower rules:
 
 The IR decouples reasoning activation from effort level and scope:
 - **Activation:** `ReasoningRequest` (enabled vs disabled).
-- **Effort Control:** `EffortControl { scope, level }` with [`EffortScope::Reasoning`](file:///home/sakura/development/MorphieCore/src/semantic/task/generation/content/reasoning.rs#L27) (per-thought) or [`EffortScope::Response`](file:///home/sakura/development/MorphieCore/src/semantic/task/generation/content/reasoning.rs#L27) (turn-wide).
+- **Effort Control:** `EffortControl { scope, level }` with [`EffortScope::Reasoning`](../src/semantic/task/generation/content/reasoning.rs#L27) (per-thought) or [`EffortScope::Response`](../src/semantic/task/generation/content/reasoning.rs#L27) (turn-wide).
 - Explicit `disabled` reasoning takes precedence over response-wide effort settings.
 
 ##### Ordered effort repair direction
@@ -694,7 +694,7 @@ Named local effort is admitted only on system messages; omitted system content i
 
 ##### Google response-effort projection
 
-`google.gemini-3.8-flash.response-effort-to-thinking.v1` maps response-scoped low/medium/high to Gemini thinking effort levels via [`ReasoningConversion::Scope`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L131).
+`google.gemini-3.8-flash.response-effort-to-thinking.v1` maps response-scoped low/medium/high to Gemini thinking effort levels via [`ReasoningConversion::Scope`](../src/protocol/reasoning.rs#L131).
 
 #### Reasoning level calibration
 
@@ -702,9 +702,9 @@ Explicit hand-authored mappings define canonical model bindings. Under the [conv
 
 ##### Thinking-budget quantization
 
-When targets require discrete qualitative levels, numeric token budgets are quantized to discrete presets defined in [`ThinkingBudgets`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L35):
-- Canonical presets are maintained in [`SHARED_BUDGETS`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L49) (6 discrete tiers spanning minimal to max).
-- Selection matches minimal absolute token distance via [`ThinkingBudgets::nearest`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L108); exact ties resolve upward to the higher effort level.
+When targets require discrete qualitative levels, numeric token budgets are quantized to discrete presets defined in [`ThinkingBudgets`](../src/protocol/reasoning.rs#L35):
+- Canonical presets are maintained in [`SHARED_BUDGETS`](../src/protocol/reasoning.rs#L49) (6 discrete tiers spanning minimal to max).
+- Selection matches minimal absolute token distance via [`ThinkingBudgets::nearest`](../src/protocol/reasoning.rs#L108); exact ties resolve upward to the higher effort level.
 - Current validation rejects requests whose thinking budget exceeds the client-specified maximum output token ceiling.
 
 ##### Bounded token-budget adaptation
@@ -715,15 +715,15 @@ This direction does not select a general adjustment formula or change thinking-b
 
 ##### Initial mapping plan
 
-Bindings declare model-specific qualitative level translation via [`ReasoningEffortMapping`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L358) and [`ReasoningRequestPolicy`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L155):
+Bindings declare model-specific qualitative level translation via [`ReasoningEffortMapping`](../src/protocol/reasoning.rs#L358) and [`ReasoningRequestPolicy`](../src/protocol/reasoning.rs#L155):
 - Conversions are strictly directional. A level missing from a binding's table resolves to the nearest supported level, ties upward, under the binding's named effort rule. Bindings that expose no effort control omit it under a named rule (L4); explicit history-read intent keeps its own guard.
-- Upstream thinking budgets translate to qualitative effort via [`ReasoningConversion::BudgetToEffort`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L137), and qualitative effort expands to discrete token budgets via [`ReasoningConversion::EffortToBudget`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L142).
+- Upstream thinking budgets translate to qualitative effort via [`ReasoningConversion::BudgetToEffort`](../src/protocol/reasoning.rs#L137), and qualitative effort expands to discrete token budgets via [`ReasoningConversion::EffortToBudget`](../src/protocol/reasoning.rs#L142).
 
 ##### Implementation owners
 
-- [`semantic::task::generation`](file:///home/sakura/development/MorphieCore/src/semantic/task/generation/mod.rs): Activation and scoped effort types.
-- [`protocol::reasoning`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs): Quantization presets, nearest-level resolution, and policy projection.
-- [`topology::catalog::bindings`](file:///home/sakura/development/MorphieCore/src/topology/catalog/bindings.rs): Binding-level policy selection and limits.
+- [`semantic::task::generation`](../src/semantic/task/generation/mod.rs): Activation and scoped effort types.
+- [`protocol::reasoning`](../src/protocol/reasoning.rs): Quantization presets, nearest-level resolution, and policy projection.
+- [`topology::catalog::bindings`](../src/topology/catalog/bindings.rs): Binding-level policy selection and limits.
 
 ### Media
 
@@ -740,10 +740,10 @@ Every lossy conversion or field omission generates bounded typed evidence.
 
 #### Domain evidence interface
 
-The conversion pipeline tracks adaptation evidence via [`Conversion<T>`](file:///home/sakura/development/MorphieCore/src/protocol/conversion/generation/evidence.rs#L837), pairing transformed payloads with a typed [`EvidenceDelta`](file:///home/sakura/development/MorphieCore/src/protocol/conversion/generation/evidence.rs#L739):
-- **Body-free isolation:** Evidence records only structured [`Effect`](file:///home/sakura/development/MorphieCore/src/protocol/conversion/generation/evidence.rs#L478) items and rule IDs; user payloads, prompts, and tokens are strictly excluded.
-- **Change categories:** Field modifications classify into canonical [`Change`](file:///home/sakura/development/MorphieCore/src/protocol/conversion/generation/evidence.rs#L361) families (`Normalize`, `Derive`, `Default`, `InferFromRequest`, `Omit`, `Approximate`, `Estimate`).
-- **Bounded allowances:** Deltas enforce hard upper bounds of [`MAX_EFFECTS`](file:///home/sakura/development/MorphieCore/src/protocol/conversion/generation/evidence.rs#L726) (64 entries) and 16 KiB per delta. When saturated, an explicit truncation count is recorded without modifying business payloads.
+The conversion pipeline tracks adaptation evidence via [`Conversion<T>`](../src/protocol/conversion/generation/evidence.rs#L837), pairing transformed payloads with a typed [`EvidenceDelta`](../src/protocol/conversion/generation/evidence.rs#L739):
+- **Body-free isolation:** Evidence records only structured [`Effect`](../src/protocol/conversion/generation/evidence.rs#L478) items and rule IDs; user payloads, prompts, and tokens are strictly excluded.
+- **Change categories:** Field modifications classify into canonical [`Change`](../src/protocol/conversion/generation/evidence.rs#L361) families (`Normalize`, `Derive`, `Default`, `InferFromRequest`, `Omit`, `Approximate`, `Estimate`).
+- **Bounded allowances:** Deltas enforce hard upper bounds of [`MAX_EFFECTS`](../src/protocol/conversion/generation/evidence.rs#L726) (64 entries) and 16 KiB per delta. When saturated, an explicit truncation count is recorded without modifying business payloads.
 
 #### Atomic evidence and output batches
 
@@ -788,8 +788,8 @@ Effective control support and request admission are distinct projections of the 
 
 ### Reasoning replay
 
-Upstream opaque tokens and signatures are delivered in tagged [`mc1.`](file:///home/sakura/development/MorphieCore/src/protocol/replay_envelope.rs#L33) envelopes via [`protocol::replay_envelope`](file:///home/sakura/development/MorphieCore/src/protocol/replay_envelope.rs):
-- **Isolation:** Payloads are bound to route fingerprints generated by [`issuer`](file:///home/sakura/development/MorphieCore/src/protocol/replay_envelope.rs#L40) and [`deployment_issuer`](file:///home/sakura/development/MorphieCore/src/protocol/replay_envelope.rs#L46) (binding provider ID, upstream model, and origin/path).
+Upstream opaque tokens and signatures are delivered in tagged [`mc1.`](../src/protocol/replay_envelope.rs#L33) envelopes via [`protocol::replay_envelope`](../src/protocol/replay_envelope.rs):
+- **Isolation:** Payloads are bound to route fingerprints generated by [`issuer`](../src/protocol/replay_envelope.rs#L40) and [`deployment_issuer`](../src/protocol/replay_envelope.rs#L46) (binding provider ID, upstream model, and origin/path).
 - **Candidate history transfer:** Incompatible reasoning is omitted on candidate copies under `transfer-visible-history.v1` by the [request projection](../src/protocol/request.rs), preserving visible messages and semantic tool links. Issuer isolation and assessed carrier availability are separate selectors.
 - **Supported replay carriers:** Anthropic thinking signatures and `redacted_thinking`, Responses `encrypted_content`, Google `thoughtSignature`, Interactions `function_call.signature`, and the explicitly selected [Chat reasoning transport](#chat-reasoning-extensions).
 - **Responses stream authority (selected 2026-11-06):** `response.output_item.done` binds completed reasoning replay once, following the official [streaming contract](https://developers.openai.com/api/reference/resources/responses/streaming-events). The terminal response snapshot is independently decoded and verifies output order, owner/type, lifecycle, phase, visible content, tool arguments and other known fields; it never replaces completed stream items. Two nonempty encrypted encodings on the same completed reasoning item need not be byte-equal: the item-done value remains authoritative for JSON, SSE and next-request replay. Replay presence changes, malformed values and differing incomplete-item tokens still reject. Required item closure, terminal publication, origin isolation and EOF checks remain strict.
@@ -859,7 +859,7 @@ Compacted conversation summaries are preserved as distinct `Compaction` items wi
 
 ### Stateful history
 
-Gateway-managed continuation via `previous_response_id` on OpenAI Responses is managed by [`protocol::openai::responses::managed`](file:///home/sakura/development/MorphieCore/src/protocol/openai/responses/managed.rs):
+Gateway-managed continuation via `previous_response_id` on OpenAI Responses is managed by [`protocol::openai::responses::managed`](../src/protocol/openai/responses/managed.rs):
 - Stores delivered response projections, typed hidden replay attachments and request contexts in process-local TTL memory (default 1 hour).
 - Synchronous retrieval, deletion, and cursor-paginated input listing.
 - Upstream requests remain fully stateless (`store: false`).
@@ -885,7 +885,7 @@ Selected on 2026-10-31: the historical thinking-prefix requirement for manual th
 
 ### Missing output ceilings
 
-[`TargetContract.default_output_tokens`](file:///home/sakura/development/MorphieCore/src/protocol/anthropic/messages/target.rs#L70) defines optional ceiling insertion:
+[`TargetContract.default_output_tokens`](../src/protocol/anthropic/messages/target.rs#L70) defines optional ceiling insertion:
 - Declared by Go/Haiku Messages (`32000`) to satisfy Anthropic mandatory `max_tokens`.
 - Injected on candidate copies only when client request omits `max_tokens`. Explicit ceilings are preserved.
 
@@ -951,16 +951,16 @@ An explicit conversation/session carrier is the routing unit, scoped by authenti
 
 ### Conversation and cache affinity
 
-Affinity keys and advisory cache policies are defined in [`protocol::cache`](file:///home/sakura/development/MorphieCore/src/protocol/cache.rs):
+Affinity keys and advisory cache policies are defined in [`protocol::cache`](../src/protocol/cache.rs):
 - `X-MorphieCore-Conversation-Id` establishes route affinity across multi-turn exchanges via hashed SHA-256 grouping keys.
 - Prefix-cache indexing supplies advisory request hints, never an implicit conversation or account-routing key.
-- Target cache capabilities are enforced via [`CacheTargetPolicy`](file:///home/sakura/development/MorphieCore/src/protocol/cache.rs#L48), omitting unsupported advisory hints under declared loss rules.
+- Target cache capabilities are enforced via [`CacheTargetPolicy`](../src/protocol/cache.rs#L48), omitting unsupported advisory hints under declared loss rules.
 
 Bound replay issuers include configuration namespace, credential provenance and the exact public-model/target/operation identity. API-key replacement invalidates old private replay; normal OAuth material renewal preserves provenance. Codecs use the bound issuer for OpenAI, Messages and Google replay, not only prefix-cache keys.
 
 ### Streaming and delivery
 
-Delivery lifecycle and event streaming are coordinated by [`ResponseDelivery`](file:///home/sakura/development/MorphieCore/src/execution/delivery.rs#L100) under [`SseLimits`](file:///home/sakura/development/MorphieCore/src/protocol/stream.rs#L8):
+Delivery lifecycle and event streaming are coordinated by [`ResponseDelivery`](../src/execution/delivery.rs#L100) under [`SseLimits`](../src/protocol/stream.rs#L8):
 - **Pre-publication holding:** Bounded lifecycle-only frames wait for content while the one same-target retry remains possible.
 - **Publication freeze:** Flushing frames irreversibly prohibits another send; subsequent upstream failures abort the stream with terminal error events.
 - **Honest completion:** Streams require validated upstream EOF before downstream release.
@@ -988,7 +988,7 @@ MorphieCore operates behind a loopback-bound reverse proxy:
 
 #### Optional delta coalescing
 
-Configured via [`DeltaCoalescing`](file:///home/sakura/development/MorphieCore/src/execution/delivery/coalescing.rs#L17) (default 50 ms / 16 KiB bounds):
+Configured via [`DeltaCoalescing`](../src/execution/delivery/coalescing.rs#L17) (default 50 ms / 16 KiB bounds):
 - Merges consecutive adjacent `PartKind::Text` fragments into larger downstream frames.
 - Flushes immediately upon non-text events, usage reports, or timer expiration.
 
@@ -1021,7 +1021,7 @@ Configured via [`DeltaCoalescing`](file:///home/sakura/development/MorphieCore/s
 
 ### Configurable exchange capture
 
-Opt-in diagnostic capture configured via [`gateway::capture::CaptureConfig`](file:///home/sakura/development/MorphieCore/src/gateway/capture.rs#L34) records sanitized HTTP headers and bodies at four pipeline boundaries:
+Opt-in diagnostic capture configured via [`gateway::capture::CaptureConfig`](../src/gateway/capture.rs#L34) records sanitized HTTP headers and bodies at four pipeline boundaries:
 1. Inbound client request (`client_request`)
 2. Outbound upstream request (`upstream_request`)
 3. Inbound upstream response (`upstream_response`)

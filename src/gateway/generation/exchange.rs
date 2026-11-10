@@ -2,7 +2,7 @@
 use crate::{
     gateway::{
         ApiError, BoundEntry, Limits, Runtime,
-        body::{self, Lane, Message, Status},
+        body::{self, Lane, Status},
         diagnostics::{Stage, Trace},
         generation::intake,
         routing::executors::BindingObservation,
@@ -15,10 +15,7 @@ use std::{
     sync::{Arc, atomic::Ordering},
     time::Duration,
 };
-use tokio::{
-    sync::{OwnedSemaphorePermit, mpsc},
-    time::Instant,
-};
+use tokio::{sync::OwnedSemaphorePermit, time::Instant};
 /// Preserve already observed upstream failures even if cancellation interrupts
 /// delivery of their failure frame. Unknown cancellation remains health-neutral.
 struct HealthAttempt<'a> {
@@ -262,18 +259,16 @@ async fn select_candidates(
     trace.executor_order(order);
     Ok(candidates)
 }
-#[allow(clippy::too_many_arguments)]
 pub(in crate::gateway) async fn produce_chain(
     source: Upstreams,
     entry: &BoundEntry,
     request: &Request,
     limits: &Limits,
     deadline: Instant,
-    tx: &mpsc::Sender<Message>,
-    state: &Status,
+    lane: &Lane<'_>,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
-    let lane = Lane { tx, state };
+    let state = lane.state;
     let (runtime, candidates, mut observed, history, binding) = match source {
         Upstreams::Http {
             runtime,
@@ -431,7 +426,7 @@ pub(in crate::gateway) async fn produce_chain(
                         request,
                         upstream,
                         limits,
-                        &lane,
+                        lane,
                         ordinal == 1
                             && retry_capable
                             && !recovery_budget.is_zero()
@@ -660,8 +655,7 @@ impl body::Produce for GenerationExchange {
             &self.request,
             limits,
             deadline,
-            lane.tx,
-            lane.state,
+            lane,
             trace,
         )
         .await
@@ -949,7 +943,7 @@ async fn response_failures_preserve_independent_health_evidence() {
                 .unwrap(),
         );
         let state = Status::default();
-        let (tx, _rx) = mpsc::channel(1);
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
         let mut trace = Trace::for_request(
             None,
             &axum::extract::Request::new(axum::body::Body::empty()),
@@ -964,8 +958,10 @@ async fn response_failures_preserve_independent_health_evidence() {
             &request,
             &gate.state.limits,
             Instant::now() + Duration::from_secs(3),
-            &tx,
-            &state,
+            &Lane {
+                tx: &tx,
+                state: &state,
+            },
             &mut trace,
         )
         .await;

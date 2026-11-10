@@ -84,17 +84,17 @@ impl Auth {
     /// Exactly one credential: `Authorization: Bearer`, or `x-api-key` as Anthropic
     /// clients (Claude Code with `ANTHROPIC_API_KEY`) send it.
     pub fn authenticate(&self, headers: &HeaderMap) -> Option<AuthenticatedAgent> {
-        let bearer: Vec<_> = headers.get_all(AUTHORIZATION).iter().collect();
-        let key: Vec<_> = headers.get_all("x-api-key").iter().collect();
-        let secret = match (bearer.as_slice(), key.as_slice()) {
-            ([value], []) => {
+        let mut bearer = headers.get_all(AUTHORIZATION).iter();
+        let mut key = headers.get_all("x-api-key").iter();
+        let secret = match (bearer.next(), bearer.next(), key.next(), key.next()) {
+            (Some(value), None, None, None) => {
                 let bytes = value.as_bytes();
                 if bytes.len() < 8 || !bytes[..7].eq_ignore_ascii_case(b"Bearer ") {
                     return None;
                 }
                 &bytes[7..]
             }
-            ([], [value]) => value.as_bytes(),
+            (None, None, Some(value), None) => value.as_bytes(),
             _ => return None,
         };
         if secret.len() > 4096 {

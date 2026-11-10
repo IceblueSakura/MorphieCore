@@ -229,7 +229,7 @@ pub fn prepare(
     secret: &SecretMaterial,
     request: &Request,
 ) -> Result<UpstreamRequest, AttemptError> {
-    prepare_with_rules(endpoint, provider, secret, request).map(|(prepared, _)| prepared)
+    prepare_with_evidence(endpoint, provider, secret, request).map(|projection| projection.value)
 }
 
 /// Also names the degradable rules applied to this candidate's body, for diagnostics.

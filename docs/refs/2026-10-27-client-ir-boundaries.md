@@ -700,7 +700,7 @@ No new lossy mapping is selected by this audit. Independent directional fixtures
 
 At **`40d005d`**, the user requested all three native and six cross-protocol Chat/Responses/Messages paths, accepting bounded semantic approximation as a design direction. Three independent read-only investigations were divided by target protocol and combined with shared-owner inspection and primary-source checks. No product source, tests, source pins, credentials or runtime state changed; no Provider calls or new executable probes ran. Earlier synthetic reproductions remain the evidence for the root-only choice and lost-serial defects.
 
-The [proposed matrix and loss policies](../api-expansion-design.md#three-protocol-tool-conversion-design) are the single design home; [Roadmap](../roadmap.md#conditional-stage-3-follow-ups) owns execution. This extension is evidence and counterexamples, not another implementation queue.
+The [remaining projection proposals](../api-expansion-design.md#three-protocol-tool-conversion-design) have one design home; [Roadmap](../roadmap.md#conditional-stage-3-follow-ups) owns execution. This extension is evidence and counterexamples, not another implementation queue.
 
 ### Additional findings
 
@@ -730,7 +730,7 @@ The nine ordinary function loops can be verified using existing SDK/gateway harn
 
 ## Tool-contract qualification (2026-11-04)
 
-Rechecked the shared owners at **`a22cf0d`** and the [current stable SDK release sources](2026-10-27-official-sdk-sources.md#tool-contract-release-recheck-2026-11-04). This qualifies the first tool package; it does not select a new content loss, activate an endpoint or establish Provider acceptance. [Design](../api-expansion-design.md#first-package-dispositions) owns the proposed dispositions.
+Rechecked the shared owners at **`a22cf0d`** and the [current stable SDK release sources](2026-10-27-official-sdk-sources.md#tool-contract-release-recheck-2026-11-04). This qualifies the first tool package; it does not select a new content loss, activate an endpoint or establish Provider acceptance. The subsequently accepted dispositions live in [Architecture](../architecture.md#ordered-tool-availability).
 
 ### Primary-source access and contracts
 

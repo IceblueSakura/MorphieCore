@@ -22,7 +22,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tokio::{net::TcpListener, process::Command};
+use tokio::net::TcpListener;
 fn adapter() -> GenerationCodec {
     GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, Some(origin()))
 }
@@ -184,24 +184,12 @@ async fn sdk_chat_media_values_streams_and_history() {
         .unwrap()
     });
     let guard = crate::ServerGuard(server.abort_handle());
-    let mut command = Command::new(
-        std::env::var_os("MORPHIECORE_SDK_PYTHON").unwrap_or_else(|| "python3".into()),
-    );
-    command
-        .args([
-            "tests/sdk/chat_media_loop.py",
-            &format!("http://{address}/v1"),
-        ])
-        .current_dir(env!("CARGO_MANIFEST_DIR"));
-    for name in [
-        "OPENAI_API_KEY",
-        "OPENAI_BASE_URL",
-        "OPENAI_ORG_ID",
-        "OPENAI_PROJECT_ID",
-        "MORPHIECORE_CONFIG",
-    ] {
-        command.env_remove(name);
-    }
+    let home = tempfile::tempdir().unwrap();
+    let mut command = crate::isolated_sdk_python(home.path());
+    command.args([
+        "tests/sdk/chat_media_loop.py",
+        &format!("http://{address}/v1"),
+    ]);
     let output = crate::child_process::run(&mut command, b"", Duration::from_secs(35), 65536)
         .await
         .unwrap();

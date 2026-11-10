@@ -31,7 +31,7 @@ use morphiecore::{
 };
 use serde_json::Value;
 use std::time::Duration;
-use tokio::{net::TcpListener, process::Command};
+use tokio::net::TcpListener;
 
 const SCRIPT: &str = "tests/sdk/responses_text_loop.py";
 
@@ -374,31 +374,19 @@ async fn sdk_case(sse: bool, profile: GenerationApi, without_opaque: bool) {
             .unwrap();
     });
     let guard = ServerGuard(server.abort_handle());
-    let mut command = Command::new(
-        std::env::var_os("MORPHIECORE_SDK_PYTHON").unwrap_or_else(|| "python3".into()),
-    );
-    command
-        .args([
-            if profile == GenerationApi::Responses {
-                SCRIPT
-            } else {
-                "tests/sdk/chat_text_loop.py"
-            },
-            &format!("http://{address}/v1"),
-            if sse { "sse" } else { "json" },
-        ])
-        .current_dir(env!("CARGO_MANIFEST_DIR"));
+    let home = tempfile::tempdir().unwrap();
+    let mut command = crate::isolated_sdk_python(home.path());
+    command.args([
+        if profile == GenerationApi::Responses {
+            SCRIPT
+        } else {
+            "tests/sdk/chat_text_loop.py"
+        },
+        &format!("http://{address}/v1"),
+        if sse { "sse" } else { "json" },
+    ]);
     if profile == GenerationApi::Responses {
         command.arg(if without_opaque { "readable" } else { "opaque" });
-    }
-    for name in [
-        "OPENAI_API_KEY",
-        "OPENAI_BASE_URL",
-        "OPENAI_ORG_ID",
-        "OPENAI_PROJECT_ID",
-        "MORPHIECORE_CONFIG",
-    ] {
-        command.env_remove(name);
     }
     let output = child_process::run(&mut command, b"", Duration::from_secs(35), 64 << 10)
         .await
