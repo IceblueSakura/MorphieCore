@@ -74,6 +74,9 @@ struct Choices {
     capability: Capability,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     values: Vec<&'static str>,
+    /// Accepted source aliases, excluded from the model's selectable native domain.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    compatibility_values: Vec<&'static str>,
 }
 impl Choices {
     fn new(choices: impl IntoIterator<Item = (&'static str, Capability)>) -> Self {
@@ -83,12 +86,14 @@ impl Choices {
             Self {
                 capability: Capability::common(negative.into_iter().map(|(_, c)| c)),
                 values: vec![],
+                compatibility_values: vec![],
             }
         } else {
             let (values, capabilities): (Vec<_>, Vec<_>) = positive.into_iter().unzip();
             Self {
                 capability: Capability::common(capabilities),
                 values,
+                compatibility_values: vec![],
             }
         }
     }
@@ -274,7 +279,7 @@ impl Interface {
             ("json_schema_output", Case::JsonSchema),
             ("max_output_tokens", Case::MaximumOutput),
         ] {
-            let (effective, admission) = assess_case(entry, &delivery_modes, case);
+            let (effective, admission, _) = assess_case(entry, &delivery_modes, case);
             features.insert(name, effective);
             request_cases.insert(name, (case.domain(entry.client.protocol()), admission));
         }
@@ -286,18 +291,26 @@ impl Interface {
         let effort = ["response", "reasoning"]
             .into_iter()
             .map(|scope| {
-                let values = Choices::new(
+                let assessments =
                     ["minimal", "low", "medium", "high", "xhigh", "max"].map(|level| {
-                        (
-                            level,
-                            if scope == effort_scope {
-                                assess(Case::Effort(level))
-                            } else {
-                                Capability::new(State::Unavailable)
-                            },
-                        )
-                    }),
+                        let (accepted, _, native) = if scope == effort_scope {
+                            assess_case(entry, &delivery_modes, Case::Effort(level))
+                        } else {
+                            let absent = Capability::new(State::Unavailable);
+                            (absent.clone(), absent.clone(), absent)
+                        };
+                        (level, accepted, native)
+                    });
+                let mut values = Choices::new(
+                    assessments
+                        .iter()
+                        .map(|(level, _, native)| (*level, native.clone())),
                 );
+                values.compatibility_values = assessments
+                    .into_iter()
+                    .filter(|(_, accepted, native)| accepted.positive() && !native.positive())
+                    .map(|(level, _, _)| level)
+                    .collect();
                 (scope, values)
             })
             .collect();
@@ -602,9 +615,19 @@ pub(super) fn assess(entry: &BoundEntry, modes: &[&str], case: Case) -> Capabili
     assess_case(entry, modes, case).0
 }
 /// Derive effective support and request admission from the same projection.
-fn assess_case(entry: &BoundEntry, modes: &[&str], case: Case) -> (Capability, Capability) {
-    let negative = |state| (Capability::new(state), Capability::new(state));
-    let (effective, admission): (Vec<_>, Vec<_>) = modes
+fn assess_case(
+    entry: &BoundEntry,
+    modes: &[&str],
+    case: Case,
+) -> (Capability, Capability, Capability) {
+    let negative = |state| {
+        (
+            Capability::new(state),
+            Capability::new(state),
+            Capability::new(state),
+        )
+    };
+    let assessments: Vec<_> = modes
         .iter()
         .flat_map(|mode| {
             let stream = *mode == "sse";
@@ -679,9 +702,45 @@ fn assess_case(entry: &BoundEntry, modes: &[&str], case: Case) -> (Capability, C
                 } else {
                     admission.clone()
                 };
-                (effective, admission)
+                // Native names survive the actual target projection unchanged. Scope-only
+                // substitutions keep the level; quantization, aliases and budget presets do not.
+                let renamed = matches!(case, Case::Effort(_))
+                    && projection.evidence().iter().any(|effect| match effect {
+                        crate::protocol::conversion::generation::Effect::EffortMapping {
+                            input,
+                            output,
+                            ..
+                        } => input.level != output.level,
+                        crate::protocol::conversion::generation::Effect::Reasoning {
+                            input,
+                            output,
+                            ..
+                        } => {
+                            input.effort.map(|effort| effort.level)
+                                != output.effort.map(|effort| effort.level)
+                        }
+                        _ => false,
+                    });
+                let native = if renamed {
+                    Capability::new(State::Unavailable)
+                } else {
+                    effective.clone()
+                };
+                (effective, admission, native)
             })
         })
-        .unzip();
-    (Capability::common(effective), Capability::common(admission))
+        .collect();
+    (
+        Capability::common(
+            assessments
+                .iter()
+                .map(|(effective, _, _)| effective.clone()),
+        ),
+        Capability::common(
+            assessments
+                .iter()
+                .map(|(_, admission, _)| admission.clone()),
+        ),
+        Capability::common(assessments.into_iter().map(|(_, _, native)| native)),
+    )
 }

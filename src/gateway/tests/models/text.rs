@@ -353,7 +353,8 @@ fn text_contract_intersects_source_efforts_and_comparable_limits_without_inventi
     assert_eq!(value["token_limits"]["max_input_tokens"], 90_000);
     assert_eq!(
         value["reasoning"]["effort"]["reasoning"],
-        json!({"state":"approved_adaptation","values":["minimal","low","medium","high","xhigh","max"],"rules":["generation.project-effort.v1"]})
+        json!({"state":"faithful","values":["high"],
+            "compatibility_values":["minimal","low","medium","xhigh","max"]})
     );
     let mut second = entry.candidates[1].as_ref().clone();
     second
@@ -397,7 +398,8 @@ fn text_contract_intersects_source_efforts_and_comparable_limits_without_inventi
     assert_eq!(value["token_limits"]["max_input_tokens"], 90_000);
     assert_eq!(
         value["reasoning"]["effort"]["reasoning"],
-        json!({"state":"approved_adaptation","values":["minimal","low","medium","high","xhigh","max"],"rules":["generation.project-effort.v1"]})
+        json!({"state":"non_uniform",
+            "compatibility_values":["minimal","low","medium","high","xhigh","max"]})
     );
     entry.candidates.truncate(1);
     let mut first = entry.candidates[0].as_ref().clone();
@@ -443,9 +445,110 @@ fn text_contract_intersects_source_efforts_and_comparable_limits_without_inventi
     assert_eq!(
         descriptor(entry)["reasoning"]["effort"]["reasoning"],
         json!({
-            "state":"approved_adaptation","values":["minimal","low","medium","high","xhigh","max"],"rules":["example.effort.v1"]
+            "state":"faithful","values":["high"],
+            "compatibility_values":["minimal","low","medium","xhigh","max"]
         })
     );
+}
+
+#[test]
+fn model_efforts_expose_native_glm_and_deepseek_levels_without_removing_compatibility() {
+    use crate::{
+        protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
+        topology::GenerationProtocol,
+    };
+    let gate = crate::gateway::tests::support::gateway(Limits::default());
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
+        for (model, native) in [
+            ("glm-5.3", false),
+            ("deepseek-flash", false),
+            ("deepseek-flash", true),
+        ] {
+            let mut entry = gate.state.entries[&(ClientProtocol::Chat, "fixture-model".into())]
+                .as_ref()
+                .clone();
+            entry.client = crate::adapter::ClientAdapter::openai(
+                GenerationCodec::new(profile, Dialect::Standard, None),
+                TargetContract::full(),
+            );
+            let mut candidate = entry.candidates[0].as_ref().clone();
+            candidate.endpoint.protocol = match profile {
+                GenerationApi::Chat => GenerationProtocol::OpenAiChat,
+                GenerationApi::Responses => GenerationProtocol::OpenAiResponses,
+            };
+            if native {
+                let scope = candidate.endpoint.bound_replay_scope.clone();
+                candidate.endpoint = crate::topology::catalog::API_KEY_BINDINGS
+                    .iter()
+                    .find(|binding| binding.endpoint_prefix == "deepseek")
+                    .unwrap()
+                    .endpoint(candidate.endpoint.protocol)
+                    .unwrap();
+                candidate.endpoint.bound_replay_scope = scope;
+            } else {
+                candidate.endpoint.upstream_model = model.into();
+                candidate
+                    .endpoint
+                    .representation
+                    .openai_mut()
+                    .unwrap()
+                    .adaptation = GenerationCodec::new(profile, Dialect::Bailian, None).adaptation;
+            }
+            entry.candidates = vec![Arc::new(candidate)];
+            let value = descriptor(entry.clone());
+            assert_eq!(
+                value["reasoning"]["effort"]["reasoning"],
+                json!({"state":"faithful","values":["low","high","max"],
+                    "compatibility_values":["minimal","medium","xhigh"]}),
+                "{model} {profile:?}",
+            );
+            let aliases: &[(&str, &str)] = if native {
+                &[
+                    ("low", "low"),
+                    ("high", "high"),
+                    ("max", "max"),
+                    ("minimal", "low"),
+                    ("medium", "high"),
+                    ("xhigh", "high"),
+                ]
+            } else {
+                &[("medium", "high")]
+            };
+            for &(alias, expected) in aliases {
+                let body = match profile {
+                    GenerationApi::Chat => json!({"model":"fixture-model",
+                    "messages":[{"role":"user","content":"text"}],"reasoning_effort":alias}),
+                    GenerationApi::Responses => json!({"model":"fixture-model",
+                    "input":"text","reasoning":{"effort":alias}}),
+                };
+                let mut request = entry
+                    .client
+                    .decode_client_request(body.to_string().as_bytes())
+                    .unwrap();
+                request.conversation = Some(
+                    crate::semantic::context::ConversationContext::independent_request(
+                        "model-efforts",
+                    )
+                    .unwrap(),
+                );
+                let projection = crate::execution::plan::project_candidate(
+                    &entry.candidates[0].endpoint,
+                    &request,
+                    Some(&entry.client),
+                )
+                .unwrap();
+                let wire = projection.value();
+                let effort = match profile {
+                    GenerationApi::Chat => &wire["reasoning_effort"],
+                    GenerationApi::Responses => &wire["reasoning"]["effort"],
+                };
+                assert_eq!(
+                    effort, expected,
+                    "a non-plugin client's {alias} still reaches its native target"
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -472,6 +575,11 @@ fn text_contract_uses_actual_dialect_checks_and_does_not_advertise_omitted_contr
     assert_eq!(
         value["features"]["named_tool_choice"],
         json!({"state":"unavailable"})
+    );
+    assert_eq!(
+        value["reasoning"]["effort"]["reasoning"],
+        json!({"state":"faithful","values":["low","medium","xhigh"],
+            "compatibility_values":["minimal","high","max"]})
     );
     let mut delegated = entry.clone();
     let mut candidate = delegated.candidates[0].as_ref().clone();
@@ -562,7 +670,8 @@ fn text_reasoning_uses_source_scopes_and_never_advertises_noop_activation_or_def
     assert_eq!(
         value["reasoning"]["effort"]["response"],
         json!({
-            "state":"approved_adaptation","values":["low","medium","high","xhigh","max"],
+            "state":"approved_adaptation","values":["low","medium","high"],
+            "compatibility_values":["xhigh","max"],
             "rules":["google.gemini-3.8-flash.response-effort-to-thinking.v1"]
         })
     );

@@ -351,6 +351,23 @@ const ZHIPU_GLM_FLASH_EFFORT: ReasoningEffortMapping = ReasoningEffortMapping {
     rule: "zhipu.glm-5.3-flash.effort.v1",
     ..ZHIPU_GLM_EFFORT
 };
+// Native DeepSeek's documented compatibility aliases, not Bailian's calibration.
+// https://api-docs.deepseek.com/guides/thinking_mode/ (2026-11-10).
+const DEEPSEEK_FLASH_EFFORT: ReasoningEffortMapping = ReasoningEffortMapping {
+    canonical_model: "deepseek-flash",
+    rule: "deepseek.deepseek-flash.effort.v1",
+    scope: EffortScope::Reasoning,
+    native_levels: &[E::Low, E::High, E::Max],
+    encode: &[
+        (E::Minimal, E::Low),
+        (E::Low, E::Low),
+        (E::Medium, E::High),
+        (E::High, E::High),
+        (E::XHigh, E::High),
+        (E::Max, E::Max),
+    ],
+    decode: &[(E::Low, E::Low), (E::High, E::High), (E::Max, E::Max)],
+};
 /// Only declared protocol members are activated by the environment bootstrap.
 pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
     // Official API-key contracts are independent of SIWC. Responses is selected
@@ -575,7 +592,10 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         provider: catalog::deepseek,
         dialect: Dialect::DeepSeek,
         endpoint_prefix: "deepseek",
-        effort_mappings: &[],
+        effort_mappings: &[
+            (GenerationProtocol::OpenAiChat, &DEEPSEEK_FLASH_EFFORT),
+            (GenerationProtocol::OpenAiResponses, &DEEPSEEK_FLASH_EFFORT),
+        ],
         model: "deepseek-flash",
         canonical_model: "deepseek-flash",
         upstream: "deepseek-flash",
@@ -594,7 +614,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         provider: catalog::deepseek_beta,
         dialect: Dialect::DeepSeek,
         endpoint_prefix: "deepseek-beta",
-        effort_mappings: &[],
+        effort_mappings: &[(GenerationProtocol::OpenAiChat, &DEEPSEEK_FLASH_EFFORT)],
         model: "deepseek-flash",
         canonical_model: "deepseek-flash",
         upstream: "deepseek-flash",

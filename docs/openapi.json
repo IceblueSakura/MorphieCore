@@ -2361,92 +2361,39 @@
       "TextEffortChoices": {
         "oneOf": [
           {
-            "type": "object",
-            "required": [
-              "state",
-              "values"
-            ],
+            "type": "object", "required": ["state", "values"],
             "properties": {
-              "state": {
-                "const": "faithful"
-              },
-              "values": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 6,
-                "uniqueItems": true,
-                "items": {
-                  "enum": [
-                    "minimal",
-                    "low",
-                    "medium",
-                    "high",
-                    "xhigh",
-                    "max"
-                  ]
-                }
-              }
+              "state": {"const": "faithful"},
+              "values": {"$ref": "#/components/schemas/TextEffortValues"},
+              "compatibility_values": {"$ref": "#/components/schemas/TextEffortValues"}
             },
             "additionalProperties": false
           },
           {
-            "type": "object",
-            "required": [
-              "state",
-              "rules",
-              "values"
-            ],
+            "type": "object", "required": ["state", "rules", "values"],
             "properties": {
-              "state": {
-                "const": "approved_adaptation"
-              },
-              "rules": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 64,
-                "uniqueItems": true,
-                "items": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128
-                }
-              },
-              "values": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 6,
-                "uniqueItems": true,
-                "items": {
-                  "enum": [
-                    "minimal",
-                    "low",
-                    "medium",
-                    "high",
-                    "xhigh",
-                    "max"
-                  ]
-                }
-              }
+              "state": {"const": "approved_adaptation"},
+              "rules": {"type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
+                "items": {"type": "string", "minLength": 1, "maxLength": 128}},
+              "values": {"$ref": "#/components/schemas/TextEffortValues"},
+              "compatibility_values": {"$ref": "#/components/schemas/TextEffortValues"}
             },
             "additionalProperties": false
           },
           {
-            "type": "object",
-            "required": [
-              "state"
-            ],
+            "type": "object", "required": ["state"],
             "properties": {
-              "state": {
-                "enum": [
-                  "unavailable",
-                  "non_uniform",
-                  "not_assessed"
-                ]
-              }
+              "state": {"enum": ["unavailable", "non_uniform", "not_assessed"]},
+              "compatibility_values": {"$ref": "#/components/schemas/TextEffortValues"}
             },
             "additionalProperties": false
           }
-        ]
+        ],
+        "description": "values contains route-common selectable native level names, preserved by actual target projection. compatibility_values contains other accepted source aliases, not additional native choices; ordinary request conversion remains available."
+      },
+      "TextEffortValues": {
+        "type": "array", "minItems": 1, "maxItems": 6, "uniqueItems": true,
+        "items": {"enum": ["minimal", "low", "medium", "high", "xhigh", "max"]}
       },
       "TextActivationChoices": {
         "oneOf": [

@@ -30,6 +30,14 @@ Pi's image metadata is not a universal enforcement layer. `inputLimits.images.re
 
 Current public model admission intentionally remains narrower than official model specifications in places, including the existing `gpt-6.1-sol` image flag. This slice reports those effective domains; it does not broaden admission from native marketing/specification claims.
 
+## Native effort and Pi planning follow-up — 2026-11-10
+
+Re-read the official DeepSeek [thinking guide](https://api-docs.deepseek.com/guides/thinking_mode/), [Chat request reference](https://api-docs.deepseek.com/api/create-chat-completion/) and [Responses request reference](https://api-docs.deepseek.com/api/create-response/). They distinguish native `low/high/max` from compatibility inputs: `minimal → low`, `medium → high`, `xhigh → high`; `none` disables thinking. The native `deepseek-flash` Chat/Responses and beta Chat bindings now declare this exact mapping. Do not copy Bailian's independently selected mapping to native DeepSeek, or assume an accepted source spelling is a distinct effective level. No new model, API or `ultra` source enum is activated.
+
+The 2026-11-10 installed Pi 1.5.1 source exposes `Model.thinkingLevelMap`, `getSupportedThinkingLevels` and `clampThinkingLevel`. Explicit null entries hide unsupported choices; a low/high/max model clamps a medium preference upward to high. Its public model metadata has `contextWindow` and `maxTokens`, without an independent input-token maximum. The user selected actual total context first, then an input-only maximum as a planning fallback when total context is absent; never add input and output, or publish that fallback as a new total-context fact. This does not resolve the decimal/binary abbreviations left unknown above or establish proxy/account capacities.
+
+Successful registry refresh does not itself replace an already active/scoped model object. The adapter reconciles metadata at idle boundaries through public `setModel`/`setThinkingLevel`; the native preference/clamping policy stays in Pi. Offline/failed refresh retains qualified cached metadata rather than guessing new facts.
+
 ## Other tasks
 
 Embedding already has independent typed contracts and runtime behavior. Reusing its discovery vocabulary does not connect it to the enhanced model list or Pi. Image/Audio/Video/Decision/Realtime schema components are metadata shapes only, with no new routes, callbacks, codecs or session lifecycle. Realtime transport and interruption/recovery contracts remain unimplemented and separately selected.
