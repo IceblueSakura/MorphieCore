@@ -98,6 +98,8 @@ impl Gateway {
         )?;
         Ok(Self {
             state: Arc::new(Runtime {
+                #[cfg(test)]
+                oauth_scan_complete: tokio::sync::Notify::new(),
                 oauth_accounts: credentials.oauth_accounts,
                 diagnostics: None,
                 request_ids: crate::gateway::ingress::correlation::RequestIds::new()

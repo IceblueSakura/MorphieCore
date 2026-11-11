@@ -4,7 +4,7 @@ use crate::{
         CodecError, DecodedResponse, anthropic::messages as wire, failure::CarrierReason,
         replay_envelope,
     },
-    semantic::{task::generation::*, value::Presence},
+    semantic::task::generation::*,
 };
 use serde_json::Value;
 
@@ -201,13 +201,8 @@ pub(crate) fn project_metadata(
         {
             report.service_class = None;
         }
-        report.settings = None;
     }
     crate::protocol::reports::single_view(&mut metadata.context.reports)?;
-    metadata.context.execution = Default::default();
-    metadata.context.instruction_messages = None;
-    metadata.instruction_fidelity = Default::default();
-    metadata.context.system_fingerprint = None;
     Ok(())
 }
 
@@ -215,21 +210,6 @@ pub(crate) fn metadata_losses(
     metadata: &crate::protocol::ResponseMetadata,
 ) -> Vec<crate::protocol::conversion::generation::Effect> {
     let mut losses = vec![];
-    let mut execution = metadata.context.execution.clone();
-    if execution.metadata == Presence::Null {
-        execution.metadata = Presence::Absent;
-    }
-    if execution != Default::default() {
-        losses.push(crate::protocol::conversion::generation::Effect::Field {
-            rule: crate::protocol::conversion::generation::RuleId::new(
-                "messages.omit-reported-execution-hints.v1",
-            ),
-            field: crate::protocol::conversion::generation::Field::Representation,
-            boundary: crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
-            change: crate::protocol::conversion::generation::Change::Omit,
-            owner: crate::protocol::conversion::generation::Owner::Root,
-        });
-    }
     if metadata.context.reports.iter().any(|r| {
         r.service_class
             .as_ref()
@@ -240,34 +220,6 @@ pub(crate) fn metadata_losses(
                 "messages.omit-reported-service-class.v1",
             ),
             field: crate::protocol::conversion::generation::Field::ServiceClass,
-            boundary: crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
-            change: crate::protocol::conversion::generation::Change::Omit,
-            owner: crate::protocol::conversion::generation::Owner::Root,
-        });
-    }
-    if metadata
-        .context
-        .reports
-        .iter()
-        .any(|r| r.settings.is_some())
-        || metadata.context.instruction_messages.is_some()
-    {
-        losses.push(crate::protocol::conversion::generation::Effect::Field {
-            rule: crate::protocol::conversion::generation::RuleId::new(
-                "messages.omit-incidental-settings.v1",
-            ),
-            field: crate::protocol::conversion::generation::Field::ReportedSettings,
-            boundary: crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
-            change: crate::protocol::conversion::generation::Change::Omit,
-            owner: crate::protocol::conversion::generation::Owner::Root,
-        });
-    }
-    if metadata.context.system_fingerprint.as_ref().is_some() {
-        losses.push(crate::protocol::conversion::generation::Effect::Field {
-            rule: crate::protocol::conversion::generation::RuleId::new(
-                "messages.omit-system-fingerprint.v1",
-            ),
-            field: crate::protocol::conversion::generation::Field::SystemFingerprint,
             boundary: crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
             change: crate::protocol::conversion::generation::Change::Omit,
             owner: crate::protocol::conversion::generation::Owner::Root,

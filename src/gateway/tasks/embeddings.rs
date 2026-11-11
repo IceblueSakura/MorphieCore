@@ -44,7 +44,8 @@ pub(in crate::gateway) async fn handle(
         .unwrap_or_else(IntoResponse::into_response)
 }
 async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, ApiError> {
-    let trace = Trace::for_request(runtime.diagnostics.as_ref(), &request);
+    let started = Instant::now();
+    let mut trace = Trace::for_request(runtime.diagnostics.as_ref(), &request);
     if runtime.shutdown.is_cancelled() {
         return Err(ApiError::shutdown());
     }
@@ -55,12 +56,14 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
         )
     })?;
     admission::headers(request.headers(), runtime.limits.request_bytes)?;
-    let bytes = tokio::select! {
-        biased;
-        _=runtime.shutdown.cancelled()=>return Err(ApiError::shutdown()),
-        result=tokio::time::timeout(runtime.limits.body_timeout,admission::collect(request.into_body(),runtime.limits.request_bytes))
-            =>result.map_err(|_|ApiError::new(StatusCode::REQUEST_TIMEOUT,crate::gateway::error::ErrorKind::RequestTimeout))??,
-    };
+    let bytes = crate::gateway::ingress::http::read_body(
+        &runtime,
+        request.into_body(),
+        runtime.limits.request_bytes,
+        started + runtime.limits.exchange_timeout,
+        &mut trace,
+    )
+    .await?;
     let parsed = codec::parse_request(&bytes).map_err(|_| ApiError::invalid())?;
     let entry = runtime
         .embeddings
@@ -75,10 +78,13 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
         .map_err(|_| ApiError::invalid())?;
     let prepared = crate::execution::embeddings::prepare(&entry.route, &entry.provider, &request)
         .map_err(|_| ApiError::invalid())?;
-    let deadline = Instant::now()
+    let deadline = started
         + runtime.limits.exchange_timeout.min(Duration::from_millis(
             entry.route.endpoint.execution.timeout_ms,
         ));
+    if Instant::now() >= deadline {
+        return Err(ApiError::timeout());
+    }
     body::respond_producer(
         Exchange {
             runtime: runtime.clone(),
@@ -130,7 +136,7 @@ async fn produce_one(
     crate::semantic::value::json_size(&value, runtime.limits.response_bytes)
         .map_err(|_| ApiError::upstream())?;
     let output = serde_json::to_vec(&value).map_err(|_| ApiError::upstream())?;
-    body::send_frame(lane, output.into(), trace).await?;
+    body::send_final_frame(lane, output.into(), trace).await?;
     Ok(())
 }
 pub(in crate::gateway) async fn receive(

@@ -56,7 +56,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 | Priority | Remaining work | Exit |
 |---|---|---|
-| Cache affinity, before Stage 4 | [R09 independent-account failover](#cache-affinity-qualification); further test items await user supplementation | Selected cache-affinity acceptance, retaining real-account prerequisites |
+| Cache affinity, paused before Stage 4 | [R09 independent-account failover](#cache-affinity-qualification), deferred by the user on 2026-11-11; further test items await user supplementation | Resume only when selected, retaining independent real-account prerequisites |
 | Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default handoff prerequisites |
 | API expansion | Select and implement Stage-4 operation contracts | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Implement opt-in per-Agent JSONL session storage | Selected isolation and lifetime bounds |
@@ -111,6 +111,8 @@ The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-bounda
 ## Cache-affinity qualification
 
 **User-selected 2026-11-09:** this remains the selected qualification stage after the delivered Generation/configuration/diagnostic baseline and before Stage 4. R09 is its initial item, preserving the original identifier and evidence. Additional cache-affinity test items will be supplied later; do not invent or launch that broader suite now. The routing freeze and credential-lifecycle authorization remain unchanged.
+
+**Paused by the user, 2026-11-11:** complete the selected local lifecycle repairs without running R09 or provisioning accounts. This pause does not qualify or waive the real-account gate.
 
 | Item | Current evidence / prerequisite | Acceptance |
 |---|---|---|
@@ -171,7 +173,7 @@ The Generation review baseline is delivered under the [partial-delivery contract
 | Stage | Goal | Exit evidence |
 |---|---|---|
 | **3 — Conditional compatibility follow-ups** | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, plain custom wrappers and examples projection | Separate policy selection and affected full-loop verification; not default blockers for Stage 4 or optional Agent qualification |
-| **Pre-4 — Cache affinity** | [Cache-affinity qualification](#cache-affinity-qualification); R09 first, additional items await user supplementation | Independent-account affinity/failover acceptance and the subsequently selected cache tests |
+| **Pre-4 — Cache affinity (paused)** | [Cache-affinity qualification](#cache-affinity-qualification); R09 awaits resumption, additional items await user supplementation | Independent-account affinity/failover acceptance and the subsequently selected cache tests |
 | **4 — Modalities, Decision & file resources** | Decision, Embedding extensions, Audio (Speech/Transcription/Translation), Images, Files/Uploads, and Video at equal priority | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
 | **5 — Unscheduled follow-ups** | Citations, tool discovery, hosted tools, server-side compaction, Batch, and Realtime | Requires explicit per-slice design selection and scheduling prior to implementation |
 

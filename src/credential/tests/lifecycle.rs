@@ -205,6 +205,48 @@ async fn rotation_and_omitted_replacement_use_account_bound_refresh() {
 }
 
 #[tokio::test]
+async fn rotated_material_survives_userinfo_failure_without_refresh_replay() {
+    let mut steps = login_steps("person-a");
+    let mut unavailable = step(
+        "/oauth2/userinfo",
+        vec![("authorization", "Bearer new-access")],
+        json!({"error":"temporarily_unavailable"}),
+    );
+    unavailable.status = StatusCode::SERVICE_UNAVAILABLE;
+    steps.extend([
+        step(
+            "/oauth2/token",
+            vec![("refresh_token", "synthetic-refresh")],
+            token("new-access", Some("rotated-refresh")),
+        ),
+        unavailable,
+        step(
+            "/oauth2/userinfo",
+            vec![("authorization", "Bearer new-access")],
+            json!({"sub":"person-a"}),
+        ),
+    ]);
+    let authority = Authority::new(steps).await;
+    let dir = Directory::new();
+    let pool = authority.pool(&dir);
+    login(&pool, "alice").await;
+    let binding = pool.bind_access("grok", "alice").unwrap();
+    assert!(pool.refresh("grok", "alice").await.is_err());
+    let reopened = authority.pool(&dir);
+    let status = reopened.list(None).unwrap().remove(0);
+    assert!(status.renewal_pending);
+    assert_eq!(status.state, AccountState::NeedsReauthorization);
+    assert!(binding.borrow().is_err());
+    assert!(!binding.refresh_if_due(120).await.unwrap());
+    assert_eq!(
+        reopened.refresh("grok", "alice").await.unwrap().state,
+        AccountState::Active
+    );
+    assert_eq!(binding.borrow().unwrap().access.expose(), "new-access");
+    authority.done();
+}
+
+#[tokio::test]
 async fn active_session_rejects_login_without_authority_io() {
     let authority = Authority::new(login_steps("person-a")).await;
     let dir = Directory::new();
@@ -307,27 +349,31 @@ async fn cancelled_rotation_and_lock_contention_fail_closed_across_pool_handles(
 #[tokio::test]
 async fn failed_rotation_publication_leaves_durable_uncertainty() {
     let mut steps = login_steps("person-a");
+    let gate = Arc::new(Notify::new());
+    let mut identity = step(
+        "/oauth2/userinfo",
+        vec![("authorization", "Bearer new-access")],
+        json!({"sub":"person-a"}),
+    );
+    identity.gate = Some(gate.clone());
     steps.extend([
         step(
             "/oauth2/token",
             vec![],
             token("new-access", Some("new-refresh")),
         ),
-        step(
-            "/oauth2/userinfo",
-            vec![("authorization", "Bearer new-access")],
-            json!({"sub":"person-a"}),
-        ),
+        identity,
     ]);
     let authority = Authority::new(steps).await;
     let dir = Directory::new();
     let pool = authority.pool(&dir);
     login(&pool, "alice").await;
     let mut refresh = Box::pin(pool.refresh("grok", "alice"));
-    while authority.steps.lock().unwrap().len() > 1 {
+    while !authority.steps.lock().unwrap().is_empty() {
         tokio::select! { _ = &mut refresh => panic!("must await identity"), _ = authority.entered.notified() => {} }
     }
     pool.store.fail_at(store::PublishStep::Rename);
+    gate.notify_one();
     assert_eq!(refresh.await.unwrap_err(), CredentialError::Storage);
     assert_eq!(
         authority.pool(&dir).list(None).unwrap()[0].state,

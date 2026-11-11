@@ -878,6 +878,72 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
     }
 }
 
+#[tokio::test(start_paused = true)]
+async fn task_upload_timeouts_keep_status_severity_and_deadline_attribution() {
+    use opentelemetry::logs::{AnyValue, Severity};
+    for path in [
+        "/v1/embeddings",
+        "/v1/images/generations",
+        "/v1/audio/speech",
+        "/v1/audio/transcriptions",
+    ] {
+        for (body_ms, exchange_ms, status, severity, cause) in [
+            (5, 100, 408, Severity::Warn, "deadline.request_body"),
+            (100, 5, 504, Severity::Error, "deadline.exchange"),
+        ] {
+            let mut gate = gateway(Limits {
+                concurrency: 1,
+                body_timeout: Duration::from_millis(body_ms),
+                exchange_timeout: Duration::from_millis(exchange_ms),
+                ..Default::default()
+            });
+            let (sink, exporter) = crate::gateway::diagnostics::Sink::memory();
+            Arc::get_mut(&mut gate.state).unwrap().diagnostics = Some(sink);
+            let response = gate.router().oneshot(
+                HttpRequest::builder()
+                    .method("POST")
+                    .uri(path)
+                    .header("authorization", format!("Bearer {KEY}"))
+                    .header(
+                        "content-type",
+                        if path.ends_with("transcriptions") {
+                            "multipart/form-data; boundary=synthetic"
+                        } else {
+                            "application/json"
+                        },
+                    )
+                    .body(axum::body::Body::from_stream(
+                        futures_util::stream::pending::<Result<bytes::Bytes, std::io::Error>>(),
+                    ))
+                    .unwrap(),
+            );
+            tokio::pin!(response);
+            assert!(futures_util::poll!(&mut response).is_pending());
+            // Poll again only after both clocks expired: attribution follows
+            // the earlier deadline, not select branch order or scheduler delay.
+            tokio::time::advance(Duration::from_millis(200)).await;
+            let response = response.await.unwrap();
+            assert_eq!(response.status(), status);
+            assert_eq!(gate.state.permits.available_permits(), 1);
+            let logs = exporter.get_emitted_logs().unwrap();
+            assert_eq!(logs.len(), 1);
+            assert_eq!(logs[0].record.severity_number(), Some(severity));
+            for (name, expected) in [
+                ("gateway.error.status_code", AnyValue::from(status as i64)),
+                ("error.type", AnyValue::from(cause)),
+            ] {
+                assert!(
+                    logs[0]
+                        .record
+                        .attributes_iter()
+                        .any(|(key, value)| key.as_str() == name && value == &expected)
+                );
+            }
+            gate.shutdown();
+        }
+    }
+}
+
 #[tokio::test]
 async fn concurrency_and_collection_timeout_fail_before_upstream() {
     let gate = gateway(Limits {

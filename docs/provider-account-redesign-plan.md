@@ -354,8 +354,10 @@ Selected baseline: keep pure polling. The due check is local (account lock and s
 The maintenance loop must:
 
 - Check on startup, serialize renewal for a session and recheck identity/expiry under the lock.
+- Run filesystem phases off the async worker while retaining account ownership across network waits. Cancellation drops network work, prevents queued storage phases and drains an already-started atomic filesystem phase before releasing ownership or returning; filesystem completion is not a hard wall-clock guarantee.
 - Bound renewal time; apply the fixed global failed-renewal delay (default 60 s) only to failures for which the profile permits safely attempting renewal again. Do not add another exponential-backoff state machine.
 - Persist replacement material safely and never reuse a potentially consumed refresh token after uncertain failure.
+- Persist complete replacement material before secondary identity verification. Grok UserInfo and SIWC verification failures leave it pending and unusable; explicit refresh resumes verification without another token exchange. Automatic scans do not resume pending verification.
 - Preserve account identity across normal rotation, and surface explicit reauthorization or persistence-recovery states.
 - Treat unknown expiry as unknown; do not perform paid inference to test validity.
 - Keep ordinary credential borrowing network-free. Any selected request-triggered 401 recovery calls the same maintenance owner instead of creating a second refresh implementation, and only where the profile's contract makes refresh the right recovery.

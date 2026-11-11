@@ -91,6 +91,119 @@ fn completed_stream() -> String {
 }
 
 #[tokio::test]
+async fn unpolled_snapshot_operations_do_not_hold_inference_capacity() {
+    let upstream = Router::new().route(
+        "/responses",
+        post(|| async { ([("content-type", "text/event-stream")], completed_stream()) }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let gate = gateway(&format!("http://{}", listener.local_addr().unwrap()));
+    let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+    let stored = value(
+        send(
+            &gate,
+            "POST",
+            "/v1/responses",
+            json!({"model":"fixture-model","input":"first","store":true}),
+        )
+        .await,
+    )
+    .await;
+    let id = stored["id"].as_str().unwrap();
+    let mut held = Vec::new();
+    for (method, path) in [
+        ("GET", format!("/v1/responses/{id}")),
+        ("GET", format!("/v1/responses/{id}/input_items")),
+        ("DELETE", format!("/v1/responses/{id}")),
+    ] {
+        let response = send(&gate, method, &path, Value::Null).await;
+        assert_eq!(response.status(), 200);
+        held.push(response);
+        assert_eq!(gate.state.permits.available_permits(), 1);
+    }
+    assert_eq!(
+        send(
+            &gate,
+            "POST",
+            "/v1/responses",
+            json!({"model":"fixture-model","input":"next"})
+        )
+        .await
+        .status(),
+        200
+    );
+    gate.shutdown();
+    server.abort();
+}
+
+#[tokio::test(start_paused = true)]
+async fn total_deadline_includes_upload_and_route_tightening_without_dispatch() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let calls = Arc::new(AtomicUsize::new(0));
+    let observed = calls.clone();
+    let upstream = Router::new().route(
+        "/responses",
+        post(move || {
+            observed.fetch_add(1, Ordering::SeqCst);
+            async { ([("content-type", "text/event-stream")], completed_stream()) }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+    for (upload_ms, route_ms) in [(200, None), (60, Some(50))] {
+        let mut gate = gateway_with_limits(
+            &origin,
+            Limits {
+                concurrency: 1,
+                exchange_timeout: Duration::from_millis(100),
+                body_timeout: Duration::from_secs(5),
+                ..Default::default()
+            },
+        );
+        let state = Arc::get_mut(&mut gate.state).unwrap();
+        for entry in state.entries.values_mut() {
+            Arc::make_mut(entry).policy.total_timeout_ms = route_ms;
+        }
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let upload_entered = entered.clone();
+        let upload_release = release.clone();
+        let body = Body::from_stream(futures_util::stream::once(async move {
+            upload_entered.notify_one();
+            upload_release.notified().await;
+            Ok::<_, std::io::Error>(bytes::Bytes::from_static(
+                br#"{"model":"fixture-model","input":"first"}"#,
+            ))
+        }));
+        let router = gate.router();
+        let request = tokio::spawn(async move {
+            router
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/v1/responses")
+                        .header("authorization", format!("Bearer {KEY}"))
+                        .header("content-type", "application/json")
+                        .body(body)
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+        });
+        entered.notified().await;
+        tokio::time::advance(Duration::from_millis(upload_ms)).await;
+        release.notify_one();
+        let response = request.await.unwrap();
+        assert_eq!(response.status(), 504);
+        assert_eq!(gate.state.permits.available_permits(), 1);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        gate.shutdown();
+    }
+    server.abort();
+}
+
+#[tokio::test]
 async fn stored_json_and_sse_support_tool_continuation_retrieval_and_independent_branches() {
     let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
     let observed = calls.clone();

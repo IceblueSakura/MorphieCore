@@ -69,6 +69,47 @@ impl AuthDriver for ThirdDriver {
         })
     }
 }
+#[test]
+fn cancelled_queued_storage_cannot_consume_or_publish_after_logout() {
+    // Exhaust the blocking pool so cancellation happens before the first
+    // filesystem phase. Dropping a spawn_blocking handle alone cannot stop it.
+    let dir = test_support::Directory::new();
+    let (manager, entered, _) = manager(&dir);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    runtime
+        .block_on(manager.login("third", "one", LoginOptions::default(), |_| {}))
+        .unwrap();
+    let (release, held) = std::sync::mpsc::channel();
+    let (started, waiting) = std::sync::mpsc::channel();
+    let hold = runtime.spawn_blocking(move || {
+        started.send(()).unwrap();
+        held.recv().unwrap();
+    });
+    waiting.recv().unwrap();
+    let original = test_support::read_account(&dir.path, "third", "one");
+    runtime.block_on(async {
+        let mut refresh = Box::pin(manager.refresh("third", "one"));
+        assert!(futures_util::poll!(&mut refresh).is_pending());
+        drop(refresh);
+        manager.logout("third", "one", false).await.unwrap();
+        release.send(()).unwrap();
+        hold.await.unwrap();
+        // With one blocking worker this barrier drains the queued phase.
+        tokio::task::spawn_blocking(|| {}).await.unwrap();
+    });
+    assert!(futures_util::FutureExt::now_or_never(entered.notified()).is_none());
+    let ended = test_support::read_account(&dir.path, "third", "one");
+    assert_eq!(ended["state"], "signed_out");
+    assert_eq!(
+        ended["generation"].as_u64().unwrap(),
+        original["generation"].as_u64().unwrap() + 1
+    );
+}
+
 #[tokio::test]
 async fn inference_binding_reloads_and_rejects_expired_logout_or_identity_change() {
     let dir = test_support::Directory::new();

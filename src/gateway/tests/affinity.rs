@@ -9,10 +9,11 @@ use crate::{
 use axum::{
     Json, Router,
     body::{Body, to_bytes},
-    http::{HeaderMap, Request as HttpRequest},
+    http::{HeaderMap, Request as HttpRequest, StatusCode},
     response::IntoResponse,
     routing::post,
 };
+use futures_util::StreamExt;
 use serde_json::{Value, json};
 use std::{sync::Mutex, time::Duration};
 use tower::ServiceExt;
@@ -249,6 +250,125 @@ async fn send(
         .unwrap();
     assert_eq!(response.status(), axum::http::StatusCode::OK);
     to_bytes(response.into_body(), 1 << 20).await
+}
+
+#[tokio::test]
+async fn final_handoff_settles_recovery_and_affinity_before_consumer_drop() {
+    for (stream, retry, explicit) in [
+        (false, false, true),
+        (false, true, true),
+        (true, true, true),
+        (false, true, false),
+        (true, false, false),
+    ] {
+        let requests = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let observed = requests.clone();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let router = Router::new().route(
+            "/upstream",
+            post(move |Json(body): Json<Value>| {
+                let mut requests = observed.lock().unwrap();
+                requests.push(body.clone());
+                let fail = retry && requests.len() == 1;
+                async move {
+                    if fail {
+                        StatusCode::SERVICE_UNAVAILABLE.into_response()
+                    } else {
+                        response(&body, false)
+                    }
+                }
+            }),
+        );
+        let _listener = Listener(tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap()
+        }));
+        let gate = gateway(&origin, GenerationApi::Responses, Dialect::Standard);
+        let mut body = json!({"model":"public","input":[{"role":"user","content":"hello"}],
+            "stream":stream,"stream_options":{"include_obfuscation":false}});
+        if !stream {
+            body.as_object_mut().unwrap().shift_remove("stream_options");
+        }
+        let mut request = HttpRequest::builder()
+            .method("POST")
+            .uri("/v1/responses")
+            .header(
+                "authorization",
+                format!("Bearer {}", crate::gateway::tests::support::KEY),
+            )
+            .header("content-type", "application/json");
+        if explicit {
+            request = request.header("x-morphiecore-conversation-id", "session");
+        }
+        let reply = gate
+            .router()
+            .oneshot(request.body(Body::from(body.to_string())).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(reply.status(), 200);
+        let mut output = reply.into_body().into_data_stream();
+        loop {
+            let bytes = output.next().await.unwrap().unwrap();
+            if !stream
+                || std::str::from_utf8(&bytes)
+                    .unwrap()
+                    .contains("event: response.completed")
+            {
+                break;
+            }
+        }
+        // Current-thread scheduling: no producer poll between final acceptance
+        // and cancellation. Shutdown must also lose to this accepted handoff.
+        drop(output);
+        if explicit {
+            gate.shutdown();
+        }
+        let permit = tokio::time::timeout(
+            Duration::from_secs(2),
+            gate.state
+                .permits
+                .clone()
+                .acquire_many_owned(gate.state.limits.concurrency as u32),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        drop(permit);
+        assert_eq!(requests.lock().unwrap().len(), if retry { 2 } else { 1 });
+        let entry =
+            &gate.state.entries[&(crate::protocol::ClientProtocol::Responses, "public".into())];
+        assert!(
+            gate.state
+                .executors
+                .unavailable(&entry.candidates[0].health, tokio::time::Instant::now())
+                .is_none()
+        );
+        if explicit {
+            let now = tokio::time::Instant::now();
+            let binding =
+                gate.state
+                    .executors
+                    .observe(Some("fixture-agent"), "public", Some("session"), now);
+            assert_eq!(
+                gate.state
+                    .executors
+                    .order(binding.as_ref(), &mut entry.candidates.clone(), now),
+                "affinity"
+            );
+        } else {
+            let key = requests.lock().unwrap().last().unwrap()["prompt_cache_key"].clone();
+            let next = json!({"model":"public","input":[
+                {"role":"user","content":"hello"},
+                {"role":"assistant","content":"ok"},
+                {"role":"user","content":"continue"}]});
+            send(&gate, GenerationApi::Responses, &next).await.unwrap();
+            assert_eq!(
+                requests.lock().unwrap().last().unwrap()["prompt_cache_key"],
+                key
+            );
+            gate.shutdown();
+        }
+    }
 }
 
 #[tokio::test]

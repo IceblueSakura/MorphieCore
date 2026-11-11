@@ -113,6 +113,8 @@ impl Gateway {
                     }
                 }
             }
+            #[cfg(test)]
+            self.state.oauth_scan_complete.notify_waiters();
             tokio::select! {
                 biased;
                 _ = self.state.shutdown.cancelled() => return,

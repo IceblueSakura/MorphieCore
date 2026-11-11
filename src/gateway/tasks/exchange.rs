@@ -35,6 +35,9 @@ pub(super) async fn send<R>(
             ApiError::invalid()
         })?;
 
+    if Instant::now() >= deadline {
+        return Err(ApiError::timeout());
+    }
     trace.stage(Stage::Connect);
     if let Some(capture) = &trace.capture {
         capture.upstream_request(&prepared, trace.capture_attempt);

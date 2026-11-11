@@ -129,6 +129,8 @@ impl BoundEntry {
     }
 }
 pub(super) struct Runtime {
+    #[cfg(test)]
+    pub(super) oauth_scan_complete: tokio::sync::Notify,
     pub(super) oauth_accounts: Vec<credentials::RenewalAccount>,
     pub(super) history: Arc<crate::gateway::generation::history::Store>,
     pub(super) diagnostics: Option<diagnostics::Sink>,

@@ -12,47 +12,52 @@ use tower::ServiceExt;
 #[tokio::test(start_paused = true)]
 async fn configured_body_budgets_apply_before_execution_and_release_capacity() {
     use axum::{body::Body, http::Request};
-    let boot = Fixture::new(
-        json!({"resources":{"concurrency":1,"request_bytes":1024,"body_timeout_ms":20},
-            "delivery":{"exchange_timeout_ms":1}}),
-        json!({"models":{"deepseek-flash":{"candidates":[{"binding":"deepseek-chat"}]}}}),
-        &[("deepseek", "primary", "synthetic-key")],
-    )
-    .unwrap();
-    let request = |body| {
-        Request::builder()
-            .method("POST")
-            .uri("/v1/chat/completions")
-            .header(
-                "authorization",
-                "Bearer synthetic-gateway-client-token-0001",
-            )
-            .header("content-type", "application/json")
-            .body(body)
-            .unwrap()
-    };
-    let response = boot
-        .gateway
-        .router()
-        .oneshot(request(Body::from("x".repeat(1025))))
-        .await
+    for (exchange_ms, expected, elapsed_ms) in [
+        (1, StatusCode::GATEWAY_TIMEOUT, 1),
+        (30, StatusCode::REQUEST_TIMEOUT, 20),
+    ] {
+        let boot = Fixture::new(
+            json!({"resources":{"concurrency":1,"request_bytes":1024,"body_timeout_ms":20},
+            "delivery":{"exchange_timeout_ms":exchange_ms}}),
+            json!({"models":{"deepseek-flash":{"candidates":[{"binding":"deepseek-chat"}]}}}),
+            &[("deepseek", "primary", "synthetic-key")],
+        )
         .unwrap();
-    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
-    let start = tokio::time::Instant::now();
-    let response = boot
-        .gateway
-        .router()
-        .oneshot(request(Body::from_stream(futures_util::stream::pending::<
-            Result<bytes::Bytes, std::io::Error>,
-        >())))
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::REQUEST_TIMEOUT);
-    assert!(
-        start.elapsed() >= std::time::Duration::from_millis(20),
-        "the post-admission execution deadline must not consume the upload budget"
-    );
-    assert_eq!(boot.gateway.state.permits.available_permits(), 1);
+        let request = |body| {
+            Request::builder()
+                .method("POST")
+                .uri("/v1/chat/completions")
+                .header(
+                    "authorization",
+                    "Bearer synthetic-gateway-client-token-0001",
+                )
+                .header("content-type", "application/json")
+                .body(body)
+                .unwrap()
+        };
+        let response = boot
+            .gateway
+            .router()
+            .oneshot(request(Body::from("x".repeat(1025))))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        let start = tokio::time::Instant::now();
+        let response = boot
+            .gateway
+            .router()
+            .oneshot(request(Body::from_stream(futures_util::stream::pending::<
+                Result<bytes::Bytes, std::io::Error>,
+            >())))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected);
+        assert_eq!(
+            start.elapsed(),
+            std::time::Duration::from_millis(elapsed_ms)
+        );
+        assert_eq!(boot.gateway.state.permits.available_permits(), 1);
+    }
 }
 
 #[test]

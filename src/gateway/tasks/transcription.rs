@@ -3,7 +3,6 @@ use crate::{
     gateway::{
         ApiError, Credentials, Runtime, StartupError, TranscriptionEntry, body,
         diagnostics::{Stage, Trace},
-        ingress::admission,
     },
     protocol::openai::transcription as codec,
     semantic::task::speech_recognition::RecognitionResult,
@@ -81,7 +80,8 @@ fn upload_head(headers: &HeaderMap, limit: usize) -> Result<(String, Option<u64>
     Ok((raw.into(), length))
 }
 async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, ApiError> {
-    let trace = Trace::for_request(runtime.diagnostics.as_ref(), &request);
+    let started = Instant::now();
+    let mut trace = Trace::for_request(runtime.diagnostics.as_ref(), &request);
     if runtime.shutdown.is_cancelled() {
         return Err(ApiError::shutdown());
     }
@@ -93,12 +93,14 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
     })?;
     let limit = runtime.limits.transcription_request_bytes;
     let (media, length) = upload_head(request.headers(), limit)?;
-    let bytes = tokio::select! {
-        biased;
-        _=runtime.shutdown.cancelled()=>return Err(ApiError::shutdown()),
-        result=tokio::time::timeout(runtime.limits.body_timeout,admission::collect(request.into_body(),limit))=>
-            result.map_err(|_|ApiError::new(StatusCode::REQUEST_TIMEOUT,crate::gateway::error::ErrorKind::RequestTimeout))??,
-    };
+    let bytes = crate::gateway::ingress::http::read_body(
+        &runtime,
+        request.into_body(),
+        limit,
+        started + runtime.limits.exchange_timeout,
+        &mut trace,
+    )
+    .await?;
     if length.is_some_and(|n| n != bytes.len() as u64) {
         return Err(ApiError::invalid());
     }
@@ -116,10 +118,13 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
     let prepared =
         crate::execution::transcription::prepare(&entry.route, &entry.provider, &request)
             .map_err(|_| ApiError::invalid())?;
-    let deadline = Instant::now()
+    let deadline = started
         + runtime.limits.exchange_timeout.min(Duration::from_millis(
             entry.route.endpoint.execution.timeout_ms,
         ));
+    if Instant::now() >= deadline {
+        return Err(ApiError::timeout());
+    }
     body::respond_producer(
         Exchange {
             runtime: runtime.clone(),
@@ -159,7 +164,7 @@ async fn produce_one(
     crate::semantic::value::json_size(&projected.body, runtime.limits.response_bytes)
         .map_err(|_| ApiError::upstream())?;
     let bytes = serde_json::to_vec(&projected.body).map_err(|_| ApiError::upstream())?;
-    body::send_frame(lane, bytes.into(), trace).await?;
+    body::send_final_frame(lane, bytes.into(), trace).await?;
     Ok(())
 }
 pub(in crate::gateway) async fn receive(

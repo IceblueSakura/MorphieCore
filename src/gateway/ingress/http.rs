@@ -235,6 +235,7 @@ async fn admit(
     state: &Runtime,
     protocol: ClientProtocol,
     request: Request,
+    deadline: tokio::time::Instant,
     trace: &mut Trace,
 ) -> Result<Admitted, ApiError> {
     let permit = admission::acquire_permit(state)?;
@@ -259,7 +260,14 @@ async fn admit(
         false
     };
     let conversation = admission::conversation(request.headers())?;
-    let bytes = read_body(state, request.into_body(), trace).await?;
+    let bytes = read_body(
+        state,
+        request.into_body(),
+        state.limits.request_bytes,
+        deadline,
+        trace,
+    )
+    .await?;
     let (entry, request, history) = match protocol {
         ClientProtocol::Responses => {
             let (entry, request, history) =
@@ -279,39 +287,57 @@ async fn admit(
         history,
     })
 }
-/// Collect the bounded body unless shutdown or the body deadline comes first.
-async fn read_body(
+/// Collect within the earlier of the upload ceiling and total request deadline.
+pub(in crate::gateway) async fn read_body(
     state: &Runtime,
     body: axum::body::Body,
+    limit: usize,
+    deadline: tokio::time::Instant,
     trace: &mut Trace,
 ) -> Result<Vec<u8>, ApiError> {
+    use crate::execution::{AttemptError, attempt::DeadlineReason};
     use crate::gateway::diagnostics::Outcome;
-    let collect = admission::collect(body, state.limits.request_bytes);
-    tokio::select! {
+    let collect = admission::collect(body, limit);
+    let body_deadline = tokio::time::Instant::now() + state.limits.body_timeout;
+    let (until, reason, error) = if deadline <= body_deadline {
+        (deadline, DeadlineReason::Exchange, ApiError::timeout())
+    } else {
+        (
+            body_deadline,
+            DeadlineReason::RequestBody,
+            ApiError::new(
+                StatusCode::REQUEST_TIMEOUT,
+                crate::gateway::error::ErrorKind::RequestTimeout,
+            ),
+        )
+    };
+    let result = tokio::select! {
         biased;
         _ = state.shutdown.cancelled() => {
             trace.outcome(Outcome::Shutdown);
             Err(ApiError::shutdown())
         }
-        result = tokio::time::timeout(state.limits.body_timeout, collect) => {
-            result.map_err(|_| {
-                trace.report.failure(
-                    None,
-                    &crate::execution::AttemptError::Deadline(
-                        crate::execution::attempt::DeadlineReason::RequestBody,
-                    ),
-                );
-                trace.outcome(Outcome::Timeout);
-                ApiError::new(StatusCode::REQUEST_TIMEOUT, crate::gateway::error::ErrorKind::RequestTimeout)
-            })?
+        _ = tokio::time::sleep_until(until) => {
+            trace.report.failure(None, &AttemptError::Deadline(reason));
+            trace.outcome(Outcome::Timeout);
+            Err(error)
         }
+        result = collect => result,
+    };
+    if let Err(error) = &result {
+        trace
+            .report
+            .request_failure(error.diagnostic_code(), error.status.as_u16());
     }
+    result
 }
 pub(in crate::gateway) async fn handle(
     state: Arc<Runtime>,
     protocol: ClientProtocol,
     request: Request,
 ) -> Result<Response, ApiError> {
+    let started = tokio::time::Instant::now();
+    let service_deadline = started + state.limits.exchange_timeout;
     let mut trace = Trace::for_request(state.diagnostics.as_ref(), &request);
 
     let Admitted {
@@ -320,7 +346,7 @@ pub(in crate::gateway) async fn handle(
         entry,
         request: mut semantic,
         history,
-    } = match admit(&state, protocol, request, &mut trace).await {
+    } = match admit(&state, protocol, request, service_deadline, &mut trace).await {
         Ok(admitted) => admitted,
         Err(error) => {
             if error.kind == crate::gateway::error::ErrorKind::Shutdown {
@@ -342,7 +368,16 @@ pub(in crate::gateway) async fn handle(
         .map_or(state.limits.exchange_timeout, |timeout| {
             timeout.min(state.limits.exchange_timeout)
         });
-    let deadline = tokio::time::Instant::now() + timeout;
+    let deadline = started + timeout;
+    // Synchronous decoding and an immediately ready body can finish after the
+    // clock expired without yielding to the deadline branch.
+    if tokio::time::Instant::now() >= deadline {
+        trace.outcome(crate::gateway::diagnostics::Outcome::Timeout);
+        trace
+            .report
+            .request_failure(ApiError::timeout().diagnostic_code(), 504);
+        return Err(ApiError::timeout());
+    }
     let failed = (protocol == ClientProtocol::Responses && semantic.delivery.streaming())
         .then(|| entry.clone());
     match exchange::run(state, entry, semantic, history, deadline, permit, trace).await {

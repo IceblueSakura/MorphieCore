@@ -456,8 +456,16 @@ pub(in crate::gateway) async fn produce_chain(
                     tokio::select! {
                         biased;
                         result = &mut attempt => (result, None),
-                        _ = recovery => (Err(ApiError::timeout()), Some(crate::execution::attempt::DeadlineReason::Recovery)),
-                        _ = tokio::time::sleep_until(attempt_deadline) => (Err(state.timeout_error()), Some(crate::execution::attempt::DeadlineReason::Attempt)),
+                        _ = recovery => {
+                            if state.cancel() {
+                                (Err(ApiError::timeout()), Some(crate::execution::attempt::DeadlineReason::Recovery))
+                            } else { (attempt.await, None) }
+                        },
+                        _ = tokio::time::sleep_until(attempt_deadline) => {
+                            if state.cancel() {
+                                (Err(state.timeout_error()), Some(crate::execution::attempt::DeadlineReason::Attempt))
+                            } else { (attempt.await, None) }
+                        },
                     }
                 };
                 if let Some(reason) = expired {
@@ -547,6 +555,11 @@ pub(in crate::gateway) async fn produce_chain(
         };
         health.failed(error);
         drop(health);
+        if state.final_accepted() {
+            // No more I/O may follow final acceptance, including optional hint
+            // normalization. The completion checks remain authoritative.
+            return Err(error);
+        }
         return Err(downstream_failure(error, runtime.as_deref(), &route_targets, limits).await);
     }
 

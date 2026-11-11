@@ -30,6 +30,7 @@ use tokio::{
 pub(super) struct Chunk {
     bytes: Bytes,
     ack: oneshot::Sender<()>,
+    final_frame: bool,
     audio_content_type: Option<&'static str>,
     history: Option<Arc<Mutex<Option<crate::gateway::generation::history::Reservation>>>>,
 }
@@ -60,9 +61,18 @@ pub(super) struct FailureState {
     previous: Vec<crate::gateway::routing::executors::FailureObservation>,
 }
 #[derive(Default)]
+enum FinalHandoff {
+    #[default]
+    Open,
+    Queued,
+    Accepted,
+    Revoked,
+}
+#[derive(Default)]
 pub(super) struct Status {
     error: Mutex<Option<ApiError>>,
     complete: AtomicBool,
+    final_handoff: Mutex<FinalHandoff>,
     pub(super) published: AtomicBool,
     /// Explicit wait attribution; the last trace stage is not a wait state.
     pub(super) waiting_upstream: AtomicBool,
@@ -71,6 +81,25 @@ pub(super) struct Status {
     pub(super) readiness: tokio::sync::Notify,
 }
 impl Status {
+    /// Serialize cancellation with final acceptance. After acceptance only the
+    /// producer's synchronous completion/health/cache settlement may remain.
+    pub(super) fn cancel(&self) -> bool {
+        let mut handoff = self.final_handoff.lock().expect("final handoff");
+        match *handoff {
+            FinalHandoff::Accepted => false,
+            FinalHandoff::Queued => {
+                *handoff = FinalHandoff::Revoked;
+                true
+            }
+            FinalHandoff::Open | FinalHandoff::Revoked => true,
+        }
+    }
+    pub(super) fn final_accepted(&self) -> bool {
+        matches!(
+            *self.final_handoff.lock().expect("final handoff"),
+            FinalHandoff::Accepted
+        )
+    }
     pub(super) fn ready(&self) {
         self.recovery_ready.store(true, Ordering::Release);
         self.readiness.notify_waiters();
@@ -161,15 +190,30 @@ impl Stream for Output {
         match item {
             Poll::Pending => Poll::Pending,
             Poll::Ready(Some(Message::Chunk(chunk))) => {
+                let mut final_handoff = chunk
+                    .final_frame
+                    .then(|| self.status.final_handoff.lock().expect("final handoff"));
+                if final_handoff
+                    .as_deref()
+                    .is_some_and(|handoff| matches!(handoff, FinalHandoff::Revoked))
+                {
+                    drop(final_handoff);
+                    self.ended = true;
+                    return Poll::Ready(Some(Err(std::io::Error::other("delivery cancelled"))));
+                }
                 let mut history = chunk
                     .history
                     .as_ref()
                     .map(|h| h.lock().expect("history handoff"));
                 let accepted = chunk.ack.send(()).is_ok();
                 if !accepted {
+                    drop(final_handoff);
                     self.ended = true;
                     Poll::Ready(Some(Err(std::io::Error::other("delivery cancelled"))))
                 } else {
+                    if let Some(handoff) = final_handoff.as_deref_mut() {
+                        *handoff = FinalHandoff::Accepted;
+                    }
                     if let Some(reservation) = history.as_mut().and_then(|h| h.take()) {
                         reservation.publish(Instant::now());
                     }
@@ -193,7 +237,9 @@ impl Stream for Output {
 }
 impl Drop for Output {
     fn drop(&mut self) {
-        self.abort.abort();
+        if self.status.cancel() {
+            self.abort.abort();
+        }
     }
 }
 pub(super) struct Lane<'a> {
@@ -207,7 +253,7 @@ pub(super) async fn send_frames(
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     for bytes in frames {
-        send_chunk(lane, bytes, None, None, trace).await?;
+        send_chunk(lane, bytes, None, None, false, trace).await?;
         delivery.commit().map_err(|_| ApiError::upstream())?;
     }
     Ok(())
@@ -218,16 +264,16 @@ pub(super) async fn send_error_frames(
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     for bytes in frames {
-        send_chunk(lane, bytes, None, None, trace).await?;
+        send_chunk(lane, bytes, None, None, false, trace).await?;
     }
     Ok(())
 }
-pub(super) async fn send_frame(
+pub(super) async fn send_final_frame(
     lane: &Lane<'_>,
     bytes: Bytes,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
-    send_chunk(lane, bytes, None, None, trace).await
+    send_chunk(lane, bytes, None, None, true, trace).await
 }
 pub(super) async fn send_final_frames(
     lane: &Lane<'_>,
@@ -242,29 +288,35 @@ pub(super) async fn send_final_frames(
     }
     let mut history = history;
     while let Some(bytes) = frames.next() {
-        let final_history = if frames.peek().is_none() {
-            history.take()
-        } else {
-            None
-        };
-        send_chunk(lane, bytes, None, final_history, trace).await?;
+        let final_frame = frames.peek().is_none();
+        let final_history = if final_frame { history.take() } else { None };
+        send_chunk(lane, bytes, None, final_history, final_frame, trace).await?;
         delivery.commit().map_err(|_| ApiError::upstream())?;
     }
     Ok(())
 }
-pub(super) async fn send_audio(
+pub(super) async fn send_final_audio(
     lane: &Lane<'_>,
     audio: crate::semantic::value::AudioArtifact,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     let content_type = crate::protocol::openai::speech::response_content_type(&audio);
-    send_chunk(lane, audio.into_data(), Some(content_type), None, trace).await
+    send_chunk(
+        lane,
+        audio.into_data(),
+        Some(content_type),
+        None,
+        true,
+        trace,
+    )
+    .await
 }
 async fn send_chunk(
     lane: &Lane<'_>,
     bytes: Bytes,
     audio_content_type: Option<&'static str>,
     history: Option<crate::gateway::generation::history::Reservation>,
+    final_frame: bool,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     trace.stage(Stage::Delivery);
@@ -274,11 +326,15 @@ async fn send_chunk(
         history.map(|reservation| HistoryHandoff(Arc::new(Mutex::new(Some(reservation)))));
     // Publication freezes advancement; acknowledgement alone proves body handoff.
     lane.state.published.store(true, Ordering::Release);
+    if final_frame {
+        *lane.state.final_handoff.lock().expect("final handoff") = FinalHandoff::Queued;
+    }
 
     lane.tx
         .send(Message::Chunk(Chunk {
             bytes,
             ack,
+            final_frame,
             audio_content_type,
             history: history.as_ref().map(|h| h.0.clone()),
         }))
@@ -306,6 +362,8 @@ async fn send_chunk(
 }
 /// The work behind one response body: Generation's attempt chain or a
 /// standalone task exchange. The body owner only publishes what it produces.
+/// After a final send is acknowledged, only synchronous validation/settlement
+/// may remain: no upstream I/O, credential reads or additional sends.
 pub(super) trait Produce: Send + 'static {
     fn produce(
         self,
@@ -325,6 +383,10 @@ pub(super) async fn respond_producer(
     permit: OwnedSemaphorePermit,
     mut trace: Trace,
 ) -> Result<Response, ApiError> {
+    if Instant::now() >= deadline {
+        trace.outcome(Outcome::Timeout);
+        return Err(ApiError::timeout());
+    }
     let (tx, mut rx) = mpsc::channel(1);
     let state = Arc::new(Status::default());
     let worker_state = state.clone();
@@ -339,23 +401,35 @@ pub(super) async fn respond_producer(
             tx: &tx,
             state: &worker_state,
         };
-        let result = tokio::select! {
+        let mut interruption = None;
+        let result = {
+            let production = producer.produce(&limits, deadline, &lane, &mut trace);
+            tokio::pin!(production);
+            tokio::select! {
             biased;
-            _ = shutdown.cancelled() => Err(ApiError::shutdown()),
+            _ = shutdown.cancelled() => {
+                if worker_state.cancel() { Err(ApiError::shutdown()) } else { production.await }
+            },
             _ = tx.closed() => {
-                let closed = AttemptError::Delivery(DeliveryReason::BodyConsumerClosed);
-                trace.report.failure(None, &closed);
-                Err(ApiError::upstream())
+                if worker_state.cancel() {
+                    interruption = Some(AttemptError::Delivery(DeliveryReason::BodyConsumerClosed));
+                    Err(ApiError::upstream())
+                } else { production.await }
             }
-            result = producer.produce(&limits, deadline, &lane, &mut trace) => result,
+            result = &mut production => result,
             // Generation's own attempt deadline must record upstream evidence
             // before the outer safety deadline cancels its recovery lease.
             _ = tokio::time::sleep_until(deadline) => {
-                let elapsed = AttemptError::Deadline(DeadlineReason::Exchange);
-                trace.report.failure(None, &elapsed);
-                Err(ApiError::timeout())
+                if worker_state.cancel() {
+                    interruption = Some(AttemptError::Deadline(DeadlineReason::Exchange));
+                    Err(ApiError::timeout())
+                } else { production.await }
+            }
             }
         };
+        if let Some(interruption) = interruption {
+            trace.report.failure(None, &interruption);
+        }
         match result {
             Ok(()) => {
                 trace.stage(Stage::Complete);

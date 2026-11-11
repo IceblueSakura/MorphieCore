@@ -490,18 +490,28 @@ impl crate::credential::AuthDriver for GrokAuthority {
                     previous.scopes.as_deref().ok_or(Error::Permission)?,
                 )
                 .await?;
-            let subject = self
-                .identity(&credential, Instant::now() + REQUEST_TIMEOUT)
-                .await?;
-            Ok(crate::credential::Renewal::Verified(
-                crate::credential::Grant {
-                    identity: VerifiedIdentity {
-                        subject,
-                        scope: None,
-                    },
+            Ok(crate::credential::Renewal::Pending(
+                crate::credential::PendingRenewal {
                     credential,
+                    verify_id_token: false,
                 },
             ))
+        })
+    }
+    fn verify_renewal<'a>(
+        &'a self,
+        _client: &'a str,
+        _identity: &'a VerifiedIdentity,
+        pending: &'a crate::credential::PendingRenewal,
+    ) -> crate::credential::DriverFuture<'a, VerifiedIdentity> {
+        Box::pin(async move {
+            let subject = self
+                .identity(&pending.credential, Instant::now() + REQUEST_TIMEOUT)
+                .await?;
+            Ok(VerifiedIdentity {
+                subject,
+                scope: None,
+            })
         })
     }
     fn revoke<'a>(

@@ -179,6 +179,8 @@ All settings belong to `gateway.json`. Zero scan interval keeps the startup chec
 
 Use `status --provider ID` for redacted state and `refresh --provider ID --account NAME` for manual renewal, with the same explicit account/store paths.
 
+When replacement material was received but identity verification failed, manual `refresh` resumes that verification without repeating the token exchange. Pending material remains unavailable to inference and automatic renewal. Renewal never detaches network work; an already-started atomic store transaction drains before renewal ownership is released.
+
 ## Manual upstream diagnostics
 
 `morphiecore-upstream` uses the same [embedded Provider metadata](architecture.md#shared-provider-metadata) as the gateway. It executes **one direct upstream request** without retries or failover.
@@ -311,7 +313,7 @@ Keep edited copies, credentials, certificates and captures outside the repositor
 | `proxy` | Outbound proxy |
 | `routing` | Global affinity, pre-dispatch wait and downstream retry-hint policy |
 | `oauth` | Global credential-maintenance timing |
-| `delivery` | Post-admission exchange deadline and text batching |
+| `delivery` | Total request deadline and text batching |
 | `resources` | Concurrent exchanges, body budgets and Responses history retention |
 | `diagnostics` | Optional trusted OTLP Logs destination and bounded private-body policy; see [Failure diagnostics](#failure-diagnostics) |
 
@@ -323,11 +325,11 @@ The configuration uses **version 1**. Policy fields belong to the following obje
 |---|---|---|
 | `routing` | `implicit_cache_affinity: true`, `affinity_ttl_ms: 3600000`, `affinity_capacity: 4096`, `max_wait_ms: 10000`, `retry_hint_horizon_ms: 60000` | Timing choices remain operator-owned. Zero TTL/capacity retains no bindings; zero wait disables waiting. The hint horizon limits credible **downstream** `Retry-After` values |
 | `oauth` | `scan_interval_ms: 15000`, `refresh_ahead_seconds: 120`, `renewal_timeout_ms: 90000`, `failed_renewal_delay_ms: 60000`, `minimum_renewal_interval_ms: 60000` | Zero scan interval keeps the startup check only; zero renewal timeout disables renewal |
-| `delivery` | `exchange_timeout_ms: 3600000` | 1–86400000 ms; begins **after body collection and admission**, includes execution/delivery, and bounds model-local deadlines |
+| `delivery` | `exchange_timeout_ms: 3600000` | 1–86400000 ms; begins **before body collection and admission**, covers execution/delivery, and bounds model-local deadlines |
 | `delivery` | `delta_coalescing: {"max_delay_ms":50,"max_pending_bytes":16384}` | Delay 1–100 ms, pending bytes 1024–1048576; see [batching](#delta-coalescing) |
 | `resources` | `concurrency: 16` | 1–256; body collection occupies a permit |
 | `resources` | `request_bytes: 33554432`, `response_bytes: 67108864` | Each 1–67108864 bytes; intersect with endpoint/task limits. A budget too small to publish discovery rejects startup |
-| `resources` | `body_timeout_ms: 60000` | 1–60000 ms; separate upload deadline, not subtracted from the later exchange budget |
+| `resources` | `body_timeout_ms: 60000` | 1–60000 ms; additional upload ceiling within the total request budget; whichever deadline expires first ends collection |
 | `resources` | `history_entries: 1024`, `history_bytes: 268435456`, `history_ttl_ms: 1800000` | Entries 1–4096, bytes 1–1073741824, TTL 1–86400000 ms. TTL controls expiration; exhausted entry/byte budgets reject additional storage instead of evicting retained responses. No history-disable setting |
 
 These are deployment budgets, not new protocol capabilities. Transcription retains its independent multipart upload ceiling; image/audio/event and internal queue ceilings remain code-owned. Compiled Generation attempts retain a one-hour ceiling and standalone task operations retain their own ceilings (currently 120 seconds). OAuth HTTP operations retain a 30-second ceiling and a 10-second connection timeout. Raising an outer deadline does not enlarge these inner ceilings.
@@ -405,7 +407,7 @@ Use `morphiecore --catalog` to select a registered public label and its catalog 
 | File | `version` | Required current schema version, `1` |
 | Model | `candidates` | Nonempty ordered array of existing bindings for this public model |
 | Model | `chat_profile` | `standard` (default) or `readable_reasoning`; selects the downstream Chat contract for all candidates, never an upstream dialect. Responses/Messages remain unchanged; invalid on frozen tasks |
-| Model | `total_timeout_ms` | Optional model-local exchange deadline, bounded by the service ceiling |
+| Model | `total_timeout_ms` | Optional model-local total deadline from the same request start, bounded by the service ceiling; route resolution cannot restart the clock |
 | Standalone task | `account` | Required enabled API-key account name in the selected binding's Provider |
 | Model | `thinking_tokens` | Optional six-level numeric table shared by this model's candidates |
 | Candidate | `binding` | Required catalog endpoint ID; fixes protocol, dialect, canonical model and authentication kind |
