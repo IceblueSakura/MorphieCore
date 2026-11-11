@@ -1,8 +1,8 @@
 # Provider account redesign plan
 
-**Status: design finalized on 2026-11-02. The user accepted a fully breaking account-system rewrite, fresh manual credential provisioning and subsequent implementation; [Roadmap](roadmap.md#unscheduled-issues) owns remaining qualification. Production deployment remains separately approved.**
+**Status: design finalized.** The account-system architecture enforces a unified account model, fresh credential provisioning, and request-boundary selection; [Roadmap](roadmap.md#unscheduled-issues) owns remaining qualification. Production deployment remains separately approved.
 
-This document owns the finalized account-redesign specification. It supersedes the earlier multi-target retry/fallback draft and interim single-send choice with request-boundary account selection and at most one bounded same-target retry. Final review selected conservative retry eligibility, a 30 s recovery budget, merged health evidence, material-aware OAuth recovery and short advisory `Retry-After` without `x-should-retry`. File/field names and implementation structure remain engineering choices within this contract, not new behavior decisions.
+This document owns the finalized account-redesign specification. It defines request-boundary account selection and at most one bounded same-target retry, conservative retry eligibility, a 30 s recovery budget, merged health evidence, material-aware OAuth recovery and short advisory `Retry-After` without `x-should-retry`. File/field names and implementation structure remain engineering choices within this contract.
 
 [Architecture](architecture.md#routing-and-security-decisions) records the accepted decisions and links here for their detailed contract. [Roadmap](roadmap.md#unscheduled-issues) owns remaining qualification and prerequisites; its [routing boundary](roadmap.md#temporary-routing-freeze) separates this work from unrelated changes. [Usage](usage.md#prepare-credentials) describes currently implemented configuration. Development uses fresh test-owned state without modifying private credentials or deployed bindings.
 
@@ -21,20 +21,20 @@ This document owns the finalized account-redesign specification. It supersedes t
 
 ## User requirements
 
-1. **Several named accounts per Provider.** Each Provider supports several named accounts of exactly one catalog-owned credential kind: API key or OAuth with one fixed profile (generalized on 2026-11-04). `openai` denotes OpenAI API-key access; `chatgpt` denotes SIWC OAuth access. They have separate model bindings and service contracts, rather than requiring mixed key/OAuth accounts under one OpenAI Provider. Account recovery can distinguish exhausted credit, rate limits and other failures (Provider split selected on 2026-11-02).
-2. **Provider-owned recovery configuration.** Configure cooldown durations, backoff, reset-hint bounds and the short recovery-time budget (default 30 s). Permit at most one additional inference send for the selected network/server failure set before content publication, always to the same Provider, account, upstream model and effective endpoint. Do not restore per-class retry counters or within-request target switching. Provider classifiers replace operator-defined per-status rules (finalized on 2026-11-02).
-3. **API-key endpoint override.** API-key accounts inherit the Provider's default `base_url` unless they supply their own, including a deployment-specific API prefix. OAuth accounts never override it (user decision, 2026-10-30).
+1. **Several named accounts per Provider.** Each Provider supports several named accounts of exactly one catalog-owned credential kind: API key or OAuth with one fixed profile. `openai` denotes OpenAI API-key access; `chatgpt` denotes SIWC OAuth access. They have separate model bindings and service contracts, rather than requiring mixed key/OAuth accounts under one OpenAI Provider. Account recovery distinguishes exhausted credit, rate limits and other failures.
+2. **Provider-owned recovery configuration.** Configure cooldown durations, backoff, reset-hint bounds and the short recovery-time budget (default 30 s). Permit at most one additional inference send for the selected network/server failure set before content publication, always to the same Provider, account, upstream model and effective endpoint. Do not restore per-class retry counters or within-request target switching. Provider classifiers replace operator-defined per-status rules.
+3. **API-key endpoint override.** API-key accounts inherit the Provider's default `base_url` unless they supply their own, including a deployment-specific API prefix. OAuth accounts never override it.
 4. **Global OAuth maintenance settings.** Configure the check interval and refresh-ahead window globally, without a separate timing configuration for every Provider.
-5. **Cache-first execution.** Preserve cache affinity ahead of keeping every request available. The operator expects normally no more than three accounts and accepts returning an error instead of immediately switching after dispatch. Select accounts at request boundaries; a failed attempt may receive the one same-target retry, but never switches targets or moves the binding. Final recovery outcome updates health; only successful completion can commit affinity (selected on 2026-11-02).
+5. **Cache-first execution.** Preserve cache affinity ahead of keeping every request available. The operator expects normally no more than three accounts and accepts returning an error instead of immediately switching after dispatch. Select accounts at request boundaries; a failed attempt may receive the one same-target retry, but never switches targets or moves the binding. Final recovery outcome updates health; only successful completion can commit affinity.
 6. **Incremental delivery.** Runtime key addition is optional; restart-based activation is acceptable. Assume accounts within one Provider have the same model capabilities; this does not equate the separate `openai` and `chatgpt` model catalogs. Do not add capability-scoring routing.
 7. **Maintainability and simplicity.** Prefer one authoritative owner per fact, deterministic behavior and a small configuration surface. Reference projects supply mechanisms and counterexamples, not a feature checklist.
-8. **Automatic selection across route candidates.** Every enabled, validly bound API-key or OAuth account in the current model route may serve a new request, including accounts of other Providers. Account and route configuration authorize these destinations and billing paths; there are no separate fallback switches or switch domains. Stored credentials alone, disabled accounts and Providers outside the route are not candidates. Health and affinity determine request-boundary selection; a failed dispatched request is not resent to another candidate. MorphieCore does not manage billing, and its usage accounting counts tokens only (user decisions, 2026-11-02, replacing the 2026-10-30 switching defaults and the earlier within-request fallback draft).
-9. **Requirements-led replacement.** The 2026-10-30 decision required finalizing requirements before replacing account binding and execution policy; the breaking cutover is delivered under the contract below.
-10. **Operator-readable CLI.** Provisioning, validation and explanation commands print human-readable output by default and offer structured JSON as an option (user decision, 2026-10-30).
-11. **Configurable policy parameters.** Wait, recovery-time and timeout budgets, cooldown backoff, reset-hint bounds, affinity cache lifetime and capacity, downstream retry-hint horizon and OAuth maintenance timing must be configurable at their authoritative owner. One additional inference attempt is the selected structural ceiling, not a generic retry-count matrix. Configuration cannot relax identity, publication, terminal-honesty or credential-lifecycle safety rules (2026-10-30 decision refined on 2026-11-02).
-12. **Defaults and operator responsibility.** Retain the stated defaults for settings that remain in the selected design; removed retry allowances and send ceilings are not dormant configuration. Do not add policy-value range or cross-parameter relationship validation at this stage; the operator selects suitable values. Retain schema/type parsing and credential, identity and target security checks (2026-10-30 decision refined on 2026-11-02).
-13. **Shared account binding, Generation-first recovery.** Replace credential loading, account references and trusted target binding across existing entrances together; initially integrate the new recovery execution policy in Generation. Existing diagnostics retain bounded named-account requests, and standalone tasks retain their existing execution capabilities without gaining multi-account recovery. Frozen features remain inactive; no parallel legacy pool path remains (user decision, 2026-11-02, refining the 2026-10-30 replacement scope).
-14. **Fully breaking replacement.** No old application/credential schema, CLI spelling, account binding or pool execution compatibility is required. Do not add migrations, importers, aliases, compatibility facades or dual runtime paths. The user will provision fresh API keys manually; OAuth access uses a fresh managed login where needed. Preserve security and official protocol contracts, not historical configuration or stored-record formats. This does not authorize deleting or changing existing private credential stores (user decision, 2026-11-02).
+8. **Automatic selection across route candidates.** Every enabled, validly bound API-key or OAuth account in the current model route may serve a new request, including accounts of other Providers. Account and route configuration authorize these destinations and billing paths; there are no separate fallback switches or switch domains. Stored credentials alone, disabled accounts and Providers outside the route are not candidates. Health and affinity determine request-boundary selection; a failed dispatched request is not resent to another candidate. MorphieCore does not manage billing, and its usage accounting counts tokens only.
+9. **Requirements-led replacement.** Unified contract cleanly replacing legacy account binding and execution policy without compatibility facades.
+10. **Operator-readable CLI.** Provisioning, validation and explanation commands print human-readable output by default and offer structured JSON as an option.
+11. **Configurable policy parameters.** Wait, recovery-time and timeout budgets, cooldown backoff, reset-hint bounds, affinity cache lifetime and capacity, downstream retry-hint horizon and OAuth maintenance timing must be configurable at their authoritative owner. One additional inference attempt is the selected structural ceiling, not a generic retry-count matrix. Configuration cannot relax identity, publication, terminal-honesty or credential-lifecycle safety rules.
+12. **Defaults and operator responsibility.** Retain stated defaults for active settings; removed retry allowances and send ceilings are not dormant configuration. The operator selects suitable values; ordinary strict parsing and security checks remain enforced.
+13. **Shared account binding, Generation-first recovery.** Replace credential loading, account references and trusted target binding across existing entrances together; integrate recovery execution policy in Generation first. Existing diagnostics retain bounded named-account requests, and standalone tasks retain existing execution capabilities without gaining multi-account recovery.
+14. **Fully breaking replacement.** No old application/credential schema, CLI spelling, account binding or pool execution compatibility is required. Do not add migrations, importers, aliases, compatibility facades or dual runtime paths. Fresh API keys are provisioned manually; OAuth access uses a fresh managed login where needed. Existing private credential stores are preserved securely.
 
 An account name identifies a configured execution identity. Two keys are not necessarily independent billing accounts or rate-limit domains. Equal model capabilities also do not establish shared caches, interchangeable OAuth grants or portable private replay state.
 
@@ -91,7 +91,7 @@ This defines configuration ownership and behavior; [Usage](usage.md#configure-ac
 
 ### Provider identity and model bindings
 
-Selected on 2026-11-02:
+Binding contracts:
 
 | Provider | Access | Binding contract |
 |---|---|---|
@@ -106,7 +106,7 @@ Configuration declares API-key `openai` and SIWC `chatgpt` directly; old referen
 
 ### Credential kind and header placement
 
-Selected on 2026-11-04: each Provider owns exactly one credential kind, either API key or OAuth with one fixed profile. All accounts under that Provider use that kind; account configuration references only the managed credential instance by alias, without repeating `kind` or `profile`. When both access contracts are supported for one service, give them separate Provider IDs, as with `openai` and `chatgpt`.
+Each Provider owns exactly one credential kind, either API key or OAuth with one fixed profile. All accounts under that Provider use that kind; account configuration references only the managed credential instance by alias, without repeating `kind` or `profile`. When both access contracts are supported for one service, give them separate Provider IDs, as with `openai` and `chatgpt`.
 
 Credential kind remains distinct from endpoint header placement and fixed request controls. OpenCode Go sends the same API key as a bearer token to Chat Completions and as `x-api-key` to Messages, while SIWC adds profile-specific request controls. Endpoint overrides must preserve the Provider's credential kind and OAuth profile.
 
@@ -142,7 +142,7 @@ Provisioning, validation and explanation commands print concise human-readable o
 
 ## Execution policy
 
-**Finalized on 2026-11-02.** One bounded same-target retry replaces the interim single-send choice without restoring within-request account/Provider fallback. Numeric defaults are configurable at the owners in the [configuration surface](#configuration-surface), within the selected structural and safety rules.
+One bounded same-target retry replaces the interim single-send choice without restoring within-request account/Provider fallback. Numeric defaults are configurable at the owners in the [configuration surface](#configuration-surface), within the selected structural and safety rules.
 
 “Next request” means a new gateway HTTP request, including a client retry of the failed turn; it does not require a new user message. MorphieCore may absorb one brief failure on the selected target; clients may still retry a returned failure. Their actual behavior must be verified, not assumed; a fresh request does not authorize the gateway to splice or replay an already-published response.
 
@@ -211,7 +211,7 @@ Provider classifiers map HTTP status, structured error codes, reset headers and 
 
 ### Bounded same-target retry
 
-Selected on 2026-11-02:
+Retry rules and eligibility:
 
 - Retry only before content publication and only once, for an explicitly allowed transient network/server failure. Keep Provider, account/security identity, upstream model, effective endpoint and admitted request meaning fixed. “Same Provider” does not permit trying another account.
 - Eligible server failures are HTTP 408/500/502/503/504 and Provider-confirmed equivalent overload failures, only when structured evidence has not reclassified them as quota, rate limit, auth or another excluded class. A valid in-band error may qualify only through the same Provider-owned classification and before publication; HTTP 2xx alone supplies no retry evidence.
@@ -357,7 +357,7 @@ The maintenance loop must:
 - Run filesystem phases off the async worker while retaining account ownership across network waits. Cancellation drops network work, prevents queued preparation phases and drains an already-started atomic filesystem phase before releasing ownership or returning; filesystem completion is not a hard wall-clock guarantee. Once the Provider has returned replacement or pending material, its revision-checked publication completes even after cancellation and retains account ownership until it ends, because the previous refresh token may already be invalid.
 - Bound renewal time; apply the fixed global failed-renewal delay (default 60 s) only to failures for which the profile permits safely attempting renewal again. Do not add another exponential-backoff state machine.
 - Persist replacement material safely and never reuse a potentially consumed refresh token after uncertain failure.
-- Persist complete replacement material before secondary identity verification. Grok UserInfo and SIWC verification failures leave it pending and unusable; explicit refresh resumes verification without another token exchange. Automatic scans resume it after a network or timeout failure, using the failed-renewal delay; denial, identity mismatch, protocol and validation failures persist a manual-verification mark and wait for explicit refresh. Revised 2026-11-11.
+- Persist complete replacement material before secondary identity verification. Grok UserInfo and SIWC verification failures leave it pending and unusable; explicit refresh resumes verification without another token exchange. Automatic scans resume it after a network or timeout failure, using the failed-renewal delay; denial, identity mismatch, protocol and validation failures persist a manual-verification mark and wait for explicit refresh.
 - Preserve account identity across normal rotation, and surface explicit reauthorization or persistence-recovery states.
 - Treat unknown expiry as unknown; do not perform paid inference to test validity.
 - Keep ordinary credential borrowing network-free. Any selected request-triggered 401 recovery calls the same maintenance owner instead of creating a second refresh implementation, and only where the profile's contract makes refresh the right recovery.
@@ -368,7 +368,7 @@ Once replacement OAuth material for the same managed identity has been verified 
 
 ### Accepted lifecycle baseline
 
-The user accepted this OAuth baseline on 2026-10-30, with request-boundary selection, no auth-triggered inference resend, routing-only enablement and subject-reservation clarifications on 2026-11-02. It records design decisions, not implementation authorization.
+This accepted OAuth baseline establishes request-boundary selection, no auth-triggered inference resend, routing-only enablement and subject-reservation. It records design decisions, not implementation authorization.
 
 | Concern | Selected behavior |
 |---|---|
@@ -422,24 +422,24 @@ Deferred items do not need placeholder interfaces or configuration fields.
 
 ### Decided
 
-The 2026-11-02 finalization superseded the original multi-target retry/fallback draft and interim single-send choice. Detailed behavior has one home in the domain sections; this index preserves decision dates and revisions.
+Authoritative decision index across the account redesign domains:
 
-| Decision | Selected / revised | Authoritative contract |
+| Decision | Scope | Authoritative contract |
 |---|---|---|
-| Requirements-first sequencing; fully breaking shared binding with Generation-first recovery | 2026-10-30 / 2026-11-02 | [User requirements](#user-requirements), [delivered boundary](#current-implementation-and-rewrite-boundary), [fresh setup](#configuration-transition-and-cli-output) |
-| OpenAI API-key / SIWC service separation; one credential kind per Provider | 2026-11-02 / 2026-11-04 | [Provider identity](#provider-identity-and-model-bindings), [credential kind](#credential-kind-and-header-placement) |
-| Named account declarations, API-key endpoint override and API-root composition | 2026-10-30 / 2026-11-02 | [Ownership](#ownership-and-defaults), [targets and trust](#targets-and-trust) |
-| Route-wide eligibility, request-boundary selection and cache-first operational priority | 2026-10-30 / 2026-11-02 | [Selection](#selection); replaces switching defaults and opt-in fallback domains |
-| One same-target retry, conservative eligibility, attempt isolation and recovery ownership | 2026-11-02 | [Bounded same-target retry](#bounded-same-target-retry); replaces both earlier retry designs |
-| Failure classes, ambiguous timeout and independent-account guidance | 2026-10-30 / 2026-11-02 | [Failure classes](#failure-classes), [cooldown and recovery](#cooldown-and-recovery) |
-| Merged health observations and success-only commits | 2026-11-02 | [Outcome and health resolution](#outcome-and-health-resolution) |
-| Parameter ownership, defaults and operator-owned policy validation | 2026-10-30 / 2026-11-02 | [Configuration surface](#configuration-surface) |
-| Advisory client retry hints, no blanket stop-retrying signal | 2026-11-02 | [Downstream signals](#downstream-signals) |
-| Pre-dispatch cross-Provider representation admission | 2026-11-02 | [Selection](#selection); supersedes the earlier Provider boundary |
-| OAuth subject uniqueness, one managed login and persistent subject reservation | 2026-10-30 / 2026-11-02 | [OAuth registration identity](#oauth-registration-identity) |
-| Polling lifecycle, routing-only enablement and material-aware auth probes | 2026-10-30 / 2026-11-02 | [OAuth maintenance](#oauth-maintenance), [accepted lifecycle baseline](#accepted-lifecycle-baseline) |
-| Conditional concurrent affinity ownership and sliding idle TTL | 2026-11-02 | [Cache affinity](#cache-affinity) |
-| Offline validation, read-only explanation, bounded diagnostics and deferred persistence | 2026-11-02 | [Operational surfaces](#initial-operational-surfaces), [optional restart continuity](#optional-restart-continuity) |
+| Requirements-first sequencing; fully breaking shared binding with Generation-first recovery | System-wide cutover | [User requirements](#user-requirements), [delivered boundary](#current-implementation-and-rewrite-boundary), [fresh setup](#configuration-transition-and-cli-output) |
+| OpenAI API-key / SIWC service separation; one credential kind per Provider | Provider identity | [Provider identity](#provider-identity-and-model-bindings), [credential kind](#credential-kind-and-header-placement) |
+| Named account declarations, API-key endpoint override and API-root composition | Target configuration | [Ownership](#ownership-and-defaults), [targets and trust](#targets-and-trust) |
+| Route-wide eligibility, request-boundary selection and cache-first operational priority | Execution policy | [Selection](#selection) |
+| One same-target retry, conservative eligibility, attempt isolation and recovery ownership | Error recovery | [Bounded same-target retry](#bounded-same-target-retry) |
+| Failure classes, ambiguous timeout and independent-account guidance | Health & cooldown | [Failure classes](#failure-classes), [cooldown and recovery](#cooldown-and-recovery) |
+| Merged health observations and success-only commits | Health resolution | [Outcome and health resolution](#outcome-and-health-resolution) |
+| Parameter ownership, defaults and operator-owned policy validation | Configuration surface | [Configuration surface](#configuration-surface) |
+| Advisory client retry hints, no blanket stop-retrying signal | Downstream signals | [Downstream signals](#downstream-signals) |
+| Pre-dispatch cross-Provider representation admission | Pre-dispatch admission | [Selection](#selection) |
+| OAuth subject uniqueness, one managed login and persistent subject reservation | OAuth identity | [OAuth registration identity](#oauth-registration-identity) |
+| Polling lifecycle, routing-only enablement and material-aware auth probes | OAuth maintenance | [OAuth maintenance](#oauth-maintenance), [accepted lifecycle baseline](#accepted-lifecycle-baseline) |
+| Conditional concurrent affinity ownership and sliding idle TTL | Cache affinity | [Cache affinity](#cache-affinity) |
+| Offline validation, read-only explanation, bounded diagnostics and deferred persistence | Operational tools | [Operational surfaces](#initial-operational-surfaces), [optional restart continuity](#optional-restart-continuity) |
 
 ### Deferred decisions
 

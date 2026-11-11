@@ -62,11 +62,11 @@ This page owns proposed operation, resource and advanced-Generation designs. The
 
 Code and tests describe current behavior, not authority over official contracts. The accepted [standards reset and Generation redesign](architecture.md#scope-and-activation-decisions) governs further modality implementation and supersedes conflicting legacy mapping assumptions here. This document records unselected operation/resource designs, not a catalog or conformance claim. Provider and binding availability belongs to [the catalog](../src/topology/catalog.rs) and [startup](../src/gateway/startup/bootstrap.rs).
 
-The 2026-10-25 [stage-4 scheduling decision](roadmap.md#stage-4-scope) supersedes earlier Embedding/Images-first and Decision-first ordering. Decision, Embedding, Audio, Images, Files/Uploads and Video have equal priority; only their own contract selection and actual dependencies constrain a slice. The proposals below do not approve new IR layouts, delivery dialects, comprehensive coverage or bindings.
+Under the [stage-4 scheduling decision](roadmap.md#stage-4-scope), Decision, Embedding, Audio, Images, Files/Uploads and Video have equal priority; only their own contract selection and actual dependencies constrain a slice. The proposals below do not approve new IR layouts, delivery dialects, comprehensive coverage or bindings.
 
 The subsequent Embedding selections are recorded in Architecture: [four-way encoding](architecture.md#embedding-encoding-compatibility), sample-centered inputs and [report/identity projection](architecture.md#google-embedding-compatibility) are implemented. Complete downstream usage with explicit request-based approximation supersedes missing-usage delivery; it does not reopen the deferred counting endpoint. This document retains only unselected Embedding extensions.
 
-On 2026-10-23 the user selected [dual-SDK Decision access](architecture.md#decision-api-direction). Its design, implementation and acceptance closure now belongs to stage 4. Both TypeSafe and OpenAI are required downstream families, rather than competing alternatives. The [Decision section](#decisions) proposes the detailed contract; selecting that direction does not approve its pending layouts, mappings or implementation.
+With [dual-SDK Decision access](architecture.md#decision-api-direction) selected, its design, implementation and acceptance closure belongs to stage 4. Both TypeSafe and OpenAI are required downstream families, rather than competing alternatives. The [Decision section](#decisions) proposes the detailed contract; selecting that direction does not approve its pending layouts, mappings or implementation.
 
 ## Requested scope
 
@@ -75,7 +75,7 @@ The user selected OpenAI-first downstream contracts, broad coverage of current a
 | Requested surface | Expansion goal |
 |---|---|
 | OpenAI Decisions and TypeSafe System One, including SDK companion operations | Stable standard-SDK access through one Decision IR; adapt initially researched OpenAI, TypeSafe, Perplexity and Cloudflare upstreams. Concrete namespaces and compatibility profiles remain under review |
-| `POST /v1/messages/count_tokens` | Stage 3, deferred 2026-10-21: count a structured model input under the selected target/projection contract, without generation |
+| `POST /v1/messages/count_tokens` | Stage 3, deferred: count a structured model input under the selected target/projection contract, without generation |
 | `POST /v1/responses/compact` | Stage 5, unscheduled: execute native context compaction and return reusable context |
 | `POST /v1/embeddings` | Complete the existing independent embedding contract |
 | `POST /v1/audio/speech` | Complete standalone speech synthesis, including supported streaming |
@@ -147,7 +147,7 @@ Extract a shared conversation-input aggregate only where counting and compaction
 
 ### Generation boundary review
 
-The 2026-10-21 production decisions now live in Architecture: [tool examples/document context](architecture.md#tool-examples-and-document-context), [citation point anchors](architecture.md#citation-point-anchors), [automatic TTL admission](architecture.md#caller-selected-automatic-cache-admission) and [explanatory reports](architecture.md#explanatory-terminal-reports). They are selected local contracts, not unresolved alternatives below or claims of implementation. The remaining proposals do not inherit that approval.
+Accepted production decisions live in Architecture: [tool examples/document context](architecture.md#tool-examples-and-document-context), [citation point anchors](architecture.md#citation-point-anchors), [automatic TTL admission](architecture.md#caller-selected-automatic-cache-admission) and [explanatory reports](architecture.md#explanatory-terminal-reports). They are selected local contracts, not unresolved alternatives below or claims of implementation. The remaining proposals do not inherit that approval.
 
 #### Retain legitimate conversation semantics
 
@@ -178,9 +178,9 @@ A future Responses hosted image-tool observation may contain image artifacts wit
 
 #### Independent output ceilings (unselected)
 
-The 2026-10-19 Bailian review selected [existing-IR-only adaptation](architecture.md#shared-aliyun-billing-dialect), not a budget-scope extension. Qwen Chat's reply-only `max_tokens:128` plus `thinking_budget:64` is a minimal counterexample: replacing them with total `192` permits an oversized reply when fewer thoughts are used; total `128` can truncate an otherwise valid 128-reply/64-thought result. Neither summation nor clipping is an exact mapping.
+The Bailian review selected [existing-IR-only adaptation](architecture.md#shared-aliyun-billing-dialect), not a budget-scope extension. Qwen Chat's reply-only `max_tokens:128` plus `thinking_budget:64` is a minimal counterexample: replacing them with total `192` permits an oversized reply when fewer thoughts are used; total `128` can truncate an otherwise valid 128-reply/64-thought result. Neither summation nor clipping is an exact mapping.
 
-A future independent-ceiling representation would need answer/thought/total ownership, precedence, contradiction rules and directional mappings. No such representation or summation rule is selected. The [2026-10-28 budget direction](architecture.md#bounded-token-budget-adaptation) permits bounded adaptation review without requiring that redesign.
+A future independent-ceiling representation would need answer/thought/total ownership, precedence, contradiction rules and directional mappings. No such representation or summation rule is selected. The [budget direction](architecture.md#bounded-token-budget-adaptation) permits bounded adaptation review without requiring that redesign.
 
 The source/code recheck identifies two smaller candidates:
 
@@ -195,7 +195,7 @@ Current Messages intake requires a manual budget of at least `1024` and strictly
 
 #### Google output report owners (unselected)
 
-Probability and token-identity proposals remain paused under the [Google API pause](roadmap.md#google-api-pause). The later 2026-10-21 decision moved bounded terminal explanations and service-source review to the accepted [report contract](architecture.md#explanatory-terminal-reports); it did not select the owners below.
+Probability and token-identity proposals remain paused under the [Google API pause](roadmap.md#google-api-pause). Bounded terminal explanations and service-source review belong to the accepted [report contract](architecture.md#explanatory-terminal-reports); they did not select the owners below.
 
 The [source counterexamples](refs/2026-10-17-generation-contracts.md#google-foreground-contracts-2026-10-20) still require design review before broader probability carriage:
 
@@ -239,7 +239,7 @@ Upstream response parsing must remain strict on known fields and ignore unknown 
 
 ### Three-protocol tool conversion design
 
-**Assessment requested on 2026-11-04; ordinary nine-direction tool conversion and the selected tool-set projections are delivered.** [Architecture](architecture.md#ordered-tool-availability) owns their contract; [Development](development.md#offline-and-synthetic-qualification-evidence) owns connected evidence. This section retains unselected content projections only. [Roadmap](roadmap.md#conditional-stage-3-follow-ups) owns their conditional sequencing, not a second core implementation queue.
+**Ordinary nine-direction tool conversion and selected tool-set projections are delivered.** [Architecture](architecture.md#ordered-tool-availability) owns their contract; [Development](development.md#offline-and-synthetic-qualification-evidence) owns connected evidence. This section retains unselected content projections only. [Roadmap](roadmap.md#conditional-stage-3-follow-ups) owns their conditional sequencing, not a second core implementation queue.
 
 Assess each future projection through **client request → selected upstream → original client response → tool result → subsequent history**. The delivered ordinary function loops do not qualify custom tools, namespaces, result media or every dialect. The dated [assessment](refs/2026-10-27-client-ir-boundaries.md#nine-direction-tool-assessment-2026-11-04) and [qualification](refs/2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04) retain source findings and qualification distinctions.
 
@@ -621,7 +621,7 @@ Neither the dual-SDK direction nor the capability-union principle approves these
 
 ### Token counting
 
-Selected for stage 3 with cross-protocol conversion and **deferred on 2026-10-21** ([roadmap](roadmap.md#deferred-token-counting)); the contract below is unstarted design reference. The Messages `count_tokens` surface is confirmed; the Responses counting companion still requires selection.
+Selected for stage 3 with cross-protocol conversion and deferred ([roadmap](roadmap.md#deferred-token-counting)); the contract below is unstarted design reference. The Messages `count_tokens` surface is confirmed; the Responses counting companion still requires selection.
 
 Model a count request from count-relevant conversation content: instructions, ordered history, tools, media and applicable settings. It is not generation with a zero output cap. A count result is not inference usage and must not contain fabricated generated output.
 
@@ -635,7 +635,7 @@ Exit evidence: independent request/result oracles cover upstream preference and 
 
 ### Embeddings
 
-The sample-centered text/scoped-token IR, native Google integration, immutable preparation and explicit ancillary/numeric delivery rules are implemented under the renewed 2026-10-23 authorization. Their authoritative contract is [Independent Embedding path](architecture.md#independent-embedding-path), not a pending proposal. This section retains only extension boundaries.
+The sample-centered text/scoped-token IR, native Google integration, immutable preparation and explicit ancillary/numeric delivery rules are implemented. Their authoritative contract is [Independent Embedding path](architecture.md#independent-embedding-path), not a pending proposal. This section retains only extension boundaries.
 
 #### Embedding chain and ownership
 
@@ -778,7 +778,7 @@ Recommend keeping strict OpenAI Images as the standard dialect and designing an 
 
 #### Static Generate review proposal
 
-**Unselected proposal, refined on 2026-10-23.** The [roadmap](roadmap.md#stage-4-operation-readiness) owns scheduling and the Images-internal sequence. Start with Generate's existing task/artifact owners; neither an Image Generate/Edit type migration nor native ratio/tier controls are prerequisites for this review.
+**Unselected proposal.** The [roadmap](roadmap.md#stage-4-operation-readiness) owns scheduling and the Images-internal sequence. Start with Generate's existing task/artifact owners; neither an Image Generate/Edit type migration nor native ratio/tier controls are prerequisites for this review.
 
 | Public-contract option | Benefit and cost | Recommendation |
 |---|---|---|
@@ -873,7 +873,7 @@ The [stage-5 backlog](roadmap.md#stage-5-backlog) has no implementation queue or
 
 ### Models discovery interfaces
 
-The selected 2026-10-26 [model capability directory](architecture.md#generation-text-model-discovery) supersedes the earlier broad draft. Architecture owns fact ownership, task-specific contracts, independent capacities, modalities and interface projection; [Usage](usage.md#generation-text-model-discovery) owns implemented endpoints and [OpenAPI](openapi.json) owns machine schemas.
+The [model capability directory](architecture.md#generation-text-model-discovery) defines fact ownership, task-specific contracts, independent capacities, modalities and interface projection; [Usage](usage.md#generation-text-model-discovery) owns implemented endpoints and [OpenAPI](openapi.json) owns machine schemas.
 
 Only Generation Text models, their assessed image inputs and current Pi Generation consumption are selected for runtime wiring. Embedding, Decision, independent Images/Audio/Video and Realtime receive discovery schema definitions only; they do not authorize inference contracts, bindings, new directory entries or client adapters. Existing independent APIs and standard Models/capabilities remain unchanged. Actual non-Generation discovery/client integration, broader media-domain assessment, conditional-capacity modes and resource-service discovery remain future selections, not an automatic queue. No version/revision maintenance or pagination system is selected.
 
@@ -881,7 +881,7 @@ Only Generation Text models, their assessed image inputs and current Pi Generati
 
 The converged [Agent identity and cluster diagnostics baseline](architecture.md#agent-identity-and-cluster-diagnostics) owns the selected direction: one deployer, no business user/tenant model, credential-independent Agent attribution and sensitive diagnostics under mandatory authentication redaction. [Per-Agent JSONL sessions](architecture.md#agent-session-files) with explicit cross-Agent reading/copying are now a current-stage design direction, not an implemented store or selected migration. Do not reinterpret OAuth account identity as Agent identity or rebuild a separate user/ownership hierarchy here.
 
-The 2026-10-25 API-key selection uses the versioned private [Agent-key schema](usage.md#agent-api-keys) first; OAuth remains deferred. Unresolved integration choices are the authorization-server product, verified OAuth authorization-instance binding to `agent_id`, managed registry persistence/management, client correlation carriers, token permissions and revocation policy, and diagnostic storage/export/retention. Rauthy remains an evaluation candidate, not a selected dependency; the [dated research](refs/2026-10-23-downstream-oauth.md) owns versioned evidence and limitations. [Roadmap](roadmap.md#agent-authorization-and-diagnostics-follow-up) owns the remaining dependency order and acceptance gates. This is not a stage-5 API assignment, OAuth implementation approval or change to current loopback ingress.
+API-key selection uses the versioned private [Agent-key schema](usage.md#agent-api-keys) first; OAuth remains deferred. Unresolved integration choices are the authorization-server product, verified OAuth authorization-instance binding to `agent_id`, managed registry persistence/management, client correlation carriers, token permissions and revocation policy, and diagnostic storage/export/retention. Rauthy remains an evaluation candidate, not a selected dependency; the [dated research](refs/2026-10-23-downstream-oauth.md) owns versioned evidence and limitations. [Roadmap](roadmap.md#agent-authorization-and-diagnostics-follow-up) owns the remaining dependency order and acceptance gates. This is not a stage-5 API assignment, OAuth implementation approval or change to current loopback ingress.
 
 ### 1C design: Messages citations
 

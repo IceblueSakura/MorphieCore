@@ -1,6 +1,6 @@
 # Convergence cleanup plan
 
-**Status: configuration/diagnostics delivered 2026-11-10; maintenance simplification delivered 2026-11-11.** Finished tasks are removed; Git retains the implementation sequence.
+**Status: Active.** Configuration, diagnostics, and maintenance simplifications are delivered; finished tasks are removed while git history retains the implementation sequence.
 
 [Architecture](architecture.md#observability) owns accepted contracts and deliberate losses. [Usage](usage.md#failure-diagnostics) owns current configuration. [Development](development.md#diagnostics-behavior-checks) owns procedures and dated acceptance. [Roadmap](roadmap.md#planned-order) owns priority; R09 is an [unscheduled routing qualification](roadmap.md#routing-qualification). This document grants no deployment, credential or private-data export authorization.
 

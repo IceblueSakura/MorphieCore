@@ -52,7 +52,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current status (2026-11-11):** the Generation review baseline has converged under the [partial-delivery exit](#partial-delivery-exit). Configuration/diagnostic cleanup, maintenance simplification and lifecycle convergence are delivered under [Observability](architecture.md#observability), with remaining production observability/reliability/privacy gates deferred in the [cleanup plan](convergence-cleanup-plan.md). Accepted contracts live in [Architecture](architecture.md); dated [qualification evidence](development.md#provider-qualification-evidence) and current-Agent checks live in Development. Residual limitations and prerequisites share the [unscheduled issue register](#unscheduled-issues), without a separate review repair queue. **User-selected 2026-11-11:** no pre-Stage-4 gate remains; R09 and Agent session storage no longer gate Stage 4. No deployment or new API activation is implied.
+The Generation review baseline has converged under the [partial-delivery exit](#partial-delivery-exit). Configuration/diagnostic cleanup, maintenance simplification, and lifecycle convergence are delivered under [Observability](architecture.md#observability), while remaining production observability, reliability, and privacy gates are deferred in the [cleanup plan](convergence-cleanup-plan.md). Accepted contracts live in [Architecture](architecture.md); current qualification evidence and agent checks live in [Development](development.md#provider-qualification-evidence). Residual limitations and prerequisites share the [unscheduled issue register](#unscheduled-issues), without a separate review repair queue. No pre-Stage-4 gate remains: R09 real-account failover and Agent session storage do not gate Stage 4. No deployment or new API activation is implied.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
@@ -63,9 +63,9 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Unscheduled issues
 
-This is the single register for unresolved Generation/client boundaries and qualification gaps. None is an active repair package or a prerequisite for the delivered baseline. Reopen only after a concrete unmet contract, target/profile, prerequisite and bounded acceptance plan are selected. Review IDs remain traceability labels, not a second phase queue. [Development](development.md#provider-qualification-evidence) owns dated verdicts; [Architecture](architecture.md) owns accepted contracts and service limitations.
+This is the single register for unresolved Generation/client boundaries and qualification gaps. None is an active repair package or a prerequisite for the delivered baseline. Reopen only after a concrete unmet contract, target/profile, prerequisite and bounded acceptance plan are selected. Review IDs remain traceability labels, not a second phase queue. [Development](development.md#provider-qualification-evidence) owns qualification verdicts; [Architecture](architecture.md) owns accepted contracts and service limitations.
 
-R02/R06's pi-first stateless carrier was selected on 2026-11-10; remaining client/Provider qualification stays here. R04/R08 and Bailian structured-output variability remain excluded; do not substitute prompt/history rewriting or deduplication work. Accepted Bailian forcing and Grok content limitations are not reopened. R09 moved here from its former pre-Stage-4 slot on 2026-11-11.
+Pi-first stateless carrier is delivered for R02/R06; remaining client/Provider qualification stays here. R04/R08 and Bailian structured-output variability remain excluded; do not substitute prompt/history rewriting or deduplication work. Accepted Bailian forcing and Grok content limitations are not reopened. R09 real-account failover remains unscheduled.
 
 ### Tool guarantees
 
@@ -78,7 +78,7 @@ R02/R06's pi-first stateless carrier was selected on 2026-11-10; remaining clien
 
 | Issue | Current boundary | Re-entry / decision |
 |---|---|---|
-| Google stateless ordinary-signature qualification (R02/R06) | **Pi-first carrier delivered, 2026-11-10.** The selected [Responses profile](architecture.md#responses-owner-replay) and pi save/resume/tool loop have synthetic acceptance. Standard unadapted clients still lack an ordinary text/call carrier. | OpenCode adaptation is deferred. Select the exact client/Provider lane and bounded real qualification separately; synthetic acceptance does not qualify real signed-call issuance or endpoint behavior. No signature deletion, synthetic reasoning owner or new Google API. |
+| Google stateless ordinary-signature qualification (R02/R06) | Pi-first carrier delivered under the [Responses profile](architecture.md#responses-owner-replay); pi save/resume/tool loop has synthetic acceptance. Standard unadapted clients still lack an ordinary text/call carrier. | OpenCode adaptation is deferred. Select the exact client/Provider lane and bounded real qualification separately; synthetic acceptance does not qualify real signed-call issuance or endpoint behavior. No signature deletion, synthetic reasoning owner or new Google API. |
 | Real Haiku protected output (R01) | Current OpenCode's original Chat loop and an explicit adaptive/medium discriminator produce no protected owners; existing carrier repair remains verified. | Resume when the same profile actually yields protected output. Missing activation alone does not justify another repair or automatic effort-to-activation mapping. |
 | Interactions signed-call replay | No signed-call sample was independently observed in the retained profile qualification; thought replay does not close that cell. | Obtain an actual signed-call sample for the selected profile and verify exact feedback/continuation; do not infer it from a generic managed-loop success. |
 
@@ -91,7 +91,7 @@ R02/R06's pi-first stateless carrier was selected on 2026-11-10; remaining clien
 
 ### Protocol boundaries
 
-The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-boundaries.md#follow-up-source-and-feasibility-review-2026-10-28) supports these retained dispositions. Current strict parsing, resource, replay and terminal guarantees remain in force.
+The [source and feasibility recheck](refs/2026-10-27-client-ir-boundaries.md#follow-up-source-and-feasibility-review-2026-10-28) supports these retained dispositions. Current strict parsing, resource, replay and terminal guarantees remain in force.
 
 | Issue | Current disposition | Reopen or complete when |
 |---|---|---|
@@ -112,7 +112,7 @@ The routing freeze and credential-lifecycle authorization remain unchanged. Addi
 
 | Issue | Current boundary | Re-entry / decision |
 |---|---|---|
-| **R09 — Real account-compatible failover** | [Real stateless JSON/SSE replay isolation passes](development.md#replay-isolation-evidence). Earlier loader evidence reports one enabled declared account per Provider; no independent compatible pair is qualified. Not a Stage-4 prerequisite since 2026-11-11 | With independent compatible accounts on one authorized same-model route, verify A success/affinity, a bounded A failure without switching inside that request, B selection on a new request with A-private replay omitted, then B success/stickiness. Define fault injection and budgets first; provisioning new credentials requires separate approval. Same-key aliases, different-model switching and synthetic authorities do not qualify this real-account gate |
+| **R09 — Real account-compatible failover** | [Real stateless JSON/SSE replay isolation passes](development.md#replay-isolation-evidence). Loader evidence reports one enabled declared account per Provider; no independent compatible pair is qualified. Unscheduled; does not gate Stage 4. | With independent compatible accounts on one authorized same-model route, verify A success/affinity, a bounded A failure without switching inside that request, B selection on a new request with A-private replay omitted, then B success/stickiness. Define fault injection and budgets first; provisioning new credentials requires separate approval. Same-key aliases, different-model switching and synthetic authorities do not qualify this real-account gate |
 
 ## Deferred protocol follow-ups
 
@@ -284,7 +284,7 @@ Carrier availability in codecs does not imply public route admission. Route admi
 
 ### Partial-delivery exit
 
-**User-approved 2026-11-07:** principal workflows are usable, selected low-loss conversions record their losses, affected paths are verified, and remaining difficulties have explicit scope for next-stage analysis.
+Under the partial-delivery exit: principal workflows are usable, selected low-loss conversions record their losses, affected paths are verified, and remaining difficulties have explicit scope for next-stage analysis.
 
 1. Preserve the representative real tool/history paths across Haiku Messages, DeepSeek readable Chat and Grok Responses, plus the existing Qwen Responses coding path. Use installed pi/OpenCode for their affected client boundaries; reuse still-applicable evidence rather than requiring every client × model × protocol combination.
 2. Verify each selected repair before claiming it complete. A new ambiguity may defer its dependent subcase without delaying unrelated slices.
