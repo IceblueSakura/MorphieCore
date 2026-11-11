@@ -2,7 +2,7 @@
 
 Sources checked on 2026-10-22 for the prioritized Embedding and Images design. Official web pages are mutable and disagree in places. The existing OpenAI Python research pin is `547ecb1e4fc233f19030736c29fee4374dfbaca1` (3.35.1, Apache-2.0); reusing it does not claim a new latest-version check. The initial source review ran no SDK, gateway or Provider acceptance; the separately dated characterization below records later bounded observations.
 
-[API expansion design](../api-expansion-design.md#operation-contracts) owns proposals; [Architecture](../architecture.md#independent-task-boundaries) owns accepted boundaries; [Roadmap](../roadmap.md#stage-4-scope) owns priority and gates. This note records evidence, not a second implementation queue.
+[API expansion design](../api-expansion-design.md#operation-contracts) owns proposals; [Architecture](../architecture/index.md#independent-task-boundaries) owns accepted boundaries; [Roadmap](../roadmap/index.md#stage-4-scope) owns priority and gates. This note records evidence, not a second implementation queue.
 
 ## Embeddings
 
@@ -24,7 +24,7 @@ The parser establishes binary32 practice but uses native-endian numeric interpre
 
 ### Numeric representation counterexample
 
-JSON `0.1` is not exactly binary32 `0.100000001490116119384765625`. A small standard-library `struct`/`Decimal` check confirmed that arithmetic distinction during this review; it does not validate a Rust conversion implementation. Arbitrary exact JSON-number reports cannot pass through binary32 and remain unchanged. The later user selection permits standard rounding on a delivery copy under the [named encoding policy](../architecture.md#embedding-encoding-compatibility), superseding the earlier exact-only recommendation; float→float source precision remains unchanged.
+JSON `0.1` is not exactly binary32 `0.100000001490116119384765625`. A small standard-library `struct`/`Decimal` check confirmed that arithmetic distinction during this review; it does not validate a Rust conversion implementation. Arbitrary exact JSON-number reports cannot pass through binary32 and remain unchanged. The later user selection permits standard rounding on a delivery copy under the [named encoding policy](../architecture/index.md#embedding-encoding-compatibility), superseding the earlier exact-only recommendation; float→float source precision remains unchanged.
 
 ### Google Embedding selection
 
@@ -95,7 +95,7 @@ The implementation baseline should therefore use direct native HTTP parsing, pin
 
 The public [agentgateway issue #2451](https://github.com/agentgateway/agentgateway/issues/2451), opened 2026-07-07, reports successful Google OpenAI-compatible **001** responses without `usage`; [fix #2455](https://github.com/agentgateway/agentgateway/pull/2455) makes that parsing optional. This is useful integration evidence, not an observation of stable Embedding 2. Official compatibility cookbook vector access likewise does not validate every required OpenAI response field.
 
-The subsequent user selection accepts [named Google ancillary projection](../architecture.md#google-embedding-compatibility), not fabricated zero accounting. A source input count can justify an explicitly derived input-only total; a missing count cannot. Bound model labeling is execution provenance, not an upstream model report. Unsupported `user` omission is a recorded loss, not an invented local attribution service.
+The subsequent user selection accepts [named Google ancillary projection](../architecture/index.md#google-embedding-compatibility), not fabricated zero accounting. A source input count can justify an explicitly derived input-only total; a missing count cannot. Bound model labeling is execution provenance, not an upstream model report. Unsupported `user` omission is a recorded loss, not an invented local attribution service.
 
 Two current-model source checks constrain the shared work:
 
@@ -112,7 +112,7 @@ These observations are separate from the source review and from real SDK-to-Prov
 - The [vocabulary definition](https://github.com/openai/tiktoken/blob/main/tiktoken_ext/openai_public.py) and [rank file](https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken), checked on 2026-10-23, identify ordinary ranks 0–100255. Rank-file SHA-256: `223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7`. Token 100256 is absent; special/control tokens are outside the selected profile.
 - Separate pinned SDK loopback checks showed that ordinary vector access tolerates absent usage while strict response validation rejects it. Strict validation also rejects Base64 under the pinned numeric response annotation before the normal decode hook; that is not a usage error.
 
-The later same-day selection uses declared request-local approximation for missing required counters, not fabricated zero usage. [Architecture](../architecture.md#google-embedding-compatibility) owns that policy and [Development](../development.md#sdk-loopback-gate) owns executable checks. No empirical estimator-accuracy claim follows from schema acceptance.
+The later same-day selection uses declared request-local approximation for missing required counters, not fabricated zero usage. [Architecture](../architecture/index.md#google-embedding-compatibility) owns that policy and [Development](../development.md#sdk-loopback-gate) owns executable checks. No empirical estimator-accuracy claim follows from schema acceptance.
 
 ## Images
 
@@ -153,7 +153,7 @@ Grok's generation guide returns temporary URLs by default and admits explicit Ba
 
 The [current image task](../../src/semantic/task/image_generation.rs) is static Generate with bounded Base64 artifacts and an 8-MiB aggregate decoded final budget. Edit inputs, masks and stream events do not exist there. Optional creation/model/usage facts do exist; they must not be synthesized at delivery.
 
-The current [prepared upstream request](../../src/execution/attempt.rs) owns materialized bytes; [image preparation](../../src/execution/images.rs) builds JSON. There is no existing image multipart/spool ownership contract to inherit. Architecture's [inert-media policy](../architecture.md#media) also leaves actual image validity and pixel dimensions upstream; local mask inspection would require a separately selected exception, not merely a new upload parser.
+The current [prepared upstream request](../../src/execution/attempt.rs) owns materialized bytes; [image preparation](../../src/execution/images.rs) builds JSON. There is no existing image multipart/spool ownership contract to inherit. Architecture's [inert-media policy](../architecture/adaptation-and-dialects.md#media) also leaves actual image validity and pixel dimensions upstream; local mask inspection would require a separately selected exception, not merely a new upload parser.
 
 The [standard encoder](../../src/protocol/openai/images.rs) requires `created`, forbids a reported model, requires compatible top-level artifact reports and rejects streaming. The [Grok codec](../../src/protocol/grok/images.rs) can honestly preserve absent creation time/model/native accounting, but no public binding is active. Existing [accounting projection](../../src/protocol/image/projection.rs) does not fix missing timestamps, serving-model carriage or default-PNG incompatibility. Adding a binding alone therefore cannot establish faithful OpenAI delivery.
 

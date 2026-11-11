@@ -1,6 +1,6 @@
 # Bailian compatible-request subset
 
-Baseline checked **2026-10-19**, with source corrections on **2026-10-29**, **2026-11-08** and **2026-11-09** below. These are mutable official definitions, not a complete DashScope API implementation. Accepted decisions belong to [Architecture](../architecture.md#shared-aliyun-billing-dialect); independent-ceiling proposals belong to [API expansion design](../api-expansion-design.md#independent-output-ceilings-unselected).
+Baseline checked **2026-10-19**, with source corrections on **2026-10-29**, **2026-11-08** and **2026-11-09** below. These are mutable official definitions, not a complete DashScope API implementation. Accepted decisions belong to [Architecture](../architecture/adaptation-and-dialects.md#shared-aliyun-billing-dialect); independent-ceiling proposals belong to [API expansion design](../api-expansion-design.md#independent-output-ceilings-unselected).
 
 ## Primary sources
 
@@ -12,7 +12,7 @@ Baseline checked **2026-10-19**, with source corrections on **2026-10-29**, **20
 - [Context cache](https://help.aliyun.com/zh/model-studio/context-cache): owner-local markers and creation/TTL reports are distinct from ordinary implicit cached-token counts; this request correction does not activate explicit cache.
 - [Text-generation API reference](https://help.aliyun.com/zh/model-studio/qwen-api-reference): native DashScope RPC is a separate `input`/`parameters` layout, not either compatible endpoint.
 
-TokenPlan's shared dialect and separate authority follow the [accepted billing-domain boundary](../architecture.md#shared-aliyun-billing-dialect). No credential, origin, billing or replay-issuer equivalence is inferred.
+TokenPlan's shared dialect and separate authority follow the [accepted billing-domain boundary](../architecture/adaptation-and-dialects.md#shared-aliyun-billing-dialect). No credential, origin, billing or replay-issuer equivalence is inferred.
 
 ## Observed definitions and selected treatment
 
@@ -58,7 +58,7 @@ The same international Responses reference lists `parallel_tool_calls` with defa
 
 Bounded China-Provider controls separate the guarantees. Qwen Flash and GLM, each with native low effort, return one call when asked for two under `parallel_tool_calls:false`. With a conflicting no-tool prompt, both return zero calls under `allowed_tools/required`; string `required` independently returns zero calls in an initial sample and all three explicit repeats per model. All twelve sends return HTTP 200. Field echo and a completed terminal alone do not establish forced invocation.
 
-The selected implementation carries the parallel boolean, keeps Kimi serial rejection, and rejects default/enabled-thinking forcing for those two exact models. Other model/mode cells remain independently scoped. [Development](../development.md#overall-acceptance-status) summarizes overall acceptance; [Architecture](../architecture.md#shared-aliyun-billing-dialect) owns the contract.
+The selected implementation carries the parallel boolean, keeps Kimi serial rejection, and rejects default/enabled-thinking forcing for those two exact models. Other model/mode cells remain independently scoped. [Development](../development.md#overall-acceptance-status) summarizes overall acceptance; [Architecture](../architecture/adaptation-and-dialects.md#shared-aliyun-billing-dialect) owns the contract.
 
 ## Function-guarantee recheck, 2026-11-09
 
@@ -70,8 +70,8 @@ Re-read the current official service references separately from SDK types; sourc
 | [Responses reference](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-responses), compatibility and tools | Processes only explicitly listed parameters and ignores unlisted OpenAI fields. Custom functions list `type`, `name`, `description`, `parameters`, without `strict`. String `required` and `allowed_tools.mode:required` require exactly one declaration in the request's `tools`, not merely one reference in the allowed list |
 | [Chat reference](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions), `tool_choice`; [GLM guide](https://help.aliyun.com/zh/model-studio/glm), quick start | Thinking models do not support forced named Chat selection. GLM **5.3** is thinking-only; disabling thinking is not an equivalent repair. GLM 5.2 is a distinct hybrid model, outside this target qualification |
 
-The Responses singleton restriction permits the already selected [allowed-inventory projection](../architecture.md#ordered-tool-availability): collapse determinate ordered declarations and filter to the one selected original function, retaining schema, history, required invocation and seriality. A bare `required` choice over several eligible functions supplies no singleton identity and retains rejection. Thinking-profile enforcement is a separate check.
+The Responses singleton restriction permits the already selected [allowed-inventory projection](../architecture/index.md#ordered-tool-availability): collapse determinate ordered declarations and filter to the one selected original function, retaining schema, history, required invocation and seriality. A bare `required` choice over several eligible functions supplies no singleton identity and retains rejection. Thinking-profile enforcement is a separate check.
 
-Native argument discriminators independently show GLM 5.3 Chat `strict:true` returning out-of-enum integer/string values, and Qwen 3.8 Flash Responses doing so with thinking disabled under both strict values and a qualified required-subset carrier. These failures do not qualify a positive strict exception. The subsequent user-selected [shared service policy](../architecture.md#shared-aliyun-billing-dialect) accepts named best-effort relaxation rather than schema deletion or a text-output wrapper. [Development](../development.md#overall-acceptance-status) summarizes overall acceptance.
+Native argument discriminators independently show GLM 5.3 Chat `strict:true` returning out-of-enum integer/string values, and Qwen 3.8 Flash Responses doing so with thinking disabled under both strict values and a qualified required-subset carrier. These failures do not qualify a positive strict exception. The subsequent user-selected [shared service policy](../architecture/adaptation-and-dialects.md#shared-aliyun-billing-dialect) accepts named best-effort relaxation rather than schema deletion or a text-output wrapper. [Development](../development.md#overall-acceptance-status) summarizes overall acceptance.
 
 The positive-evidence audit finds no qualified Bailian function-strict pair: Qwen Flash/Max Chat flags and serialization checks do not establish enforcement; the two early combined strict/named DeepSeek samples and non-strict Agent loops do not transfer native DeepSeek beta's guarantee to Bailian. The implementation's verified set therefore starts empty and is independent of generic canonical capabilities. The user's same-upstream/two-plan selection applies this policy to DashScope and TokenPlan together; credentials, origins and billing remain isolated.

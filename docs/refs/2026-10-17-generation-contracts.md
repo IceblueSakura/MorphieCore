@@ -1,6 +1,6 @@
 # Generation source distinctions
 
-Research began **2026-10-17**; the dated observations below retain their original scope. Current contracts live in [Architecture](../architecture.md), current implementation evidence in [Development](../development.md#verification-gates), and source navigation in the [official SDK guide](2026-10-27-official-sdk-sources.md). This note retains distinctions not replaced by those documents, rather than a second feature inventory.
+Research began **2026-10-17**; the dated observations below retain their original scope. Current contracts live in [Architecture](../architecture/index.md), current implementation evidence in [Development](../development.md#verification-gates), and source navigation in the [official SDK guide](2026-10-27-official-sdk-sources.md). This note retains distinctions not replaced by those documents, rather than a second feature inventory.
 
 ## Google foreground contracts, 2026-10-20
 
@@ -35,7 +35,7 @@ Sources read: [Interactions v1 OpenAPI](https://ai.google.dev/static/api/interac
 
 ## Accounting source distinctions
 
-Retained from the October 17–21 reviews; [scoped accounting](../architecture.md#scoped-accounting) owns the selected IR interpretation.
+Retained from the October 17–21 reviews; [scoped accounting](../architecture/index.md#scoped-accounting) owns the selected IR interpretation.
 
 - generateContent reports prompt input, tool-use input, generated output and thoughts separately; cached input is a prompt subset. Do not flatten these into OpenAI's buckets before establishing the reported relationships.
 - Interactions may report a total whose relationship to input/output/tool-input is not established. In particular, do not turn a residual into an invented `internal` counter or sum tool input by analogy with generateContent.
@@ -58,13 +58,13 @@ The independent JSON/chunk expectations in
 dialect maps. Failure labels never become successful termination; interruption
 labels retain incomplete outcomes. Unknown labels remain malformed known values.
 Delivery mappings and retained L5 boundaries belong to
-[Architecture](../architecture.md#conversion-ladder), not this source note.
+[Architecture](../architecture/adaptation-and-dialects.md#conversion-ladder), not this source note.
 
 ## Remaining dated cross-protocol evidence
 
 - **2026-10-18 target review:** Qwen total-output versus answer-only ceilings and ignored controls are retained in the [Bailian source note](2026-10-19-bailian-compatible-requests.md). DeepSeek developer-role demotion is retained in the [instruction-authority review](2026-10-25-instruction-authority.md). Client strictness/cache/compaction observations are retained in the [client guide](2026-10-27-client-and-proxy-sources.md#earlier-client-observations).
-- **2026-10-18 Messages review:** Haiku 5.5 thinking replay was documented as issuing-account-bound. This is not evidence of cross-account portability; preserve the [replay provenance boundary](../architecture.md#reasoning-replay) and recheck the target before new acceptance.
-- **2026-10-19 attribution review:** OpenAI `safety_identifier` (128 characters) and deprecated `user`, Messages `metadata.user_id` (512 characters), and Google `labels.safety_identifier` (63-character label grammar) are distinct native carriers. They are neither cache keys nor permission to lowercase/truncate an identity. [End-user attribution](../architecture.md#end-user-attribution) owns the current mapping.
+- **2026-10-18 Messages review:** Haiku 5.5 thinking replay was documented as issuing-account-bound. This is not evidence of cross-account portability; preserve the [replay provenance boundary](../architecture/history-and-replay.md#reasoning-replay) and recheck the target before new acceptance.
+- **2026-10-19 attribution review:** OpenAI `safety_identifier` (128 characters) and deprecated `user`, Messages `metadata.user_id` (512 characters), and Google `labels.safety_identifier` (63-character label grammar) are distinct native carriers. They are neither cache keys nor permission to lowercase/truncate an identity. [End-user attribution](../architecture/adaptation-and-dialects.md#end-user-attribution) owns the current mapping.
 - **2026-10-21 Anthropic review:** beta task budgets are advisory loop controls, not enforceable response ceilings; document `context` is model-visible text, not a citable source block; automatic caching selects eligible tails and excludes deferred tool definitions from the system prefix. Recheck the version-specific [SDK unions](2026-10-27-official-sdk-sources.md#anthropic) before admitting these semantics.
 
-Earlier implementation claims about automatic-cache coexistence, annotation insertion, unsigned reasoning and broad signature transfer have been removed. Use [cache admission](../architecture.md#owner-local-cache-admission), [standard request boundaries](../architecture.md#standard-request-boundary) and [replay](../architecture.md#reasoning-replay), not superseded compatibility behavior.
+Earlier implementation claims about automatic-cache coexistence, annotation insertion, unsigned reasoning and broad signature transfer have been removed. Use [cache admission](../architecture/adaptation-and-dialects.md#owner-local-cache-admission), [standard request boundaries](../architecture/adaptation-and-dialects.md#standard-request-boundary) and [replay](../architecture/history-and-replay.md#reasoning-replay), not superseded compatibility behavior.

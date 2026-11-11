@@ -1,6 +1,6 @@
 # Instruction authority and Provider dialects
 
-Researched **2026-10-25** against official API references, SDK implementations, and Provider specifications. [Architecture](../architecture.md#instruction-authority-and-canonical-roles) owns accepted canonical instruction roles and conversion rules.
+Researched **2026-10-25** against official API references, SDK implementations, and Provider specifications. [Architecture](../architecture/index.md#instruction-authority-and-canonical-roles) owns accepted canonical instruction roles and conversion rules.
 
 ## Contents
 
@@ -50,7 +50,7 @@ Responses root `instructions` are defined as "a system (or developer) message in
 | Xiaomi Chat / Responses | `developer` and `system` supported | Developer instructions supported; root instructions separate in Responses |
 | OpenRouter Chat / Responses | `developer` and `system` admitted in schema | Route-dependent; downstream models normalize independently |
 
-The selected canonical application role and exact target spellings belong to [Architecture](../architecture.md#instruction-authority-and-canonical-roles). The earlier directional recommendation table is not a separate loss policy. Role spelling, temporal order and authority must be assessed independently; changing a carrier name does not itself prove demotion or equivalence.
+The selected canonical application role and exact target spellings belong to [Architecture](../architecture/index.md#instruction-authority-and-canonical-roles). The earlier directional recommendation table is not a separate loss policy. Role spelling, temporal order and authority must be assessed independently; changing a carrier name does not itself prove demotion or equivalence.
 
 ## Vercel Provider instruction cross-check, 2026-10-25
 

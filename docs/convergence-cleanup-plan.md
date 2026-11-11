@@ -2,7 +2,7 @@
 
 **Status: Active.** Configuration, diagnostics, and maintenance simplifications are delivered; finished tasks are removed while git history retains the implementation sequence.
 
-[Architecture](architecture.md#observability) owns accepted contracts and deliberate losses. [Usage](usage.md#failure-diagnostics) owns current configuration. [Development](development.md#overall-acceptance-status) summarizes overall acceptance. [Roadmap](roadmap.md#planned-order) owns priority; R09 is an [unscheduled routing qualification](roadmap.md#routing-qualification). This document grants no deployment, credential or private-data export authorization.
+[Architecture](architecture/runtime-and-routing.md#observability) owns accepted contracts and deliberate losses. [Usage](usage/gateway-configuration.md#failure-diagnostics) owns current configuration. [Development](development.md#overall-acceptance-status) summarizes overall acceptance. [Roadmap](roadmap/index.md#planned-order) owns priority; R09 is an [unscheduled routing qualification](roadmap/unscheduled-issues.md#routing-qualification). This document grants no deployment, credential or private-data export authorization.
 
 ## Remaining boundaries and gates
 

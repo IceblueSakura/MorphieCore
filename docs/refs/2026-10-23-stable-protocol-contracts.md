@@ -1,6 +1,6 @@
 # Stable-release protocol contracts
 
-Checked **2026-10-23**, with dated rechecks below, against official releases, SDK source, and then-current API documentation. The [source lock](../../tests/upstream/sources.lock.json) owns exact release revisions; [Architecture](../architecture.md) owns accepted design, and [Roadmap](../roadmap.md#planned-order) owns remaining execution.
+Checked **2026-10-23**, with dated rechecks below, against official releases, SDK source, and then-current API documentation. The [source lock](../../tests/upstream/sources.lock.json) owns exact release revisions; [Architecture](../architecture/index.md) owns accepted design, and [Roadmap](../roadmap/index.md#planned-order) owns remaining execution.
 
 ## Contents
 
@@ -93,7 +93,7 @@ The October 23–25 review established several distinctions that remain useful b
 - Matching service-tier names do not prove equal latency, billing or priority guarantees. Requested policy and reported effective service remain separate.
 - Single-choice generation, unsupported moderation/citations and Google media restrictions are bounded implementation choices, not reasons to weaken known fields.
 
-The old corrected/implemented field matrix is superseded by the [request counterexamples](2026-10-26-standard-request-boundaries.md) and [Client/IR source distinctions](2026-10-27-client-ir-boundaries.md). In particular, unsigned Messages reasoning is not a supported compatibility projection: current standard delivery requires genuine native replay/signature state. Accepted policies live in [Architecture](../architecture.md#field-handling).
+The old corrected/implemented field matrix is superseded by the [request counterexamples](2026-10-26-standard-request-boundaries.md) and [Client/IR source distinctions](2026-10-27-client-ir-boundaries.md). In particular, unsigned Messages reasoning is not a supported compatibility projection: current standard delivery requires genuine native replay/signature state. Accepted policies live in [Architecture](../architecture/adaptation-and-dialects.md#field-handling).
 
 ## Instruction authority research
 

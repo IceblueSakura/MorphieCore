@@ -1,10 +1,10 @@
 # Provider account redesign plan
 
-**Status: design finalized.** The account-system architecture enforces a unified account model, fresh credential provisioning, and request-boundary selection; [Roadmap](roadmap.md#unscheduled-issues) owns remaining qualification. Production deployment remains separately approved.
+**Status: design finalized.** The account-system architecture enforces a unified account model, fresh credential provisioning, and request-boundary selection; [Roadmap](roadmap/unscheduled-issues.md#unscheduled-issues) owns remaining qualification. Production deployment remains separately approved.
 
 This document owns the finalized account-redesign specification. It defines request-boundary account selection and at most one bounded same-target retry, conservative retry eligibility, a 30 s recovery budget, merged health evidence, material-aware OAuth recovery and short advisory `Retry-After` without `x-should-retry`. File/field names and implementation structure remain engineering choices within this contract.
 
-[Architecture](architecture.md#routing-and-security-decisions) records the accepted decisions and links here for their detailed contract. [Roadmap](roadmap.md#unscheduled-issues) owns remaining qualification and prerequisites; its [routing boundary](roadmap.md#temporary-routing-freeze) separates this work from unrelated changes. [Usage](usage.md#prepare-credentials) describes currently implemented configuration. Development uses fresh test-owned state without modifying private credentials or deployed bindings.
+[Architecture](architecture/decisions.md#routing-and-security-decisions) records the accepted decisions and links here for their detailed contract. [Roadmap](roadmap/unscheduled-issues.md#unscheduled-issues) owns remaining qualification and prerequisites; its [routing boundary](roadmap/index.md#temporary-routing-freeze) separates this work from unrelated changes. [Usage](usage/credentials-and-diagnostics.md#prepare-credentials) describes currently implemented configuration. Development uses fresh test-owned state without modifying private credentials or deployed bindings.
 
 ## Contents
 
@@ -40,7 +40,7 @@ An account name identifies a configured execution identity. Two keys are not nec
 
 ## Current implementation and rewrite boundary
 
-The shared account-source cutover separates private declarations, secret persistence, effective target binding and execution. [Roadmap](roadmap.md#unscheduled-issues) owns remaining qualification and prerequisites:
+The shared account-source cutover separates private declarations, secret persistence, effective target binding and execution. [Roadmap](roadmap/unscheduled-issues.md#unscheduled-issues) owns remaining qualification and prerequisites:
 
 | Owner | Current behavior | Retained boundary |
 |---|---|---|
@@ -77,7 +77,7 @@ Model route
   request-wide execution bounds
 ```
 
-This defines configuration ownership and behavior; [Usage](usage.md#configure-accounts) owns current schema and CLI spelling.
+This defines configuration ownership and behavior; [Usage](usage/credentials-and-diagnostics.md#configure-accounts) owns current schema and CLI spelling.
 
 ### Ownership and defaults
 
@@ -112,7 +112,7 @@ Credential kind remains distinct from endpoint header placement and fixed reques
 
 Binding, validation, provisioning and diagnostics derive kind/profile from the same catalog definition before credential access. Current-schema strict parsing does not infer alternate account formats. Preserve separate API-key and OAuth lifecycle types, verified identity, trusted origins and replay provenance; this decision does not unify their lifecycle machinery or change credential-store namespaces, formats or encryption.
 
-The shared account loader, startup, provisioning and diagnostics implement this alias-only contract. [Usage](usage.md#configure-accounts) owns current declarations and setup commands; [Roadmap](roadmap.md#unscheduled-issues) owns remaining profile qualification and prerequisites.
+The shared account loader, startup, provisioning and diagnostics implement this alias-only contract. [Usage](usage/credentials-and-diagnostics.md#configure-accounts) owns current declarations and setup commands; [Roadmap](roadmap/unscheduled-issues.md#unscheduled-issues) owns remaining profile qualification and prerequisites.
 
 ### Targets and trust
 
@@ -120,7 +120,7 @@ The shared account loader, startup, provisioning and diagnostics implement this 
 - An API-key account may override `base_url`. The override moves origin trust into operator configuration, so it must pass the same rules as catalog origins (HTTPS, no userinfo, query or fragment). Treat it as the complete API root and append the catalog-declared operation-relative suffix after normalizing the joining slash. For example, `https://relay.example/custom/v1` plus `responses` gives `https://relay.example/custom/v1/responses`; plus `models` gives `https://relay.example/custom/v1/models`. Do not guess or strip version prefixes. Without an override, retain each operation's full catalog target.
 - OAuth accounts reject an override. Their tokens go only to the origin of the profile's authorization-resource contract.
 - Validate targets before borrowing secrets. Business requests cannot change origins, credentials, auth headers or proxies.
-- The override trust decision is recorded in [Architecture](architecture.md#routing-and-security-decisions) and enforced by the shared account binder.
+- The override trust decision is recorded in [Architecture](architecture/decisions.md#routing-and-security-decisions) and enforced by the shared account binder.
 
 ### OAuth registration identity
 
@@ -130,7 +130,7 @@ Each configured OAuth account has one managed login session. Do not support dupl
 
 Enforce verified-subject uniqueness atomically when publishing a login, including concurrent publishers, as well as during offline configuration validation. Issued-client provenance must not bypass subject uniqueness. Disabled, signed-out and reauthorization-required accounts retain the subject reservation; explicit account removal releases it. Reauthorization uses the existing account rather than creating another alias.
 
-Current file and field names follow [Usage](usage.md#configure-accounts). The replacement follows the project's current-schema-only rule: no migration, historical aliases or parallel legacy execution path. Fresh provisioning replaces the earlier requirement to reuse compatible stored credential records.
+Current file and field names follow [Usage](usage/credentials-and-diagnostics.md#configure-accounts). The replacement follows the project's current-schema-only rule: no migration, historical aliases or parallel legacy execution path. Fresh provisioning replaces the earlier requirement to reuse compatible stored credential records.
 
 ### Configuration transition and CLI output
 
@@ -396,7 +396,7 @@ The OpenAI [session contract](https://developers.openai.com/siwc/token-sharing-o
 | Read-only account and route explanation | Show normalized reasons, applicable wait/recovery/time bounds, the one-retry ceiling, eligible route candidates, cooldown/renewal state and affinity action. Queries must not change selection, extend TTL or trigger renewal |
 | Explicit account diagnostics | Extend the existing upstream CLI to address a named account with bounded requests and no hidden retries; no automatic sweep of all accounts |
 
-Reuse existing CLI and diagnostic owners. Ordinary reports remain body-free and redacted, with bounded attempt breadcrumbs; do not expose upstream origins or credential locators to clients. Usage reporting counts reported tokens per account and attempt, including failed attempts where usage is available; unknown usage stays unknown. Client response usage describes the delivered attempt, not a fabricated merged response. Compute no prices or balances. This design does not activate the deferred diagnostic aggregation/public-extension work in the [roadmap](roadmap.md#observability-follow-up).
+Reuse existing CLI and diagnostic owners. Ordinary reports remain body-free and redacted, with bounded attempt breadcrumbs; do not expose upstream origins or credential locators to clients. Usage reporting counts reported tokens per account and attempt, including failed attempts where usage is available; unknown usage stays unknown. Client response usage describes the delivered attempt, not a fabricated merged response. Compute no prices or balances. This design does not activate the deferred diagnostic aggregation/public-extension work in the [roadmap](roadmap/index.md#observability-follow-up).
 
 ### Deferred unless a concrete need emerges
 
@@ -456,7 +456,7 @@ Keep this document as the detailed redesign specification, linked from Architect
 
 The design must explain deterministic request-boundary selection, at most one bounded same-target retry, configurable wait/recovery/time bounds, cooldown and affinity lifetimes, and honest behavior before and after publication. Identity, trusted targets, replay isolation, cancellation and credential lifecycle protections remain mandatory.
 
-The final review has settled the policy choices. Roadmap now owns [remaining qualification and prerequisites](roadmap.md#unscheduled-issues) within the shared-binding and Generation-first boundary. The project's existing [verification requirements](development.md#verification-gates) remain applicable; design and planning supply no runtime acceptance evidence.
+The final review has settled the policy choices. Roadmap now owns [remaining qualification and prerequisites](roadmap/unscheduled-issues.md#unscheduled-issues) within the shared-binding and Generation-first boundary. The project's existing [verification requirements](development.md#verification-gates) remain applicable; design and planning supply no runtime acceptance evidence.
 
 ## Reference observations
 

@@ -2,7 +2,7 @@
 
 Research date: **2026-10-23**. Evidence: official specifications, project documentation, release records and selected tagged source inspection. No authorization server was deployed and no agent SDK interoperability was tested. Versions below were the latest releases observed on that date, not dependency pins or security guarantees.
 
-The subsequent same-day clarification selects a single-deployer cluster with Agent-only attribution, not business users or tenants. [Architecture](../architecture.md#agent-identity-and-cluster-diagnostics) owns that converged future baseline; this note retains protocol and candidate evidence, not a second implementation plan.
+The subsequent same-day clarification selects a single-deployer cluster with Agent-only attribution, not business users or tenants. [Architecture](../architecture/runtime-and-routing.md#agent-identity-and-cluster-diagnostics) owns that converged future baseline; this note retains protocol and candidate evidence, not a second implementation plan.
 
 ## Goal and protocol fit
 
@@ -34,7 +34,7 @@ The `oauth2` and `openidconnect` crates are useful for client/protocol integrati
 
 ## Integration boundaries and validation
 
-Follow the [Agent identity baseline](../architecture.md#agent-identity-and-cluster-diagnostics) and [scheduled-slice gates](../roadmap.md#agent-authorization-and-diagnostics-follow-up). Protocol-specific checks below remain prerequisites for selecting an authorization server. For JWTs, verify signatures and allowed algorithms using a trusted issuer/key configuration; never merely decode claims or accept an ID token as API authorization. Opaque tokens require authenticated introspection. Refresh-token revocation alone does not invalidate offline-verified JWTs.
+Follow the [Agent identity baseline](../architecture/runtime-and-routing.md#agent-identity-and-cluster-diagnostics) and [scheduled-slice gates](../roadmap/index.md#agent-authorization-and-diagnostics-follow-up). Protocol-specific checks below remain prerequisites for selecting an authorization server. For JWTs, verify signatures and allowed algorithms using a trusted issuer/key configuration; never merely decode claims or accept an ID token as API authorization. Opaque tokens require authenticated introspection. Refresh-token revocation alone does not invalidate offline-verified JWTs.
 
 Before selection, verify:
 

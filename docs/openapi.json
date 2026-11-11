@@ -3,7 +3,7 @@
   "info": {
     "title": "MorphieCore HTTP API",
     "version": "0.1.0",
-    "description": "HTTP API summary for the local gateway, not full vendor API conformance. Generation uses a typed IR, stateless upstream history and bounded pre-publication failover. Downstream required fields prefer reported values, then justified inference and text-only estimates; usage may be approximate, not billing truth. Responses enables gateway-managed TTL history by default; store:false opts out. Known fields are strict; unknown generation fields are ignored, not forwarded. Standalone tasks require explicit activation. Embeddings accepts text with float/Base64 delivery; other media remain frozen. Codecs define exact admission; docs/usage.md explains setup."
+    "description": "HTTP API summary for the local gateway, not full vendor API conformance. Generation uses a typed IR, stateless upstream history and bounded pre-publication failover. Downstream required fields prefer reported values, then justified inference and text-only estimates; usage may be approximate, not billing truth. Responses enables gateway-managed TTL history by default; store:false opts out. Known fields are strict; unknown generation fields are ignored, not forwarded. Standalone tasks require explicit activation. Embeddings accepts text with float/Base64 delivery; other media remain frozen. Codecs define exact admission; docs/usage/index.md explains setup."
   },
   "servers": [{"url": "http://127.0.0.1:8080"}],
   "security": [{"bearerAuth": []}, {"apiKeyAuth": []}],
@@ -674,7 +674,7 @@
       },
       "TextGenerationContract": {
         "type": "object",
-        "description": "Partial simple text request domains, source-pinned Agent-default request preflight including the configured ingress body limit, and conditional delivery adaptations are separate assessments. Independent features do not promise arbitrary schemas, combinations, Provider effectiveness or a complete tool/replay loop. See docs/usage.md.",
+        "description": "Partial simple text request domains, source-pinned Agent-default request preflight including the configured ingress body limit, and conditional delivery adaptations are separate assessments. Independent features do not promise arbitrary schemas, combinations, Provider effectiveness or a complete tool/replay loop. See docs/usage/index.md.",
         "required": [
           "scope",
           "composition",
@@ -735,7 +735,7 @@
                 "$ref": "#/components/schemas/TextCapability"
               },
               "serial_tool_calls": {
-                "description": "One root function with automatic selection and explicit seriality; see docs/usage.md finite tool domains.",
+                "description": "One root function with automatic selection and explicit seriality; see docs/usage/index.md finite tool domains.",
                 "$ref": "#/components/schemas/TextCapability"
               },
               "named_tool_choice": {

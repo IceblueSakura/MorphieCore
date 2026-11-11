@@ -1,6 +1,6 @@
 # References
 
-This document separates protocol authority, reproducible regression pins, implementation references and dated research. Current behavior belongs to [Architecture](architecture.md), scope to [Roadmap](roadmap.md), and overall acceptance status to [Development](development.md).
+This document separates protocol authority, reproducible regression pins, implementation references and dated research. Current behavior belongs to [Architecture](architecture/index.md), scope to [Roadmap](roadmap/index.md), and overall acceptance status to [Development](development.md).
 
 ## Contents
 
@@ -68,7 +68,7 @@ Historical revisions remain next to the specific dated observations that need th
 
 ## Test source repositories
 
-Selected on 2026-10-23 for [integrated text/SSE redesign acceptance and later operations](roadmap.md#test-supplementation). Release revisions are fixed in the source lock; the links below identify fixture families, not imported coverage. [Development](development.md#upstream-test-sources) owns acquisition, license/provenance checks and later release updates.
+Selected on 2026-10-23 for [integrated text/SSE redesign acceptance and later operations](roadmap/index.md#test-supplementation). Release revisions are fixed in the source lock; the links below identify fixture families, not imported coverage. [Development](development.md#upstream-test-sources) owns acquisition, license/provenance checks and later release updates.
 
 The imported subset is identified in [assets.lock.json](../tests/upstream/assets.lock.json), with [explicit fixture adaptations and exclusions](refs/2026-10-23-stable-protocol-contracts.md#imported-asset-boundaries). Selected Anthropic 2.x/1.x SDK sources use Apache-2.0; older MIT source evidence does not determine their licenses.
 

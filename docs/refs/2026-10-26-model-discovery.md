@@ -1,6 +1,6 @@
 # Model capacity and discovery evidence — 2026-10-26
 
-[Architecture](../architecture.md#generation-text-model-discovery) owns the selected design. This note records source evidence, not runtime health or authorization to activate tasks.
+[Architecture](../architecture/adaptation-and-dialects.md#generation-text-model-discovery) owns the selected design. This note records source evidence, not runtime health or authorization to activate tasks.
 
 ## Capacity sources
 

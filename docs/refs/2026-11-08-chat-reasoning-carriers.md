@@ -1,6 +1,6 @@
 # Chat reasoning carrier evidence, 2026-11-08
 
-This note records source and consumer evidence. [Architecture](../architecture.md#chat-reasoning-extensions) owns the selected public contract; [Development](../development.md#overall-acceptance-status) summarizes overall acceptance and [Roadmap](../roadmap.md#unscheduled-issues) owns remaining qualification.
+This note records source and consumer evidence. [Architecture](../architecture/history-and-replay.md#chat-reasoning-extensions) owns the selected public contract; [Development](../development.md#overall-acceptance-status) summarizes overall acceptance and [Roadmap](../roadmap/unscheduled-issues.md#unscheduled-issues) owns remaining qualification.
 
 ## Sources and authority
 

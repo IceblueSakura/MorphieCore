@@ -1,6 +1,6 @@
 # Grok Imagine contracts
 
-Official sources checked on 2026-10-22. These mutable documentation observations do not establish OAuth account access or successful media generation. Scope and remaining gates belong to the [roadmap](../roadmap.md#grok-imagine-adaptation); selected execution policy belongs to [Architecture](../architecture.md#scope-and-activation-decisions).
+Official sources checked on 2026-10-22. These mutable documentation observations do not establish OAuth account access or successful media generation. Scope and remaining gates belong to the [roadmap](../roadmap/index.md#grok-imagine-adaptation); selected execution policy belongs to [Architecture](../architecture/decisions.md#scope-and-activation-decisions).
 
 ## Sources
 

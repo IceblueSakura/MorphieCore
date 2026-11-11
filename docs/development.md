@@ -1,6 +1,6 @@
 # Development
 
-This page summarizes overall acceptance status and shared development conventions. [Architecture](architecture.md) owns accepted contracts, [Roadmap](roadmap.md) owns remaining work and gates, and [Usage](usage.md) owns setup and operation.
+This page summarizes overall acceptance status and shared development conventions. [Architecture](architecture/index.md) owns accepted contracts, [Roadmap](roadmap/index.md) owns remaining work and gates, and [Usage](usage/index.md) owns setup and operation.
 
 Acceptance notes are temporary development material. Keep the overall result and remaining boundaries here, not historical run classifications, execution dates, tested-version inventories, command recipes or per-run reports. Reusable checks belong in code and tests; protocol research and source pins belong in [References](references.md).
 
@@ -22,7 +22,7 @@ Acceptance notes are temporary development material. Keep the overall result and
 
 ## Overall acceptance status
 
-The Generation baseline has met the selected [partial-delivery exit](roadmap.md#partial-delivery-exit). Offline regression, connected SDK checks, isolated pi/OpenCode workflows and representative real Provider workflows support that delivery. Remaining qualification and production preparation stay within the [roadmap boundaries](roadmap.md#current-status).
+The Generation baseline has met the selected [partial-delivery exit](roadmap/index.md#partial-delivery-exit). Offline regression, connected SDK checks, isolated pi/OpenCode workflows and representative real Provider workflows support that delivery. Remaining qualification and production preparation stay within the [roadmap boundaries](roadmap/index.md#current-status).
 
 | Area | Overall status |
 |---|---|
@@ -36,7 +36,7 @@ The Generation baseline has met the selected [partial-delivery exit](roadmap.md#
 | Real account failover | Replay isolation is accepted for selected profiles; independent compatible-account failover remains unscheduled |
 | Production and Stage 5 | Deployment and production backend acceptance remain separate. Stage-5 APIs are unscheduled |
 
-Accepted losses and service limitations live in [Architecture](architecture.md); unresolved qualifications have one home in the [unscheduled issue register](roadmap.md#unscheduled-issues). Do not duplicate those registers here or turn deferred cases into new baseline prerequisites.
+Accepted losses and service limitations live in [Architecture](architecture/index.md); unresolved qualifications have one home in the [unscheduled issue register](roadmap/unscheduled-issues.md#unscheduled-issues). Do not duplicate those registers here or turn deferred cases into new baseline prerequisites.
 
 ## Environment
 
@@ -111,7 +111,7 @@ Use synthetic task content and model-issued call/result identities with untouche
 
 ### Reverse-proxy delivery gate
 
-The selected [proxy contract](architecture.md#reverse-proxy-delivery) is covered by isolated foreground Nginx and installed-client lifecycle checks. Test-owned configuration and processes exercise content visibility before terminal/EOF, coalescing, cancellation, upstream release and subsequent recovery. Production TLS, networking and deployment remain separately authorized work.
+The selected [proxy contract](architecture/runtime-and-routing.md#reverse-proxy-delivery) is covered by isolated foreground Nginx and installed-client lifecycle checks. Test-owned configuration and processes exercise content visibility before terminal/EOF, coalescing, cancellation, upstream release and subsequent recovery. Production TLS, networking and deployment remain separately authorized work.
 
 ### Documentation checks
 
