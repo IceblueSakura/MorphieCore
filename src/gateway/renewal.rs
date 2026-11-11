@@ -58,8 +58,8 @@ impl Gateway {
                         *next_attempt = Instant::now() + policy.oauth_failed_renewal_delay;
                     }
                     failure @ (Ok(Err(_)) | Err(_)) => {
-                        // A delay never restores uncertain material or resumes pending
-                        // verification. Only the lifecycle owner authorizes reuse.
+                        // A delay never restores uncertain material; the credential
+                        // manager alone decides whether pending verification may resume.
                         *next_attempt = Instant::now() + policy.oauth_failed_renewal_delay;
                         use crate::credential::CredentialError as Error;
                         let (severity, code) = match failure {

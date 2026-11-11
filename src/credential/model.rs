@@ -87,6 +87,9 @@ pub struct Grant {
 pub struct PendingRenewal {
     pub credential: Credential,
     pub verify_id_token: bool,
+    /// Set after a non-transient verification failure; only explicit refresh retries.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub requires_manual_verification: bool,
 }
 pub enum Renewal {
     Verified(Grant),

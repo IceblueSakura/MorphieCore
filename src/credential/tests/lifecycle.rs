@@ -237,9 +237,57 @@ async fn rotated_material_survives_userinfo_failure_without_refresh_replay() {
     assert!(status.renewal_pending);
     assert_eq!(status.state, AccountState::NeedsReauthorization);
     assert!(binding.borrow().is_err());
-    assert!(!binding.refresh_if_due(120).await.unwrap());
+    // UserInfo needs no token exchange, so automatic renewal resumes it.
+    assert!(binding.refresh_if_due(120).await.unwrap());
+    assert_eq!(reopened.list(None).unwrap()[0].state, AccountState::Active);
+    assert_eq!(binding.borrow().unwrap().access.expose(), "new-access");
+    authority.done();
+}
+
+#[tokio::test]
+async fn rejected_userinfo_verification_waits_for_explicit_refresh() {
+    let mut steps = login_steps("person-a");
+    let mut rejected = step(
+        "/oauth2/userinfo",
+        vec![("authorization", "Bearer new-access")],
+        json!({"error":"invalid_token"}),
+    );
+    rejected.status = StatusCode::UNAUTHORIZED;
+    steps.extend([
+        step(
+            "/oauth2/token",
+            vec![("refresh_token", "synthetic-refresh")],
+            token("new-access", Some("rotated-refresh")),
+        ),
+        rejected,
+        step(
+            "/oauth2/userinfo",
+            vec![("authorization", "Bearer new-access")],
+            json!({"sub":"person-a"}),
+        ),
+    ]);
+    let authority = Authority::new(steps).await;
+    let dir = Directory::new();
+    let pool = authority.pool(&dir);
+    login(&pool, "alice").await;
+    let binding = pool.bind_access("grok", "alice").unwrap();
+    {
+        let tx = pool.store.transaction().unwrap();
+        let mut account = tx.load("grok", "alice").unwrap().account.unwrap();
+        account.credential.as_mut().unwrap().expires_at = Some(1);
+        tx.publish(account).unwrap();
+    }
     assert_eq!(
-        reopened.refresh("grok", "alice").await.unwrap().state,
+        binding.refresh_if_due(120).await.unwrap_err(),
+        CredentialError::Denied
+    );
+    assert!(pool.list(None).unwrap()[0].renewal_pending);
+    // Later scans neither exchange tokens nor call UserInfo again.
+    let before = read_account(&dir.path, "grok", "alice");
+    assert!(!binding.refresh_if_due(120).await.unwrap());
+    assert_eq!(before, read_account(&dir.path, "grok", "alice"));
+    assert_eq!(
+        pool.refresh("grok", "alice").await.unwrap().state,
         AccountState::Active
     );
     assert_eq!(binding.borrow().unwrap().access.expose(), "new-access");

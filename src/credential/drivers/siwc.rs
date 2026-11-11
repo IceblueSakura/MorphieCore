@@ -171,6 +171,7 @@ fn token(status: u16, body: &[u8], previous: Option<&Credential>) -> Result<Pend
     Ok(PendingRenewal {
         credential,
         verify_id_token,
+        requires_manual_verification: false,
     })
 }
 impl AuthDriver for SiwcAuthority {

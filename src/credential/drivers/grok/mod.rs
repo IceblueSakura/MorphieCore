@@ -494,6 +494,7 @@ impl crate::credential::AuthDriver for GrokAuthority {
                 crate::credential::PendingRenewal {
                     credential,
                     verify_id_token: false,
+                    requires_manual_verification: false,
                 },
             ))
         })

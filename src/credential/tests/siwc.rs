@@ -366,8 +366,6 @@ async fn rotated_material_survives_jwks_failure_and_recovers_without_token_reuse
     let state = manager.list(Some("openai")).unwrap().remove(0);
     assert!(state.renewal_pending);
     assert!(binding.borrow().is_err());
-    // Automatic scans cannot resume quarantined identity verification.
-    assert!(!binding.refresh_if_due(120).await.unwrap());
     let stored = read_account(&dir.path, "openai", "personal");
     assert!(stored["credential"].is_null());
     assert_eq!(
@@ -379,9 +377,9 @@ async fn rotated_material_survives_jwks_failure_and_recovers_without_token_reuse
         .lock()
         .unwrap()
         .push_back(step("/.well-known/jwks.json", vec![], keys()));
-    let reopened = authority.pool(&dir);
-    let state = reopened.refresh("openai", "personal").await.unwrap();
-    assert!(!state.renewal_pending);
+    // A transient verification failure resumes automatically without token reuse.
+    assert!(binding.refresh_if_due(120).await.unwrap());
+    assert!(!manager.list(Some("openai")).unwrap()[0].renewal_pending);
     assert_eq!(binding.borrow().unwrap().access.expose(), "new-access");
     assert!(
         !authority

@@ -175,11 +175,11 @@ Automatic renewal runs in the background when running `morphiecore` (`Gateway::s
 - Spaces successful short-grant renewals with `oauth.minimum_renewal_interval_ms` (default 60000). Failed eligible work uses `oauth.failed_renewal_delay_ms` (default 60000), not an exponential retry loop.
 - Persists rotated tokens in the private credential store.
 
-All settings belong to `gateway.json`. Zero scan interval keeps the startup check but disables periodic scanning. Timing never restores uncertain refresh material or automatically resumes pending verification. Current SIWC/Grok network and temporary-service failures provide no safe-consumption proof, so ambiguous dispatched refresh remains quarantined; the delay alone authorizes no retry.
+All settings belong to `gateway.json`. Zero scan interval keeps the startup check but disables periodic scanning. Timing never restores uncertain refresh material. Current SIWC/Grok network and temporary-service failures provide no safe-consumption proof, so ambiguous dispatched refresh remains quarantined; the delay alone authorizes no retry.
 
 Use `status --provider ID` for redacted state and `refresh --provider ID --account NAME` for manual renewal, with the same explicit account/store paths.
 
-When replacement material was received but identity verification failed, manual `refresh` resumes that verification without repeating the token exchange. Pending material remains unavailable to inference and automatic renewal. Renewal never detaches network work; an already-started atomic store transaction drains before renewal ownership is released. Material already returned by the Provider is still published after a renewal timeout or shutdown.
+When replacement material was received but identity verification failed, `refresh` resumes that verification without repeating the token exchange. Automatic renewal also retries it after a network/5xx or timeout failure, every `oauth.failed_renewal_delay_ms`; after a denial, identity mismatch or invalid response only manual `refresh` retries. Pending material remains unavailable to inference until verification succeeds. Renewal never detaches network work; an already-started atomic store transaction drains before renewal ownership is released. Material already returned by the Provider is still published after a renewal timeout or shutdown.
 
 ## Manual upstream diagnostics
 

@@ -581,6 +581,7 @@ async fn automatic_refresh_skips_ineligible_accounts_without_mutation_or_authori
                     account.pending_renewal = Some(PendingRenewal {
                         credential: account.credential.take().unwrap(),
                         verify_id_token: false,
+                        requires_manual_verification: true,
                     });
                 }
                 "logout" => {

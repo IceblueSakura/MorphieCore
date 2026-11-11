@@ -1128,7 +1128,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Decision | Date | Accepted Architectural Consequence |
 |---|---|---|
 | Entry path safety | 2026-10-20 | Concrete unescaped ASCII paths; rejects dot segments and encoded separators |
-| Automatic OAuth renewal | 2026-10-26 | Background renewal under account locks for tokens expiring within 120s |
+| Automatic OAuth renewal | 2026-10-26; revised 2026-11-11 | Background renewal under account locks for tokens expiring within 120s. Pending identity verification resumes automatically only after network/timeout failures; other verification failures wait for explicit refresh |
 | Managed OAuth login admission | 2026-11-02 | Active sessions and pending logins reject another login before authority I/O. Publication reserves a verified subject across issued clients under the profile transaction, including signed-out accounts. Configuration validation includes disabled accounts; only explicit account removal releases the subject |
 | Browser callback input | 2026-11-09 / 2026-11-10 | Browser login always accepts HTTP callback or a full pasted redirect URL, first valid result wins. Plain echoed line input replaces the opt-in hidden terminal mechanism; no input/callback overlap coordination. Reuse callback validation and managed publication; no raw-code or token import. [Contract](#credentials-and-security) |
 | OAuth registration removal | 2026-11-02 | Logout and recovery loading preserve removal tombstones. Re-registration creates a fresh immutable identity while retaining monotonic revision/generation counters; old bindings and stale revision-checked removal cannot revive or delete the replacement |

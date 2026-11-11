@@ -163,11 +163,24 @@ impl CredentialManager {
                     return Ok(Prepared::Skip);
                 };
                 binding.check_identity(account)?;
+                if let Some(pending) = &account.pending_renewal {
+                    // Verification needs no token exchange, so a transient
+                    // failure may be retried; anything else waits for an operator.
+                    return Ok(
+                        if loaded.recovery
+                            || account.login_attempt.is_some()
+                            || pending.requires_manual_verification
+                        {
+                            Prepared::Skip
+                        } else {
+                            Prepared::Pending(loaded.account.expect("loaded account"))
+                        },
+                    );
+                }
                 let deadline = super::super::model::now()?.saturating_add(*ahead);
                 if loaded.recovery
                     || account.state != AccountState::Active
                     || account.login_attempt.is_some()
-                    || account.pending_renewal.is_some()
                     || !account.credential.as_ref().is_some_and(|credential| {
                         credential.refresh.is_some()
                             && credential
@@ -228,19 +241,29 @@ impl CredentialManager {
         account: Account,
         storage: &RefreshStorage,
     ) -> Result<AccountStatus, Error> {
-        let expected = account.identity.as_ref().ok_or(Error::Storage)?;
         let pending = account.pending_renewal.as_ref().ok_or(Error::Storage)?;
-        let identity = driver
-            .verify_renewal(&account.client_id, expected, pending)
-            .await?;
-        if &identity != expected {
-            return Err(Error::IdentityMismatch);
+        let manual = pending.requires_manual_verification;
+        if let Err(error) = verify_pending(driver, &account).await {
+            let requires_manual = !matches!(error, Error::Network | Error::Timeout);
+            if requires_manual != manual {
+                let manager = self.clone();
+                storage
+                    .commit(move || {
+                        let mut account = account;
+                        let tx = manager.store.transaction()?;
+                        manager.check_current(&tx, &account)?;
+                        account
+                            .pending_renewal
+                            .as_mut()
+                            .ok_or(Error::Storage)?
+                            .requires_manual_verification = requires_manual;
+                        account.advance()?;
+                        tx.publish(account)
+                    })
+                    .await?;
+            }
+            return Err(error);
         }
-        driver.validate(
-            &account.client_id,
-            Some(expected),
-            Some(&pending.credential),
-        )?;
         let manager = self.clone();
         storage
             .commit(move || {
@@ -256,4 +279,19 @@ impl CredentialManager {
             })
             .await
     }
+}
+async fn verify_pending(driver: &dyn AuthDriver, account: &Account) -> Result<(), Error> {
+    let expected = account.identity.as_ref().ok_or(Error::Storage)?;
+    let pending = account.pending_renewal.as_ref().ok_or(Error::Storage)?;
+    let identity = driver
+        .verify_renewal(&account.client_id, expected, pending)
+        .await?;
+    if &identity != expected {
+        return Err(Error::IdentityMismatch);
+    }
+    driver.validate(
+        &account.client_id,
+        Some(expected),
+        Some(&pending.credential),
+    )
 }
