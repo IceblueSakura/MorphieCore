@@ -1,6 +1,6 @@
 # Convergence cleanup plan
 
-**Status: selected implementation delivered, 2026-11-10.** Configuration errors, native failure Logs, bounded private context and diagnostic report/proof removal are complete. Finished tasks are removed; Git retains the implementation sequence.
+**Status: configuration/diagnostics delivered 2026-11-10; maintenance simplification delivered 2026-11-11.** Finished tasks are removed; Git retains the implementation sequence.
 
 [Architecture](architecture.md#observability) owns accepted contracts and deliberate losses. [Usage](usage.md#failure-diagnostics) owns current configuration. [Development](development.md#diagnostics-behavior-checks) owns procedures and dated acceptance. [Roadmap](roadmap.md#planned-order) owns priority and the independent R09 pre-Stage-4 gate. This document grants no deployment, credential or private-data export authorization.
 
@@ -12,22 +12,17 @@
 | Backend persistence | Application export is best effort. Durable queues, indexing and access belong to the selected receiver/backend, not an application file fallback |
 | Raw malformed content | Retain parser/omission facts and last safe events. Verbatim malformed/HTML/plain-text context needs a separately selected redaction policy |
 | Standalone failed-response bodies | Keep metadata-only coverage and immediate failed-head return. Reading error bodies needs a separately selected finite byte/time/cancellation policy |
-| Out-of-tree Rust consumers | Repository callers of removed report/capture APIs are migrated. No external consumer inventory or compatibility promise is claimed |
+| Out-of-tree Rust consumers | Repository callers of changed constructors/evidence/report/capture APIs are migrated. No external consumer inventory or compatibility promise is claimed |
 
 These boundaries do not reopen the delivered application cleanup. Complete successful exchange archives, exact live-wire/attempt attestation, metrics and mandatory trace export remain outside the selected baseline. Synthetic authorities and client-visible outcomes replace successful logs as verification oracles.
 
-## Deferred cleanup candidates
+## Maintenance simplification
 
-The following findings need later selection, not completion of this cleanup:
+**Selected maintenance delivered, 2026-11-11.** Typed evidence APIs, construction-fixed encoder contracts, typed credential maps, historical-store detection removal, the shared Responses item-normalization owner and SDK-only test pruning are complete. Finished tasks are removed; Git retains their implementation.
 
-- Direct enum evidence APIs instead of internal string parsing.
-- Constructor-fixed encoder contracts.
-- Removal of dedicated historical-store detection.
-- Typed credential-store maps.
-- Consolidated Responses normalization.
-- Remaining SDK-only self-tests.
+[Architecture](architecture.md#domain-evidence-interface) owns typed evidence/encoder boundaries and [credential safety](architecture.md#credentials-and-security). [Development](development.md#maintenance-simplification) owns dated verification. Whole-response envelope validation, task decoding and terminal comparison remain separate; no new normalization framework or rule activation was introduced.
 
-They do not activate a broader rewrite, new APIs, Windows removal, durable application queues or a new observability backend.
+Production observability, reliability and privacy-policy changes remain deferred under [Remaining boundaries and gates](#remaining-boundaries-and-gates). No new APIs, dependencies, real Provider calls, deployment or credential operations are activated.
 
 ## Implementation references
 

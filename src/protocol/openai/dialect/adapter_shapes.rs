@@ -3,7 +3,9 @@
 use crate::protocol::{
     failure::{CarrierReason, ShapeReason},
     openai::{
-        CodecError, DecodeDirection, GenerationApi, dialect::adaptation::Adaptation, shape::bounded,
+        CodecError, DecodeDirection, GenerationApi,
+        dialect::adaptation::{Adaptation, WireRules},
+        shape::bounded,
     },
 };
 use serde_json::{Map, Value};
@@ -451,19 +453,26 @@ pub(crate) fn decode<'a>(
         && let Some(items) = o.get_mut("output").and_then(Value::as_array_mut)
     {
         for item in items {
-            if adaptation.rules.responses_reasoning_format {
-                reasoning_marker(item)?;
-            }
-            if adaptation.rules.responses_reasoning_text_shorthand {
-                reasoning_text_shorthand(item)?;
-            }
+            normalize_responses_item(item, &adaptation.rules)?;
         }
     }
     Ok((Cow::Owned(value), extras))
 }
+pub(crate) fn normalize_responses_item(
+    value: &mut Value,
+    rules: &WireRules,
+) -> Result<(), CodecError> {
+    if rules.responses_reasoning_format {
+        reasoning_marker(value)?;
+    }
+    if rules.responses_reasoning_text_shorthand {
+        reasoning_text_shorthand(value)?;
+    }
+    Ok(())
+}
 /// The containing reasoning item determines the only admitted content kind.
 /// Reject unknown shorthand fields instead of turning arbitrary objects into text.
-pub(crate) fn reasoning_text_shorthand(value: &mut Value) -> Result<(), CodecError> {
+fn reasoning_text_shorthand(value: &mut Value) -> Result<(), CodecError> {
     if value.get("type").and_then(Value::as_str) == Some("reasoning")
         && let Some(parts) = value.get_mut("content").and_then(Value::as_array_mut)
     {
@@ -485,7 +494,7 @@ pub(crate) fn reasoning_text_shorthand(value: &mut Value) -> Result<(), CodecErr
 /// codec. Unknown formats must not borrow that codec's replay semantics.
 /// `unknown` marks reasoning the router did not classify (observed for
 /// `z-ai/glm-5.3-flash`, 2026-10-13); it is readable text only, never a replay carrier.
-pub(crate) fn reasoning_marker(value: &mut Value) -> Result<(), CodecError> {
+fn reasoning_marker(value: &mut Value) -> Result<(), CodecError> {
     if value.get("type").and_then(Value::as_str) != Some("reasoning") {
         return Ok(());
     }

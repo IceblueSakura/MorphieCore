@@ -119,16 +119,10 @@ impl EventDecoder {
                     && payload.get("item").is_some()
                 {
                     let mut mapped = payload.clone();
-                    if self.adaptation.rules.responses_reasoning_format {
-                        crate::protocol::openai::dialect::adapter_shapes::reasoning_marker(
-                            &mut mapped["item"],
-                        )?;
-                    }
-                    if self.adaptation.rules.responses_reasoning_text_shorthand {
-                        crate::protocol::openai::dialect::adapter_shapes::reasoning_text_shorthand(
-                            &mut mapped["item"],
-                        )?;
-                    }
+                    crate::protocol::openai::dialect::adapter_shapes::normalize_responses_item(
+                        &mut mapped["item"],
+                        &self.adaptation.rules,
+                    )?;
                     (std::borrow::Cow::Owned(mapped), Default::default())
                 } else {
                     (std::borrow::Cow::Borrowed(payload), Default::default())

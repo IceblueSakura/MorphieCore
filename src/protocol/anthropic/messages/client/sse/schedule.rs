@@ -100,9 +100,12 @@ impl Schedule {
         while let Some(ready) = self.pop(terminal) {
             match ready {
                 Ready::Event(event) => events.push(*event),
-                Ready::OmitReasoning(item) => losses.push(
-                    super::super::projection::reasoning_omission(item, ("event.project").into()),
-                ),
+                Ready::OmitReasoning(item) => {
+                    losses.push(super::super::projection::reasoning_omission(
+                        item,
+                        crate::protocol::conversion::generation::ConversionBoundary::EventProject,
+                    ))
+                }
                 // Wire-only closures do not invent semantic part/item finality.
                 Ready::ClosePart(..) | Ready::CloseOwner(..) => {}
             }

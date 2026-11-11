@@ -397,7 +397,8 @@ fn result_stream_uses_item_snapshots_and_requires_honest_closure() {
     assert_eq!(decoder.materialize().unwrap().semantic, expected);
 
     let starter = events[1].clone();
-    let mut chat = EventEncoder::new(GenerationApi::Chat, metadata()).unwrap();
+    let mut chat =
+        EventEncoder::new(GenerationApi::Chat, metadata(), TargetContract::full()).unwrap();
     chat.encode(&StreamEvent::Started, &fidelity()).unwrap();
     assert!(chat.encode(&starter, &fidelity()).is_err());
     let mut messages = ClientEventEncoder::new("r", "synthetic");

@@ -189,7 +189,7 @@ async fn rotation_and_omitted_replacement_use_account_bound_refresh() {
         let tx = pool.store.transaction().unwrap();
         let mut account = tx.load("grok", "alice").unwrap().account.unwrap();
         account.credential.as_mut().unwrap().expires_at = Some(1);
-        tx.publish(&account).unwrap();
+        tx.publish(account).unwrap();
     }
     assert!(binding.refresh_if_due(120).await.unwrap());
     assert_eq!(binding.borrow().unwrap().access.expose(), "new-access");

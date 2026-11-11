@@ -162,8 +162,12 @@ mod message_envelopes {
                 .iter()
                 .any(|effect| effect.rule() == "responses.omit-message-envelopes.v1")
         );
-        let mut encoder =
-            EventEncoder::new(GenerationApi::Responses, projected.metadata().clone()).unwrap();
+        let mut encoder = EventEncoder::new(
+            GenerationApi::Responses,
+            projected.metadata().clone(),
+            morphiecore::protocol::openai::TargetContract::full(),
+        )
+        .unwrap();
         let mut wire = vec![];
         for event in &events {
             if matches!(event, StreamEvent::MessageEnvelope(_)) {
@@ -208,7 +212,12 @@ mod message_envelopes {
                 morphiecore::protocol::openai::TargetContract::full(),
             )
             .unwrap();
-            let mut encoder = EventEncoder::new(profile, projected.metadata().clone()).unwrap();
+            let mut encoder = EventEncoder::new(
+                profile,
+                projected.metadata().clone(),
+                morphiecore::protocol::openai::TargetContract::full(),
+            )
+            .unwrap();
             let mut consumer = EventDecoder::new(profile);
             for event in &events {
                 if profile == GenerationApi::Responses

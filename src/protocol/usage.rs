@@ -91,15 +91,15 @@ pub(crate) fn grounding_counts(value: &Value) -> Result<Vec<ToolUseCount>, Codec
 }
 
 pub(crate) fn report_loss(
-    direction: &'static str,
+    direction: crate::protocol::conversion::generation::ConversionBoundary,
 ) -> crate::protocol::conversion::generation::Effect {
     crate::protocol::conversion::generation::Effect::Field {
         rule: crate::protocol::conversion::generation::RuleId::new(
             "generation.usage-report-view.v1",
         ),
-        field: ("generation.usage.reports").into(),
-        boundary: (direction).into(),
-        change: ("project").into(),
+        field: crate::protocol::conversion::generation::Field::UsageReports,
+        boundary: direction,
+        change: crate::protocol::conversion::generation::Change::Omit,
         owner: crate::protocol::conversion::generation::Owner::Root,
     }
 }

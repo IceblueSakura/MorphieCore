@@ -1,4 +1,5 @@
 //! Admission regressions for the existing text subset, not the whole SDK union.
+use morphiecore::protocol::openai::TargetContract;
 use morphiecore::protocol::openai::{Dialect, GenerationApi, GenerationCodec};
 use serde_json::json;
 
@@ -8,7 +9,7 @@ fn nullable_reasoning_effort_and_optional_function_headers_follow_their_own_sche
     let wire =
         json!({"model":"m","messages":[{"role":"user","content":"hi"}],"reasoning_effort":null});
     let decoded = adapter.decode_request(wire.to_string().as_bytes()).unwrap();
-    let contract = morphiecore::protocol::openai::TargetContract::full();
+    let contract = TargetContract::full();
     assert!(
         adapter
             .encode_request(&decoded, "m", &contract)
@@ -71,7 +72,12 @@ fn known_unrepresentable_event_fields_and_changed_bound_metadata_fail_early() {
             },
         },
     ] {
-        let mut encoder = EventEncoder::new(GenerationApi::Chat, metadata.clone()).unwrap();
+        let mut encoder = EventEncoder::new(
+            GenerationApi::Chat,
+            metadata.clone(),
+            TargetContract::full(),
+        )
+        .unwrap();
         encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
         assert!(
             encoder
@@ -94,7 +100,12 @@ fn known_unrepresentable_event_fields_and_changed_bound_metadata_fail_early() {
         .latest_mut()
         .expect("report")
         .service_class = Some(ServiceClass::StandardProcessing);
-    let mut encoder = EventEncoder::new(GenerationApi::Chat, metadata.clone()).unwrap();
+    let mut encoder = EventEncoder::new(
+        GenerationApi::Chat,
+        metadata.clone(),
+        TargetContract::full(),
+    )
+    .unwrap();
     encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
     metadata
         .context

@@ -338,7 +338,7 @@ async fn rotated_material_survives_jwks_failure_and_recovers_without_token_reuse
         let tx = manager.store.transaction().unwrap();
         let mut account = tx.load("openai", "personal").unwrap().account.unwrap();
         account.credential.as_mut().unwrap().expires_at = Some(1);
-        tx.publish(&account).unwrap();
+        tx.publish(account).unwrap();
     }
     let mut replacement = token("", SCOPES);
     replacement["access_token"] = json!("new-access");

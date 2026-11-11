@@ -370,24 +370,7 @@ async fn binary_uses_account_files_and_account_locks_without_cross_profile_effec
     assert!(!busy.status.success());
 }
 #[tokio::test]
-async fn binary_refuses_old_format_and_reports_quarantine_without_exposing_tokens() {
-    let legacy = fixture();
-    declare(&legacy.path, "grok", "one");
-    std::fs::write(legacy.path.join("accounts.json"), "synthetic obsolete data").unwrap();
-    let output = command(&[
-        "status".as_ref(),
-        "--json".as_ref(),
-        "--store".as_ref(),
-        legacy.path.as_os_str(),
-    ])
-    .await;
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("legacy"));
-    assert_eq!(
-        std::fs::read_to_string(legacy.path.join("accounts.json")).unwrap(),
-        "synthetic obsolete data"
-    );
-
+async fn binary_reports_quarantine_without_exposing_tokens() {
     let dir = fixture();
     save(
         &dir.path,

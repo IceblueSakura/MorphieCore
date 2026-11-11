@@ -78,47 +78,6 @@ class ConstrainedProfileOracles(unittest.TestCase):
     def gateway(self):
         return SimpleNamespace(requests=[], budget=7)
 
-    def test_pinned_sdk_keeps_schema_and_effort_in_actual_json_and_sse_requests(self):
-        seen = []
-        def handle(request):
-            body = json.loads(request.content)
-            seen.append(body)
-            message = {"id": "synthetic", "type": "message", "role": "assistant", "model": live.MODEL,
-                       "content": [{"type": "thinking", "thinking": "synthetic thought",
-                                    "signature": sealed("anthropic-thinking", "synthetic-signature")},
-                                   {"type": "text", "text": "synthetic"}], "stop_reason": "end_turn",
-                       "stop_sequence": None, "usage": {"input_tokens": 1, "output_tokens": 1}}
-            if not body.get("stream"):
-                return live.httpx.Response(200, json=message)
-            frames = [{"type": "message_start", "message": {**message, "content": [], "stop_reason": None}}]
-            for index, block in enumerate(message["content"]):
-                frames += [{"type": "content_block_start", "index": index, "content_block": block},
-                           {"type": "content_block_stop", "index": index}]
-            frames += [
-                {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": None},
-                 "usage": {"output_tokens": 1}}, {"type": "message_stop"},
-            ]
-            raw = "".join(f"event: {f['type']}\ndata: {json.dumps(f)}\n\n" for f in frames)
-            return live.httpx.Response(200, content=raw.encode(), headers={"content-type": "text/event-stream"})
-        with live.httpx.Client(transport=live.httpx.MockTransport(handle), trust_env=False) as http:
-            with live.anthropic.Anthropic(api_key="synthetic", base_url="http://127.0.0.1",
-                                         max_retries=0, http_client=http) as client:
-                messages = [live.user("synthetic"), copy.deepcopy(live.EFFORT)]
-                delivered = []
-                for streamed in (False, True):
-                    reply = live.sdk_generate(self.gateway(), client,
-                        live.profile(messages, structured=True), streamed, "synthetic")
-                    delivered.append(reply)
-                    messages = messages + [{"role": "assistant", "content": reply["content"]},
-                                           live.user("next"), copy.deepcopy(live.EFFORT)]
-        self.assertEqual(len(seen), 2)
-        for body in seen:
-            self.assertEqual(body["output_config"], {"effort": "high",
-                "format": {"type": "json_schema", "schema": live.OUTPUT_SCHEMA}})
-            self.assertEqual(body["thinking"], live.THINKING)
-            self.assertEqual(body["messages"][1], live.EFFORT)
-        self.assertEqual(seen[1]["messages"][2]["content"], delivered[0]["content"])
-
     def test_seven_request_plan_keeps_strict_controls_and_model_history(self):
         gateway, client = self.gateway(), Client()
         histories = live.structured(gateway, client)

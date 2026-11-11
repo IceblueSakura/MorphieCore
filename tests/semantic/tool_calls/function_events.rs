@@ -1,5 +1,6 @@
 //! Function argument, mixed-item identity, snapshot and terminal conformance.
 use crate::events_support::*;
+use morphiecore::protocol::openai::TargetContract;
 use morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
@@ -38,7 +39,9 @@ fn response_terminal_domains_do_not_constrain_string_error_events() {
             },
         },
     ] {
-        let mut encoder = EventEncoder::new(GenerationApi::Responses, metadata()).unwrap();
+        let mut encoder =
+            EventEncoder::new(GenerationApi::Responses, metadata(), TargetContract::full())
+                .unwrap();
         encoder.encode(&StreamEvent::Started, &f).unwrap();
         assert!(encoder.encode(&event, &f).is_err());
         assert!(encoder.finish().is_err());
@@ -72,7 +75,8 @@ fn response_terminal_domains_do_not_constrain_string_error_events() {
             );
         }
     }
-    let mut encoder = EventEncoder::new(GenerationApi::Responses, metadata()).unwrap();
+    let mut encoder =
+        EventEncoder::new(GenerationApi::Responses, metadata(), TargetContract::full()).unwrap();
     let frames = encoder
         .encode(
             &StreamEvent::Terminal {
@@ -187,7 +191,9 @@ fn non_success_terminals_keep_partial_output_and_error_is_not_materializable() {
             };
             assert_eq!(call.arguments.as_raw(), Some("{"));
             assert_eq!(response.continuation(), Continuation::Unreported);
-            let mut encoder = EventEncoder::new(GenerationApi::Responses, metadata()).unwrap();
+            let mut encoder =
+                EventEncoder::new(GenerationApi::Responses, metadata(), TargetContract::full())
+                    .unwrap();
             let source = FidelityRecords::default();
             for event in &events[..events.len() - 1] {
                 encoder.encode(event, &source).unwrap();
@@ -225,7 +231,8 @@ fn non_success_terminals_keep_partial_output_and_error_is_not_materializable() {
 }
 #[test]
 fn event_encoder_rejects_duplicate_terminal_and_unrepresentable_chat_grouping() {
-    let mut e = EventEncoder::new(GenerationApi::Responses, metadata()).unwrap();
+    let mut e =
+        EventEncoder::new(GenerationApi::Responses, metadata(), TargetContract::full()).unwrap();
     let f = FidelityRecords::default();
     assert!(
         e.finish().is_err(),
@@ -239,7 +246,7 @@ fn event_encoder_rejects_duplicate_terminal_and_unrepresentable_chat_grouping() 
         e.finish().is_err(),
         "a rejected completed stream stays rejected"
     );
-    let mut e = EventEncoder::new(GenerationApi::Chat, metadata()).unwrap();
+    let mut e = EventEncoder::new(GenerationApi::Chat, metadata(), TargetContract::full()).unwrap();
     e.encode(&StreamEvent::Started, &f).unwrap();
     e.encode(&start(1, ItemKind::Message { phase: None }), &f)
         .unwrap();

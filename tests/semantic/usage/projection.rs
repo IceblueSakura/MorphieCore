@@ -1,5 +1,6 @@
 //! Named Chat loss never changes the source or repairs invalid reports.
 use crate::events_support::{metadata, text};
+use morphiecore::protocol::openai::TargetContract;
 use morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
@@ -55,7 +56,12 @@ fn canonical_report_events_reach_terminal_carriers_without_rewriting_source_fact
         let meta = metadata();
         let projected =
             lower_response(&source, &fidelity, &meta, profile, Contract::full()).unwrap();
-        let mut encoder = EventEncoder::new(profile, projected.metadata().clone()).unwrap();
+        let mut encoder = EventEncoder::new(
+            profile,
+            projected.metadata().clone(),
+            TargetContract::full(),
+        )
+        .unwrap();
         for event in text_events() {
             encoder.encode(&event, &fidelity).unwrap();
         }
@@ -205,8 +211,12 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
                 .is_some(),
             !fingerprint.is_none()
         );
-        let mut encoder =
-            EventEncoder::new(GenerationApi::Responses, projected.metadata().clone()).unwrap();
+        let mut encoder = EventEncoder::new(
+            GenerationApi::Responses,
+            projected.metadata().clone(),
+            TargetContract::full(),
+        )
+        .unwrap();
         for event in text_events() {
             encoder.encode(&event, &fidelity).unwrap();
         }
@@ -218,8 +228,12 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
                 .count(),
             0
         );
-        let mut failed =
-            EventEncoder::new(GenerationApi::Responses, projected.metadata().clone()).unwrap();
+        let mut failed = EventEncoder::new(
+            GenerationApi::Responses,
+            projected.metadata().clone(),
+            TargetContract::full(),
+        )
+        .unwrap();
         for event in text_events() {
             failed.encode(&event, &fidelity).unwrap();
         }
@@ -264,7 +278,7 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
             )
             .is_err()
         );
-        assert!(EventEncoder::new(GenerationApi::Responses, meta).is_err());
+        assert!(EventEncoder::new(GenerationApi::Responses, meta, Contract::full()).is_err());
     }
 }
 
@@ -321,24 +335,13 @@ fn text_events() -> Vec<StreamEvent> {
 }
 
 #[test]
-fn a_stream_cannot_switch_target_policy_after_publication() {
-    use morphiecore::protocol::openai::events::EventEncoder;
-    let mut encoder = EventEncoder::new(GenerationApi::Chat, metadata()).unwrap();
-    let fidelity = FidelityRecords::default();
-    encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
-    let mut contract = Contract::full();
-    contract.adaptation.rules.structured_chat_reasoning = true;
-    encoder = encoder.with_contract(contract);
-    assert!(encoder.encode(&text_events()[1], &fidelity).is_err());
-}
-
-#[test]
 fn chat_stream_null_metadata_is_lossless() {
     use morphiecore::{protocol::openai::events::EventEncoder, semantic::value::Presence};
     let fidelity = FidelityRecords::default();
     let mut meta = metadata();
     meta.context.execution.metadata = Presence::Null;
-    let mut encoder = EventEncoder::new(GenerationApi::Chat, meta.clone()).unwrap();
+    let mut encoder =
+        EventEncoder::new(GenerationApi::Chat, meta.clone(), TargetContract::full()).unwrap();
     let frames = encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
     assert!(frames.iter().all(|frame| frame.get("metadata").is_none()));
     assert!(
@@ -363,9 +366,8 @@ fn chat_stream_null_metadata_is_lossless() {
         Some(&serde_json::Value::Null)
     );
 
-    let mut encoder = EventEncoder::new(GenerationApi::Chat, meta.clone())
-        .unwrap()
-        .with_contract(Contract::full());
+    let mut encoder =
+        EventEncoder::new(GenerationApi::Chat, meta.clone(), Contract::full()).unwrap();
     for event in text_events() {
         encoder.encode(&event, &fidelity).unwrap();
     }
@@ -375,9 +377,7 @@ fn chat_stream_null_metadata_is_lossless() {
             .iter()
             .all(|e| e.field() != "response.context.metadata")
     );
-    let mut encoder = EventEncoder::new(GenerationApi::Chat, metadata())
-        .unwrap()
-        .with_contract(Contract::full());
+    let mut encoder = EventEncoder::new(GenerationApi::Chat, metadata(), Contract::full()).unwrap();
     encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
     encoder.update_metadata(meta.clone()).unwrap();
     for event in text_events().into_iter().skip(1) {
@@ -391,8 +391,9 @@ fn chat_stream_null_metadata_is_lossless() {
     );
 
     meta.context.execution.metadata = Presence::Value(Default::default());
-    assert!(EventEncoder::new(GenerationApi::Chat, meta.clone()).is_err());
-    let mut encoder = EventEncoder::new(GenerationApi::Chat, metadata()).unwrap();
+    assert!(EventEncoder::new(GenerationApi::Chat, meta.clone(), Contract::full()).is_err());
+    let mut encoder =
+        EventEncoder::new(GenerationApi::Chat, metadata(), TargetContract::full()).unwrap();
     encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
     assert!(
         encoder

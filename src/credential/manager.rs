@@ -161,7 +161,7 @@ impl CredentialManager {
             let id = random_id()?;
             account.login_attempt = Some(id.clone());
             account.advance()?;
-            tx.publish(&account)?;
+            tx.publish(account)?;
             LoginTicket {
                 store: self.store.clone(),
                 profile: profile.into(),
@@ -194,7 +194,7 @@ impl CredentialManager {
             driver.validate(issued, None, None)?;
             account.client_id = issued.into();
             account.advance()?;
-            tx.publish(&account)
+            tx.publish(account).map(|_| ())
         };
         let grant = driver
             .login(
@@ -239,7 +239,7 @@ impl CredentialManager {
         account.state = AccountState::Active;
         account.login_attempt = None;
         account.advance()?;
-        tx.publish(&account)?;
+        let account = tx.publish(account)?;
         ticket.complete = true;
         self.status(&account, false)
     }
@@ -318,7 +318,7 @@ impl CredentialManager {
             account.state = AccountState::NeedsReauthorization;
             account.login_attempt = None;
             account.advance()?;
-            tx.publish(&account)?;
+            let account = tx.publish(account)?;
             (account, previous)
         };
         let expected = account.identity.as_ref().ok_or(Error::Storage)?;
@@ -331,7 +331,7 @@ impl CredentialManager {
                 let tx = self.store.transaction()?;
                 account.pending_renewal = Some(pending);
                 account.advance()?;
-                tx.publish(&account)?;
+                let account = tx.publish(account)?;
                 drop(tx);
                 return self.complete_renewal(driver, account).await.map(Some);
             }
@@ -354,7 +354,7 @@ impl CredentialManager {
         account.replace_credential(Some(grant.credential))?;
         account.state = AccountState::Active;
         account.advance()?;
-        tx.publish(&account)?;
+        let account = tx.publish(account)?;
         self.status(&account, false).map(Some)
     }
     async fn complete_renewal(
@@ -389,7 +389,7 @@ impl CredentialManager {
         account.replace_credential(Some(pending.credential))?;
         account.state = AccountState::Active;
         account.advance()?;
-        tx.publish(&account)?;
+        let account = tx.publish(account)?;
         self.status(&account, false)
     }
     pub async fn logout(
@@ -425,7 +425,7 @@ impl CredentialManager {
             account.state = AccountState::SignedOut;
             account.login_attempt = None;
             account.advance()?;
-            tx.publish(&account)?;
+            let account = tx.publish(account)?;
             (account.client_id, previous)
         };
         if !revoke {
@@ -461,7 +461,7 @@ impl CredentialManager {
         account.identity = None;
         account.state = AccountState::Removed;
         account.advance()?;
-        tx.publish(&account)?;
+        let account = tx.publish(account)?;
         self.status(&account, false)
     }
 }
@@ -494,7 +494,7 @@ impl Drop for LoginTicket {
         {
             account.login_attempt = None;
             if account.advance().is_ok() {
-                let _ = tx.publish(&account);
+                let _ = tx.publish(account);
             }
         }
     }

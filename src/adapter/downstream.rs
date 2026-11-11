@@ -323,9 +323,9 @@ pub(crate) const SAFETY_ASSESSMENT_RULE: &str = "generation.omit-safety-assessme
 fn safety_assessment_loss() -> Effect {
     Effect::Field {
         rule: crate::protocol::conversion::generation::RuleId::new(SAFETY_ASSESSMENT_RULE),
-        field: ("response.safety_reports").into(),
-        boundary: ("event.project").into(),
-        change: ("omit").into(),
+        field: crate::protocol::conversion::generation::Field::SafetyReports,
+        boundary: crate::protocol::conversion::generation::ConversionBoundary::EventProject,
+        change: crate::protocol::conversion::generation::Change::Omit,
         owner: crate::protocol::conversion::generation::Owner::Root,
     }
 }

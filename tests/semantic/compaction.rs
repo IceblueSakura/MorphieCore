@@ -181,9 +181,7 @@ fn compaction_stream_requires_a_matching_closed_snapshot() {
 
     let mut client_caps = contract();
     client_caps.replay_origin = Some(CLIENT_ORIGIN.clone());
-    let mut client = EventEncoder::new(GenerationApi::Responses, metadata())
-        .unwrap()
-        .with_contract(client_caps);
+    let mut client = EventEncoder::new(GenerationApi::Responses, metadata(), client_caps).unwrap();
     let sealed: Vec<_> = events
         .iter()
         .cloned()
@@ -202,9 +200,7 @@ fn compaction_stream_requires_a_matching_closed_snapshot() {
     assert_eq!(format, ReplayFormat::ResponsesCompaction);
     assert_eq!(payload.as_str(), "synthetic-context");
     assert_eq!(sealed[3]["item"], sealed[4]["response"]["output"][0]);
-    let mut chat = EventEncoder::new(GenerationApi::Chat, metadata())
-        .unwrap()
-        .with_contract(contract());
+    let mut chat = EventEncoder::new(GenerationApi::Chat, metadata(), contract()).unwrap();
     chat.encode(&events[0], &result.fidelity).unwrap();
     assert!(chat.encode(&events[1], &result.fidelity).is_err());
     let mut messages = ClientEventEncoder::new("r", "synthetic");
@@ -405,9 +401,7 @@ fn compaction_progress_and_output_creator_are_not_execution_or_request_authority
     );
     // Independent typed event -> wire expectation. Progress remains repeatable,
     // content-free and ordered; no output snapshot is invented from it.
-    let mut encoder = EventEncoder::new(GenerationApi::Responses, metadata())
-        .unwrap()
-        .with_contract(contract());
+    let mut encoder = EventEncoder::new(GenerationApi::Responses, metadata(), contract()).unwrap();
     encoder
         .encode(&StreamEvent::Started, &FidelityRecords::default())
         .unwrap();

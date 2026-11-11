@@ -676,7 +676,7 @@ fn messages_end_turn_derivation_uses_original_request_without_mutating_reports()
         assert!(
             crate::protocol::anthropic::messages::client::completed_without_stops(
                 &continued,
-                "response.project"
+                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject
             )
             .unwrap()
             .is_none()
@@ -694,7 +694,7 @@ fn messages_end_turn_derivation_uses_original_request_without_mutating_reports()
         assert!(
             crate::protocol::anthropic::messages::client::completed_without_stops(
                 &stopped,
-                "response.project"
+                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject
             )
             .unwrap()
             .is_none()

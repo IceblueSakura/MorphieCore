@@ -11,6 +11,7 @@ This guide owns tooling, test procedures and evidence reporting. Use offline, sy
 - [Verification gates](#verification-gates)
   - [Offline baseline](#offline-baseline)
   - [Diagnostics behavior checks](#diagnostics-behavior-checks)
+  - [Maintenance simplification](#maintenance-simplification)
   - [Reusable Generation sessions](#reusable-generation-sessions)
   - [SDK loopback gate](#sdk-loopback-gate)
   - [Reverse-proxy delivery gate](#reverse-proxy-delivery-gate)
@@ -264,6 +265,16 @@ Native in-memory exporters check severity, source precedence, recovery/cancellat
 **Failure diagnostics, 2026-11-10:** the full offline baseline, strict all-target Clippy, formatting, production compilation, 20 pinned assets, all Python suites and 20 serial SDK scenarios pass. All 26 isolated installed-Agent scenarios pass on pi **1.5.1** and OpenCode **2.2.5**, including actual Google-owner replay/session resume and cancellation synchronized through native failure Logs. `nix flake check` passes for the current `x86_64-linux` environment; other declared systems remain unverified. Two independent reviews preserve real acknowledgment/history/recovery ownership; targeted regressions repair logger-destruction blocking, shutdown severity and original failure-stage attribution. Evidence: `failure-logs-{offline-sdk,clients}-20261110.job`.
 
 Complete successful exchange/usage reports, exact live prepared-wire/attempt attestation and file recovery are withdrawn. Synthetic authorities and SDK/client outputs remain independent oracles, not reconstructed success logs. Source accounting and public notice semantics remain at their owners. The pre-existing notice-after-retry gap has a [deferred disposition](roadmap.md#protocol-boundaries). No real Provider call, production receiver/backend persistence or deployment is qualified by this cleanup.
+
+### Maintenance simplification
+
+**Accepted, 2026-11-11:** conversion evidence uses typed fields/boundaries/changes, and OpenAI event encoders receive their final contract at construction. Existing semantic, transport and SDK expectations preserve rule spelling, loss classification, metadata identity and terminal honesty. Responses snapshots and item events share only the ordered marker/shorthand rule owner; envelope, task and terminal validation remain distinct.
+
+Credential provider documents use typed OAuth/key maps and move-and-return publication without new secret-cloning APIs or a disk-format change. Raw-current-JSON checks reject duplicate aliases and nested credential fields through both loaders. Bidirectional partition updates, existing publication fault injection, bounds, lock isolation and CLI quarantine/redaction checks pass. Historical filename/error detection and its exclusive assertion are removed; current storage safety and reserved namespaces remain.
+
+The full offline baseline, strict all-target Clippy, formatting, production compilation, pinned assets, all four Python suites and all 20 serial SDK scenarios pass. All 26 isolated current-Agent scenarios pass on pi **1.5.1** and OpenCode **2.2.5**, including tool/history, replay, summary, recovery and cancellation. Two independent source reviews found no concrete regression in credential ownership/publication or evidence/stream semantics. Evidence: `maintenance-{offline-sdk,clients}-20261111.job`.
+
+Only the standalone mocked Anthropic serialization self-test and the now-inexpressible encoder policy-switch test were pruned; connected SDK consumers and acceptance failure oracles remain. No dependency refresh, real Provider acceptance, production diagnostics/backend/reliability/privacy change or deployment is qualified by this slice.
 
 ### Python checks
 

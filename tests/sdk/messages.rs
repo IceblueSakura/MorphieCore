@@ -439,9 +439,12 @@ fn responses_null_metadata(events: Vec<StreamEvent>, model: &str) -> Response {
     use morphiecore::semantic::value::Presence;
     let mut metadata = crate::events_support::metadata();
     metadata.context.execution.metadata = Presence::Null;
-    let mut producer = EventEncoder::new(GenerationApi::Responses, metadata)
-        .unwrap()
-        .with_contract(crate::events_support::contract());
+    let mut producer = EventEncoder::new(
+        GenerationApi::Responses,
+        metadata,
+        crate::events_support::contract(),
+    )
+    .unwrap();
     let mut attempt = Attempt::new(
         GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
         1 << 20,

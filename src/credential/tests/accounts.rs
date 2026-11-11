@@ -37,7 +37,7 @@ fn named_oauth_accounts_keep_distinct_principals_and_network_free_borrowing() {
             .store
             .transaction()
             .unwrap()
-            .publish(&account)
+            .publish(account)
             .unwrap();
     }
     let source = Accounts {
@@ -112,7 +112,7 @@ fn named_oauth_accounts_keep_distinct_principals_and_network_free_borrowing() {
         let tx = manager.store.transaction().unwrap();
         let mut other = tx.load("grok", "second").unwrap().account.unwrap();
         other.identity.as_mut().unwrap().subject = "subject-first".into();
-        tx.publish(&other).unwrap();
+        tx.publish(other).unwrap();
     }
     assert!(
         duplicate.bind(&manager).is_err(),

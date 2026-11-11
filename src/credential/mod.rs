@@ -58,8 +58,6 @@ pub enum CredentialError {
     UnknownProfile,
     #[error("operation or login method is unsupported by this profile")]
     Unsupported,
-    #[error("legacy credential snapshot is unsupported; select a new explicit store directory")]
-    LegacyStore,
     #[error(
         "credential publication is uncertain; explicit login, key replacement or local removal required"
     )]

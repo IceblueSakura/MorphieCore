@@ -294,7 +294,9 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
             } else {
                 assert!(target.metadata().context.settings().is_none());
             }
-            let mut encoder = EventEncoder::new(profile, target.metadata().clone()).unwrap();
+            let mut encoder =
+                EventEncoder::new(profile, target.metadata().clone(), TargetContract::full())
+                    .unwrap();
             let mut frames = encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
             frames.extend(
                 encoder

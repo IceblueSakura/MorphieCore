@@ -736,14 +736,16 @@ Media resources (images, audio, video, files) are handled as inert payloads (bas
 
 ### Adaptation evidence
 
-Every lossy conversion or field omission generates bounded typed evidence.
+Every lossy conversion or field omission generates bounded typed evidence. Internal authors pass `Field`, `ConversionBoundary` and `Change` enums directly; wire spelling remains at their serialization owner, without static-string parsing or panic tables.
 
 #### Domain evidence interface
 
-The conversion pipeline tracks adaptation evidence via [`Conversion<T>`](../src/protocol/conversion/generation/evidence.rs#L837), pairing transformed payloads with a typed [`EvidenceDelta`](../src/protocol/conversion/generation/evidence.rs#L739):
-- **Body-free isolation:** Evidence records only structured [`Effect`](../src/protocol/conversion/generation/evidence.rs#L478) items and rule IDs; user payloads, prompts, and tokens are strictly excluded.
-- **Change categories:** Field modifications classify into canonical [`Change`](../src/protocol/conversion/generation/evidence.rs#L361) families (`Normalize`, `Derive`, `Default`, `InferFromRequest`, `Omit`, `Approximate`, `Estimate`).
-- **Bounded allowances:** Deltas enforce hard upper bounds of [`MAX_EFFECTS`](../src/protocol/conversion/generation/evidence.rs#L726) (64 entries) and 16 KiB per delta. When saturated, an explicit truncation count is recorded without modifying business payloads.
+The conversion pipeline tracks adaptation evidence via [`Conversion<T>`](../src/protocol/conversion/generation/evidence.rs#L754), pairing transformed payloads with a typed [`EvidenceDelta`](../src/protocol/conversion/generation/evidence.rs#L645):
+- **Body-free isolation:** Evidence records only structured [`Effect`](../src/protocol/conversion/generation/evidence.rs#L384) items and rule IDs; user payloads, prompts, and tokens are strictly excluded.
+- **Change categories:** Field modifications classify into canonical [`Change`](../src/protocol/conversion/generation/evidence.rs#L282) families (`Normalize`, `Derive`, `Default`, `InferFromRequest`, `Omit`, `Approximate`, `Estimate`).
+- **Bounded allowances:** Deltas enforce hard upper bounds of [`MAX_EFFECTS`](../src/protocol/conversion/generation/evidence.rs#L632) (64 entries) and 16 KiB per delta. When saturated, an explicit truncation count is recorded without modifying business payloads.
+
+OpenAI event encoders receive the final `TargetContract` at construction. There is no target-policy setter or publication-time target lock; identity-bound metadata updates and source lifecycle/terminal checks remain independent.
 
 #### Atomic evidence and output batches
 
@@ -994,7 +996,7 @@ Configured via [`DeltaCoalescing`](../src/execution/delivery/coalescing.rs#L17) 
 
 ### Credentials and security
 
-- **Store:** Private files and redacted, zeroizing in-memory secret types; loaders reject unsafe paths.
+- **Store:** Private files and redacted, zeroizing in-memory secret types; loaders reject unsafe paths. Provider documents hold typed OAuth/key maps, rejecting duplicate aliases and malformed known fields across both partitions. Publication moves and returns records without secret-cloning APIs, preserving shared locks, bounds, quarantine and atomic-write ordering. Only the current format is maintained: no historical filename detection or migration; generic invalid-directory rejection and reserved namespace protection remain.
 - **Driver ownership:** Managers share an immutable driver registry. Each driver has one registration-aware login entrance and one renewal entrance; pending renewal still requires its separate identity verification and durable publication steps.
 - **Browser login input:** Every browser login accepts HTTP callback and a full callback URL on stdin together; the first valid result wins at the shared listener. Stdin uses ordinary echoed lines, with no mode switch, hidden-input parser or partial-line coordination. Pasted URLs relay only to the prepared loopback target and share state/field validation, PKCE, issued-client binding, nonce, identity proof and the original deadline. No token import or second exchange is introduced. See [operation](usage.md#oauth) and [implementation references](refs/2026-11-02-account-recovery-sources.md#headless-browser-callback-input).
 - **Automatic OAuth renewal:** Startup owns the deduplicated maintenance registry, including configured disabled accounts. Listener-owned renewal consumes that registry and scans tokens expiring within 120s, rotating credentials serially under account locks.

@@ -343,7 +343,7 @@ async fn bad_nonce_or_mixed_subject_never_reactivates_ended_browser_session() {
             subject: "person-a".into(),
             scope: None,
         });
-        pool.store.transaction().unwrap().publish(&account).unwrap();
+        pool.store.transaction().unwrap().publish(account).unwrap();
         let error = run_browser(&pool, &authority, bad_nonce).await.unwrap_err();
         assert_eq!(
             error,

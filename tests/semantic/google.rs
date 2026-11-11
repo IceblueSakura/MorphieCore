@@ -1,4 +1,5 @@
 //! Independent generateContent wire expectations: streamed intake and the next request.
+use morphiecore::protocol::openai::TargetContract;
 use morphiecore::{
     protocol::{
         CodecError as Failure, DecodedResponse, GenerationRequestEnvelope as Request,
@@ -320,18 +321,12 @@ fn stream_maps_thoughts_text_calls_and_owned_signatures() {
     );
     assert!(
         GenerationCodec::new(GenerationApi::Chat, Dialect::MorphieCore, None)
-            .encode_response(
-                &observed,
-                &morphiecore::protocol::openai::TargetContract::full()
-            )
+            .encode_response(&observed, &TargetContract::full())
             .is_err()
     );
     assert!(
         GenerationCodec::new(GenerationApi::Responses, Dialect::MorphieCore, None)
-            .encode_response(
-                &observed,
-                &morphiecore::protocol::openai::TargetContract::full()
-            )
+            .encode_response(&observed, &TargetContract::full())
             .is_err()
     );
     assert_eq!(observed.metadata.created, None);
@@ -475,7 +470,7 @@ fn stream_maps_thoughts_text_calls_and_owned_signatures() {
             &denied.fidelity,
             &denied.metadata,
             GenerationApi::Responses,
-            morphiecore::protocol::openai::TargetContract::full()
+            TargetContract::full()
         )
         .err()
         .unwrap()
@@ -491,6 +486,7 @@ fn stream_maps_thoughts_text_calls_and_owned_signatures() {
     let mut openai = morphiecore::protocol::openai::events::EventEncoder::new(
         GenerationApi::Responses,
         metadata,
+        TargetContract::full(),
     )
     .unwrap();
     openai
@@ -1539,11 +1535,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     );
     assert!(
         GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
-            .encode_request(
-                &cached,
-                "upstream",
-                &morphiecore::protocol::openai::TargetContract::full()
-            )
+            .encode_request(&cached, "upstream", &TargetContract::full())
             .is_err()
     );
     assert!(
@@ -1614,11 +1606,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     );
     assert!(
         GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
-            .encode_request(
-                &policy,
-                "upstream",
-                &morphiecore::protocol::openai::TargetContract::full()
-            )
+            .encode_request(&policy, "upstream", &TargetContract::full())
             .is_err()
     );
     assert!(

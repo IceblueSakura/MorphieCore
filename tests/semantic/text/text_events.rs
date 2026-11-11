@@ -1,5 +1,6 @@
 //! Text/refusal parts preserve boundaries, empty values and independent item lifecycle.
 use crate::events_support::*;
+use morphiecore::protocol::openai::TargetContract;
 use morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
@@ -83,12 +84,14 @@ fn empty_failed_and_incomplete_static_event_closure_keeps_details() {
 }
 #[test]
 fn queued_lifecycle_has_no_chat_projection() {
-    let mut chat = EventEncoder::new(GenerationApi::Chat, metadata()).unwrap();
+    let mut chat =
+        EventEncoder::new(GenerationApi::Chat, metadata(), TargetContract::full()).unwrap();
     assert!(
         chat.encode(&StreamEvent::Queued, &FidelityRecords::default())
             .is_err()
     );
-    let mut responses = EventEncoder::new(GenerationApi::Responses, metadata()).unwrap();
+    let mut responses =
+        EventEncoder::new(GenerationApi::Responses, metadata(), TargetContract::full()).unwrap();
     let v = responses
         .encode(&StreamEvent::Queued, &FidelityRecords::default())
         .unwrap();

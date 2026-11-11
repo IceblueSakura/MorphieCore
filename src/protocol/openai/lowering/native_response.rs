@@ -7,27 +7,29 @@ mod events;
 use crate::protocol::conversion::generation::Effect;
 pub(crate) use events::EventProjection;
 
-fn envelope_loss(profile: GenerationApi, direction: &'static str) -> Effect {
+fn envelope_loss(
+    profile: GenerationApi,
+    direction: crate::protocol::conversion::generation::ConversionBoundary,
+) -> Effect {
     Effect::Field {
         rule: crate::protocol::conversion::generation::RuleId::new(match profile {
             GenerationApi::Responses => "responses.omit-message-envelopes.v1",
             GenerationApi::Chat => "chat.regroup-native-message-envelopes.v1",
         }),
-        field: ("generation.message_envelopes").into(),
-        boundary: (direction).into(),
-        change: (if profile == GenerationApi::Responses {
-            "omit"
+        field: crate::protocol::conversion::generation::Field::MessageEnvelopes,
+        boundary: direction,
+        change: if profile == GenerationApi::Responses {
+            crate::protocol::conversion::generation::Change::Omit
         } else {
-            "regroup"
-        })
-        .into(),
+            crate::protocol::conversion::generation::Change::Approximate
+        },
         owner: crate::protocol::conversion::generation::Owner::Root,
     }
 }
 pub(crate) fn usage_loss(
     before: Option<Usage>,
     after: Option<Usage>,
-    direction: &'static str,
+    direction: crate::protocol::conversion::generation::ConversionBoundary,
 ) -> Vec<crate::protocol::conversion::generation::Effect> {
     use crate::protocol::conversion::generation::{Change, Effect, Field};
     if before == after {
@@ -37,7 +39,7 @@ pub(crate) fn usage_loss(
         return vec![Effect::new(
             "openai.omit-native-usage-view.v1",
             Field::UsageReports,
-            direction.into(),
+            direction,
             Change::Omit,
         )];
     };
@@ -110,7 +112,7 @@ pub(crate) fn usage_loss(
             effects.push(Effect::new(
                 "openai.native-usage-view.v1",
                 field,
-                direction.into(),
+                direction,
                 change,
             ));
         }

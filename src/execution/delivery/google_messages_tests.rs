@@ -711,7 +711,10 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
         };
         assert!(
             policy
-                .project(&incomplete, "event.encode")
+                .project(
+                    &incomplete,
+                    crate::protocol::conversion::generation::ConversionBoundary::EventEncode
+                )
                 .unwrap()
                 .is_none()
         );
@@ -726,7 +729,15 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
                 .clone()
                 .with_progress(progress)
                 .unwrap();
-            assert!(policy.project(&unknown, "event.encode").unwrap().is_none());
+            assert!(
+                policy
+                    .project(
+                        &unknown,
+                        crate::protocol::conversion::generation::ConversionBoundary::EventEncode
+                    )
+                    .unwrap()
+                    .is_none()
+            );
         }
         // A real native MAX_TOKENS call turn keeps its incomplete terminal.
         if !interactions {

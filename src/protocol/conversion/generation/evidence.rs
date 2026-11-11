@@ -232,80 +232,6 @@ impl Field {
         }
     }
 }
-impl From<&'static str> for Field {
-    fn from(value: &'static str) -> Self {
-        match value {
-            "generation.service_class" => Self::ServiceClass,
-            "generation.identity.bucketing" => Self::IdentityBucket,
-            "generation.cache.retention" => Self::CacheRetention,
-            "generation.cache.options" => Self::CacheOptions,
-            "generation.cache.key" => Self::CacheKey,
-            "generation.parallel_tool_calls" => Self::ParallelTools,
-            "generation.tool_choice" => Self::ToolChoice,
-            "generation.document_context" => Self::DocumentContext,
-            "generation.cached_context" => Self::CachedContext,
-            "generation.safety" => Self::Safety,
-            "generation.delivered_projection" => Self::DeliveredProjection,
-            "generation.terminal.explanation" => Self::TerminalExplanation,
-            "generation.completion_cause" => Self::CompletionCause,
-            "generation.prediction" => Self::Prediction,
-            "generation.reasoning.allocation" => Self::ReasoningAllocation,
-            "generation.effort" => Self::Effort,
-            "generation.reasoning.summary" => Self::ReasoningSummary,
-            "generation.instructions.authority" => Self::InstructionAuthority,
-            "generation.sampling" => Self::Sampling,
-            "generation.text.verbosity" => Self::Verbosity,
-            "generation.message.phase" => Self::MessagePhase,
-            "generation.message.status" => Self::MessageStatus,
-            "generation.message_envelopes" => Self::MessageEnvelopes,
-            "generation.usage" => Self::Usage,
-            "generation.usage.reports" => Self::UsageReports,
-            "generation.usage.input_tokens" => Self::InputTokens,
-            "generation.usage.output_tokens" => Self::OutputTokens,
-            "generation.usage.total_tokens" => Self::TotalTokens,
-            "generation.usage.cached_input_tokens" => Self::CachedTokens,
-            "generation.usage.input_cache_write_tokens" => Self::CacheWriteTokens,
-            "generation.usage.reasoning_tokens" => Self::ReasoningTokens,
-            "generation.usage.input_image_tokens" => Self::InputImageTokens,
-            "generation.usage.input_text_tokens" => Self::InputTextTokens,
-            "generation.usage.input_audio_tokens" => Self::InputAudioTokens,
-            "generation.usage.output_text_tokens" => Self::OutputTextTokens,
-            "generation.usage.output_audio_tokens" => Self::OutputAudioTokens,
-            "generation.usage.accepted_prediction_tokens" => Self::AcceptedPredictionTokens,
-            "generation.usage.rejected_prediction_tokens" => Self::RejectedPredictionTokens,
-            "response.reports.opening" => Self::OpeningReport,
-            "response.reported.reasoning" => Self::ReportedReasoning,
-            "response.reported.effort" => Self::ReportedEffort,
-            "response.reported.settings" => Self::ReportedSettings,
-            "response.context.metadata" => Self::ResponseMetadata,
-            "response.context.system_fingerprint" => Self::SystemFingerprint,
-            "response.terminal.completion" => Self::Completion,
-            "response.terminal.incomplete" => Self::Incomplete,
-            "response.terminal.refusal" => Self::Refusal,
-            "response.terminal.explanation" => Self::Explanation,
-            "generation.content.refusal" => Self::ContentRefusal,
-            "generation.content.reasoning" => Self::ReasoningContent,
-            "generation.tools.eager_input" => Self::EagerToolInput,
-            "response.safety_reports" => Self::SafetyReports,
-            "response.input_transformations" => Self::InputTransformations,
-            "generation.content.annotations" => Self::HistoryAnnotations,
-            "response.delivery.usage" => Self::DeliveryUsage,
-            "response.delivery.settings" => Self::DeliverySettings,
-            "generation.tool_results.is_error" => Self::ToolResultError,
-            "generation.tool_results.execution" => Self::ToolExecution,
-            "generation.tool_calls.arguments" => Self::ToolArguments,
-            "generation.tool_calls.identity" => Self::ToolCallIdentity,
-            "generation.schema.name" => Self::SchemaName,
-            "generation.cache" => Self::Cache,
-            "generation.identity" => Self::Identity,
-            "generation.tools" => Self::Tools,
-            "generation.replay" => Self::Replay,
-            "protocol.representation" => Self::Representation,
-            "generation.max_output_tokens" => Self::MaximumOutput,
-            _ => panic!("undeclared static evidence field"),
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 pub enum ConversionBoundary {
@@ -340,22 +266,6 @@ impl ConversionBoundary {
             Self::EventDecode => "event.decode",
             Self::EventProject => "event.project",
             Self::EventEncode => "event.encode",
-        }
-    }
-}
-impl From<&'static str> for ConversionBoundary {
-    fn from(value: &'static str) -> Self {
-        match value {
-            "request.decode" => Self::RequestDecode,
-            "request.project" => Self::RequestProject,
-            "request.encode" => Self::RequestEncode,
-            "response.decode" => Self::ResponseDecode,
-            "response.project" => Self::ResponseProject,
-            "response.encode" => Self::ResponseEncode,
-            "event.decode" => Self::EventDecode,
-            "event.project" => Self::EventProject,
-            "event.encode" => Self::EventEncode,
-            _ => panic!("undeclared static conversion boundary"),
         }
     }
 }
@@ -399,21 +309,6 @@ impl Change {
     }
     pub const fn is_loss(self) -> bool {
         matches!(self, Self::Omit | Self::Approximate | Self::Estimate)
-    }
-}
-impl From<&'static str> for Change {
-    fn from(value: &'static str) -> Self {
-        match value {
-            "omit" => Self::Omit,
-            "normalize" => Self::Normalize,
-            "derive" | "resolve" => Self::Derive,
-            "insert" | "default" => Self::Default(DefaultBasis::SelectedPolicy),
-            "infer" => Self::InferFromRequest,
-            "estimate" => Self::Estimate,
-            "approximate" | "regroup" | "wrap" => Self::Approximate,
-            "project" | "adapt" => Self::Omit,
-            _ => panic!("undeclared static conversion change"),
-        }
     }
 }
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]

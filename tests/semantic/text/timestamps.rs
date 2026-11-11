@@ -1,4 +1,5 @@
 //! Independent timestamp admission and typed edits, without Provider or Gateway bindings.
+use morphiecore::protocol::openai::TargetContract;
 use morphiecore::protocol::openai::{
     GenerationApi, TargetContract as Contract, events::EventEncoder, lowering::lower_response,
     responses::envelope,
@@ -50,6 +51,8 @@ fn timestamp_typed_edits_cannot_bypass_context_lowering_or_event_encoding() {
                 }
             ))
         );
-        assert!(EventEncoder::new(GenerationApi::Responses, metadata).is_err());
+        assert!(
+            EventEncoder::new(GenerationApi::Responses, metadata, TargetContract::full()).is_err()
+        );
     }
 }

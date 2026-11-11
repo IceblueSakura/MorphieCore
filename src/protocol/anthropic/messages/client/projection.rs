@@ -19,7 +19,7 @@ impl GoogleTerminalPolicy {
     pub(crate) fn project(
         self,
         source: &GenerationResponse,
-        direction: &'static str,
+        direction: crate::protocol::conversion::generation::ConversionBoundary,
     ) -> Result<
         Option<(
             TerminalDetails,
@@ -46,7 +46,11 @@ impl GoogleTerminalPolicy {
                 InteractionProgress::AwaitingToolResults,
                 true,
                 Some(CompletionCause::NaturalOrStopSequence),
-            ) => (None, "messages.google-tool-stop.v1", "omit"),
+            ) => (
+                None,
+                "messages.google-tool-stop.v1",
+                crate::protocol::conversion::generation::Change::Omit,
+            ),
             (
                 Self::GenerateContentWithoutStops,
                 InteractionProgress::TurnFinished,
@@ -55,12 +59,12 @@ impl GoogleTerminalPolicy {
             ) => (
                 Some(CompletionCause::Natural),
                 "messages.google-stop-without-sequences.v1",
-                "infer",
+                crate::protocol::conversion::generation::Change::InferFromRequest,
             ),
             (Self::InteractionsWithoutStops, InteractionProgress::TurnFinished, false, None) => (
                 Some(CompletionCause::Natural),
                 "messages.interactions-completed-as-end-turn.v1",
-                "infer",
+                crate::protocol::conversion::generation::Change::InferFromRequest,
             ),
             _ => return Ok(None),
         };
@@ -70,9 +74,9 @@ impl GoogleTerminalPolicy {
             details,
             crate::protocol::conversion::generation::Effect::Field {
                 rule: crate::protocol::conversion::generation::RuleId::new(rule),
-                field: ("generation.completion_cause").into(),
-                boundary: (direction).into(),
-                change: (action).into(),
+                field: crate::protocol::conversion::generation::Field::CompletionCause,
+                boundary: direction,
+                change: action,
                 owner: crate::protocol::conversion::generation::Owner::Root,
             },
         )))
@@ -83,7 +87,7 @@ impl GoogleTerminalPolicy {
 /// remain unchanged; the Messages target derives both end-turn facts.
 pub(crate) fn completed_without_stops(
     source: &GenerationResponse,
-    direction: &'static str,
+    direction: crate::protocol::conversion::generation::ConversionBoundary,
 ) -> Result<
     Option<(
         TerminalDetails,
@@ -117,7 +121,7 @@ pub(crate) fn completed_without_stops(
         crate::protocol::conversion::generation::Effect::Field {
             rule: "messages.infer-end-turn-from-request.v1".into(),
             field: crate::protocol::conversion::generation::Field::Completion,
-            boundary: direction.into(),
+            boundary: direction,
             change: crate::protocol::conversion::generation::Change::InferFromRequest,
             owner: crate::protocol::conversion::generation::Owner::Root,
         },
@@ -221,8 +225,8 @@ pub(crate) fn metadata_losses(
                 "messages.omit-reported-execution-hints.v1",
             ),
             field: crate::protocol::conversion::generation::Field::Representation,
-            boundary: ("response.project").into(),
-            change: ("omit").into(),
+            boundary: crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
+            change: crate::protocol::conversion::generation::Change::Omit,
             owner: crate::protocol::conversion::generation::Owner::Root,
         });
     }
@@ -236,8 +240,8 @@ pub(crate) fn metadata_losses(
                 "messages.omit-reported-service-class.v1",
             ),
             field: crate::protocol::conversion::generation::Field::ServiceClass,
-            boundary: ("response.project").into(),
-            change: ("omit").into(),
+            boundary: crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
+            change: crate::protocol::conversion::generation::Change::Omit,
             owner: crate::protocol::conversion::generation::Owner::Root,
         });
     }
@@ -252,9 +256,9 @@ pub(crate) fn metadata_losses(
             rule: crate::protocol::conversion::generation::RuleId::new(
                 "messages.omit-incidental-settings.v1",
             ),
-            field: ("response.reported.settings").into(),
-            boundary: ("response.project").into(),
-            change: ("omit").into(),
+            field: crate::protocol::conversion::generation::Field::ReportedSettings,
+            boundary: crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
+            change: crate::protocol::conversion::generation::Change::Omit,
             owner: crate::protocol::conversion::generation::Owner::Root,
         });
     }
@@ -263,24 +267,24 @@ pub(crate) fn metadata_losses(
             rule: crate::protocol::conversion::generation::RuleId::new(
                 "messages.omit-system-fingerprint.v1",
             ),
-            field: ("response.context.system_fingerprint").into(),
-            boundary: ("response.project").into(),
-            change: ("omit").into(),
+            field: crate::protocol::conversion::generation::Field::SystemFingerprint,
+            boundary: crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
+            change: crate::protocol::conversion::generation::Change::Omit,
             owner: crate::protocol::conversion::generation::Owner::Root,
         });
     }
     losses
 }
 pub(super) fn explanation_loss(
-    direction: &'static str,
+    direction: crate::protocol::conversion::generation::ConversionBoundary,
 ) -> crate::protocol::conversion::generation::Effect {
     crate::protocol::conversion::generation::Effect::Field {
         rule: crate::protocol::conversion::generation::RuleId::new(
             "messages.omit-terminal-explanation.v1",
         ),
-        field: ("generation.terminal.explanation").into(),
-        boundary: (direction).into(),
-        change: ("omit").into(),
+        field: crate::protocol::conversion::generation::Field::TerminalExplanation,
+        boundary: direction,
+        change: crate::protocol::conversion::generation::Change::Omit,
         owner: crate::protocol::conversion::generation::Owner::Root,
     }
 }
@@ -289,7 +293,7 @@ pub(super) fn explanation_loss(
 pub(crate) fn report_losses(
     source: &UsageReport,
     selected: Option<&UsageReport>,
-    direction: &'static str,
+    direction: crate::protocol::conversion::generation::ConversionBoundary,
 ) -> Vec<crate::protocol::conversion::generation::Effect> {
     if selected == Some(source) {
         return vec![];
@@ -302,15 +306,15 @@ pub(crate) fn report_losses(
         losses.push(crate::protocol::usage::report_loss(direction));
     }
     if !detailed || selected.is_some_and(|s| s.scalar_summary() != source.scalar_summary()) {
-        losses.push(usage_loss().with_boundary(direction.into()));
+        losses.push(usage_loss().with_boundary(direction));
     }
     losses
 }
 pub(crate) fn usage_loss() -> crate::protocol::conversion::generation::Effect {
     crate::protocol::conversion::generation::Effect::Field {
         rule: crate::protocol::conversion::generation::RuleId::new("messages.usage-view.v1"),
-        field: ("generation.usage").into(),
-        boundary: ("response.project").into(),
+        field: crate::protocol::conversion::generation::Field::Usage,
+        boundary: crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
         change: crate::protocol::conversion::generation::Change::Normalize,
         owner: crate::protocol::conversion::generation::Owner::Root,
     }

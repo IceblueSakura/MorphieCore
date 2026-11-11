@@ -1,11 +1,11 @@
 //! One structured document per provider namespace; short transactions merge records.
 use crate::credential::{
     CredentialError as Error,
+    api_key::KeyRecord,
     model::{Account, valid_alias, valid_profile},
     storage::fs::{Directory, FileLock},
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
@@ -14,16 +14,6 @@ use std::{
 const DOCUMENT_BYTES: u64 = 8 * 1024 * 1024;
 const RECORDS: usize = 64;
 
-pub(in crate::credential) trait StoredDocument:
-    Serialize + serde::de::DeserializeOwned
-{
-    fn validate_binding(&self, namespace: &str, alias: &str) -> Result<(), Error>;
-}
-impl StoredDocument for Account {
-    fn validate_binding(&self, namespace: &str, alias: &str) -> Result<(), Error> {
-        self.validate(namespace, alias)
-    }
-}
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(in crate::credential) struct ProviderDocument {
@@ -33,36 +23,16 @@ pub(in crate::credential) struct ProviderDocument {
     pub host_id: Option<String>,
     #[serde(default)]
     pub revision: u64,
-    #[serde(default, deserialize_with = "oauth_records")]
-    pub oauth: BTreeMap<String, Value>,
-    #[serde(default, deserialize_with = "key_records")]
-    pub api_keys: BTreeMap<String, Value>,
-}
-// Typed intake rejects duplicate/unknown grant fields before Value is used as a
-// transient serialization container for merging one independently owned record.
-fn typed_records<'de, D: serde::Deserializer<'de>, T: Deserialize<'de> + Serialize>(
-    d: D,
-) -> Result<BTreeMap<String, Value>, D::Error> {
-    let records: BTreeMap<String, T> =
-        serde_with::rust::maps_duplicate_key_is_error::deserialize(d)?;
-    records
-        .into_iter()
-        .map(|(key, value)| {
-            serde_json::to_value(value)
-                .map(|value| (key, value))
-                .map_err(serde::de::Error::custom)
-        })
-        .collect()
-}
-fn oauth_records<'de, D: serde::Deserializer<'de>>(
-    d: D,
-) -> Result<BTreeMap<String, Value>, D::Error> {
-    typed_records::<D, Account>(d)
-}
-fn key_records<'de, D: serde::Deserializer<'de>>(
-    d: D,
-) -> Result<BTreeMap<String, Value>, D::Error> {
-    typed_records::<D, crate::credential::api_key::KeyRecord>(d)
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::maps_duplicate_key_is_error::deserialize"
+    )]
+    pub oauth: BTreeMap<String, Account>,
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::maps_duplicate_key_is_error::deserialize"
+    )]
+    pub api_keys: BTreeMap<String, KeyRecord>,
 }
 impl ProviderDocument {
     fn empty(provider: &str) -> Self {
@@ -85,14 +55,10 @@ impl ProviderDocument {
         {
             return Err(Error::Storage);
         }
-        for (alias, value) in &self.oauth {
-            let account: Account =
-                serde_json::from_value(value.clone()).map_err(|_| Error::Storage)?;
+        for (alias, account) in &self.oauth {
             account.validate(provider, alias)?;
         }
-        for (alias, value) in &self.api_keys {
-            let key: crate::credential::api_key::KeyRecord =
-                serde_json::from_value(value.clone()).map_err(|_| Error::Storage)?;
+        for (alias, key) in &self.api_keys {
             key.validate_binding(provider, alias)?;
         }
         Ok(())
@@ -145,10 +111,7 @@ impl Store {
             #[cfg(test)]
             fault: std::sync::atomic::AtomicU8::new(0),
         });
-        let names = store.root.names()?;
-        if names.iter().any(|n| n == "accounts.json") {
-            return Err(Error::LegacyStore);
-        }
+        store.root.names()?;
         let _ = store.transaction()?;
         Ok(store)
     }
@@ -266,12 +229,6 @@ impl Transaction<'_> {
         }
         Ok(())
     }
-    fn records<'a>(&self, document: &'a mut ProviderDocument) -> &'a mut BTreeMap<String, Value> {
-        match self.store.partition {
-            Partition::OAuth => &mut document.oauth,
-            Partition::ApiKey => &mut document.api_keys,
-        }
-    }
     fn marker(&self, provider: &str, alias: &str) -> String {
         format!("{provider}.{}.{alias}.pending", self.store.partition.name())
     }
@@ -286,8 +243,11 @@ impl Transaction<'_> {
         }
     }
     pub fn aliases(&self, provider: &str) -> Result<Vec<String>, Error> {
-        let mut document = self.provider(provider)?;
-        let mut aliases: BTreeSet<_> = self.records(&mut document).keys().cloned().collect();
+        let document = self.provider(provider)?;
+        let mut aliases: BTreeSet<_> = match self.store.partition {
+            Partition::OAuth => document.oauth.keys().cloned().collect(),
+            Partition::ApiKey => document.api_keys.keys().cloned().collect(),
+        };
         let prefix = format!("{provider}.{}.", self.store.partition.name());
         for name in self.store.root.names()? {
             if let Some(alias) = name
@@ -306,24 +266,16 @@ impl Transaction<'_> {
         Ok(aliases.into_iter().collect())
     }
     pub fn load(&self, profile: &str, alias: &str) -> Result<Loaded, Error> {
-        let (account, recovery) = self.load_document(profile, alias)?;
-        Ok(Loaded { account, recovery })
-    }
-    pub fn load_document<T: StoredDocument>(
-        &self,
-        profile: &str,
-        alias: &str,
-    ) -> Result<(Option<T>, bool), Error> {
         valid_alias(alias)?;
-        let mut document = self.provider(profile)?;
-        let record = self
-            .records(&mut document)
-            .remove(alias)
-            .map(|v| serde_json::from_value::<T>(v).map_err(|_| Error::Storage))
-            .transpose()?;
-        if let Some(record) = &record {
-            record.validate_binding(profile, alias)?;
-        }
+        let account = self.provider(profile)?.oauth.remove(alias);
+        Ok(Loaded {
+            account,
+            recovery: self.recovery(profile, alias)?,
+        })
+    }
+    pub fn load_key(&self, profile: &str, alias: &str) -> Result<(Option<KeyRecord>, bool), Error> {
+        valid_alias(alias)?;
+        let record = self.provider(profile)?.api_keys.remove(alias);
         Ok((record, self.recovery(profile, alias)?))
     }
     #[cfg(test)]
@@ -339,51 +291,65 @@ impl Transaction<'_> {
     }
     pub fn clear_unpublished(&self, profile: &str, alias: &str) -> Result<(), Error> {
         valid_alias(alias)?;
-        if self
-            .records(&mut self.provider(profile)?)
-            .contains_key(alias)
-            || !self.recovery(profile, alias)?
-        {
+        let document = self.provider(profile)?;
+        let present = match self.store.partition {
+            Partition::OAuth => document.oauth.contains_key(alias),
+            Partition::ApiKey => document.api_keys.contains_key(alias),
+        };
+        if present || !self.recovery(profile, alias)? {
             return Err(Error::Storage);
         }
         self.store
             .root
             .write(&self.marker(profile, alias), b"false", || Ok(()))
     }
-    pub fn publish(&self, account: &Account) -> Result<(), Error> {
-        self.publish_document(&account.profile, &account.alias, account)
+    pub fn publish(&self, account: Account) -> Result<Account, Error> {
+        let profile = account.profile.clone();
+        let alias = account.alias.clone();
+        account.validate(&profile, &alias)?;
+        let mut document = self.provider(&profile)?;
+        self.check_namespace_capacity(&document)?;
+        if !document.oauth.contains_key(&alias) && document.oauth.len() >= RECORDS {
+            return Err(Error::Capacity);
+        }
+        check_record_size(&account)?;
+        document.oauth.insert(alias.clone(), account);
+        self.publish_record(&mut document, &alias)?;
+        Ok(document
+            .oauth
+            .remove(&alias)
+            .expect("published OAuth record"))
     }
-    pub fn publish_document<T: StoredDocument>(
+    pub fn publish_key(
         &self,
         profile: &str,
         alias: &str,
-        record: &T,
-    ) -> Result<(), Error> {
+        record: KeyRecord,
+    ) -> Result<KeyRecord, Error> {
         record.validate_binding(profile, alias)?;
         let mut document = self.provider(profile)?;
         self.check_namespace_capacity(&document)?;
-        let values = self.records(&mut document);
-        if !values.contains_key(alias) && values.len() >= RECORDS {
+        if !document.api_keys.contains_key(alias) && document.api_keys.len() >= RECORDS {
             return Err(Error::Capacity);
         }
-        let value = serde_json::to_value(record).map_err(|_| Error::Storage)?;
-        if serde_json::to_vec(&value)
-            .map_err(|_| Error::Storage)?
-            .len()
-            > 128 * 1024
-        {
-            return Err(Error::Storage);
-        }
-        values.insert(alias.into(), value);
-        let before_recovery = self.recovery(profile, alias)?;
-        let marker = self.marker(profile, alias);
+        check_record_size(&record)?;
+        document.api_keys.insert(alias.into(), record);
+        self.publish_record(&mut document, alias)?;
+        Ok(document
+            .api_keys
+            .remove(alias)
+            .expect("published key record"))
+    }
+    fn publish_record(&self, document: &mut ProviderDocument, alias: &str) -> Result<(), Error> {
+        let before_recovery = self.recovery(&document.provider, alias)?;
+        let marker = self.marker(&document.provider, alias);
         self.store.root.write(&marker, b"true", || Ok(()))?;
         for step in [PublishStep::MarkerSync, PublishStep::MarkerDirectorySync] {
             self.store
                 .checkpoint(step)
                 .map_err(|_| Error::PersistenceUncertain)?;
         }
-        let result = self.publish_provider_with(&mut document, || {
+        let result = self.publish_provider_with(document, || {
             for step in [
                 PublishStep::Write,
                 PublishStep::FileSync,
@@ -447,6 +413,15 @@ impl Transaction<'_> {
             before_commit,
         )
     }
+}
+fn check_record_size(record: &impl Serialize) -> Result<(), Error> {
+    let bytes = crate::credential::SecretBytes::new(
+        serde_json::to_vec(record).map_err(|_| Error::Storage)?,
+    );
+    if bytes.len() > 128 * 1024 {
+        return Err(Error::Storage);
+    }
+    Ok(())
 }
 pub(in crate::credential) fn valid_host_id(id: &str) -> bool {
     let Some(uuid) = id.strip_prefix("urn:uuid:") else {

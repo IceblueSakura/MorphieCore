@@ -252,7 +252,7 @@ impl ClientProjection {
             {
                 self.reported_loss(Effect::new(
                     rule,
-                    ("response.reported.settings").into(),
+                    crate::protocol::conversion::generation::Field::ReportedSettings,
                     ConversionBoundary::EventProject,
                     Change::Omit,
                 ));
@@ -268,7 +268,7 @@ impl ClientProjection {
             if metadata.context.system_fingerprint.as_ref().is_some() {
                 self.loss(
                     rule,
-                    ("response.context.system_fingerprint").into(),
+                    crate::protocol::conversion::generation::Field::SystemFingerprint,
                     Owner::Root,
                 );
             }
@@ -448,7 +448,7 @@ impl ClientProjection {
                         {
                             *phase = None;
                             self.losses.push(
-                                crate::protocol::phase::delivery_omission("event.project")
+                                crate::protocol::phase::delivery_omission(crate::protocol::conversion::generation::ConversionBoundary::EventProject)
                                     .at(Owner::item(*item)),
                             );
                         }
@@ -504,7 +504,7 @@ impl ClientProjection {
                             *kind = PartKind::Text;
                             let effect = Effect::new(
                                 rule,
-                                ("generation.content.refusal").into(),
+                                crate::protocol::conversion::generation::Field::ContentRefusal,
                                 ConversionBoundary::EventProject,
                                 Change::Approximate,
                             );
@@ -587,7 +587,7 @@ impl ClientProjection {
                         report.validate()?;
                         if report.has_unrepresented_details() {
                             self.reported_loss(crate::protocol::usage::report_loss(
-                                "event.project",
+                                crate::protocol::conversion::generation::ConversionBoundary::EventProject,
                             ));
                         }
                         if report.scope != UsageScope::Operation
@@ -657,7 +657,7 @@ impl ClientProjection {
                             crate::protocol::anthropic::messages::client::report_losses(
                                 &report,
                                 selected.as_ref(),
-                                "event.project",
+                                crate::protocol::conversion::generation::ConversionBoundary::EventProject,
                             ),
                         );
                         if scalar_source.is_some()
@@ -685,7 +685,7 @@ impl ClientProjection {
                         crate::protocol::openai::lowering::native_response::usage_loss(
                             Some(*usage),
                             selected,
-                            "event.project",
+                            crate::protocol::conversion::generation::ConversionBoundary::EventProject,
                         ),
                     );
                     let Some(selected) = selected else { continue };
@@ -847,7 +847,7 @@ impl ClientProjection {
                     }
                     if &reports != state.usage_reports() {
                         self.losses
-                            .push(crate::protocol::usage::report_loss("event.project"));
+                            .push(crate::protocol::usage::report_loss(crate::protocol::conversion::generation::ConversionBoundary::EventProject));
                         for report in reports.reports() {
                             let usage = StreamEvent::UsageReport(report.clone());
                             self.state = Some(reduce(
@@ -879,7 +879,7 @@ impl ClientProjection {
                     .with_progress(progress)?
                     .with_details(details.clone())?;
                     if let Some(policy) = self.terminal_policy
-                        && let Some((view, effect)) = policy.project(&source, "event.project")?
+                        && let Some((view, effect)) = policy.project(&source, crate::protocol::conversion::generation::ConversionBoundary::EventProject)?
                     {
                         *details = view;
                         self.losses.push(effect);
@@ -895,7 +895,7 @@ impl ClientProjection {
                         && let Some((view, effect)) =
                             crate::protocol::anthropic::messages::client::completed_without_stops(
                                 &source,
-                                "event.project",
+                                crate::protocol::conversion::generation::ConversionBoundary::EventProject,
                             )?
                     {
                         *details = view;

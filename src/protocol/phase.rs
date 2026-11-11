@@ -7,14 +7,16 @@ pub(crate) fn has_phase(items: &[(ItemId, Item)]) -> bool {
         .any(|(_, item)| matches!(item, Item::Message(m) if m.phase.is_some()))
 }
 
-pub(crate) fn delivery_omission(direction: &'static str) -> Effect {
+pub(crate) fn delivery_omission(
+    direction: crate::protocol::conversion::generation::ConversionBoundary,
+) -> Effect {
     Effect::Field {
         rule: crate::protocol::conversion::generation::RuleId::new(
             "generation.omit-delivery-message-phase.v1",
         ),
-        field: ("generation.message.phase").into(),
-        boundary: (direction).into(),
-        change: ("omit").into(),
+        field: crate::protocol::conversion::generation::Field::MessagePhase,
+        boundary: direction,
+        change: crate::protocol::conversion::generation::Change::Omit,
         owner: crate::protocol::conversion::generation::Owner::Root,
     }
 }

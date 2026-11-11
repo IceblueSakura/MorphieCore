@@ -781,6 +781,7 @@ mod identity_tests {
             crate::protocol::openai::events::EventEncoder::new(
                 GenerationApi::Responses,
                 without_id,
+                crate::protocol::openai::TargetContract::full(),
             )
             .is_err()
         );

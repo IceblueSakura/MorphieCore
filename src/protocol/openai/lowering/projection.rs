@@ -354,7 +354,12 @@ mod tests {
                     omitted
                 );
                 assert_eq!(metadata, source);
-                let mut encoder = EventEncoder::new(profile, metadata.clone()).unwrap();
+                let mut encoder = EventEncoder::new(
+                    profile,
+                    metadata.clone(),
+                    crate::protocol::openai::TargetContract::full(),
+                )
+                .unwrap();
                 let opening = encoder
                     .encode(&StreamEvent::Started, &decoded.fidelity)
                     .unwrap();
@@ -423,13 +428,25 @@ mod tests {
                 )
             ))
         );
-        assert!(EventEncoder::new(GenerationApi::Responses, metadata.clone()).is_err());
+        assert!(
+            EventEncoder::new(
+                GenerationApi::Responses,
+                metadata.clone(),
+                TargetContract::full()
+            )
+            .is_err()
+        );
         let mut opening = metadata.clone();
         let ResponseReports::Lifecycle { terminal, .. } = &mut opening.context.reports else {
             unreachable!()
         };
         *terminal = None;
-        let mut encoder = EventEncoder::new(GenerationApi::Responses, opening.clone()).unwrap();
+        let mut encoder = EventEncoder::new(
+            GenerationApi::Responses,
+            opening.clone(),
+            crate::protocol::openai::TargetContract::full(),
+        )
+        .unwrap();
         encoder
             .encode(&StreamEvent::Started, &decoded.fidelity)
             .unwrap();
@@ -438,7 +455,12 @@ mod tests {
             kind: ItemKind::Message { phase: None },
             replay: None,
         };
-        let mut valid = EventEncoder::new(GenerationApi::Responses, opening).unwrap();
+        let mut valid = EventEncoder::new(
+            GenerationApi::Responses,
+            opening,
+            crate::protocol::openai::TargetContract::full(),
+        )
+        .unwrap();
         valid
             .encode(&StreamEvent::Started, &decoded.fidelity)
             .unwrap();

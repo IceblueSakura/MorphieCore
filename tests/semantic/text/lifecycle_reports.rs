@@ -315,7 +315,12 @@ fn nullable_report_mode_remains_an_explicit_observation_in_json_and_sse() {
         },
     ));
     let fidelity = FidelityRecords::default();
-    let mut encoder = EventEncoder::new(GenerationApi::Responses, source.clone()).unwrap();
+    let mut encoder = EventEncoder::new(
+        GenerationApi::Responses,
+        source.clone(),
+        TargetContract::full(),
+    )
+    .unwrap();
     encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
     let frames = encoder
         .encode(
@@ -363,7 +368,12 @@ fn independently_constructed_reports_use_phase_carriers_and_terminal_snapshots()
         terminal: StreamTerminal::Completed,
         details: Default::default(),
     };
-    let mut encoder = EventEncoder::new(GenerationApi::Responses, original.clone()).unwrap();
+    let mut encoder = EventEncoder::new(
+        GenerationApi::Responses,
+        original.clone(),
+        TargetContract::full(),
+    )
+    .unwrap();
     let opening = encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
     assert_eq!(
         opening[0]["response"]["reasoning"],
@@ -405,7 +415,7 @@ fn independently_constructed_reports_use_phase_carriers_and_terminal_snapshots()
     );
     assert_eq!(original.context.reports, lifecycle());
     assert!(
-        EventEncoder::new(GenerationApi::Chat, original).is_err(),
+        EventEncoder::new(GenerationApi::Chat, original, TargetContract::full()).is_err(),
         "no cross-protocol tier drift"
     );
 }
@@ -442,6 +452,7 @@ fn terminal_absence_never_inherits_opening_and_terminal_only_never_invents_openi
     let mut encoder = EventEncoder::new(
         GenerationApi::Responses,
         metadata(ResponseReports::phased(ReportPhase::Terminal, report(true))),
+        TargetContract::full(),
     )
     .unwrap();
     let opening = encoder
@@ -457,6 +468,7 @@ fn emitted_reports_cannot_be_rewritten_and_both_slots_count_toward_the_bound() {
         let mut encoder = EventEncoder::new(
             GenerationApi::Responses,
             metadata(ResponseReports::phased(ReportPhase::Terminal, report(true))),
+            TargetContract::full(),
         )
         .unwrap();
         encoder
@@ -469,7 +481,12 @@ fn emitted_reports_cannot_be_rewritten_and_both_slots_count_toward_the_bound() {
         assert!(encoder.finish().is_err());
     }
     let opening = metadata(ResponseReports::phased(ReportPhase::Opening, report(false)));
-    let mut encoder = EventEncoder::new(GenerationApi::Responses, opening.clone()).unwrap();
+    let mut encoder = EventEncoder::new(
+        GenerationApi::Responses,
+        opening.clone(),
+        TargetContract::full(),
+    )
+    .unwrap();
     encoder
         .encode(&StreamEvent::Started, &FidelityRecords::default())
         .unwrap();

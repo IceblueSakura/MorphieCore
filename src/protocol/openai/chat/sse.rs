@@ -208,7 +208,7 @@ impl ChatSseEncoder {
         }
         Ok(Self {
             notice: None,
-            codec: EventEncoder::new(GenerationApi::Chat, metadata)?.with_contract(contract),
+            codec: EventEncoder::new(GenerationApi::Chat, metadata, contract)?,
             limits,
             options,
             padding,

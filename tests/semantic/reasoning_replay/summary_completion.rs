@@ -57,9 +57,7 @@ fn interrupted_summary_close_preserves_event_fact_without_inventing_static_statu
     let part = PartId::new(8);
     let mut records = FidelityRecords::default();
     records.record_response_item_id(id, "reason").unwrap();
-    let mut encoder = EventEncoder::new(GenerationApi::Responses, metadata())
-        .unwrap()
-        .with_contract(contract());
+    let mut encoder = EventEncoder::new(GenerationApi::Responses, metadata(), contract()).unwrap();
     for event in [
         StreamEvent::Started,
         StreamEvent::ItemStarted {

@@ -89,7 +89,7 @@ async fn inference_binding_reloads_and_rejects_expired_logout_or_identity_change
         let tx = manager.store.transaction().unwrap();
         let mut account = tx.load("third", "one").unwrap().account.unwrap();
         account.credential.as_mut().unwrap().access = Secret::new("rotated-access".into()).unwrap();
-        tx.publish(&account).unwrap();
+        tx.publish(account).unwrap();
     }
     assert_eq!(binding.borrow().unwrap().access.expose(), "rotated-access");
     assert_eq!(
@@ -100,7 +100,7 @@ async fn inference_binding_reloads_and_rejects_expired_logout_or_identity_change
         let tx = manager.store.transaction().unwrap();
         let mut account = tx.load("third", "one").unwrap().account.unwrap();
         account.credential.as_mut().unwrap().expires_at = Some(1);
-        tx.publish(&account).unwrap();
+        tx.publish(account).unwrap();
     }
     assert!(matches!(binding.borrow(), Err(CredentialError::Expired)));
     manager.logout("third", "one", false).await.unwrap();
@@ -116,7 +116,7 @@ async fn inference_binding_reloads_and_rejects_expired_logout_or_identity_change
         let tx = manager.store.transaction().unwrap();
         let mut account = tx.load("third", "one").unwrap().account.unwrap();
         account.identity.as_mut().unwrap().subject = "another-principal".into();
-        tx.publish(&account).unwrap();
+        tx.publish(account).unwrap();
     }
     assert!(matches!(
         binding.borrow(),
@@ -130,7 +130,7 @@ async fn inference_binding_reloads_and_rejects_expired_logout_or_identity_change
     {
         let tx = manager.store.transaction().unwrap();
         let account = tx.load("third", "one").unwrap().account.unwrap();
-        assert!(tx.publish(&account).is_err());
+        assert!(tx.publish(account).is_err());
     }
     assert!(matches!(
         rebound.borrow(),
@@ -448,7 +448,7 @@ async fn freshness_and_client_binding_are_not_inferred_from_lifecycle_or_alias()
         let tx = manager.store.transaction().unwrap();
         let mut account = tx.load("third", "one").unwrap().account.unwrap();
         account.credential.as_mut().unwrap().expires_at = Some(1);
-        tx.publish(&account).unwrap();
+        tx.publish(account).unwrap();
     }
     let status = manager.list(None).unwrap().remove(0);
     assert_eq!(status.state, AccountState::Active);
@@ -505,7 +505,7 @@ async fn automatic_refresh_skips_ineligible_accounts_without_mutation_or_authori
                 }
                 _ => unreachable!(),
             }
-            tx.publish(&account).unwrap();
+            tx.publish(account).unwrap();
         }
         let before = test_support::read_account(&dir.path, "third", "one");
         assert!(!binding.refresh_if_due(120).await.unwrap(), "{case}");
@@ -537,7 +537,7 @@ async fn automatic_refresh_rechecks_pinned_identity_before_consuming_a_due_grant
             } else {
                 account.identity.as_mut().unwrap().subject = "changed-subject".into();
             }
-            tx.publish(&account).unwrap();
+            let account = tx.publish(account).unwrap();
             account.generation
         };
         assert_eq!(
@@ -560,7 +560,7 @@ async fn automatic_refresh_is_exclusive_and_rechecks_new_expiry() {
         let tx = manager.store.transaction().unwrap();
         let mut account = tx.load("third", "one").unwrap().account.unwrap();
         account.credential.as_mut().unwrap().expires_at = Some(1);
-        tx.publish(&account).unwrap();
+        tx.publish(account).unwrap();
     }
     let binding = manager.bind_access("third", "one").unwrap();
     let provenance = binding.provenance();

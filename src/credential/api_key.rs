@@ -2,7 +2,7 @@
 use crate::credential::{
     CredentialError as Error, CredentialManager, Secret,
     model::{random_id, valid_alias, valid_profile},
-    storage::store::{StoredDocument, Transaction},
+    storage::store::Transaction,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -48,8 +48,8 @@ fn identity(value: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
-impl StoredDocument for KeyRecord {
-    fn validate_binding(&self, domain: &str, alias: &str) -> Result<(), Error> {
+impl KeyRecord {
+    pub(super) fn validate_binding(&self, domain: &str, alias: &str) -> Result<(), Error> {
         if valid_profile(domain).is_err()
             || valid_alias(alias).is_err()
             || self.domain != domain
@@ -69,8 +69,6 @@ impl StoredDocument for KeyRecord {
         }
         Ok(())
     }
-}
-impl KeyRecord {
     fn material_digest(&self) -> Option<[u8; 32]> {
         self.secret
             .as_ref()
@@ -134,7 +132,7 @@ impl ApiKeyAccess {
     }
     pub fn borrow(&self) -> Result<Secret, Error> {
         let tx = self.manager.keys.transaction()?;
-        let (record, recovery) = tx.load_document::<KeyRecord>(&self.domain, &self.alias)?;
+        let (record, recovery) = tx.load_key(&self.domain, &self.alias)?;
         let record = record.ok_or(Error::KeyUnavailable)?;
         if recovery
             || record.state != ApiKeyState::Enabled
@@ -168,7 +166,7 @@ impl CredentialManager {
         }
         let _lock = self.keys.account_lock(domain, alias)?;
         let tx = self.keys.transaction()?;
-        let (existing, recovery) = tx.load_document::<KeyRecord>(domain, alias)?;
+        let (existing, recovery) = tx.load_key(domain, alias)?;
         if recovery {
             return Err(Error::PersistenceUncertain);
         }
@@ -186,7 +184,7 @@ impl CredentialManager {
             state: ApiKeyState::Enabled,
             secret: Some(secret),
         };
-        tx.publish_document(domain, alias, &record)?;
+        let record = tx.publish_key(domain, alias, record)?;
         Ok(record.status(false))
     }
     pub fn replace_api_key(
@@ -235,7 +233,7 @@ impl CredentialManager {
     ) -> Result<ApiKeyStatus, Error> {
         let _lock = self.existing_key_lock(domain, alias)?;
         let tx = self.keys.transaction()?;
-        let (record, recovery) = tx.load_document::<KeyRecord>(domain, alias)?;
+        let (record, recovery) = tx.load_key(domain, alias)?;
         if record.is_none() && recovery && revision == 0 {
             tx.clear_unpublished(domain, alias)?;
             return Ok(ApiKeyStatus {
@@ -269,7 +267,7 @@ impl CredentialManager {
     ) -> Result<crate::credential::storage::fs::FileLock, Error> {
         {
             let tx = self.keys.transaction()?;
-            let (record, recovery) = tx.load_document::<KeyRecord>(domain, alias)?;
+            let (record, recovery) = tx.load_key(domain, alias)?;
             if record.is_none() && !recovery {
                 return Err(Error::KeyUnavailable);
             }
@@ -285,7 +283,7 @@ impl CredentialManager {
     ) -> Result<ApiKeyStatus, Error> {
         let _lock = self.existing_key_lock(domain, alias)?;
         let tx = self.keys.transaction()?;
-        let (record, recovery) = tx.load_document::<KeyRecord>(domain, alias)?;
+        let (record, recovery) = tx.load_key(domain, alias)?;
         update(&tx, domain, alias, revision, record, recovery, change)
     }
     pub fn list_api_keys(&self, domain: Option<&str>) -> Result<Vec<ApiKeyStatus>, Error> {
@@ -300,7 +298,7 @@ impl CredentialManager {
         let mut statuses = Vec::new();
         for domain in domains {
             for alias in tx.aliases(&domain)? {
-                let (record, recovery) = tx.load_document::<KeyRecord>(&domain, &alias)?;
+                let (record, recovery) = tx.load_key(&domain, &alias)?;
                 if let Some(record) = record {
                     statuses.push(record.status(recovery));
                 } else if recovery {
@@ -323,7 +321,7 @@ impl CredentialManager {
         alias: &str,
     ) -> Result<ApiKeyAccess, Error> {
         let tx = self.keys.transaction()?;
-        let (record, _) = tx.load_document::<KeyRecord>(domain, alias)?;
+        let (record, _) = tx.load_key(domain, alias)?;
         let record = record.ok_or(Error::KeyUnavailable)?;
         let material = record.material_digest();
         Ok(ApiKeyAccess {
@@ -351,6 +349,6 @@ fn update(
         return Err(Error::Superseded);
     }
     change(&mut record, recovery)?;
-    tx.publish_document(domain, alias, &record)?;
+    let record = tx.publish_key(domain, alias, record)?;
     Ok(record.status(false))
 }

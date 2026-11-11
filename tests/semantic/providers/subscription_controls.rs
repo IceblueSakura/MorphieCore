@@ -355,9 +355,8 @@ fn independent_semantic_events_encode_native_subscription_sse() {
     for dialect in [Dialect::Grok, Dialect::Siwc] {
         let independent = response(dialect == Dialect::Siwc, false);
         let contract = adapter(dialect).contract(&TargetContract::full());
-        let mut encoder = EventEncoder::new(GenerationApi::Responses, independent.metadata)
-            .unwrap()
-            .with_contract(contract);
+        let mut encoder =
+            EventEncoder::new(GenerationApi::Responses, independent.metadata, contract).unwrap();
         let values = events
             .iter()
             .flat_map(|event| encoder.encode(event, &FidelityRecords::default()).unwrap())

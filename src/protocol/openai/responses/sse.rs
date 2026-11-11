@@ -213,7 +213,7 @@ impl ResponsesSseEncoder {
         metadata.context.validate().map_err(CodecError::from)?;
         Ok(Self {
             notice: None,
-            codec: EventEncoder::new(GenerationApi::Responses, metadata)?.with_contract(contract),
+            codec: EventEncoder::new(GenerationApi::Responses, metadata, contract)?,
             limits,
             wire_bytes: 0,
             events: 0,

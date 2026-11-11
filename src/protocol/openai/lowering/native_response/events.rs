@@ -93,7 +93,10 @@ impl EventProjection {
         // Native block IDs are 1..=MAX_ITEMS. This is only a target carrier.
         let owner = ItemId::scoped(self.scope, MAX_ITEMS as u64 + 1);
         self.message = Some(owner);
-        self.record(super::envelope_loss(self.profile, "event.project"));
+        self.record(super::envelope_loss(
+            self.profile,
+            crate::protocol::conversion::generation::ConversionBoundary::EventProject,
+        ));
         out.push(StreamEvent::ItemStarted {
             item: owner,
             kind: ItemKind::Message { phase: None },
@@ -145,7 +148,7 @@ impl EventProjection {
                             ItemKind::Message { phase } if self.profile == GenerationApi::Chat => {
                                 if self.phase_only && phase.take().is_some() {
                                     self.record(crate::protocol::phase::delivery_omission(
-                                        "event.project",
+                                        crate::protocol::conversion::generation::ConversionBoundary::EventProject,
                                     ));
                                 }
                                 if !self.calls.is_empty() {
@@ -163,7 +166,7 @@ impl EventProjection {
                                 if owner != *item {
                                     self.record(super::envelope_loss(
                                         self.profile,
-                                        "event.project",
+                                        crate::protocol::conversion::generation::ConversionBoundary::EventProject,
                                     ));
                                     continue;
                                 }
@@ -221,7 +224,7 @@ impl EventProjection {
                                         CarrierReason::Unavailable,
                                     ));
                                 }
-                                self.record(super::envelope_loss(self.profile, "event.project"));
+                                self.record(super::envelope_loss(self.profile, crate::protocol::conversion::generation::ConversionBoundary::EventProject));
                                 continue;
                             }
                             self.text_part = Some((*part, *kind));
@@ -324,7 +327,7 @@ impl EventProjection {
                             .collect();
                         if self.profile == GenerationApi::Responses || envelope.members() != members
                         {
-                            self.record(super::envelope_loss(self.profile, "event.project"));
+                            self.record(super::envelope_loss(self.profile, crate::protocol::conversion::generation::ConversionBoundary::EventProject));
                         }
                         continue;
                     }

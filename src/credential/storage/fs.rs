@@ -191,7 +191,7 @@ impl Directory {
                 continue;
             }
             if entry.file_type().map_err(|_| Error::Storage)?.is_dir() {
-                return Err(Error::LegacyStore);
+                return Err(Error::Storage);
             }
             names.push(name);
         }

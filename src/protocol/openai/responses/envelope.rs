@@ -594,7 +594,7 @@ mod tests {
             assert_eq!(rule.is_some(), echoed);
             if let Some(rule) = rule {
                 assert_eq!(
-                    rule.effect("response.project".into()).change(),
+                    rule.effect(crate::protocol::conversion::generation::ConversionBoundary::ResponseProject).change(),
                     Change::InferFromRequest
                 );
             }

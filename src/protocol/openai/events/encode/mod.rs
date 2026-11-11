@@ -13,7 +13,6 @@ pub struct EventEncoder {
     pub(super) state: Option<StreamState>,
     pub(super) fidelity: FidelityRecords,
     pub(super) contract: TargetContract,
-    target_locked: bool,
     sequence: u64,
     pub(super) chat_audio_pending: Vec<u8>,
     pub(super) chat_details_active: bool,
@@ -26,7 +25,11 @@ pub struct EventEncoder {
     held_bytes: usize,
 }
 impl EventEncoder {
-    pub fn new(profile: GenerationApi, metadata: ResponseMetadata) -> Result<Self, CodecError> {
+    pub fn new(
+        profile: GenerationApi,
+        metadata: ResponseMetadata,
+        contract: TargetContract,
+    ) -> Result<Self, CodecError> {
         metadata.validate()?;
         crate::protocol::reports::relation(&metadata.context.reports, true)?;
         validate_metadata(profile, &metadata)?;
@@ -35,8 +38,7 @@ impl EventEncoder {
             metadata,
             state: Some(StreamState::new()),
             fidelity: FidelityRecords::default(),
-            contract: TargetContract::full(),
-            target_locked: false,
+            contract,
             sequence: 0,
             chat_audio_pending: Vec::new(),
             chat_details_active: false,
@@ -102,14 +104,6 @@ impl EventEncoder {
         }
         result
     }
-    pub fn with_contract(mut self, contract: TargetContract) -> Self {
-        if self.target_locked && self.contract != contract {
-            self.state = None;
-        } else {
-            self.contract = contract;
-        }
-        self
-    }
     pub fn encode(
         &mut self,
         event: &StreamEvent,
@@ -118,7 +112,6 @@ impl EventEncoder {
         if self.state.is_none() {
             return Err(CodecError::invalid());
         }
-        self.target_locked = true;
         let checked_projection = self.projection.len();
         let result = (|| {
             let metadata_echo = if self.profile == GenerationApi::Responses {

@@ -555,9 +555,12 @@ fn chat_details_keep_item_boundaries_and_survive_pi_and_opencode_replays() {
     );
 
     let mut decoder = issuer.event_decoder();
-    let mut encoder = EventEncoder::new(GenerationApi::Chat, decoded.metadata.clone())
-        .unwrap()
-        .with_contract(client_contract);
+    let mut encoder = EventEncoder::new(
+        GenerationApi::Chat,
+        decoded.metadata.clone(),
+        client_contract,
+    )
+    .unwrap();
     let mut deltas = vec![];
     for frame in &events {
         for event in decoder.push(frame).unwrap() {
@@ -679,9 +682,12 @@ fn signed_text_streams_immediately_and_backfills_details_only_at_replay_closure(
     let json = chat_client()
         .encode_response(&decoded, &contract(CLIENT_ORIGIN.as_str()))
         .unwrap();
-    let mut encoder = EventEncoder::new(GenerationApi::Chat, decoded.metadata.clone())
-        .unwrap()
-        .with_contract(chat_client().contract(&contract(CLIENT_ORIGIN.as_str())));
+    let mut encoder = EventEncoder::new(
+        GenerationApi::Chat,
+        decoded.metadata.clone(),
+        chat_client().contract(&contract(CLIENT_ORIGIN.as_str())),
+    )
+    .unwrap();
     let mut decoder = issuer.event_decoder();
     let mut deltas = vec![];
     for (sequence, mut frame) in frames.into_iter().enumerate() {

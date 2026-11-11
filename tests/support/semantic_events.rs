@@ -84,9 +84,7 @@ pub fn apply(events: &[StreamEvent]) -> Result<StreamState, EventError> {
     events.iter().cloned().try_fold(StreamState::new(), reduce)
 }
 pub fn encode(events: &[StreamEvent], profile: GenerationApi, f: &FidelityRecords) -> Vec<Value> {
-    let mut encoder = EventEncoder::new(profile, metadata())
-        .unwrap()
-        .with_contract(contract());
+    let mut encoder = EventEncoder::new(profile, metadata(), contract()).unwrap();
     let values = events
         .iter()
         .flat_map(|e| encoder.encode(e, f).unwrap())

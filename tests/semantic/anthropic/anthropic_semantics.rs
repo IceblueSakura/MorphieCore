@@ -1,4 +1,5 @@
 //! Independent semantic mapping and append-only native continuation expectations.
+use morphiecore::protocol::openai::TargetContract;
 use morphiecore::{
     protocol::{DecodedRequest, anthropic::messages::Profile, native::ReplayTarget},
     semantic::{task::generation::*, value::Text},
@@ -360,7 +361,7 @@ fn stable_refusal_details_have_independent_native_directions_and_guarded_deliver
                 &manual.fidelity,
                 &metadata,
                 profile,
-                morphiecore::protocol::openai::TargetContract::full(),
+                TargetContract::full(),
             );
             let lowered = result.unwrap();
             assert!(lowered.semantic().details().refusal.is_none());
@@ -529,7 +530,7 @@ fn native_stop_reasons_have_independent_terminal_owners() {
         &fidelity,
         &metadata,
         morphiecore::protocol::openai::GenerationApi::Responses,
-        morphiecore::protocol::openai::TargetContract::full(),
+        TargetContract::full(),
     )
     .unwrap();
     assert!(
@@ -546,7 +547,7 @@ fn native_stop_reasons_have_independent_terminal_owners() {
         &fidelity,
         &metadata,
         morphiecore::protocol::openai::GenerationApi::Chat,
-        morphiecore::protocol::openai::TargetContract::full(),
+        TargetContract::full(),
     )
     .unwrap();
     assert!(
@@ -597,7 +598,7 @@ fn native_stop_reasons_have_independent_terminal_owners() {
             &fidelity,
             &metadata,
             profile,
-            morphiecore::protocol::openai::TargetContract::full(),
+            TargetContract::full(),
         )
         .unwrap();
         let named = |stages: &[morphiecore::protocol::conversion::generation::Effect]| {
@@ -619,9 +620,12 @@ fn native_stop_reasons_have_independent_terminal_owners() {
             ],
         ]
         .concat();
-        let mut encoder =
-            morphiecore::protocol::openai::events::EventEncoder::new(profile, metadata.clone())
-                .unwrap();
+        let mut encoder = morphiecore::protocol::openai::events::EventEncoder::new(
+            profile,
+            metadata.clone(),
+            TargetContract::full(),
+        )
+        .unwrap();
         let frames: Vec<_> = events
             .iter()
             .flat_map(|event| encoder.encode(event, &fidelity).unwrap())
@@ -1206,7 +1210,7 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
             &client.task.semantic,
             &client.task.fidelity,
             profile,
-            morphiecore::protocol::openai::TargetContract::full(),
+            TargetContract::full(),
         )
         .unwrap();
         let wire = match profile {
@@ -1350,7 +1354,7 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
             &stopped.semantic,
             &stopped.fidelity,
             morphiecore::protocol::openai::GenerationApi::Responses,
-            morphiecore::protocol::openai::TargetContract::full()
+            TargetContract::full()
         )
         .is_err()
     );

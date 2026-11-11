@@ -1,5 +1,6 @@
 //! Reasoning ownership, opaque replay, mixed tool continuation and resource failures.
 use crate::events_support::*;
+use morphiecore::protocol::openai::TargetContract;
 use morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
@@ -242,7 +243,8 @@ fn typed_disabled_summary_is_valid_semantics_without_a_responses_carrier() {
             .summary(),
         None
     );
-    let mut encoder = EventEncoder::new(GenerationApi::Responses, reported).unwrap();
+    let mut encoder =
+        EventEncoder::new(GenerationApi::Responses, reported, TargetContract::full()).unwrap();
     let wire = encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
     assert_eq!(wire[0]["response"]["reasoning"]["effort"], "none");
     assert!(wire[0]["response"]["reasoning"].get("summary").is_none());
@@ -334,7 +336,8 @@ fn unsupported_snapshot_content_is_not_silently_dropped() {
 }
 #[test]
 fn encoder_rejects_unbound_replay_before_emitting_it() {
-    let mut encoder = EventEncoder::new(GenerationApi::Responses, metadata()).unwrap();
+    let mut encoder =
+        EventEncoder::new(GenerationApi::Responses, metadata(), TargetContract::full()).unwrap();
     let f = FidelityRecords::default();
     encoder.encode(&StreamEvent::Started, &f).unwrap();
     assert!(

@@ -1,5 +1,6 @@
 //! Independent field and transformation contracts for stateless Responses text.
 use crate::wire;
+use morphiecore::protocol::openai::TargetContract;
 use morphiecore::{
     protocol::openai::{
         DecodedRequest, GenerationApi, TargetContract as Contract, chat,
@@ -500,6 +501,7 @@ fn custom_tools_and_text_array_results_are_not_function_arguments() {
     let mut stream = morphiecore::protocol::openai::events::EventEncoder::new(
         GenerationApi::Chat,
         response.metadata,
+        TargetContract::full(),
     )
     .unwrap();
     stream
@@ -658,7 +660,8 @@ fn reported_text_container_presence_is_not_request_intent() {
                 .iter()
                 .all(|stage| !stage.change().is_loss())
         );
-        let mut encoder = EventEncoder::new(GenerationApi::Responses, metadata).unwrap();
+        let mut encoder =
+            EventEncoder::new(GenerationApi::Responses, metadata, TargetContract::full()).unwrap();
         for event in [
             StreamEvent::Started,
             StreamEvent::Terminal {
@@ -956,7 +959,7 @@ fn reported_cache_context_is_an_independent_response_fact() {
         &requested.task.semantic,
         &requested.task.fidelity,
         GenerationApi::Responses,
-        morphiecore::protocol::openai::TargetContract::full(),
+        TargetContract::full(),
     )
     .unwrap();
     assert_eq!(
@@ -986,7 +989,7 @@ fn reported_cache_context_is_an_independent_response_fact() {
             &reported.fidelity,
             &reported.metadata,
             GenerationApi::Responses,
-            morphiecore::protocol::openai::TargetContract::full(),
+            TargetContract::full(),
         )
         .unwrap();
         assert_eq!(

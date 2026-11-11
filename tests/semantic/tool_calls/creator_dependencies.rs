@@ -1,4 +1,5 @@
 use crate::events_support::*;
+use morphiecore::protocol::openai::TargetContract;
 use morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
@@ -60,7 +61,7 @@ fn context_edits_invalidate_creator_reports_even_when_debug_is_redacted() {
             &parsed.fidelity,
             &parsed.metadata,
             GenerationApi::Responses,
-            morphiecore::protocol::openai::TargetContract::full(),
+            TargetContract::full(),
         )
         .err()
         .map(|error| error.cause)
@@ -163,9 +164,8 @@ fn typed_event_encoding_cannot_change_or_erase_an_already_published_creator() {
                 Some(&json!("A")),
             )
             .unwrap();
-        let mut encoder = EventEncoder::new(GenerationApi::Responses, metadata())
-            .unwrap()
-            .with_contract(contract());
+        let mut encoder =
+            EventEncoder::new(GenerationApi::Responses, metadata(), contract()).unwrap();
         encoder.encode(&StreamEvent::Started, &initial).unwrap();
         let opened = encoder
             .encode(

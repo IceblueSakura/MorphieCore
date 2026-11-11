@@ -228,7 +228,11 @@ impl ClientEventEncoder {
             Err(CodecError::Unsupported(_)) if self.delivery_enabled => None,
             Err(error) => return Err(error),
         };
-        for loss in super::projection::report_losses(source, selected.as_ref(), "event.encode") {
+        for loss in super::projection::report_losses(
+            source,
+            selected.as_ref(),
+            crate::protocol::conversion::generation::ConversionBoundary::EventEncode,
+        ) {
             if !self.losses.contains(&loss) {
                 self.losses.push(loss);
             }
@@ -294,7 +298,7 @@ impl ClientEventEncoder {
                     schedule::Ready::OmitReasoning(item) => {
                         self.losses.push(super::projection::reasoning_omission(
                             item,
-                            ("event.project").into(),
+                            crate::protocol::conversion::generation::ConversionBoundary::EventProject,
                         ));
                     }
                     schedule::Ready::ClosePart(item, part) => {
@@ -635,7 +639,9 @@ impl ClientEventEncoder {
                 let mut details = details.clone();
                 details.validate(outcome)?;
                 if details.explanation.as_ref().is_some() {
-                    let loss = super::projection::explanation_loss("event.encode");
+                    let loss = super::projection::explanation_loss(
+                        crate::protocol::conversion::generation::ConversionBoundary::EventEncode,
+                    );
                     if !self.losses.contains(&loss) {
                         self.losses.push(loss);
                     }

@@ -1,4 +1,5 @@
 //! Independent standard Chat media/citation oracles; never use a live credential or catalog.
+use morphiecore::protocol::openai::TargetContract;
 use morphiecore::{
     protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract as Contract},
     semantic::task::generation::*,
@@ -467,7 +468,7 @@ fn byte_fragments_encode_as_one_base64_value() {
         context: Default::default(),
         instruction_fidelity: Default::default(),
     };
-    let mut e = EventEncoder::new(GenerationApi::Chat, meta).unwrap();
+    let mut e = EventEncoder::new(GenerationApi::Chat, meta, TargetContract::full()).unwrap();
     let item = ItemId::new(1);
     let part = PartId::new(1);
     let mut data = String::new();

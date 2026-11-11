@@ -32,7 +32,7 @@ fn provider_document_merges_independent_records_without_losing_other_credentials
         .store
         .transaction()
         .unwrap()
-        .publish(&active())
+        .publish(active())
         .unwrap();
     manager
         .add_api_key(
@@ -41,12 +41,92 @@ fn provider_document_merges_independent_records_without_losing_other_credentials
             Secret::new("synthetic-key".into()).unwrap(),
         )
         .unwrap();
+    {
+        let tx = manager.store.transaction().unwrap();
+        let mut account = tx.load("synthetic", "one").unwrap().account.unwrap();
+        assert_eq!(
+            account.credential.as_ref().unwrap().access.expose(),
+            "old-access"
+        );
+        account.credential.as_mut().unwrap().access = Secret::new("next-access".into()).unwrap();
+        account.advance().unwrap();
+        tx.publish(account).unwrap();
+    }
     let file = dir.path.join("synthetic.json");
     let doc: serde_json::Value = serde_json::from_slice(&std::fs::read(file).unwrap()).unwrap();
     assert_eq!(doc["provider"], "synthetic");
-    assert_eq!(doc["oauth"]["one"]["credential"]["access"], "old-access");
+    assert_eq!(doc["oauth"]["one"]["credential"]["access"], "next-access");
     assert_eq!(doc["api_keys"]["backup"]["secret"], "synthetic-key");
     assert!(doc.get("pools").is_none());
+}
+#[test]
+fn malformed_records_in_either_partition_reject_before_credentials_are_available() {
+    let dir = Directory::new();
+    let manager = CredentialManager::new(&dir.path, vec![]).unwrap();
+    manager
+        .store
+        .transaction()
+        .unwrap()
+        .publish(active())
+        .unwrap();
+    manager
+        .add_api_key(
+            "synthetic",
+            "backup",
+            Secret::new("synthetic-key".into()).unwrap(),
+        )
+        .unwrap();
+    let path = dir.path.join("synthetic.json");
+    let valid: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let oauth = valid["oauth"]["one"].to_string();
+    let key = valid["api_keys"]["backup"].to_string();
+    for (oauth_records, key_records) in [
+        (
+            format!(r#"{{"one":{oauth},"one":{oauth}}}"#),
+            format!(r#"{{"backup":{key}}}"#),
+        ),
+        (
+            format!(r#"{{"one":{oauth}}}"#),
+            format!(r#"{{"backup":{key},"backup":{key}}}"#),
+        ),
+        (
+            format!(
+                r#"{{"one":{}}}"#,
+                oauth.replace(
+                    r#""access":"old-access""#,
+                    r#""access":"old-access","access":"other-access""#
+                )
+            ),
+            format!(r#"{{"backup":{key}}}"#),
+        ),
+        (
+            format!(r#"{{"one":{oauth}}}"#),
+            format!(
+                r#"{{"backup":{}}}"#,
+                key.replace(
+                    r#""secret":"synthetic-key""#,
+                    r#""secret":"synthetic-key","secret":"other-key""#
+                )
+            ),
+        ),
+    ] {
+        let raw = format!(
+            r#"{{"version":1,"provider":"synthetic","oauth":{oauth_records},"api_keys":{key_records}}}"#
+        );
+        std::fs::write(&path, raw).unwrap();
+        {
+            let tx = manager.store.transaction().unwrap();
+            assert!(matches!(
+                tx.load("synthetic", "one"),
+                Err(CredentialError::Storage)
+            ));
+        }
+        let tx = manager.keys.transaction().unwrap();
+        assert!(matches!(
+            tx.load_key("synthetic", "backup"),
+            Err(CredentialError::Storage)
+        ));
+    }
 }
 #[test]
 fn publication_faults_distinguish_unchanged_data_from_uncertain_replacement() {
@@ -62,12 +142,12 @@ fn publication_faults_distinguish_unchanged_data_from_uncertain_replacement() {
     ] {
         let dir = Directory::new();
         let store = Store::open(&dir.path).unwrap();
-        let mut account = active();
-        store.transaction().unwrap().publish(&account).unwrap();
+        let account = active();
+        let mut account = store.transaction().unwrap().publish(account).unwrap();
         account.credential.as_mut().unwrap().access = Secret::new("new-access".into()).unwrap();
         account.advance().unwrap();
         store.fail_at(fault);
-        let result = store.transaction().unwrap().publish(&account);
+        let result = store.transaction().unwrap().publish(account);
         let reopened = Store::open(&dir.path).unwrap();
         let loaded = reopened
             .transaction()
@@ -89,7 +169,7 @@ fn publication_faults_distinguish_unchanged_data_from_uncertain_replacement() {
             assert!(result.is_ok());
         } else {
             assert_eq!(
-                result.unwrap_err(),
+                result.err().unwrap(),
                 if uncertain {
                     CredentialError::PersistenceUncertain
                 } else {
@@ -117,7 +197,7 @@ fn account_file_binding_permissions_links_and_size_are_enforced() {
     use std::os::unix::fs::{PermissionsExt, symlink};
     let dir = Directory::new();
     let store = Store::open(&dir.path).unwrap();
-    store.transaction().unwrap().publish(&active()).unwrap();
+    store.transaction().unwrap().publish(active()).unwrap();
     let path = dir.path.join("synthetic.json");
     assert_eq!(
         std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
@@ -194,12 +274,12 @@ fn first_publication_admits_last_namespace_without_poisoning_capacity() {
         for index in 0..63 {
             tx.ensure_namespace(&format!("namespace-{index}")).unwrap();
         }
-        tx.publish(&active()).unwrap();
+        tx.publish(active()).unwrap();
         assert_eq!(tx.namespaces().unwrap().len(), 64);
         let mut rejected = active();
         rejected.profile = "overflow".into();
         assert_eq!(
-            tx.publish(&rejected).unwrap_err(),
+            tx.publish(rejected).err().unwrap(),
             CredentialError::Capacity
         );
         assert!(tx.load("overflow", "one").unwrap().account.is_none());
@@ -225,7 +305,7 @@ fn first_publication_recovers_its_reserved_namespace_at_capacity() {
     }
     let reopened = Store::open(&dir.path).unwrap();
     let tx = reopened.transaction().unwrap();
-    tx.publish(&active()).unwrap();
+    tx.publish(active()).unwrap();
     let loaded = tx.load("synthetic", "one").unwrap();
     assert!(!loaded.recovery);
     assert_eq!(

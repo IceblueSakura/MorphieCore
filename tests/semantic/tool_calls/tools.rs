@@ -1,6 +1,7 @@
 //! Tool availability, call guarantees and replay boundaries.
 use crate::events_support::{apply, close, created, envelope, metadata, start, terminal};
 use morphiecore::protocol::openai::Dialect;
+use morphiecore::protocol::openai::TargetContract;
 use morphiecore::{adapter::ClientAdapter, protocol::openai::GenerationCodec};
 use morphiecore::{
     protocol::{
@@ -481,7 +482,9 @@ fn program_items_have_no_chat_projection() {
 fn program_output_waits_for_status_without_reordering_following_items() {
     for status in [ItemLifecycle::Completed, ItemLifecycle::Incomplete] {
         let fidelity = FidelityRecords::default();
-        let mut encoder = events::EventEncoder::new(GenerationApi::Responses, metadata()).unwrap();
+        let mut encoder =
+            events::EventEncoder::new(GenerationApi::Responses, metadata(), TargetContract::full())
+                .unwrap();
         let mut wire = encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
         let mut held = vec![
             start(

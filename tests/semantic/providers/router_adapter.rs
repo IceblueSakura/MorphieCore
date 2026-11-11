@@ -189,9 +189,12 @@ fn router_repeated_finish_usage_is_content_free_and_matches_static() {
             .encode_response(&expected, &Contract::full())
             .unwrap()
     );
-    let mut encoder = EventEncoder::new(GenerationApi::Chat, decoded.metadata.clone())
-        .unwrap()
-        .with_contract(source.contract(&Contract::full()));
+    let mut encoder = EventEncoder::new(
+        GenerationApi::Chat,
+        decoded.metadata.clone(),
+        source.contract(&Contract::full()),
+    )
+    .unwrap();
     let mut encoded = vec![];
     for event in &events {
         encoded.extend(encoder.encode(event, &decoded.fidelity).unwrap());
