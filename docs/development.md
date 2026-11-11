@@ -280,6 +280,8 @@ Only the standalone mocked Anthropic serialization self-test and the now-inexpre
 
 The full offline baseline, strict all-target Clippy, formatting, production compilation, 20 pinned assets, all four Python suites and all 20 serial SDK scenarios pass. All 25 selected isolated Agent scenarios pass on current pi **1.5.2** and OpenCode **2.2.5**, covering defaults, signed history, recovery, summaries and lifecycle/cancellation; the extension-specific Google-owner replay scenario was not rerun. Local documentation links pass. Evidence: `lifecycle-convergence-20261111.job`. R09 remains user-paused; no real Provider, production backend, deployment or private-credential qualification was performed.
 
+**Renewal publication and retry notice, 2026-11-11:** with the blocking pool held after the Provider returned rotated material, dropping the renewal caller previously left the account `needs_reauthorization` without a credential; post-network publication now completes under retained ownership and releases the account lock afterwards, while the queued-preparation logout case still cannot consume. A Responses request whose prepared wire omits `temperature` and whose first send returns 503 previously lost that omission from the retried reply's notice; each send now reapplies the immutable preparation evidence exactly once. The full offline baseline, strict all-target Clippy, formatting, production compilation, 20 pinned assets, all four Python suites and all 20 serial SDK scenarios pass. Installed-Agent scenarios were not rerun; no real Provider, OAuth login or deployment was involved.
+
 ### Python checks
 
 The shared Python environment stays in `tests/sdk/`; test ownership does not determine environment location. Python and dependencies are pinned by `.python-version` and `uv.lock` there, including OpenAI, Anthropic and Google SDKs. `sdk_support.require_sdk` reads exact direct versions from `pyproject.toml`, avoiding duplicate version literals in scenarios. uv owns the ignored `.venv/`; do not edit it by hand.
@@ -613,7 +615,7 @@ Keep immutable request text/order and explicit tool policy; prose does not synth
 
 **2026-11-08:** real stateless Responses SDK JSON and SSE each pass **4/4**: Grok protected call → same-target feedback → Luna visible-history transfer → Grok again. Original native values restore on the same target; foreign reasoning takes the selected omission while visible text and call/result links survive. Evidence: `ar5-r09-replay-{json,sse,offline}-20261108.log`.
 
-This qualifies replay isolation for those profiles, not independent-account failover. Earlier loader evidence reports one enabled declared account per Provider; no independent compatible same-model pair is qualified and no fresh inventory/provisioning is implied. R09 retains its separate [selected pre-Stage-4 gate](roadmap.md#cache-affinity-qualification).
+This qualifies replay isolation for those profiles, not independent-account failover. Earlier loader evidence reports one enabled declared account per Provider; no independent compatible same-model pair is qualified and no fresh inventory/provisioning is implied. R09 remains an [unscheduled routing qualification](roadmap.md#routing-qualification).
 
 ### Installed-client default characterization
 

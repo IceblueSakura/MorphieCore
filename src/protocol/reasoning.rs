@@ -17,7 +17,7 @@
 //! - **Quantization & Upward Tie-Breaking**: Numeric budgets are quantized to discrete
 //!   effort levels by minimal absolute distance (`abs_diff`). Ties resolve upward to
 //!   the higher effort level (via `std::cmp::Reverse(rank(*level))`).
-//! - **Ceiling Limits (P3b)**: A thinking budget cannot exceed the client-specified
+//! - **Ceiling Limits**: A thinking budget cannot exceed the client-specified
 //!   maximum output token ceiling.
 use crate::{
     protocol::{CodecError, failure::CarrierReason},

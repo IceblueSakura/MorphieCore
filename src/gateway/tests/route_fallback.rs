@@ -415,3 +415,89 @@ async fn recovery_ownership_spans_final_handoff_and_distinguishes_deadlines() {
     upstream.abort();
     let _ = upstream.await;
 }
+
+#[tokio::test]
+async fn same_target_retry_reports_reused_upstream_request_adaptations() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tower::ServiceExt;
+    let calls = Arc::new(AtomicUsize::new(0));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let observed = calls.clone();
+    let router = Router::new().route("/responses", post(move |Json(body): Json<Value>| {
+        let calls = observed.clone();
+        async move {
+            assert!(body.get("temperature").is_none());
+            if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+            ([("content-type", "text/event-stream")], super::responses_wire::response_stream(json!({"object":"response","id":"retry-r","model":"private-fixture","created_at":1,"status":"completed","output":[{"type":"message","id":"retry-msg","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok","annotations":[],"logprobs":[]}]}]}))).into_response()
+        }
+    }));
+    let upstream = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let mut credentials = Credentials::new();
+    credentials.insert(
+        CredentialBindingId::new("fixture-key").unwrap(),
+        Arc::new(SecretMaterial::new("synthetic-key").unwrap()),
+    );
+    let gate = Gateway::new(
+        super::topology::topology_at(&origin),
+        TaskEntries {
+            generation: vec![Entry {
+                chat_profile: Default::default(),
+                model: "limited-model".into(),
+                protocol: crate::protocol::ClientProtocol::Responses,
+                endpoint: EndpointId::new("limited-responses").unwrap(),
+            }],
+            ..Default::default()
+        },
+        credentials,
+        std::collections::BTreeMap::from([(
+            "fixture-agent".into(),
+            SecretMaterial::new(super::support::KEY).unwrap(),
+        )]),
+        Limits::default(),
+        None,
+    )
+    .unwrap();
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        gate.router().oneshot(
+            axum::http::Request::builder()
+                .method("POST")
+                .uri("/v1/responses")
+                .header("authorization", format!("Bearer {}", super::support::KEY))
+                .header("content-type", "application/json")
+                .body(axum::body::Body::from(
+                    r#"{"model":"limited-model","input":"synthetic","temperature":0.5}"#,
+                ))
+                .unwrap(),
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(response.status(), 200);
+    let body: Value = serde_json::from_slice(
+        &axum::body::to_bytes(response.into_body(), 1 << 16)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(body["output"][0]["content"][0]["text"], "ok");
+    // The retry sends the same prepared wire, so the reply must still disclose
+    // that wire's omission exactly once.
+    let sampling: Vec<_> = body["morphiecore"]["adaptations"]
+        .as_array()
+        .expect("adaptation notice")
+        .iter()
+        .filter(|entry| entry["field"] == "generation.sampling")
+        .collect();
+    assert_eq!(sampling.len(), 1, "{body}");
+    assert_eq!(sampling[0]["change"], "omit");
+    assert_eq!(sampling[0]["occurrences"], 1);
+    gate.shutdown();
+    upstream.abort();
+    let _ = upstream.await;
+}

@@ -1,27 +1,57 @@
 //! Caller-owned renewal with off-worker, cancellation-drained filesystem phases.
 use super::*;
-use crate::credential::{AccessBinding, Credential, Grant, Renewal, storage::fs::FileLock};
-use std::sync::Mutex;
+use crate::credential::{
+    AccessBinding, Credential, Grant, Renewal,
+    storage::{fs::FileLock, store::Transaction},
+};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 #[derive(Default)]
 struct StorageState {
     cancelled: bool,
+    committing: bool,
     account_lock: Option<FileLock>,
 }
 #[derive(Default)]
 struct RefreshStorage(Arc<Mutex<StorageState>>);
+fn state(shared: &Mutex<StorageState>) -> MutexGuard<'_, StorageState> {
+    // A panicking phase leaves no partial in-memory state worth rejecting;
+    // the store itself owns publication recovery.
+    shared.lock().unwrap_or_else(PoisonError::into_inner)
+}
 impl RefreshStorage {
-    async fn run<T: Send + 'static>(
+    /// Runs a phase that precedes Provider I/O; it is skipped once the caller is gone.
+    async fn prepare<T: Send + 'static>(
         &self,
         phase: impl FnOnce(&mut Option<FileLock>) -> Result<T, Error> + Send + 'static,
     ) -> Result<T, Error> {
-        let state = self.0.clone();
+        self.run(false, phase).await
+    }
+    /// Publishes material the Provider may already have rotated. It completes
+    /// after caller cancellation, and the account lock lives until it ends.
+    async fn commit<T: Send + 'static>(
+        &self,
+        phase: impl FnOnce() -> Result<T, Error> + Send + 'static,
+    ) -> Result<T, Error> {
+        self.run(true, |_| phase()).await
+    }
+    async fn run<T: Send + 'static>(
+        &self,
+        commit: bool,
+        phase: impl FnOnce(&mut Option<FileLock>) -> Result<T, Error> + Send + 'static,
+    ) -> Result<T, Error> {
+        let shared = self.0.clone();
+        if commit {
+            state(&shared).committing = true;
+        }
         tokio::task::spawn_blocking(move || {
-            let mut state = state.lock().expect("refresh storage phase");
-            if state.cancelled {
+            let mut state = state(&shared);
+            if state.cancelled && !commit {
                 return Err(Error::Superseded);
             }
-            phase(&mut state.account_lock)
+            let result = phase(&mut state.account_lock);
+            state.committing = false;
+            result
         })
         .await
         .map_err(|_| Error::Storage)?
@@ -31,10 +61,13 @@ impl Drop for RefreshStorage {
     fn drop(&mut self) {
         // An atomic filesystem replacement cannot be interrupted. Drain any
         // started phase before releasing exclusivity or acknowledging cancellation;
-        // queued phases must never publish after the caller has gone away.
-        let mut state = self.0.lock().expect("refresh storage phase");
+        // queued preparation must never run after the caller has gone away. A
+        // queued commit keeps the shared lock until its blocking task drops it.
+        let mut state = state(&self.0);
         state.cancelled = true;
-        state.account_lock.take();
+        if !state.committing {
+            state.account_lock.take();
+        }
     }
 }
 enum Prepared {
@@ -68,7 +101,7 @@ impl CredentialManager {
         let alias = alias.to_owned();
         let automatic = automatic.map(|(binding, ahead)| (binding.clone(), ahead));
         let prepared = storage
-            .run(move |lock| {
+            .prepare(move |lock| {
                 *lock = Some(manager.store.account_lock(&profile, &alias)?);
                 manager.prepare_refresh(&profile, &alias, automatic.as_ref())
             })
@@ -92,10 +125,12 @@ impl CredentialManager {
             Renewal::Pending(pending) => {
                 let manager = self.clone();
                 let account = storage
-                    .run(move |_| {
+                    .commit(move || {
+                        let tx = manager.store.transaction()?;
+                        manager.check_current(&tx, &account)?;
                         account.pending_renewal = Some(pending);
                         account.advance()?;
-                        manager.store.transaction()?.publish(account)
+                        tx.publish(account)
                     })
                     .await?;
                 return self
@@ -110,7 +145,7 @@ impl CredentialManager {
         }
         let manager = self.clone();
         storage
-            .run(move |_| manager.publish_refresh(account, grant))
+            .commit(move || manager.publish_refresh(account, grant))
             .await
             .map(Some)
     }
@@ -164,9 +199,9 @@ impl CredentialManager {
         account.advance()?;
         Ok(Prepared::Renew(tx.publish(account)?, previous))
     }
-    fn publish_refresh(&self, mut account: Account, grant: Grant) -> Result<AccountStatus, Error> {
-        let tx = self.store.transaction()?;
-        let loaded = self.load(&tx, &account.profile, &account.alias)?;
+    /// Post-network publication applies only to the record this renewal prepared.
+    fn check_current(&self, tx: &Transaction<'_>, account: &Account) -> Result<(), Error> {
+        let loaded = self.load(tx, &account.profile, &account.alias)?;
         let current = loaded.account.ok_or(Error::Superseded)?;
         if loaded.recovery
             || current.revision != account.revision
@@ -176,6 +211,11 @@ impl CredentialManager {
         {
             return Err(Error::Superseded);
         }
+        Ok(())
+    }
+    fn publish_refresh(&self, mut account: Account, grant: Grant) -> Result<AccountStatus, Error> {
+        let tx = self.store.transaction()?;
+        self.check_current(&tx, &account)?;
         account.replace_credential(Some(grant.credential))?;
         account.state = AccountState::Active;
         account.advance()?;
@@ -203,18 +243,10 @@ impl CredentialManager {
         )?;
         let manager = self.clone();
         storage
-            .run(move |_| {
+            .commit(move || {
                 let mut account = account;
                 let tx = manager.store.transaction()?;
-                let loaded = manager.load(&tx, &account.profile, &account.alias)?;
-                if loaded.recovery
-                    || loaded
-                        .account
-                        .as_ref()
-                        .is_none_or(|current| current.revision != account.revision)
-                {
-                    return Err(Error::Superseded);
-                }
+                manager.check_current(&tx, &account)?;
                 let pending = account.pending_renewal.take().ok_or(Error::Storage)?;
                 account.replace_credential(Some(pending.credential))?;
                 account.state = AccountState::Active;

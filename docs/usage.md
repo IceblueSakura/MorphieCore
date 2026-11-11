@@ -179,7 +179,7 @@ All settings belong to `gateway.json`. Zero scan interval keeps the startup chec
 
 Use `status --provider ID` for redacted state and `refresh --provider ID --account NAME` for manual renewal, with the same explicit account/store paths.
 
-When replacement material was received but identity verification failed, manual `refresh` resumes that verification without repeating the token exchange. Pending material remains unavailable to inference and automatic renewal. Renewal never detaches network work; an already-started atomic store transaction drains before renewal ownership is released.
+When replacement material was received but identity verification failed, manual `refresh` resumes that verification without repeating the token exchange. Pending material remains unavailable to inference and automatic renewal. Renewal never detaches network work; an already-started atomic store transaction drains before renewal ownership is released. Material already returned by the Provider is still published after a renewal timeout or shutdown.
 
 ## Manual upstream diagnostics
 

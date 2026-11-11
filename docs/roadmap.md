@@ -10,7 +10,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
   - [History and replay](#history-and-replay)
   - [Content and client qualification](#content-and-client-qualification)
   - [Protocol boundaries](#protocol-boundaries)
-- [Cache-affinity qualification](#cache-affinity-qualification)
+  - [Routing qualification](#routing-qualification)
 - [Deferred protocol follow-ups](#deferred-protocol-follow-ups)
   - [Conditional Stage-3 follow-ups](#conditional-stage-3-follow-ups)
     - [Tool verification and scope gates](#tool-verification-and-scope-gates)
@@ -32,7 +32,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
   - [Verification and integration boundary](#verification-and-integration-boundary)
 - [Integration handoff](#integration-handoff)
   - [Partial-delivery exit](#partial-delivery-exit)
-  - [P7 boundary review](#p7-boundary-review)
+  - [Public route activation review](#public-route-activation-review)
 - [Pending decisions](#pending-decisions)
   - [Ownership and projection decisions](#ownership-and-projection-decisions)
 - [Deferred work](#deferred-work)
@@ -52,21 +52,20 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current status (2026-11-11):** AR5 has converged under the [partial-delivery exit](#partial-delivery-exit). Configuration/diagnostic cleanup is delivered under [Observability](architecture.md#observability); maintenance simplification is also delivered, with remaining production observability/reliability/privacy gates deferred in the [cleanup plan](convergence-cleanup-plan.md). Accepted contracts live in [Architecture](architecture.md); dated [qualification evidence](development.md#provider-qualification-evidence) and current-Agent checks live in Development. Residual limitations and prerequisites share the [unscheduled issue register](#unscheduled-issues), without a separate review repair queue. [Cache-affinity qualification](#cache-affinity-qualification) remains required before Stage 4. No deployment or new API activation is implied.
+**Current status (2026-11-11):** the Generation review baseline has converged under the [partial-delivery exit](#partial-delivery-exit). Configuration/diagnostic cleanup, maintenance simplification and lifecycle convergence are delivered under [Observability](architecture.md#observability), with remaining production observability/reliability/privacy gates deferred in the [cleanup plan](convergence-cleanup-plan.md). Accepted contracts live in [Architecture](architecture.md); dated [qualification evidence](development.md#provider-qualification-evidence) and current-Agent checks live in Development. Residual limitations and prerequisites share the [unscheduled issue register](#unscheduled-issues), without a separate review repair queue. **User-selected 2026-11-11:** no pre-Stage-4 gate remains; R09 and Agent session storage no longer gate Stage 4. No deployment or new API activation is implied.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
-| Cache affinity, paused before Stage 4 | [R09 independent-account failover](#cache-affinity-qualification), deferred by the user on 2026-11-11; further test items await user supplementation | Resume only when selected, retaining independent real-account prerequisites |
 | Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default handoff prerequisites |
 | API expansion | Select and implement Stage-4 operation contracts | Per-operation lifecycle, protocol and SDK acceptance |
-| Downstream integration | Implement opt-in per-Agent JSONL session storage | Selected isolation and lifetime bounds |
+| Downstream integration | Opt-in [per-Agent JSONL session storage](architecture.md#agent-session-files); unscheduled and not a Stage-4 prerequisite | Select isolation and lifetime bounds before implementation |
 | Production preparation | Select real diagnostic receiver/storage and deferred cluster observability scope | Explicit deployer selection; cleanup implementation does not deploy a Collector or backend |
 
 ## Unscheduled issues
 
 This is the single register for unresolved Generation/client boundaries and qualification gaps. None is an active repair package or a prerequisite for the delivered baseline. Reopen only after a concrete unmet contract, target/profile, prerequisite and bounded acceptance plan are selected. Review IDs remain traceability labels, not a second phase queue. [Development](development.md#provider-qualification-evidence) owns dated verdicts; [Architecture](architecture.md) owns accepted contracts and service limitations.
 
-R02/R06's pi-first stateless carrier was selected on 2026-11-10; remaining client/Provider qualification stays here. R04/R08 and Bailian structured-output variability remain excluded; do not substitute prompt/history rewriting or deduplication work. Accepted Bailian forcing and Grok content limitations are not reopened. R09 is separately [scheduled before Stage 4](#cache-affinity-qualification), not moved into this backlog.
+R02/R06's pi-first stateless carrier was selected on 2026-11-10; remaining client/Provider qualification stays here. R04/R08 and Bailian structured-output variability remain excluded; do not substitute prompt/history rewriting or deduplication work. Accepted Bailian forcing and Grok content limitations are not reopened. R09 moved here from its former pre-Stage-4 slot on 2026-11-11.
 
 ### Tool guarantees
 
@@ -98,7 +97,6 @@ The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-bounda
 |---|---|---|
 | Chat custom-tool SSE | Retain standard rejection; investigate upstream intake and downstream delivery separately | Official event contract resolves the disagreement, or a separately selected dialect/client contract supplies independent wire/consumer evidence |
 | SIWC Responses inline-tool continuation | Real endpoint acceptance for inline declarations and direct call/result history remains unqualified | Select the endpoint/profile and a bounded full-loop run; retain root namespace requirements |
-| Request adaptation notice after same-target retry | Pre-existing gap: starting a fresh attempt while reusing prepared wire can lose its upstream-request effects from the public notice | Select a focused repair that reapplies immutable preparation evidence per send; do not restore historical diagnostic reports |
 | Chat upstream final usage | Duplicate nonnull final reports remain unqualified at the emitter | A concrete upstream profile and independently observed report sequence |
 | Nonempty Messages tool opener plus nonempty fragments | Retain rejection, including a complete-fragment negative regression; complete opener plus zero-byte deltas remains supported | Authoritative replacement/merge semantics exist |
 | Bounded token-budget adjustment | Model-maximum clamp selected; broader formulas deferred; native effort and existing validation preserved | An authorized target plus failing request, limit provenance, useful reserve, finite maximum and infeasible behavior qualify a target-local rule |
@@ -108,15 +106,13 @@ The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-bounda
 | Messages custom-input wrapping | Conditional Stage-3 follow-up S3-T6; not a core exit prerequisite | Declaration, arguments, return/history mapping and client execution expectations are selected together |
 | Token scope and SDK drift | Investigate only the selected target/field; no automatic source-pin promotion | A bounded budget rule or reviewed version change has independent expectations and a reachable target path |
 
-## Cache-affinity qualification
+### Routing qualification
 
-**User-selected 2026-11-09:** this remains the selected qualification stage after the delivered Generation/configuration/diagnostic baseline and before Stage 4. R09 is its initial item, preserving the original identifier and evidence. Additional cache-affinity test items will be supplied later; do not invent or launch that broader suite now. The routing freeze and credential-lifecycle authorization remain unchanged.
+The routing freeze and credential-lifecycle authorization remain unchanged. Additional cache-affinity test items await user supplementation; do not invent or launch that broader suite.
 
-**Paused by the user, 2026-11-11:** complete the selected local lifecycle repairs without running R09 or provisioning accounts. This pause does not qualify or waive the real-account gate.
-
-| Item | Current evidence / prerequisite | Acceptance |
+| Issue | Current boundary | Re-entry / decision |
 |---|---|---|
-| **R09 — Real account-compatible failover** | [Real stateless JSON/SSE replay isolation passes](development.md#replay-isolation-evidence). Earlier loader evidence reports one enabled declared account per Provider; no independent compatible pair is qualified. | With independent compatible accounts on one authorized same-model route, verify A success/affinity, a bounded A failure without switching inside that request, B selection on a new request with A-private replay omitted, then B success/stickiness. Define fault injection and budgets first; provisioning new credentials requires separate approval. Same-key aliases, different-model switching and synthetic authorities do not qualify this real-account gate. |
+| **R09 — Real account-compatible failover** | [Real stateless JSON/SSE replay isolation passes](development.md#replay-isolation-evidence). Earlier loader evidence reports one enabled declared account per Provider; no independent compatible pair is qualified. Not a Stage-4 prerequisite since 2026-11-11 | With independent compatible accounts on one authorized same-model route, verify A success/affinity, a bounded A failure without switching inside that request, B selection on a new request with A-private replay omitted, then B success/stickiness. Define fault injection and budgets first; provisioning new credentials requires separate approval. Same-key aliases, different-model switching and synthetic authorities do not qualify this real-account gate |
 
 ## Deferred protocol follow-ups
 
@@ -168,12 +164,11 @@ The [pinned Anthropic SDK](../tests/upstream/sources.lock.json) types already in
 
 ## Planned order
 
-The Generation review baseline is delivered under the [partial-delivery contract](#partial-delivery-exit). Stage 4 still follows the selected [cache-affinity qualification](#cache-affinity-qualification); [unscheduled issues](#unscheduled-issues) do not become implicit prerequisites. Stage-4 families retain equal priority and advance as contracts are selected. Conditional tool packages keep their own policy gates; Stage 5 remains unscheduled.
+The Generation review baseline is delivered under the [partial-delivery contract](#partial-delivery-exit). Stage 4 has no remaining entry gate; [unscheduled issues](#unscheduled-issues), including R09, do not become implicit prerequisites. Stage-4 families retain equal priority and advance as contracts are selected. Conditional tool packages keep their own policy gates; Stage 5 remains unscheduled.
 
 | Stage | Goal | Exit evidence |
 |---|---|---|
 | **3 — Conditional compatibility follow-ups** | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, plain custom wrappers and examples projection | Separate policy selection and affected full-loop verification; not default blockers for Stage 4 or optional Agent qualification |
-| **Pre-4 — Cache affinity (paused)** | [Cache-affinity qualification](#cache-affinity-qualification); R09 awaits resumption, additional items await user supplementation | Independent-account affinity/failover acceptance and the subsequently selected cache tests |
 | **4 — Modalities, Decision & file resources** | Decision, Embedding extensions, Audio (Speech/Transcription/Translation), Images, Files/Uploads, and Video at equal priority | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
 | **5 — Unscheduled follow-ups** | Citations, tool discovery, hosted tools, server-side compaction, Batch, and Realtime | Requires explicit per-slice design selection and scheduling prior to implementation |
 
@@ -256,7 +251,7 @@ Safe-to-ignore diagnostic extensions may be added without dedicated extension te
 
 ### Agent authorization and diagnostics follow-up
 
-- **Session design:** Implement the selected opt-in [per-Agent JSONL session storage](architecture.md#agent-session-files), including boundary isolation and lifetime bounds.
+- **Session design:** Opt-in [per-Agent JSONL session storage](architecture.md#agent-session-files) is unscheduled; select boundary isolation and lifetime bounds before implementation.
 - **Deferred scope:** Dynamic OAuth authorization servers, cross-agent token exchange, and cluster IAM remain unscheduled.
 
 ### Temporary routing freeze
@@ -297,7 +292,7 @@ Carrier availability in codecs does not imply public route admission. Route admi
 4. Classify each remaining observation as resolved, a scoped limitation, next-stage analysis, or an unavailable prerequisite. A recorded deferral is sufficient disposition; closing every R identifier is not an exit condition.
 5. Unscheduled issues may be selected alongside relevant Stage-4 work; it does not make Stage 5 features or production activation implicit.
 
-### P7 boundary review
+### Public route activation review
 
 Prerequisites for activating newly implemented codec carriers on public routes:
 1. Classify each field on the conversion ladder: exact, equivalent, approximate, omitted or rejected.
@@ -352,7 +347,7 @@ Unified citation delivery ([1C proposal](api-expansion-design.md#1c-design-messa
 |---|---|
 | Non-image multimodal real checks | Stage-4 modality slice implementation |
 | Current-client image replay | Selected image client profile verification |
-| Real multi-provider failover | Dedicated production credential pairs and reproducible fault injection |
+| Real multi-provider failover | [R09](#routing-qualification) prerequisites: dedicated credential pairs and reproducible fault injection |
 | Claude Code acceptance | Verification of beta headers, counting, and citation contracts |
 
 ### Target clients

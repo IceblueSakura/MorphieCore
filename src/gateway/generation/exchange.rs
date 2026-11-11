@@ -75,6 +75,8 @@ fn observe_binding(
 /// One candidate's prepared request on the wire, with the affinity projection it used.
 struct Prepared<'r> {
     wire: crate::execution::UpstreamRequest,
+    /// Immutable preparation evidence, reapplied to each send's fresh attempt report.
+    evidence: crate::protocol::conversion::generation::EvidenceDelta,
     request: Cow<'r, Request>,
     affinity: Option<crate::gateway::routing::prefix_cache::Selection>,
 }
@@ -179,13 +181,9 @@ async fn prepare_attempt<'r>(
                 .map_err(|_| ApiError::upstream())?,
         );
     }
-    trace.report.accept(
-        crate::execution::report::View::UpstreamRequest,
-        conversion.evidence,
-    );
-
     Ok(Prepared {
         wire: prepared,
+        evidence: conversion.evidence,
         request: local,
         affinity,
     })
@@ -355,6 +353,15 @@ pub(in crate::gateway) async fn produce_chain(
                                 .await?,
                             );
                         }
+                        // Each send begins a fresh attempt report over the same wire.
+                        trace.report.accept(
+                            crate::execution::report::View::UpstreamRequest,
+                            prepared
+                                .as_ref()
+                                .expect("prepared request")
+                                .evidence
+                                .clone(),
+                        );
                         if ordinal == 2 {
                             let available = candidate.secret.availability_for_request().await?;
                             if available

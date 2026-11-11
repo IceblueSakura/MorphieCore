@@ -11,7 +11,7 @@ MorphieCore is a local gateway that hides LLM Provider differences behind a sing
 | Use the gateway | [Usage](docs/usage.md) | Credentials, configuration, startup, requests, history, and errors |
 | Accepted design | [Architecture](docs/architecture.md) | Shared principles, domain contracts, IR semantics, and settled decisions |
 | Planned work | [Roadmap](docs/roadmap.md) | Current scope, unified unscheduled issues, work packages, dependencies, and exit gates |
-| Cleanup boundaries | [Convergence cleanup plan](docs/convergence-cleanup-plan.md) | Remaining external gates and unselected simplification candidates after the delivered cleanup |
+| Cleanup boundaries | [Convergence cleanup plan](docs/convergence-cleanup-plan.md) | Remaining production observability, reliability and privacy gates after the delivered cleanup |
 | Proposed designs | [API expansion design](docs/api-expansion-design.md) | Operation proposals and future candidates |
 | Account redesign | [Provider account redesign plan](docs/provider-account-redesign-plan.md) | Accepted account/recovery contract and fully breaking setup; [remaining qualification](docs/roadmap.md#unscheduled-issues) tracks scoped limitations and prerequisites |
 | Develop and verify | [Development](docs/development.md) | Tooling, offline checks, SDK gates, acceptance procedures, and dated qualification evidence |

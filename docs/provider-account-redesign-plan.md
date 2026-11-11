@@ -354,7 +354,7 @@ Selected baseline: keep pure polling. The due check is local (account lock and s
 The maintenance loop must:
 
 - Check on startup, serialize renewal for a session and recheck identity/expiry under the lock.
-- Run filesystem phases off the async worker while retaining account ownership across network waits. Cancellation drops network work, prevents queued storage phases and drains an already-started atomic filesystem phase before releasing ownership or returning; filesystem completion is not a hard wall-clock guarantee.
+- Run filesystem phases off the async worker while retaining account ownership across network waits. Cancellation drops network work, prevents queued preparation phases and drains an already-started atomic filesystem phase before releasing ownership or returning; filesystem completion is not a hard wall-clock guarantee. Once the Provider has returned replacement or pending material, its revision-checked publication completes even after cancellation and retains account ownership until it ends, because the previous refresh token may already be invalid.
 - Bound renewal time; apply the fixed global failed-renewal delay (default 60 s) only to failures for which the profile permits safely attempting renewal again. Do not add another exponential-backoff state machine.
 - Persist replacement material safely and never reuse a potentially consumed refresh token after uncertain failure.
 - Persist complete replacement material before secondary identity verification. Grok UserInfo and SIWC verification failures leave it pending and unusable; explicit refresh resumes verification without another token exchange. Automatic scans do not resume pending verification.

@@ -110,6 +110,50 @@ fn cancelled_queued_storage_cannot_consume_or_publish_after_logout() {
     );
 }
 
+#[test]
+fn cancelled_caller_cannot_discard_material_rotated_by_the_provider() {
+    // Once renewal returns, the Provider may already have invalidated the old
+    // refresh token. A queued publication must still run after cancellation.
+    let dir = test_support::Directory::new();
+    let (manager, entered, release) = manager(&dir);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    runtime
+        .block_on(manager.login("third", "one", LoginOptions::default(), |_| {}))
+        .unwrap();
+    let original = test_support::read_account(&dir.path, "third", "one");
+    let (unblock, held) = std::sync::mpsc::channel();
+    runtime.block_on(async {
+        let mut refresh = Box::pin(manager.refresh("third", "one"));
+        tokio::select! {
+            _ = &mut refresh => panic!("renewal finished before the Provider replied"),
+            _ = entered.notified() => {}
+        }
+        let (started, waiting) = std::sync::mpsc::channel();
+        let hold = tokio::task::spawn_blocking(move || {
+            started.send(()).unwrap();
+            held.recv().unwrap();
+        });
+        waiting.recv().unwrap();
+        release.notify_one();
+        assert!(futures_util::poll!(&mut refresh).is_pending());
+        drop(refresh);
+        unblock.send(()).unwrap();
+        hold.await.unwrap();
+        tokio::task::spawn_blocking(|| {}).await.unwrap();
+    });
+    let ended = test_support::read_account(&dir.path, "third", "one");
+    assert_eq!(ended["state"], "active");
+    assert_eq!(
+        ended["generation"].as_u64().unwrap(),
+        original["generation"].as_u64().unwrap() + 2
+    );
+    drop(manager.store.account_lock("third", "one").unwrap());
+}
+
 #[tokio::test]
 async fn inference_binding_reloads_and_rejects_expired_logout_or_identity_change() {
     let dir = test_support::Directory::new();
