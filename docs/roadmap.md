@@ -1,6 +1,6 @@
 # Roadmap
 
-This page owns current scope, priorities, dependencies, and exit gates. [Architecture](architecture.md) owns accepted design, [API expansion design](api-expansion-design.md) owns unselected proposals, and [Development](development.md) owns verification procedures. Code and tests define behavior. Completed slices are removed; Git preserves history.
+This page owns current scope, priorities, dependencies, and exit gates. [Architecture](architecture.md) owns accepted design, [API expansion design](api-expansion-design.md) owns unselected proposals, and [Development](development.md) owns shared development conventions and overall acceptance status. Code and tests define behavior. Completed slices are removed; Git preserves history.
 
 ## Contents
 
@@ -52,7 +52,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-The Generation review baseline has converged under the [partial-delivery exit](#partial-delivery-exit). Configuration/diagnostic cleanup, maintenance simplification, and lifecycle convergence are delivered under [Observability](architecture.md#observability), while remaining production observability, reliability, and privacy gates are deferred in the [cleanup plan](convergence-cleanup-plan.md). Accepted contracts live in [Architecture](architecture.md); current qualification evidence and agent checks live in [Development](development.md#provider-qualification-evidence). Residual limitations and prerequisites share the [unscheduled issue register](#unscheduled-issues), without a separate review repair queue. No pre-Stage-4 gate remains: R09 real-account failover and Agent session storage do not gate Stage 4. No deployment or new API activation is implied.
+The Generation review baseline has converged under the [partial-delivery exit](#partial-delivery-exit). Configuration/diagnostic cleanup, maintenance simplification, and lifecycle convergence are delivered under [Observability](architecture.md#observability), while remaining production observability, reliability, and privacy gates are deferred in the [cleanup plan](convergence-cleanup-plan.md). Accepted contracts live in [Architecture](architecture.md); overall acceptance status is summarized in [Development](development.md#overall-acceptance-status). Residual limitations and prerequisites share the [unscheduled issue register](#unscheduled-issues), without a separate review repair queue. No pre-Stage-4 gate remains: R09 real-account failover and Agent session storage do not gate Stage 4. No deployment or new API activation is implied.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
@@ -63,7 +63,7 @@ The Generation review baseline has converged under the [partial-delivery exit](#
 
 ## Unscheduled issues
 
-This is the single register for unresolved Generation/client boundaries and qualification gaps. None is an active repair package or a prerequisite for the delivered baseline. Reopen only after a concrete unmet contract, target/profile, prerequisite and bounded acceptance plan are selected. Review IDs remain traceability labels, not a second phase queue. [Development](development.md#provider-qualification-evidence) owns qualification verdicts; [Architecture](architecture.md) owns accepted contracts and service limitations.
+This is the single register for unresolved Generation/client boundaries and qualification gaps. None is an active repair package or a prerequisite for the delivered baseline. Reopen only after a concrete unmet contract, target/profile, prerequisite and bounded acceptance plan are selected. Review IDs remain traceability labels, not a second phase queue. [Development](development.md#overall-acceptance-status) summarizes overall acceptance; [Architecture](architecture.md) owns accepted contracts and service limitations.
 
 Pi-first stateless carrier is delivered for R02/R06; remaining client/Provider qualification stays here. R04/R08 and Bailian structured-output variability remain excluded; do not substitute prompt/history rewriting or deduplication work. Accepted Bailian forcing and Grok content limitations are not reopened. R09 real-account failover remains unscheduled.
 
@@ -112,7 +112,7 @@ The routing freeze and credential-lifecycle authorization remain unchanged. Addi
 
 | Issue | Current boundary | Re-entry / decision |
 |---|---|---|
-| **R09 — Real account-compatible failover** | [Real stateless JSON/SSE replay isolation passes](development.md#replay-isolation-evidence). Loader evidence reports one enabled declared account per Provider; no independent compatible pair is qualified. Unscheduled; does not gate Stage 4. | With independent compatible accounts on one authorized same-model route, verify A success/affinity, a bounded A failure without switching inside that request, B selection on a new request with A-private replay omitted, then B success/stickiness. Define fault injection and budgets first; provisioning new credentials requires separate approval. Same-key aliases, different-model switching and synthetic authorities do not qualify this real-account gate |
+| **R09 — Real account-compatible failover** | [Real stateless JSON/SSE replay isolation passes](development.md#overall-acceptance-status). Loader evidence reports one enabled declared account per Provider; no independent compatible pair is qualified. Unscheduled; does not gate Stage 4. | With independent compatible accounts on one authorized same-model route, verify A success/affinity, a bounded A failure without switching inside that request, B selection on a new request with A-private replay omitted, then B success/stickiness. Define fault injection and budgets first; provisioning new credentials requires separate approval. Same-key aliases, different-model switching and synthetic authorities do not qualify this real-account gate |
 
 ## Deferred protocol follow-ups
 

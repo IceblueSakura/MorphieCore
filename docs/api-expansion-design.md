@@ -239,7 +239,7 @@ Upstream response parsing must remain strict on known fields and ignore unknown 
 
 ### Three-protocol tool conversion design
 
-**Ordinary nine-direction tool conversion and selected tool-set projections are delivered.** [Architecture](architecture.md#ordered-tool-availability) owns their contract; [Development](development.md#offline-and-synthetic-qualification-evidence) owns connected evidence. This section retains unselected content projections only. [Roadmap](roadmap.md#conditional-stage-3-follow-ups) owns their conditional sequencing, not a second core implementation queue.
+**Ordinary nine-direction tool conversion and selected tool-set projections are delivered.** [Architecture](architecture.md#ordered-tool-availability) owns their contract; [Development](development.md#overall-acceptance-status) summarizes overall acceptance. This section retains unselected content projections only. [Roadmap](roadmap.md#conditional-stage-3-follow-ups) owns their conditional sequencing, not a second core implementation queue.
 
 Assess each future projection through **client request → selected upstream → original client response → tool result → subsequent history**. The delivered ordinary function loops do not qualify custom tools, namespaces, result media or every dialect. The dated [assessment](refs/2026-10-27-client-ir-boundaries.md#nine-direction-tool-assessment-2026-11-04) and [qualification](refs/2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04) retain source findings and qualification distinctions.
 
@@ -1005,9 +1005,9 @@ Extract shared values only when the selected operation needs them. Direct-input 
 
 ## Verification
 
-Pin current official schemas and streaming grammars before implementation; documented carriers do not prove model-effective support. Use the existing [test design](development.md#test-layout), [accepted design](architecture.md#scope-and-activation-decisions) and [verification procedures](development.md#verification-gates), including separately scoped [real Provider checks](development.md#real-provider-checks).
+Pin current official schemas and streaming grammars before implementation; documented carriers do not prove model-effective support. Use the existing [test design](development.md#test-layout), [accepted design](architecture.md#scope-and-activation-decisions) and [verification conventions](development.md#verification-gates), including separately scoped [real Provider checks](development.md#real-provider-checks).
 
-Stage-4 implementation preserves the [text/SSE integration baseline](development.md#text-and-sse-integration-baseline) and includes [operation-level upstream-test acceptance](roadmap.md#stage-4-reuse-and-acceptance). Reuse the shared source/adaptation procedures rather than a separate modality harness; this does not select unresolved operation contracts.
+Stage-4 implementation preserves the [text/SSE integration baseline](development.md#overall-acceptance-status) and includes [operation-level upstream-test acceptance](roadmap.md#stage-4-reuse-and-acceptance). Reuse the shared source/adaptation procedures rather than a separate modality harness; this does not select unresolved operation contracts.
 
 Keep independent wire-to-IR and IR-to-wire expectations, covering success and intended rejection at the responsible owner. Extend existing tests rather than building per-model/Provider matrices. Resource/job checks must address authorization, recovery, cancellation and uncertain submission.
 

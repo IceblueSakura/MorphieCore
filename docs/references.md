@@ -1,6 +1,6 @@
 # References
 
-This document separates protocol authority, reproducible regression pins, implementation references and dated research. Current behavior belongs to [Architecture](architecture.md), scope to [Roadmap](roadmap.md), and execution/acceptance to [Development](development.md).
+This document separates protocol authority, reproducible regression pins, implementation references and dated research. Current behavior belongs to [Architecture](architecture.md), scope to [Roadmap](roadmap.md), and overall acceptance status to [Development](development.md).
 
 ## Contents
 
@@ -62,7 +62,7 @@ Resolved from crates.io release metadata on **2026-10-24**, with native Logs tra
 | `tracing-subscriber` | 0.3.23 / [`54ede4d`](https://github.com/tokio-rs/tracing/tree/54ede4d5d85a536aed5485c5213011d9ec961935/tracing-subscriber) | MIT |
 | `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp` | 0.33.1 / [`372ebbc`](https://github.com/open-telemetry/opentelemetry-rust/tree/372ebbc74d4dba71bb9820732f57f7316b4e7a1e) | Apache-2.0 |
 
-Primary contract entry points: [OTLP HTTP/runtime/configuration](https://docs.rs/opentelemetry-otlp/0.33.1/opentelemetry_otlp/), [native Logs API](https://docs.rs/opentelemetry/0.33.1/opentelemetry/logs/), and [batch log processor source](https://github.com/open-telemetry/opentelemetry-rust/blob/372ebbc74d4dba71bb9820732f57f7316b4e7a1e/opentelemetry-sdk/src/logs/batch_log_processor.rs). Trace/appender bridges and the dependency-only prototype are removed; [Development](development.md#diagnostics-behavior-checks) owns actual native export and gateway-boundary checks.
+Primary contract entry points: [OTLP HTTP/runtime/configuration](https://docs.rs/opentelemetry-otlp/0.33.1/opentelemetry_otlp/), [native Logs API](https://docs.rs/opentelemetry/0.33.1/opentelemetry/logs/), and [batch log processor source](https://github.com/open-telemetry/opentelemetry-rust/blob/372ebbc74d4dba71bb9820732f57f7316b4e7a1e/opentelemetry-sdk/src/logs/batch_log_processor.rs). Trace/appender bridges and the dependency-only prototype are removed; [Development](development.md#overall-acceptance-status) summarizes overall acceptance.
 
 Historical revisions remain next to the specific dated observations that need them, not in a second version catalog. The SDK loopback gate uses `tests/sdk/uv.lock`; source pins and package execution locks are distinct. Passing old scenarios under a new SDK does not accept new protocol semantics.
 

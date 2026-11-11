@@ -50,7 +50,7 @@ Retained from source reviews on **2026-10-21/22**, not re-certified as current O
 - OpenCode core `/api/event` exposes text deltas while the inspected noninteractive consumer prints completed text; pi exposes `assistantMessageEvent.text_delta`. CLI stdout alone is not proof of incremental transport.
 - The **2026-10-25** pi 1.4.0 consumer check found `allowEmptySignature:false` converts unsigned thinking to assistant text; enabling it returns an empty signature. Neither behavior supplies a valid native signature. Current MorphieCore rejects unsigned standard Messages reasoning rather than adopting this compatibility repair.
 
-[Development](../development.md#production-profile-acceptance) owns installed-version profiles and acceptance. Always use current installed Agents with isolated state and safe unwrapped launchers; release-source pins are independent.
+[Development](../development.md#installed-client-acceptance) describes current-client verification conventions. Always use current installed Agents with isolated state and safe unwrapped launchers; release-source pins are independent.
 
 ## Magpie: cache affinity and failure ownership
 
