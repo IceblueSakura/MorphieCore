@@ -273,7 +273,7 @@ The scheduling review exposed two pre-existing boundaries. The subsequent 2026-1
 - [Messages defaults](../../src/protocol/anthropic/messages/target.rs) apply on the candidate copy after selected reasoning conversion. Existing native-control tests distinguish `2048` thinking with a default ceiling of `2048` (reject) from `2049` (syntactically valid). One answer token does not establish a useful reserve.
 - [Go/Haiku](../../src/topology/catalog/messages.rs) already selects `32000` and disables manual thinking. [Startup](../../src/gateway/startup/models.rs) currently exposes configured effort-to-budget conversion only for generateContent. No generally applicable fix follows from raising the Haiku default or deleting the semantic guard.
 - The follow-up catalog/example review found no qualified active conflict. [Startup regression](../../src/gateway/startup/bootstrap/tests.rs) preserves native medium effort and explicit output `6000` even with a configured preset of `7000`. The [advanced example](../../config/models.advanced.example.json) selects budget-to-effort for Haiku, not a numeric thinking allocation under its smaller output default. Private deployment activation was not inspected; [Roadmap](../roadmap/unscheduled-issues.md#protocol-boundaries) records deferral and target-specific reopening requirements.
-- [Model limits](../../src/protocol/model_limits.rs) distinguish output maxima from defaults; context/input capacities are planning metadata, not input-token enforcement. Unknown maxima cannot justify unlimited expansion. [Independent-ceiling alternatives](../api-expansion-design.md#independent-output-ceilings-unselected) retain the reply-versus-total counterexample and the smaller target-qualified candidates.
+- [Model limits](../../src/protocol/model_limits.rs) distinguish output maxima from defaults; context/input capacities are planning metadata, not input-token enforcement. Unknown maxima cannot justify unlimited expansion. [Independent-ceiling alternatives](../proposals/index.md#independent-output-ceilings-unselected) retain the reply-versus-total counterexample and the smaller target-qualified candidates.
 
 ### Remaining source distinctions
 
@@ -700,7 +700,7 @@ No new lossy mapping is selected by this audit. Independent directional fixtures
 
 At **`40d005d`**, the user requested all three native and six cross-protocol Chat/Responses/Messages paths, accepting bounded semantic approximation as a design direction. Three independent read-only investigations were divided by target protocol and combined with shared-owner inspection and primary-source checks. No product source, tests, source pins, credentials or runtime state changed; no Provider calls or new executable probes ran. Earlier synthetic reproductions remain the evidence for the root-only choice and lost-serial defects.
 
-The [remaining projection proposals](../api-expansion-design.md#three-protocol-tool-conversion-design) have one design home; [Roadmap](../roadmap/unscheduled-issues.md#conditional-stage-3-follow-ups) owns execution. This extension is evidence and counterexamples, not another implementation queue.
+The [remaining projection proposals](../proposals/index.md#three-protocol-tool-conversion-design) have one design home; [Roadmap](../roadmap/unscheduled-issues.md#conditional-stage-3-follow-ups) owns execution. This extension is evidence and counterexamples, not another implementation queue.
 
 ### Additional findings
 

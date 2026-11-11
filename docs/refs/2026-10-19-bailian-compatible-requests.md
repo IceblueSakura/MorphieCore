@@ -1,6 +1,6 @@
 # Bailian compatible-request subset
 
-Baseline checked **2026-10-19**, with source corrections on **2026-10-29**, **2026-11-08** and **2026-11-09** below. These are mutable official definitions, not a complete DashScope API implementation. Accepted decisions belong to [Architecture](../architecture/adaptation-and-dialects.md#shared-aliyun-billing-dialect); independent-ceiling proposals belong to [API expansion design](../api-expansion-design.md#independent-output-ceilings-unselected).
+Baseline checked **2026-10-19**, with source corrections on **2026-10-29**, **2026-11-08** and **2026-11-09** below. These are mutable official definitions, not a complete DashScope API implementation. Accepted decisions belong to [Architecture](../architecture/adaptation-and-dialects.md#shared-aliyun-billing-dialect); independent-ceiling proposals belong to [API expansion design](../proposals/index.md#independent-output-ceilings-unselected).
 
 ## Primary sources
 

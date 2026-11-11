@@ -2,7 +2,7 @@
 
 This page owns current scope, planned execution sequence, stage priorities, and release/integration gates. Known limitations and qualification gaps belong to [Unscheduled issues](unscheduled-issues.md); paused and deferred work belongs to [Backlog and frozen scope](backlog-and-frozen.md).
 
-[Architecture](../architecture/index.md) owns accepted design, [API expansion design](../api-expansion-design.md) owns unselected proposals, and [Development](../development.md) owns shared development conventions and overall acceptance status. Code and tests define behavior. Completed slices are removed; Git preserves history.
+[Architecture](../architecture/index.md) owns accepted design, [API expansion design](../proposals/index.md) owns unselected proposals, and [Development](../development.md) owns shared development conventions and overall acceptance status. Code and tests define behavior. Completed slices are removed; Git preserves history.
 
 ## Contents
 
@@ -99,7 +99,7 @@ Before public Generate activation, resolve dimensions, quality tiers, creation t
 ### Stage 5 backlog
 
 All Stage 5 tasks are currently unscheduled:
-- **Citations & source attribution:** Unified citation models ([1C proposal](../api-expansion-design.md#1c-design-messages-citations)).
+- **Citations & source attribution:** Unified citation models ([1C proposal](../proposals/stage5-backlog.md#1c-design-messages-citations)).
 - **Tool discovery:** Dynamic tool discovery and native `web_search`.
 - **Hosted tool execution:** Separate contracts for Provider-executed tools and observations; ordinary declarations, aliases and custom-text adaptation remain in the Stage-3 tool work.
 - **Server-side compaction:** Provider-executed `/responses/compact` operations.

@@ -62,7 +62,7 @@ Dynamic tool discovery and native Provider web search remain unscheduled Stage 5
 Discovery for other task families (Embeddings, Media, Decision) remains schema-only until those operations are publicly activated. Extend the existing [Generation discovery contract](../architecture/adaptation-and-dialects.md#generation-text-model-discovery) only with selected operation contracts.
 
 ### Messages citations
-Unified citation delivery ([1C proposal](../api-expansion-design.md#1c-design-messages-citations)) remains unscheduled. Requests requiring citation output are rejected.
+Unified citation delivery ([1C proposal](../proposals/stage5-backlog.md#1c-design-messages-citations)) remains unscheduled. Requests requiring citation output are rejected.
 
 ## Deferred acceptance
 

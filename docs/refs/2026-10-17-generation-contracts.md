@@ -21,7 +21,7 @@ The source review at SDK revision `364889a` distinguished three operations:
 | SDK streamed intake (`models.py`) | Parses and yields native responses individually | A shared candidate-score accumulator |
 | Continuation helper | Adds numeric sums across continuation hops | A single-request SSE frame reducer |
 
-A finish reason does not establish whole-output score coverage. Repeated/missing fields cannot be reduced safely without knowing their scope. The [aggregate-score proposal](../api-expansion-design.md#google-output-report-owners-unselected) remains separate from accepted token-probability carriage. The [current SDK guide](2026-10-27-official-sdk-sources.md#google-gen-ai) supplies newer converter/transport entry points without upgrading this historical observation into new acceptance.
+A finish reason does not establish whole-output score coverage. Repeated/missing fields cannot be reduced safely without knowing their scope. The [aggregate-score proposal](../proposals/index.md#google-output-report-owners-unselected) remains separate from accepted token-probability carriage. The [current SDK guide](2026-10-27-official-sdk-sources.md#google-gen-ai) supplies newer converter/transport entry points without upgrading this historical observation into new acceptance.
 
 ## Google text-report source recheck, 2026-10-21
 

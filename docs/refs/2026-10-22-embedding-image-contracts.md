@@ -2,7 +2,7 @@
 
 Sources checked on 2026-10-22 for the prioritized Embedding and Images design. Official web pages are mutable and disagree in places. The existing OpenAI Python research pin is `547ecb1e4fc233f19030736c29fee4374dfbaca1` (3.35.1, Apache-2.0); reusing it does not claim a new latest-version check. The initial source review ran no SDK, gateway or Provider acceptance; the separately dated characterization below records later bounded observations.
 
-[API expansion design](../api-expansion-design.md#operation-contracts) owns proposals; [Architecture](../architecture/index.md#independent-task-boundaries) owns accepted boundaries; [Roadmap](../roadmap/index.md#stage-4-scope) owns priority and gates. This note records evidence, not a second implementation queue.
+[API expansion design](../proposals/index.md#operation-contracts) owns proposals; [Architecture](../architecture/index.md#independent-task-boundaries) owns accepted boundaries; [Roadmap](../roadmap/index.md#stage-4-scope) owns priority and gates. This note records evidence, not a second implementation queue.
 
 ## Embeddings
 
@@ -178,4 +178,4 @@ Local-code review identifies the responsible seams:
 - [Image execution](../../src/gateway/tasks/images.rs) buffers bounded static output through EOF before validation/projection/publication. Reuse that boundary. [Topology](../../src/topology/images.rs) and gateway execution remain API-key-specific; catalog wiring alone cannot integrate Grok OAuth or prove entitlement.
 - Standard/OpenRouter upstream parsing currently reuses closed-object validation. An otherwise valid response with an unknown member can fail before any semantic issue; tolerate unknown upstream members without relaxing known fields or client admission.
 
-These findings support the [static Generate review proposal](../api-expansion-design.md#static-generate-review-proposal), not approval of its new public profile. Native controls, Edit, preview streaming, Files and deferred video remain separate. No local image decoder/transcoder or new URL-fetching authority was evaluated or selected.
+These findings support the [static Generate review proposal](../proposals/multimodal.md#static-generate-review-proposal), not approval of its new public profile. Native controls, Edit, preview streaming, Files and deferred video remain separate. No local image decoder/transcoder or new URL-fetching authority was evaluated or selected.

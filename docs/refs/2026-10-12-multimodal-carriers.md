@@ -2,7 +2,7 @@
 
 Research notes on how each protocol carries image, audio, video and document input, tool-result media, Provider file references and generated media. Collected on 2026-10-12. Vendor pages are unversioned; recheck a row before relying on it. Code defines what MorphieCore actually accepts.
 
-Current media decisions belong to [Architecture](../architecture/adaptation-and-dialects.md#media), expansion scope to [Roadmap](../roadmap/index.md#stage-4-scope), and unselected operation/resource designs to [API expansion design](../api-expansion-design.md). The [research index](../references.md#research-notes) links related dated evidence.
+Current media decisions belong to [Architecture](../architecture/adaptation-and-dialects.md#media), expansion scope to [Roadmap](../roadmap/index.md#stage-4-scope), and unselected operation/resource designs to [API expansion design](../proposals/index.md). The [research index](../references.md#research-notes) links related dated evidence.
 
 ## Contents
 
