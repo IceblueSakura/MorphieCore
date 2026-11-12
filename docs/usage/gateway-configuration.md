@@ -15,6 +15,7 @@ See [Credentials and Diagnostics](credentials-and-diagnostics.md) for auth setup
     - [Choosing a window](#choosing-a-window)
   - [Private failure context](#private-failure-context)
 - [Start the gateway](#start-the-gateway)
+  - [Binary-only SSH releases](#binary-only-ssh-releases)
 - [Reverse-proxy deployment](#reverse-proxy-deployment)
 
 ## Configure the gateway
@@ -323,6 +324,66 @@ All three executables (`morphiecore`, `morphiecore-auth`, `morphiecore-upstream`
 Ctrl-C shuts down the listener and cancels in-flight upstream work.
 
 For Rust embedding, `Gateway::new` takes a compiled topology and one `TaskEntries` value with separate Generation, Images, Speech, Transcription and Embeddings lists. Empty lists activate nothing. Credentials and limits remain explicit; the embedded constructor does not opt into environment proxies. Each Generation entry names one client protocol (Chat, Responses or Messages); file-configured models expose all three. See [task entries](../../src/gateway/startup/entries.rs) and [binding](../../src/gateway/startup/bind.rs).
+
+### Binary-only SSH releases
+
+Build on a Linux workstation with the same CPU architecture as the server:
+
+```sh
+nix develop .#release --command cargo build --release --bins --locked --offline
+```
+
+The Linux-only `release` shell uses the pinned Rust toolchain and musl compiler. On x86_64, outputs are in `target/x86_64-unknown-linux-musl/release/`; on aarch64, use `target/aarch64-unknown-linux-musl/release/`. These static executables need no remote Nix store, Cargo, compiler or source checkout. Ordinary `target/release/` binaries built in the development shell retain Nix runtime dependencies and are not standalone deployment artifacts. Nix may fetch the pinned build environment before the offline Cargo build.
+
+Keep private configuration and credentials outside release directories. For an existing user service, inspect `systemctl --user show morphiecore.service -p ExecStart -p WorkingDirectory -p DropInPaths` before changing paths. Preserve its configuration path, credential overrides, proxy settings and lifecycle controls. The `llmapi` deployment uses this final override at `~/.config/systemd/user/morphiecore.service.d/30-binary-release.conf`:
+
+```ini
+[Service]
+WorkingDirectory=%h/.local/lib/morphiecore
+ExecStart=
+ExecStart=%h/.local/lib/morphiecore/current/morphiecore --config %h/.local/share/morphiecore-next/gateway.json
+```
+
+After an authorized unit change, run `systemctl --user daemon-reload`. For noninteractive SSH, set `XDG_RUNTIME_DIR=/run/user/$(id -u)` when the login environment does not provide it.
+
+From the local repository root, use Bash to upload only the three executables into a fresh release directory and compare transfer checksums:
+
+```bash
+set -euo pipefail
+HOST=llmapi
+OUT=target/x86_64-unknown-linux-musl/release
+RELEASE="$(git rev-parse --short=12 HEAD)-$(date -u +%Y%m%dT%H%M%SZ)"
+REMOTE_DIR=".local/lib/morphiecore/releases/$RELEASE"
+BINS=(morphiecore morphiecore-auth morphiecore-upstream)
+
+ssh "$HOST" "test ! -e '$REMOTE_DIR' && install -d -m 700 '$REMOTE_DIR'"
+scp "${BINS[@]/#/$OUT/}" "$HOST:$REMOTE_DIR/"
+diff <(cd "$OUT" && sha256sum "${BINS[@]}") \
+     <(ssh "$HOST" "cd '$REMOTE_DIR' && sha256sum ${BINS[*]}")
+```
+
+After deployment authorization, validate through the production loader, atomically switch the release symlink and restart immediately. This uses the configuration path above; adjust it with the unit for other installations.
+
+```bash
+ssh "$HOST" bash -s -- "$RELEASE" <<'REMOTE'
+set -euo pipefail
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+cd "$HOME/.local/lib/morphiecore"
+release="releases/$1"
+chmod 755 "$release"/morphiecore{,-auth,-upstream}
+"$release/morphiecore" --validate --config "$HOME/.local/share/morphiecore-next/gateway.json"
+ln -s "$release" current.next
+mv -Tf current.next current
+mkdir -p "$HOME/.local/bin"
+for bin in morphiecore morphiecore-auth morphiecore-upstream; do
+    ln -sfn "../lib/morphiecore/current/$bin" "$HOME/.local/bin/$bin"
+done
+systemctl --user restart morphiecore.service
+systemctl --user is-active --quiet morphiecore.service
+REMOTE
+```
+
+Check the running process's executable, loopback listener and authenticated client behavior before removing an older release. Rollback selects a retained release with the same atomic symlink switch and restarts the service. Never copy over a running executable in place. Initial migration may remove the former source/build directory only after successful activation and confirmation that configuration, credentials and service paths are independent of it. Former Nix builds can also leave project source copies in the store; identify those copies and remove only those paths with `nix-store --delete` after releasing their project-owned GC roots. Do not synchronize the checkout, use a broad `rsync --delete` against application state or run global garbage collection for this cleanup.
 
 ## Reverse-proxy deployment
 

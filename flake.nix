@@ -79,7 +79,28 @@
               nixfmt
             ];
           };
-        };
+        }
+        // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
+          let
+            target = pkgs.pkgsStatic.stdenv.hostPlatform.rust.rustcTarget;
+            targetEnv = builtins.replaceStrings [ "-" ] [ "_" ] target;
+            cc = pkgs.pkgsStatic.stdenv.cc;
+          in
+          {
+            release = pkgs.mkShell {
+              name = "morphiecore-static-release";
+              packages = [
+                (toolchain.override { targets = [ target ]; })
+                pkgs.cmake
+                pkgs.pkg-config
+                cc
+              ];
+              CARGO_BUILD_TARGET = target;
+              "CARGO_TARGET_${pkgs.lib.toUpper targetEnv}_LINKER" = "${cc}/bin/${cc.targetPrefix}cc";
+              "CC_${targetEnv}" = "${cc}/bin/${cc.targetPrefix}cc";
+            };
+          }
+        );
     in
     {
       devShells = forAllSystems shellsFor;
