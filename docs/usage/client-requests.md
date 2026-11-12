@@ -85,6 +85,8 @@ Standard Chat has no private reasoning/replay carrier. Uncarried reasoning owner
 
 Return standard Responses reasoning and Messages thinking/redacted-thinking carriers unchanged. Chat has no private reasoning-history transport. Provider-specific fields are handled only at the trusted upstream boundary.
 
+When changing protocols or Providers, reasoning history may be omitted even if the model name stays the same; ordinary text and tool/result relationships remain intact. Do not convert discarded reasoning into assistant answer text. See the [cross-source history contract](../architecture/history-and-replay.md#cross-protocol-and-cross-provider-history) for the distinction between available replay provenance and unsigned history.
+
 Assessed Bailian Responses candidates keep summary-only history and apply `responses.transfer-visible-history.v1` to reasoning owners without a target carrier. This candidate-side projection preserves visible history and tool links without turning reasoning into assistant text. Explicit historical read intent cannot be fulfilled by omission; unassessed bindings retain their prior behavior.
 
 Bailian Responses request controls use the selected [presentation/continuity policy](../architecture/adaptation-and-dialects.md#clientir-projection-principles): summary `auto` resolves to the native default; explicit `concise`/`detailed` and encrypted include take named omissions where no carrier exists. An admitted explicit thinking-off request needs no encrypted-include loss receipt.

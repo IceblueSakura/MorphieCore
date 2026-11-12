@@ -9,6 +9,7 @@ See [Architecture Overview](index.md) for system boundaries and core IR semantic
 - [History and replay](#history-and-replay)
   - [Reasoning replay](#reasoning-replay)
     - [Binding reasoning-history contract](#binding-reasoning-history-contract)
+  - [Cross-protocol and cross-Provider history](#cross-protocol-and-cross-provider-history)
   - [Standard Chat reasoning](#standard-chat-reasoning)
   - [Stateless API boundaries](#stateless-api-boundaries)
   - [Compacted history](#compacted-history)
@@ -55,11 +56,29 @@ Consumer responsibilities remain bounded:
 
 Every candidate starts with immutable admitted input; an omission for one candidate cannot remove an owner needed by a later candidate. Managed Responses continuation preserves admitted input and delivered history, while equivalent stateless history is checked through client carriage and replay opening. Neither path adds a new completeness ledger or upstream conversation persistence.
 
+### Cross-protocol and cross-Provider history
+
+Cross-protocol or cross-Provider requests may discard historical reasoning, including readable text, summaries and incompatible signed/encrypted owners, even when the model name is unchanged. Reasoning portability is not an acceptance requirement for these transfers: a matching field or model label does not establish upstream compatibility. This selected loss avoids forwarding source-specific reasoning that the new target may reject; it does not require a private replay carrier or compatibility layer. [Current pi behavior](../refs/2026-11-08-chat-reasoning-carriers.md#cross-source-thinking-transfer-2026-11-12) supplies the reference policy.
+
+Apply omission to the candidate-local copy under the existing `*.transfer-visible-history.v1` rules. Preserve ordinary user/assistant text, instructions, tool names, arguments, call/result associations and results. Remove the reasoning owner rather than moving its text into an assistant answer or treating it as a tool result. Compatible same-origin native replay remains eligible for preservation.
+
+Use available source/binding facts, not model-name equality, to assess continuity. Gateway replay scope includes the upstream protocol, Provider, endpoint, model and credential provenance; foreign protected replay is already excluded. Standard stateless input does not generally identify the original Provider of unsigned reasoning. The current projection removes foreign/untrusted replay and uncarriable reasoning shapes; it does not infer every readable owner's provenance or claim pi-style session metadata for all history. This permission also allows readable reasoning omission on cross-source transfers without making universal provenance tracking or unconditional deletion a new requirement.
+
+The loss applies to reasoning history, not to visible content or tool execution. Explicit `read_history:true`, malformed recognized envelopes and compacted context retain their existing checks. Ordinary text/call signature delivery follows the separate [stateless boundary](#stateless-api-boundaries).
+
 ### Standard Chat reasoning
 
 Public Chat uses the official Standard dialect. It omits unsigned readable reasoning under `chat.omit-readable-reasoning.v1` and replay-bearing reasoning under `chat.omit-uncarried-reasoning.v1`, preserving visible content, tool links, usage and terminal authority. Reasoning is never moved into visible text or fabricated as a signature. Required tool-history bindings follow the [thinking-off fallback or rejection](#binding-reasoning-history-contract).
 
 Provider-specific `reasoning_content`, `reasoning_details` and `preserve_thinking` remain upstream dialect concerns. Unknown downstream extension fields are discarded, not retained or forwarded. There is no public reasoning/replay profile or client-specific retention requirement.
+
+| Historical reasoning | Missing Standard Chat carrier |
+|---|---|
+| Provider-readable `reasoning_content` / `reasoning`, or structured `reasoning_details` | No official assistant-message reasoning-history field; these are Provider extensions |
+| Responses `type:"reasoning"` with summary/content, item identity and `encrypted_content` | No equivalent reasoning item or opaque continuation field |
+| Messages thinking signatures/redacted data or Google thought-owned signatures | No native signed or encrypted reasoning block |
+
+`reasoning_effort` controls the current computation; `usage` reasoning-token counters report accounting. Neither transports historical reasoning. Missing reasoning carriage alone does not reject an otherwise valid cross-source conversation: use the selected omission above, subject to explicit guarantees and binding admission.
 
 ### Stateless API boundaries
 
