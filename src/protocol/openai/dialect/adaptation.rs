@@ -14,8 +14,6 @@ pub enum ChatFinishReason {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct WireRules {
-    /// Explicit downstream Responses owner-replay profile, independent of Provider dialects.
-    pub responses_owner_replay: bool,
     /// Closed aliases selected by a trusted dialect, shared by JSON and chunks.
     pub chat_finish_reasons: &'static [(&'static str, ChatFinishReason)],
     /// Closed opening-to-terminal reasoning/service resolutions on the selected

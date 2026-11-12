@@ -1,6 +1,6 @@
 # Provider account redesign plan
 
-**Status: design finalized.** The account-system architecture enforces a unified account model, fresh credential provisioning, and request-boundary selection; [Roadmap](roadmap/unscheduled-issues.md#unscheduled-issues) owns remaining qualification. Production deployment remains separately approved.
+**Status: design finalized.** Ordered first-exit operation and maintainability take priority over precise concurrent routing. The account-system architecture enforces a unified account model, fresh credential provisioning, and request-boundary selection; [Roadmap](roadmap/unscheduled-issues.md#unscheduled-issues) owns remaining qualification. Production deployment remains separately approved.
 
 This document owns the finalized account-redesign specification. It defines request-boundary account selection and at most one bounded same-target retry, conservative retry eligibility, a 30 s recovery budget, merged health evidence, material-aware OAuth recovery and short advisory `Retry-After` without `x-should-retry`. File/field names and implementation structure remain engineering choices within this contract.
 
@@ -27,7 +27,7 @@ This document owns the finalized account-redesign specification. It defines requ
 4. **Global OAuth maintenance settings.** Configure the check interval and refresh-ahead window globally, without a separate timing configuration for every Provider.
 5. **Cache-first execution.** Preserve cache affinity ahead of keeping every request available. The operator expects normally no more than three accounts and accepts returning an error instead of immediately switching after dispatch. Select accounts at request boundaries; a failed attempt may receive the one same-target retry, but never switches targets or moves the binding. Final recovery outcome updates health; only successful completion can commit affinity.
 6. **Incremental delivery.** Runtime key addition is optional; restart-based activation is acceptable. Assume accounts within one Provider have the same model capabilities; this does not equate the separate `openai` and `chatgpt` model catalogs. Do not add capability-scoring routing.
-7. **Maintainability and simplicity.** Prefer one authoritative owner per fact, deterministic behavior and a small configuration surface. Reference projects supply mechanisms and counterexamples, not a feature checklist.
+7. **Maintainability and simplicity.** Most requests use the first configured exit. Prefer readable ordered selection, advisory cooldowns/preferences, one authoritative owner per fact and a small configuration surface. Do not implement exclusive health probes, routing generations, affinity epochs or strict listener reentrancy. Reference projects supply mechanisms and counterexamples, not a feature checklist.
 8. **Automatic selection across route candidates.** Every enabled, validly bound API-key or OAuth account in the current model route may serve a new request, including accounts of other Providers. Account and route configuration authorize these destinations and billing paths; there are no separate fallback switches or switch domains. Stored credentials alone, disabled accounts and Providers outside the route are not candidates. Health and affinity determine request-boundary selection; a failed dispatched request is not resent to another candidate. MorphieCore does not manage billing, and its usage accounting counts tokens only.
 9. **Requirements-led replacement.** Unified contract cleanly replacing legacy account binding and execution policy without compatibility facades.
 10. **Operator-readable CLI.** Provisioning, validation and explanation commands print human-readable output by default and offer structured JSON as an option.
@@ -48,10 +48,10 @@ The shared account-source cutover separates private declarations, secret persist
 | [Account declarations](../src/account.rs) | Versioned ordered named accounts outside secret storage; common local reference, subject and target validation; stored pool metadata and CLI are deleted | Keep one source across startup, diagnostics and task selection |
 | [Startup model assembly](../src/gateway/startup/models.rs) and [binding](../src/gateway/startup/bind.rs) | Expands route bindings and enabled accounts in declaration order; standalone tasks select one explicit account; replay/cache scopes retain provenance/origin/path/model | Preserve account order and replay/cache scope |
 | [Route policy](../src/topology/route.rs) and [model routes](../src/gateway/startup/models.rs) | All eligible accounts participate before dispatch; post-dispatch advancement, fallback switches and route send ceilings are removed | Preserve deterministic request-boundary selection |
-| [Executor health and affinity](../src/gateway/routing/executors.rs) | Account/target constraints, material-aware atomic probes and conditional success-only affinity; merged observations advance each affected scope once | See [Cache affinity](#cache-affinity) and [Outcome and health resolution](#outcome-and-health-resolution) |
-| [Generation exchange](../src/gateway/generation/exchange.rs) and [intake](../src/gateway/generation/intake.rs) | One lease and immutable prepared request own at most two serial sends; retry readiness, publication and validated completion remain distinct | Preserve the selected recovery budget and original deadlines through consumer acceptance |
+| [Executor health and affinity](../src/gateway/routing/executors.rs) | Account/target cooldowns, material-aware auth availability and advisory success-updated affinity; merged observations advance each affected scope once | See [Cache affinity](#cache-affinity) and [Outcome and health resolution](#outcome-and-health-resolution) |
+| [Generation exchange](../src/gateway/generation/exchange.rs) and [intake](../src/gateway/generation/intake.rs) | One selected candidate and immutable prepared request own at most two serial sends; retry readiness, publication and validated completion remain distinct | Preserve the selected recovery budget and original deadlines through consumer acceptance |
 | [Failure classification](../src/provider/errors.rs), [wire facts](../src/protocol/failure.rs) and [transport](../src/transport/http.rs) | Finite Provider-owned meaning replaces global quota substrings; typed sanitized causes separate positive interruption from trust/local/unknown faults and ambiguous timeout | Keep service identity ahead of protocol spelling and retry permission separate from health |
-| [Credential access](../src/credential/access.rs), [API keys](../src/credential/api_key.rs) and [renewal](../src/gateway/renewal.rs) | Pinned identities, usable-publication material receipts, network-free borrowing and configurable listener-owned maintenance with bounded short-grant spacing | Connect receipts to old-auth probe eligibility and stale-401 fencing without weakening lifecycle quarantine |
+| [Credential access](../src/credential/access.rs), [API keys](../src/credential/api_key.rs) and [renewal](../src/gateway/renewal.rs) | Pinned identities, usable-publication material receipts, network-free borrowing and configurable listener-owned maintenance with bounded short-grant spacing | Connect receipts to old-auth cooldown release and stale-401 filtering without weakening lifecycle quarantine |
 
 Reuse secure storage mechanisms, OAuth drivers, identity verification, atomic publication/recovery, cancellation, trusted target selection and the publication fence where they fit. Existing credential record formats and persisted data are not compatibility requirements. This is a rewrite of account binding and execution policy, not a replacement of the semantic IR, codecs or transport stack.
 
@@ -151,7 +151,7 @@ One bounded same-target retry replaces the interim single-send choice without re
 1. **Cache affinity first.** A new request prefers its bound target, including a short bounded cooldown wait. Recovering the same target preserves affinity; a failure never preemptively rebinds the conversation.
 2. **Selection before dispatch.** Choose another ready candidate only when the bound target cannot serve within the wait budget or is otherwise ineligible. After dispatch, any recovery stays on that exact target; a final failure returns without switching accounts or Providers.
 3. **One ordered list, no balancing.** Selection is deterministic route order. No weights, tiers, round-robin, usage spreading, hedging or cache-value estimates.
-4. **One retry owner, two sends at most.** The gateway owns the initial attempt and at most one additional serial attempt, including when probing. SDK and transport retries stay off. The unchanged request deadline bounds the whole exchange; a short recovery budget additionally bounds the retry phase. Shared OAuth maintenance has its own lifecycle and timeout.
+4. **One retry owner, two sends at most.** The gateway owns the initial attempt and at most one additional serial attempt, including after cooldown expiry. SDK and transport retries stay off. The unchanged request deadline bounds the whole exchange; a short recovery budget additionally bounds the retry phase. Shared OAuth maintenance has its own lifecycle and timeout.
 5. **Typed, time-bounded health.** Cooldowns are absolute deadlines at a known scope. No error disables a target permanently, and request-shaped or malformed-output errors never cool or rotate anything.
 
 ### Terms
@@ -166,7 +166,7 @@ One bounded same-target retry replaces the interim single-send choice without re
 ```text
 candidates = eligible route targets in declaration order
 bound = the fresh binding's target, if still eligible
-ready = targets not cooling; an expired cooldown requires exclusive probe ownership
+ready = lifecycle-usable targets without a live cooldown; no exclusive probes
 
 if bound is ready: send to bound
 else if bound is cooling and its deadline is within max_wait:
@@ -177,7 +177,7 @@ no ready candidate: fail fast (see Downstream signals)
 
 Only a valid conversation binding earns a short cooldown wait. New conversations choose the first ready route candidate without waiting for an unbound higher-priority target. Without a conversation carrier every request is new, and fill-first still keeps traffic on one target while it is healthy.
 
-Check cancellation and remaining deadlines before waiting and before either dispatch. Recheck health and probe ownership after a pre-dispatch wait; if the preferred target cannot be acquired, select another ready eligible candidate before the first send or fail without sending. Do not loop through additional cooldown waits. Once a send begins, only the same-target retry below is permitted; candidate selection runs again only for a new gateway request.
+Check cancellation and remaining deadlines before waiting and before either dispatch. Recheck lifecycle and cooldowns after a pre-dispatch wait; if the preferred target is unavailable, select another ready eligible candidate before the first send or fail without sending. Do not loop through additional cooldown waits. Once a send begins, only the same-target retry below is permitted; candidate selection runs again only for a new gateway request.
 
 A candidate-local inability to represent the request before dispatch permits checking later candidates, including other Providers. Invalid client input still rejects at ingress; trust, replay and explicit-guarantee rules remain in force. If no candidate can represent the request, return the appropriate failure. An upstream `request` or `malformed` failure remains terminal under the failure table rather than triggering candidate search.
 
@@ -200,7 +200,7 @@ Provider classifiers map HTTP status, structured error codes, reset headers and 
 - Quota and auth cool the whole account because every model on it fails. Transient and rate-limit failures cool only that account and model.
 - `malformed` exists because a deterministic Provider protocol defect would otherwise cool every account in turn.
 - A timeout after the response head but before content remains `transient` health evidence, but an ambiguous post-dispatch timeout is not automatically retried. The upstream may already have performed work; even an explicit connection interruption can leave execution uncertain, so gateway/client retries do not promise exactly-once execution.
-- User cancellation, downstream disconnection and gateway-local failures do not become upstream health evidence. Preserve any upstream failure already observed independently; release probe ownership without declaring recovery.
+- User cancellation, downstream disconnection and gateway-local failures do not become upstream health evidence. Preserve any upstream failure already observed independently; leave live cooldowns intact.
 
 ### Waits and bounds
 
@@ -221,7 +221,7 @@ Retry rules and eligibility:
 - Before retrying, close/release the failed upstream and discard its unpublished attempt-local frames, parser state, response IDs and output metadata. Preserve observed usage and attempt diagnostics separately; do not mix first-attempt output into the second response. No attempts overlap.
 - Once the retry reaches validated content eligible for delivery, or a valid no-content terminal, normal processing continues under the original request deadline. Headers, keepalives and lifecycle-only frames do not establish recovery. For buffered JSON, eligible content is an internal readiness milestone, not permission to publish partial JSON; successful completion still requires validated terminal/EOF.
 - The recovery deadline is an independently cancellable constraint, not a replacement full-response transport timeout. Reaching deliverable content removes only that short constraint, never resets the request or attempt clock. If any frame is actually committed downstream before that milestone, the publication fence still forbids resending.
-- Keep any foreground probe ownership throughout the bounded recovery. The first failure is retained as an observation but does not independently release the probe or commit affinity. A successful completed retry recovers health subject to fencing; final failure applies the relevant health scopes without double-counting the initial failure. Cancellation releases ownership while preserving independently observed upstream failures.
+- The first failure remains an observation until recovery ends. Successful completed retry discards its pending penalty; final failure applies scoped cooldowns once per request. Cancellation preserves independently observed failures. No routing lease spans the attempt.
 - The recovery budget defaults to 30 s. After the old attempt is released, retry immediately unless a valid upstream retry/reset hint requires waiting. That wait uses the same budget; if it leaves no recovery time, return the original failure without sending again. Do not shorten a valid hint to fit the budget, add an artificial delay or allow SDK/transport retries.
 
 This is the initial selected execution policy, not a later mode. Client retries remain possible, so acceptance must count actual gateway and client transmissions together.
@@ -230,23 +230,22 @@ This is the initial selected execution policy, not a later mode. Client retries 
 
 Delivery, upstream outcome and health evidence have separate meanings:
 
-- A successful completion under [Cache affinity](#cache-affinity), including output-limit incomplete completion or a completed tool-call/refusal turn, can recover health and conditionally commit affinity. Successful HTTP transport, valid failure delivery or a raw EOF alone cannot.
-- If recovery succeeds, discard the first failure's pending health penalty while retaining its attempt diagnostics and reported usage. Existing generation fencing still prevents an older success from clearing newer health.
+- A successful completion under [Cache affinity](#cache-affinity), including output-limit incomplete completion or a completed tool-call/refusal turn, can reset expired health and update affinity. Successful HTTP transport, valid failure delivery or a raw EOF alone cannot.
+- If recovery succeeds, discard the first failure's pending health penalty while retaining its attempt diagnostics and reported usage. Live cooldowns survive concurrent successes.
 - Otherwise retain every independently observed health-affecting failure. A second request/malformed error, local timeout or cancellation does not erase the first upstream failure. Apply different account/target constraints at their own scopes; do not collapse them into the error shown to the client.
 - Advance each affected scope's backoff at most once per gateway request. For multiple constraints on that scope, retain the latest resulting deadline without incrementing the level for each attempt. Failure timestamps, not delayed cleanup time, anchor observed reset information.
 - The final failed attempt supplies the client-visible failure through the existing protocol mapping. If no second attempt starts, retain the first failure. A recovery deadline expiring during the second attempt is a timeout result, not a fabricated upstream error. Do not concatenate two failure bodies or retract published output.
-- A cancelled or undeliverable response never commits or renews affinity. Release probe/attempt resources and preserve already-observed upstream failure evidence; do not infer an upstream failure from the downstream disconnect.
+- A cancelled or undeliverable response never commits or renews affinity. Release attempt resources and preserve already-observed upstream failure evidence; do not infer an upstream failure from the downstream disconnect.
 
 For example, `503 → quota` retains target-transient and account-quota constraints; `503 → malformed` or `503 → cancellation` retains the transient observation without assigning a new health penalty to the second outcome.
 
 ### Cooldown and recovery
 
-- Failure updates only extend deadlines. A failure inside an open cooldown window does not escalate the backoff. Verified credential replacement has the narrowly scoped auth-probe exception described under [OAuth maintenance](#oauth-maintenance).
+- Failure updates only extend deadlines. A failure inside an open cooldown window does not escalate the backoff. Verified credential replacement has the narrowly scoped auth-cooldown release described under [OAuth maintenance](#oauth-maintenance).
 - The backoff level resets after a success or a configurable failure-free interval (default 30 min).
 - Hints come from valid `Retry-After` delta-seconds/HTTP-date or Provider-declared reset fields. Missing, invalid or already-expired hints supply no future deadline. Cooldown hints use the configured floor (default 1 s) and class cap; those health bounds do not permit retrying earlier than a valid hint within the current recovery phase.
-- An expired cooldown admits one foreground probe. Only a validated completion eligible under the success-only completion rule clears the relevant scopes, subject to health fencing; HTTP 2xx or a successfully delivered failure is insufficient. Neutral outcomes release probe ownership without clearing health. There are no background probes, permanent disables or health persistence; a restart clears health.
-- Acquire probe ownership atomically across all relevant account/target scopes or acquire none. Account-scoped probing excludes concurrent probes on every model of that account; target-scoped probing excludes only that target. Ownership lasts through same-target recovery and is released on completion/cancellation. Releasing a neutral probe does not certify recovery.
-- Generation fencing keeps stale completions from overwriting newer health or bindings.
+- An expired cooldown admits ordinary requests, including concurrent ones. Successful delivery removes expired constraints and resets backoff when none remain. It leaves any live constraint intact, so an older success cannot erase a recent failure. No probe tickets, health generations, background probes, permanent disables or persistent health are maintained.
+
 - The current pool-wide rate-limit scope is dropped. Caches and rate limits follow upstream organizations or workspaces, so operators configure one account per independent organization or workspace; several keys of one organization add no failover value.
 
 ### Publication
@@ -259,8 +258,8 @@ The gateway may absorb one short network/server failure before returning an erro
 
 - Do not emit downstream `x-should-retry` or forward an upstream copy. Clients retain their own retry policy; gateway exhaustion, long cooldown or unusable credentials do not add a blanket automatic-retry prohibition.
 - Do not turn one account's long `Retry-After` into a route-wide delay when another eligible candidate is ready.
-- When all eligible targets are blocked, return a gateway admission failure: 429 for rate/quota-only blocking, 503 otherwise. For each lifecycle-usable, non-probing target, its earliest probe time is the latest deadline of its blocking scopes; the route hint is the earliest such time. Emit `Retry-After` only if this is a positive known interval within the 60 s horizon, rounded up to whole seconds.
-- No ready target and no credible short deadline means no `Retry-After`: probe ownership, renewal in progress, reauthorization, quarantine and long cooldowns must not acquire an invented reset time. Return the failure honestly; clients may still retry under their own limits.
+- When all eligible targets are blocked, return a gateway admission failure: 429 for rate/quota-only blocking, 503 otherwise. For each lifecycle-usable target, its earliest available time is the latest deadline of its blocking scopes; the route hint is the earliest such time. Emit `Retry-After` only if this is a positive known interval within the 60 s horizon, rounded up to whole seconds.
+- No ready target and no credible short deadline means no `Retry-After`: renewal in progress, reauthorization, quarantine and long cooldowns must not acquire an invented reset time. Return the failure honestly; clients may still retry under their own limits.
 - Preserve existing protocol error meanings for dispatched failures, including native failed Responses. Do not turn a native failed outcome into a different HTTP result solely to trigger retries. Upstream credential failure must not masquerade as failed downstream authentication. Ordinary error messages remain redacted and body-free.
 - Headers must be chosen before HTTP headers are committed. Published streams end through their protocol error mechanism, not revised HTTP status or headers.
 
@@ -302,7 +301,7 @@ Cache lifetime here means gateway-owned affinity state. It does not change an up
 2. **Short and long rate limits.** A returns 429 with `Retry-After: 5`: record the cooldown and return the failure. The next request may wait for A within `max_wait`. With `Retry-After: 120`, a promptly retried request selects ready key B instead. Only B's success moves the binding; later turns stay there after A recovers.
 3. **SIWC usage limit.** A conversation on `chatgpt` account A hits `subscription_sharing_usage_limit_exceeded` without a reset hint. The request fails and account A cools for 30 min. A later request selects another ready candidate explicitly bound to that public model route. No ready candidate means admission failure, not an additional inference send.
 4. **Published failure.** A releases content, then the upstream stream fails. End the stream honestly and record classified upstream health evidence. Do not resend, switch, commit affinity or fabricate completion. Any subsequent client retry is a separate request; partial delivered content is not a gateway continuation prefill.
-5. **Recovery deadline.** A fails before publication, but cleanup or the retry cannot reach deliverable output within the short recovery budget. Stop recovery within the original request deadline, release upstream/probe ownership and return failure. Do not reset the budget, grant a third send or select B.
+5. **Recovery deadline.** A fails before publication, but cleanup or the retry cannot reach deliverable output within the short recovery budget. Stop recovery within the original request deadline, release upstream resources and return failure. Do not reset the budget, grant a third send or select B.
 
 ### Rejected mechanisms
 
@@ -327,14 +326,14 @@ Cache lifetime here means gateway-owned affinity state. It does not change an up
 
 ## Cache affinity
 
-The [executor](../src/gateway/routing/executors.rs) owns conversation affinity under the following contracts. Task outcome, health fencing and concurrent binding ownership remain separate facts.
+The [executor](../src/gateway/routing/executors.rs) owns conversation affinity under the following contracts. Preferences are advisory and independent of task outcome and credential/replay identity.
 
 - **Key:** Agent identity, public model and conversation carrier. Carriers come from [ingress admission](../src/gateway/ingress/admission.rs): `X-MorphieCore-Conversation-Id`, then OpenCode `X-Session-Id`, pi `session_id`, Codex `session-id` and pi `x-session-affinity`. Do not derive sessions from content, prefixes or first messages, and do not let one caller's label select another caller's binding.
 - **Identity:** a binding names the effective target: credential provenance, account endpoint and model/protocol scope. Normal OAuth token rotation preserves it; replacement API keys or changed targets cannot inherit it.
 - **Commit:** only after successful completion. That is a valid terminal with a completed outcome, or an outcome that is incomplete only because of the output limit; tool-call turns count. Failed, cancelled, errored or published-then-failed attempts never commit.
-- **Concurrent ownership:** commit conditionally against the binding version observed when the request began, including an absent binding. Replacement, expiry and eviction invalidate older commit rights; an absent→bound→evicted sequence must not let an old absent observer recreate the binding. A stale completion cannot overwrite or renew it. Version tracking must remain bounded by affinity capacity and in-flight work, without permanent per-conversation tombstones. Health fencing remains independent; do not serialize entire conversation requests.
+- **Concurrent completion:** preferences are best effort; the last eligible successful completion wins. A late success may recreate an expired/evicted entry. There are no observation slots, version checks or ownership leases.
 - **Failure:** a failure never deletes or moves a binding. Cooldown decides whether selection waits for the bound target or moves; only the next success moves the binding.
-- **Lifetime:** configurable sliding idle TTL (global, default 1 h) and configurable bounded capacity. Only an eligible successful completion renews the binding's TTL; request lookup, failures and read-only queries do not. Remove expired entries before evicting the least recently successful binding when capacity is needed. After expiry or eviction the conversation is new and fills from route order; a valid binding never proactively fails back. Provider cache lifetimes run from five minutes to about 24 hours, so a longer TTL rarely preserves a warm cache.
+- **Lifetime:** configurable sliding idle TTL (default 1 h) and bounded capacity. Only successful completion stores or renews a preference; lookup and failure do not. Before insertion, discard expired entries and evict the least recently successful entry if full. Zero capacity or TTL retains nothing. New requests without a live preference follow route order.
 - **Replay:** moving a binding strips target-scoped private replay state under the accepted replay trust rules.
 
 Do not base routing on inferred cache value, guessed cache lifetime or missing cache-usage fields.
@@ -347,7 +346,7 @@ Persistence is not selected for the first rewrite. Corrupt-file handling, stale 
 
 ## OAuth maintenance
 
-Keep one global maintenance policy and the existing account locks and lifecycle owner. Enumerate configured Active OAuth sessions independently of route references and routing enablement. Each rotation uses its own registered client and latest refresh material; expiry and principal facts come from the credential driver's verified contract.
+Keep one global maintenance policy and the existing OAuth account locks and lifecycle owner. API-key mutations use one short store transaction without a redundant account-operation lock. One listener owns maintenance per runtime; startup does not add a multi-listener arbitration protocol. Unix binaries handle SIGINT and SIGTERM through the same cancellation path. Enumerate configured Active OAuth sessions independently of route references and routing enablement. Each rotation uses its own registered client and latest refresh material; expiry and principal facts come from the credential driver's verified contract.
 
 Selected baseline: keep pure polling. The due check is local (account lock and store read, no network), so frequent scans are cheap. The selected defaults are a 15 s scan, 90 s timeout and 120 s refresh-ahead window. As operator guidance, allow at least the scan interval plus renewal timeout in the refresh-ahead window, and additional room for queueing or failed-renewal backoff; this is not a startup validation rule or a guarantee of timely renewal. A five-minute scan with a three-minute window can miss expiry: a scan seeing four minutes left skips renewal, and the next scan occurs one minute after expiry. A deadline-aware timer remains an alternative if polling delay becomes a concrete problem.
 
@@ -364,7 +363,7 @@ The maintenance loop must:
 
 Timing and the safe failed-renewal delay are configurable. A request-triggered auth observation may notify the shared lifecycle owner where the profile permits recovery, but auth failure does not qualify for the network/server retry. Global timing does not remove Provider-specific token verification or rotation requirements.
 
-Once replacement OAuth material for the same managed identity has been verified and durably published, only auth restrictions tied to the replaced material become eligible for an exclusive foreground probe. This does not declare inference healthy, clear quota/permission constraints, move affinity or bypass lifecycle vetoes. A late 401 for an older material revision cannot create or extend an auth penalty against the replacement. Refresh preserves identity; a changed principal/registration still follows the existing provenance and replay-isolation rules.
+Once replacement OAuth material for the same managed identity is verified and durably published, auth cooldowns tied to older material no longer block new requests. Quota, permission and lifecycle constraints remain independent; no refresh moves affinity. A late old-material 401 cannot penalize replacement material. A changed principal/registration still follows provenance and replay isolation.
 
 ### Accepted lifecycle baseline
 
@@ -380,7 +379,7 @@ This accepted OAuth baseline establishes request-boundary selection, no auth-tri
 | Expiry and scheduling | Unknown expiry stays unknown. Account queueing and failed-renewal delays can exceed the nominal polling interval; frequent scans alone do not guarantee renewal before expiry. Existing code serializes account scans, so this matters as account count grows |
 | Request-time recovery | Use material published by the shared lifecycle owner; an auth failure may request recovery for a later request but never triggers an inference resend now. Cancellation ends the request's participation; an already-started shared refresh remains lifecycle-owned and finishes safely within its own timeout. Cancellation must not restore possibly consumed material |
 | Lifecycle versus routing health | Temporary cooldown, expired access, reauthorization-required and persistence-recovery states are different facts. A routing cooldown expiring cannot make invalid credentials usable |
-| Verified replacement and auth probes | Durable verified replacement makes only old-material auth restrictions probe-eligible. Stale 401s do not penalize new material; quota/permission and lifecycle vetoes remain, and successful inference is still required to recover health |
+| Verified replacement and auth availability | Verified replacement releases only old-material auth cooldowns. Stale 401s do not penalize new material; quota/permission and lifecycle vetoes remain |
 | Account switching | Refreshing one registration is not switching accounts. A new request may select any eligible route candidate without separate opt-ins; refreshing does not restore exhausted subscription quota |
 | Logout and inspection | Local removal and remote revocation have different outcomes. Surface incomplete revocation honestly; coordinate logout with renewal so a late refresh cannot reactivate a signed-out account. Status/explanation remains read-only and redacted, without exposing token values or credential locations |
 
@@ -437,8 +436,8 @@ Authoritative decision index across the account redesign domains:
 | Advisory client retry hints, no blanket stop-retrying signal | Downstream signals | [Downstream signals](#downstream-signals) |
 | Pre-dispatch cross-Provider representation admission | Pre-dispatch admission | [Selection](#selection) |
 | OAuth subject uniqueness, one managed login and persistent subject reservation | OAuth identity | [OAuth registration identity](#oauth-registration-identity) |
-| Polling lifecycle, routing-only enablement and material-aware auth probes | OAuth maintenance | [OAuth maintenance](#oauth-maintenance), [accepted lifecycle baseline](#accepted-lifecycle-baseline) |
-| Conditional concurrent affinity ownership and sliding idle TTL | Cache affinity | [Cache affinity](#cache-affinity) |
+| Polling lifecycle, routing-only enablement and material-aware auth availability | OAuth maintenance | [OAuth maintenance](#oauth-maintenance), [accepted lifecycle baseline](#accepted-lifecycle-baseline) |
+| Advisory last-success affinity and sliding idle TTL | Cache affinity | [Cache affinity](#cache-affinity) |
 | Offline validation, read-only explanation, bounded diagnostics and deferred persistence | Operational tools | [Operational surfaces](#initial-operational-surfaces), [optional restart continuity](#optional-restart-continuity) |
 
 ### Deferred decisions

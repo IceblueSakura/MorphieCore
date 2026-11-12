@@ -1154,7 +1154,8 @@ fn responses_associate_grouped_results_by_call_id_without_reordering() {
         json!({"id":"fc_b","type":"function_call","name":"lookup","call_id":"b","arguments":"{\"key\":\"B\"}"}),
     ];
     let results = [
-        json!({"type":"function_call_output","call_id":"a","output":"value-A"}),
+        json!({"type":"function_call_output","call_id":"a","output":[
+            {"type":"input_text","text":"value-"},{"type":"input_text","text":""},{"type":"input_text","text":"A"}]}),
         json!({"type":"function_call_output","call_id":"b","output":"value-B"}),
     ];
     for history in [
@@ -1163,10 +1164,35 @@ fn responses_associate_grouped_results_by_call_id_without_reordering() {
     ] {
         let wire = json!({"model":"qwen3.8-flash","input":history});
         for codec in [
-            client(GenerationApi::Responses),
+            GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
             native(GenerationApi::Responses),
         ] {
             let input = codec.decode_request(wire.to_string().as_bytes()).unwrap();
+            let result = input
+                .task
+                .semantic
+                .items()
+                .iter()
+                .find_map(|(_, item)| match item {
+                    Item::ToolResult(result)
+                        if result.call_id.as_ref().is_some_and(|id| id.as_str() == "a") =>
+                    {
+                        Some(result)
+                    }
+                    _ => None,
+                })
+                .unwrap();
+            let ToolOutput::Parts(parts) = &result.output else {
+                panic!("text result parts must retain their boundaries");
+            };
+            let texts: Vec<_> = parts
+                .iter()
+                .map(|part| match &part.content {
+                    InputPart::Text(text) => text.as_str(),
+                    _ => panic!("text-only feedback"),
+                })
+                .collect();
+            assert_eq!(texts, ["value-", "", "A"]);
             let before = input.clone();
             let (encoded, rules) = target.encode_request_with_rules(&input).unwrap();
             assert_eq!(encoded["input"], history);

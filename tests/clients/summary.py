@@ -141,7 +141,7 @@ def assert_rebuilt(body, phase, native, path, split=False):
               "rebuilt_native_tool_result")
     else:
         assistant = assistants[0]
-        check(assistant["reasoning_content"] == PLAN, "rebuilt_readable_reasoning")
+        check("reasoning_content" not in assistant, "rebuilt_standard_history")
         calls = assistant["tool_calls"]
         check(len(calls) == 1 and calls[0]["id"] == CALL and calls[0]["function"]["name"] == "read"
               and json.loads(calls[0]["function"]["arguments"]) == {"path": str(path)},

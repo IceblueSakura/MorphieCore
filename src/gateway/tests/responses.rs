@@ -34,7 +34,6 @@ fn gateway_with_limits(origin: &str, limits: Limits) -> Gateway {
         super::topology::topology_at(origin),
         crate::gateway::TaskEntries {
             generation: vec![Entry {
-                chat_profile: Default::default(),
                 model: "fixture-model".into(),
                 protocol: crate::protocol::ClientProtocol::Responses,
                 endpoint: EndpointId::new("fixture-responses").unwrap(),

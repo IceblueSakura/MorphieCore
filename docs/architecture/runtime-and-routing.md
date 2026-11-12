@@ -29,7 +29,7 @@ See [Architecture Overview](index.md) for system boundaries and core IR semantic
 
 ### Failover
 
-Shared named-account binding, scoped health, material-aware auth probes, success-owned affinity and bounded same-target recovery implement the accepted [execution policy](../provider-account-redesign-plan.md#execution-policy). [Roadmap](../roadmap/unscheduled-issues.md#unscheduled-issues) tracks remaining profile qualification and prerequisites. Production deployment requires separate approval.
+Shared named-account binding, scoped cooldowns, old-material auth cooldown release, advisory affinity and bounded same-target recovery implement the accepted [execution policy](../provider-account-redesign-plan.md#execution-policy). [Roadmap](../roadmap/unscheduled-issues.md#unscheduled-issues) tracks remaining profile qualification and prerequisites. Production deployment requires separate approval.
 
 Failover operates on precompiled candidate lists under a cache-affine routing policy.
 
@@ -49,7 +49,7 @@ Preparation still validates the trusted binding, streaming and final body bounds
 
 #### Advancement
 
-The production model loader fixes one account target before dispatch. Configuration exposes no fallback switch, credential-member budget or route send ceiling; the old chain/transition internals are removed. One lease and one prepared request own the original send and at most one serial retry. The retry reuses the exact effective endpoint, credential material, headers and body, with a network-free lifecycle/material veto before sending.
+The production model loader fixes one account target before dispatch. Configuration exposes no fallback switch, credential-member budget or route send ceiling. One selected candidate and one prepared request own the original send and at most one serial retry. The retry reuses the exact effective endpoint, credential material, headers and body, with a network-free lifecycle/material veto before sending.
 
 Publication remains irreversible: no later attempt may replay committed output. Provider-owned finite classification separates health from the narrow resend allowlist. Typed transport causes distinguish positive interruption/connection timeout from TLS, local faults, unknown causes and ambiguous post-dispatch timeout; no private URL or third-party message enters policy. Unknown structured codes retain actual-status fallback and unknown in-band errors gain no synthetic-500 resend permission.
 
@@ -57,16 +57,16 @@ The short recovery clock covers cleanup, hints, preparation and the retry until 
 
 #### Health and recovery
 
-One exchange-local failure ledger retains the original HTTP observation, later interruption, material revision and previous-attempt evidence. Terminal cleanup resolves health and releases its lease before asynchronous downstream normalization.
+One exchange-local failure ledger retains the original HTTP observation, later interruption, material revision and previous-attempt evidence. Terminal cleanup records advisory cooldowns before asynchronous downstream normalization.
 
 - **Scoping:** Auth/quota constrain an account; transient, rate-limit and permission failures constrain its exact model/operation/origin/path target. Independent constraints retain their own deadlines.
-- **Probe ownership:** Acquisition is atomic across account and target scopes. Account probes exclude sibling-model probes in either acquisition order; target probes alone do not exclude healthy sibling traffic. Cancellation releases ownership without declaring recovery.
-- **Recovery:** Only validated successful work can clear health, subject to generation fencing. Reported failures and independently identified transport interruptions retain observation times and material revisions through cleanup or cancellation. Clean HTTP EOF missing a protocol terminal is malformed, not positive transport-interruption evidence. A completed retry discards its first failure's pending penalty; otherwise merged account/target constraints advance each affected scope at most once. Attempt-local output resets while usage and diagnostics remain separately attributable. Provider-owned timing and narrowly scoped material replacement follow the [selected contract](../provider-account-redesign-plan.md#cooldown-and-recovery).
+- **Concurrency:** expired cooldowns admit ordinary concurrent requests. There are no exclusive probes, routing generations or affinity observation leases. Credential lifecycle coordination remains independent.
+- **Recovery:** Validated successful work clears expired constraints and resets exhausted backoff; live cooldowns survive concurrent successes. Reported failures and independently identified transport interruptions retain observation times and material revisions through cleanup or cancellation. Clean HTTP EOF missing a protocol terminal is malformed, not positive transport-interruption evidence. A completed retry discards its first failure's pending penalty; otherwise merged account/target constraints advance each affected scope at most once. Attempt-local output resets while usage and diagnostics remain separately attributable. Provider-owned timing and narrowly scoped material replacement follow the [selected contract](../provider-account-redesign-plan.md#cooldown-and-recovery).
 - **Downstream hints:** Upstream reset evidence remains available to health/recovery. Returned `Retry-After` describes only a credible short route-wide block and is suppressed when another usable target is ready; `x-should-retry` is never emitted.
 
 #### Routing unit
 
-An explicit conversation/session carrier is the routing unit, scoped by authenticated Agent and public model. Only a valid binding earns one bounded cooldown wait; after waiting, lifecycle and probe ownership are rechecked before dispatch. Successful final delivery conditionally establishes affinity to the serving target.
+An explicit conversation/session carrier is the routing unit, scoped by authenticated Agent and public model. Only a valid binding earns one bounded cooldown wait; after waiting, lifecycle and cooldowns are rechecked before dispatch. Successful final delivery updates a bounded TTL preference; the last eligible completion wins. Without a preference, configured order selects the first available exit.
 
 ### Conversation and cache affinity
 

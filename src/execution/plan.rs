@@ -102,7 +102,6 @@ pub(crate) fn project_candidate(
     }
     let fallback = if let Some(crate::adapter::ClientAdapter::OpenAi { adapter, .. }) = client
         && adapter.protocol == crate::protocol::openai::GenerationApi::Chat
-        && !adapter.adaptation.rules.readable_reasoning
         && endpoint.protocol == crate::topology::GenerationProtocol::OpenAiChat
     {
         endpoint
@@ -256,10 +255,6 @@ mod tests {
             .unwrap();
         let standard = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
         let plain = ClientAdapter::openai(standard.clone(), TargetContract::full());
-        let readable = ClientAdapter::openai(
-            GenerationCodec::new(GenerationApi::Chat, Dialect::ChatReasoning, None),
-            TargetContract::full(),
-        );
         let mut unknown = endpoint.clone();
         unknown.id = EndpointId::new("unassessed-history").unwrap();
         unknown
@@ -314,13 +309,6 @@ mod tests {
             assert!(project_candidate(endpoint, &constrained, Some(&plain)).is_err());
             assert_eq!(constrained, before);
         }
-        let projected = project_candidate(endpoint, &request, Some(&readable)).unwrap();
-        assert_eq!(projected.value()["reasoning_effort"], "low");
-        assert!(
-            !projected
-                .evidence()
-                .contains_rule("chat.fallback-thinking-off.v1")
-        );
         let mut always_thinking = endpoint.clone();
         always_thinking
             .representation
@@ -347,13 +335,6 @@ mod tests {
         assert!(rejected.is_empty());
         assert_eq!(
             select(CandidatePolicy::RequireAll, &plain).unwrap().0.len(),
-            2
-        );
-        assert_eq!(
-            select(CandidatePolicy::RequireAll, &readable)
-                .unwrap()
-                .0
-                .len(),
             2
         );
         assert_eq!(request, original);

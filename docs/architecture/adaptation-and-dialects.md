@@ -88,7 +88,7 @@ Existing generateContent and Interactions targets admit a qualified closed-objec
 - **Native no-call equivalence:** explicit `tool_choice:none` uses `NONE` / `none`, which prohibits every call and satisfies argument/cardinality guarantees vacuously. Shared admission and direct writers retain complete declarations/schemas, skip conditional-strict fallback and accept serial intent without requesting validated decoding. This does not relax auto/required selection or bypass known-field, bounds, trust, history or other declaration-carrier checks.
 - Parameter omission keeps the native parameterless declaration. No schema deletion, argument repair, inferred prompting or local retry supplies a missing guarantee. Serial intent still rejects when calls are enabled; one declared function can produce multiple calls.
 
-Ordinary Google text/call signatures use managed Responses continuation or the explicitly selected [stateless owner-replay profile](history-and-replay.md#responses-owner-replay). Standard stateless Responses and Chat/Messages retain their unsupported attachment boundary. Existing managed continuation remains available; neither path deletes signatures or creates surrogate reasoning owners.
+Ordinary Google text/call signatures use explicit managed Responses continuation. Standard stateless Responses and Chat/Messages reject attachments without a lawful carrier; the [field-level boundary](history-and-replay.md#stateless-api-boundaries) records their owners, missing fields and rejection timing. No public replay extension, signature deletion or surrogate reasoning owner is available.
 
 #### Protocol tree ownership
 
@@ -98,6 +98,8 @@ Module layout mirrors `vendor / api / responsibility`:
 - `protocol::google::{generate_content, interactions}`
 
 ##### Shared Aliyun billing dialect
+
+Responses function feedback accepts strings and ordered arrays of text parts without flattening or reordering. Media tool results remain outside this qualified carrier.
 
 DashScope and Aliyun TokenPlan share the `Bailian` wire dialect for Chat and Responses:
 - Readable reasoning mapped to `reasoning_content` with `preserve_thinking`.
@@ -188,7 +190,7 @@ Applications selected on 2026-10-30 are implemented, including request strictnes
 | Google strictness/serial intent with explicit `tool_choice:none` | L2 `google.no-call-tool-guarantees.v1`: native no-call mode satisfies both guarantees, preserving all declarations and schemas without strict-default fallback; enabled calls retain their independent admission gates |
 | Effort | Nearest supported level, ties upward, across Reasoning/Response scopes at the same level (L3); manual budgets on adaptive-only bindings convert to adaptive plus effort. When an explicit effort already exists, preserve it rather than replacing it with a budget-derived level; omit the uncarriable numeric budget under a named loss |
 | Output ceilings | Preserve equivalent carriers; clamp to a known model maximum or retain a narrower accounting scope with loss (L3); omit when no useful carrier exists (L4). See [output-ceiling adaptation](#output-ceiling-adaptation) |
-| `required_with_tools` history with a Standard Chat client | Deployers select `readable_reasoning` on such public models; otherwise a candidate with a thinking-off carrier disables thinking under a named loss (L3), and one without rejects at planning. Not delegated, because the next turn is known to fail upstream |
+| `required_with_tools` history with a Standard Chat client | A candidate with a thinking-off carrier disables thinking under a named loss (L3), and one without rejects at planning. Not delegated, because the next turn is known to fail upstream |
 | Uncarried reasoning in delivery or history | Omit the owner, keep visible content and tool links (L3); applies to opaque reasoning on Standard Chat and unsigned reasoning on Messages; never forged |
 | Messages reasoning publication | An undecided summary waits for its actual signature in the bounded schedule. An irreversibly uncarriable shape discards its payload immediately and retains only bounded lifecycle tracking; invisible owners do not block visible successors. Summary interruption stays an interruption and cannot supply item or response completion |
 | Unsealed or foreign client reasoning in history | Omit under visible-history transfer (L3); never forwarded |

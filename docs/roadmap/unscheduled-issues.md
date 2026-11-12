@@ -21,7 +21,7 @@ See [Roadmap Main](index.md) for current sprint priorities and execution gates; 
 
 This is the single register for unresolved Generation/client boundaries and qualification gaps. None is an active repair package or a prerequisite for the delivered baseline. Reopen only after a concrete unmet contract, target/profile, prerequisite and bounded acceptance plan are selected. Review IDs remain traceability labels, not a second phase queue. [Development](../development.md#overall-acceptance-status) summarizes overall acceptance; [Architecture](../architecture/index.md) owns accepted contracts and service limitations.
 
-Pi-first stateless carrier is delivered for R02/R06; remaining client/Provider qualification stays here. R04/R08 and Bailian structured-output variability remain excluded; do not substitute prompt/history rewriting or deduplication work. Accepted Bailian forcing and Grok content limitations are not reopened. R09 real-account failover remains unscheduled.
+Generation uses standard downstream APIs only. Uncarriable ordinary signatures follow the [field-level rejection contract](../architecture/history-and-replay.md#stateless-api-boundaries). R04/R08 and Bailian structured-output variability remain excluded. R09 real-account failover remains unscheduled.
 
 ### Tool guarantees
 
@@ -34,14 +34,15 @@ Pi-first stateless carrier is delivered for R02/R06; remaining client/Provider q
 
 | Issue | Current boundary | Re-entry / decision |
 |---|---|---|
-| Google stateless ordinary-signature qualification (R02/R06) | Pi-first carrier delivered under the [Responses profile](../architecture/history-and-replay.md#responses-owner-replay); pi save/resume/tool loop has synthetic acceptance. Standard unadapted clients still lack an ordinary text/call carrier. | OpenCode adaptation is deferred. Select the exact client/Provider lane and bounded real qualification separately; synthetic acceptance does not qualify real signed-call issuance or endpoint behavior. No signature deletion, synthetic reasoning owner or new Google API. |
+| Google ordinary-signature boundary (R02/R06) | Standard stateless delivery rejects ordinary text/call signatures without a lawful carrier. Explicit managed Responses remains separate; [fields and reasons](../architecture/history-and-replay.md#stateless-api-boundaries) own this deliberate limitation. | Reopen only with an official standard carrier and concrete client need; no private replay profile or client adaptation is scheduled |
 | Real Haiku protected output (R01) | Current OpenCode's original Chat loop and an explicit adaptive/medium discriminator produce no protected owners; existing carrier repair remains verified. | Resume when the same profile actually yields protected output. Missing activation alone does not justify another repair or automatic effort-to-activation mapping. |
-| Interactions signed-call replay | No signed-call sample was independently observed in the retained profile qualification; thought replay does not close that cell. | Obtain an actual signed-call sample for the selected profile and verify exact feedback/continuation; do not infer it from a generic managed-loop success. |
+| Interactions signed-call authority | Existing scoped decoding recognizes a call signature, but pinned ordinary-call types and observed issuance do not establish a current official carrier. | Select current primary schema and an actual sample before expanding qualification; if observed, standard stateless delivery retains its explicit attachment rejection |
 
 ### Content and client qualification
 
 | Issue | Current boundary | Re-entry / decision |
 |---|---|---|
+| Standard-only real Agent qualification | Current installed-client loops with synthetic upstreams cover standard history, summaries and recovery. Representative real workflows still need qualification after retiring the private Chat and Responses profiles. | Select exact existing account/model/client routes and bounded tool/history runs; reuse unaffected real evidence. No extension restoration or full cross-product sweep |
 | Messages literal-label recall (R13) | Scoped upstream omission: the unchanged five-request audit preserves ordered instructions/history/tools/effort, and complete native text equals delivered/client text on the failed recall. | No further recall sweep or prompt/history rewrite. Re-enter only on concrete new project-owned divergence; preserve the exact-label failure and distinguish incomplete captures from verified attribution. |
 | Luna router endpoints | Endpoint contracts remain unqualified. Existing registered-binding and Agent evidence does not qualify additional router endpoints. | Select the exact endpoint/profile and independent full-loop acceptance; no new binding or activation is implied. |
 
@@ -68,6 +69,7 @@ The routing freeze and credential-lifecycle authorization remain unchanged. Addi
 
 | Issue | Current boundary | Re-entry / decision |
 |---|---|---|
+| OAuth primary-path qualification | Synthetic authorities cover verification, rotation, uncertain-state quarantine, queued publication and graceful shutdown. OpenAI/SIWC and Grok login/verify → bounded request → refresh → request, including use of replacement material, remain unqualified against real authorities. | Authorize lifecycle operations for named accounts, define request/output/time bounds, then verify through the project loader and redacted receipts. Include interrupted-renewal restart state; never inspect or reuse uncertain token material |
 | **R09 — Real account-compatible failover** | [Real stateless JSON/SSE replay isolation passes](../development.md#overall-acceptance-status). Loader evidence reports one enabled declared account per Provider; no independent compatible pair is qualified. Unscheduled; does not gate Stage 4. | With independent compatible accounts on one authorized same-model route, verify A success/affinity, a bounded A failure without switching inside that request, B selection on a new request with A-private replay omitted, then B success/stickiness. Define fault injection and budgets first; provisioning new credentials requires separate approval. Same-key aliases, different-model switching and synthetic authorities do not qualify this real-account gate |
 
 ## Deferred protocol follow-ups

@@ -151,7 +151,6 @@ pub(super) struct Runtime {
     pub(super) permits: Arc<Semaphore>,
     pub(super) transport: HttpTransport,
     pub(super) shutdown: CancellationToken,
-    pub(super) serving: tokio::sync::Mutex<()>,
 }
 
 #[cfg(test)]
@@ -373,19 +372,13 @@ mod tests {
         let mut selected = entry.eligible(&request, &gate.state.affinity).unwrap();
         assert!(selected.iter().all(|planned| planned.projection.is_some()));
         let now = tokio::time::Instant::now();
-        let binding = gate.state.executors.observe(
-            Some("fixture-agent"),
-            "fixture-model",
-            Some("session"),
-            now,
-        );
-        let lease = gate
-            .state
+        let binding =
+            gate.state
+                .executors
+                .observe(Some("fixture-agent"), "fixture-model", Some("session"));
+        gate.state
             .executors
-            .acquire(&selected[1].candidate, now)
-            .unwrap();
-        assert!(lease.completed(binding.as_ref(), now).0);
-        drop(lease);
+            .completed(&selected[1].candidate, binding.as_ref(), now);
         assert_eq!(
             gate.state
                 .executors

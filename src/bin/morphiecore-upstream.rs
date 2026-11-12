@@ -1,4 +1,6 @@
 //! Manual upstream diagnostics, independent of gateway activation and routing.
+#[path = "support/shutdown.rs"]
+mod shutdown;
 #[path = "upstream/mod.rs"]
 mod upstream;
 
@@ -21,12 +23,19 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let shutdown = match shutdown::signal() {
+        Ok(signal) => signal,
+        Err(error) => {
+            eprintln!("Shutdown signal setup failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
     tokio::select! {
         result = upstream::execute(options) => match result {
             Ok(report) => { println!("{report}"); ExitCode::SUCCESS }
             Err(error) => { eprintln!("Upstream operation failed: {error}"); ExitCode::FAILURE }
         },
-        _ = tokio::signal::ctrl_c() => {
+        _ = shutdown => {
             eprintln!("Upstream operation cancelled; no retry. If OAuth refresh was interrupted, check morphiecore-auth status before continuing.");
             ExitCode::FAILURE
         }

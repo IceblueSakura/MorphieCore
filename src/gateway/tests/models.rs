@@ -164,7 +164,6 @@ async fn activated_protocols_are_deduplicated_and_images_share_the_directory() {
             generation: crate::protocol::ClientProtocol::ALL
                 .into_iter()
                 .map(|protocol| Entry {
-                    chat_profile: Default::default(),
                     model: "fixture-model".into(),
                     protocol,
                     endpoint: crate::topology::EndpointId::new("fixture-chat").unwrap(),

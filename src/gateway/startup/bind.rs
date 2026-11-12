@@ -1,7 +1,7 @@
 //! Startup-only resolution of immutable entry, contract and credential ownership.
 use super::{
     credentials::Binding,
-    entries::{ChatProfile, Entry, TaskEntries},
+    entries::{Entry, TaskEntries},
     error::StartupError,
     limits::Limits,
 };
@@ -127,7 +127,6 @@ impl Gateway {
                 limits,
                 transport,
                 shutdown: CancellationToken::new(),
-                serving: tokio::sync::Mutex::new(()),
             }),
         })
     }
@@ -141,11 +140,8 @@ fn bind_generation(
     credentials: &Credentials,
     namespace: &[u8; 32],
 ) -> Result<GenerationEntries, StartupError> {
-    let mut groups: BTreeMap<(ClientProtocol, String), (ChatProfile, BoundEntry)> = BTreeMap::new();
+    let mut groups: BTreeMap<(ClientProtocol, String), BoundEntry> = BTreeMap::new();
     for entry in entries {
-        if entry.protocol != ClientProtocol::Chat && entry.chat_profile != ChatProfile::Standard {
-            return Err(StartupError::Binding);
-        }
         let public = topology.model(&entry.model).ok_or(StartupError::Binding)?;
         let route = topology.route(&public.route).ok_or(StartupError::Binding)?;
         if !route.endpoints.contains(&entry.endpoint) {
@@ -160,25 +156,18 @@ fn bind_generation(
         let binding = credentials
             .get(&endpoint.credential)
             .ok_or(StartupError::Credentials)?;
-        let (chat_profile, group) = groups
+        let group = groups
             .entry((entry.protocol, entry.model.clone()))
-            .or_insert_with(|| {
-                (
-                    entry.chat_profile,
-                    BoundEntry {
-                        public: public.clone(),
-                        client: client_adapter(entry.protocol, entry.chat_profile),
-                        policy: route.policy.clone(),
-                        candidates: vec![],
-                    },
-                )
+            .or_insert_with(|| BoundEntry {
+                public: public.clone(),
+                client: client_adapter(entry.protocol),
+                policy: route.policy.clone(),
+                candidates: vec![],
             });
-        // One public model has one client dialect per protocol.
-        if *chat_profile != entry.chat_profile
-            || group
-                .candidates
-                .iter()
-                .any(|c| c.endpoint.id == endpoint.id)
+        if group
+            .candidates
+            .iter()
+            .any(|c| c.endpoint.id == endpoint.id)
         {
             return Err(StartupError::Binding);
         }
@@ -191,7 +180,7 @@ fn bind_generation(
     }
     groups
         .into_iter()
-        .map(|(key, (_, mut group))| {
+        .map(|(key, mut group)| {
             let route = topology
                 .route(&group.public.route)
                 .ok_or(StartupError::Binding)?;
@@ -209,14 +198,18 @@ fn bind_generation(
 
 /// The client-side codec for one public protocol. Provider dialects never
 /// authorize private public-API carriers.
-fn client_adapter(protocol: ClientProtocol, chat_profile: ChatProfile) -> ClientAdapter {
+fn client_adapter(protocol: ClientProtocol) -> ClientAdapter {
     let profile = match protocol {
         ClientProtocol::Messages => return ClientAdapter::Messages,
         ClientProtocol::Chat => GenerationApi::Chat,
         ClientProtocol::Responses => GenerationApi::Responses,
     };
     let client_scope = crate::protocol::replay_envelope::CLIENT_ORIGIN.clone();
-    let client = GenerationCodec::new(profile, chat_profile.dialect(), Some(client_scope.clone()));
+    let client = GenerationCodec::new(
+        profile,
+        crate::protocol::openai::Dialect::Standard,
+        Some(client_scope.clone()),
+    );
     // Model input admission must not filter facts reported on the client wire
     // (e.g. empty logprobs or defaults a model cannot accept as controls).
     let downstream = TargetContract {

@@ -15,11 +15,7 @@ async fn installed_case(script: &str, case: &str, variable: &str, arguments: &[&
     let directory = filesystem::private_directory();
     let root = directory.path();
     let native = case.contains("messages");
-    let domain = if script == "google_owner_replay" {
-        "google"
-    } else if script == "protocol_defaults" && case.ends_with("-signed") {
-        "opencode-go"
-    } else if script == "protocol_defaults" && case.contains("chat") {
+    let domain = if script == "protocol_defaults" && case.contains("chat") {
         // pi's builtin strict read tool routes through the beta endpoint binding.
         if case.starts_with("pi-chat") {
             "deepseek-beta"
@@ -80,48 +76,9 @@ async fn installed_case(script: &str, case: &str, variable: &str, arguments: &[&
 }
 
 #[tokio::test]
-#[ignore = "requires current pi and explicit replay extension source; native Google signatures and session resume"]
-async fn pi_responses_google_owner_replay() {
-    let source = std::env::var("MORPHIECORE_PI_REPLAY_SOURCE")
-        .expect("set the workstation replay.ts source path");
-    assert!(std::path::Path::new(&source).is_absolute());
-    installed_case(
-        "google_owner_replay",
-        "pi-responses-google-owner-replay",
-        "MORPHIECORE_PI_BIN",
-        &[&source],
-    )
-    .await;
-}
-
-#[tokio::test]
 #[ignore = "requires explicit unwrapped installed pi; synthetic Chat recovery, no Provider"]
 async fn pi_chat_credential_recovery() {
     installed_case("recovery", "pi-chat", "MORPHIECORE_PI_BIN", &[]).await;
-}
-
-#[tokio::test]
-#[ignore = "requires current pi; Readable Chat signed and opaque thinking through native Messages"]
-async fn pi_chat_signed_reasoning_tool_history() {
-    installed_case(
-        "protocol_defaults",
-        "pi-chat-signed",
-        "MORPHIECORE_PI_BIN",
-        &[],
-    )
-    .await;
-}
-
-#[tokio::test]
-#[ignore = "requires current OpenCode; Readable Chat signed and opaque thinking through native Messages"]
-async fn opencode_chat_signed_reasoning_tool_history() {
-    installed_case(
-        "protocol_defaults",
-        "opencode-chat-signed",
-        "MORPHIECORE_OPENCODE_BIN",
-        &[],
-    )
-    .await;
 }
 
 #[tokio::test]

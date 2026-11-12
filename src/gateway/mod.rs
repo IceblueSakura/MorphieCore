@@ -28,10 +28,7 @@ use error::ApiError;
 use runtime::{BoundCandidate, BoundEntry, Runtime};
 pub use startup::credentials::Credentials;
 pub use startup::{
-    entries::{
-        ChatProfile, EmbeddingEntry, Entry, ImageEntry, SpeechEntry, TaskEntries,
-        TranscriptionEntry,
-    },
+    entries::{EmbeddingEntry, Entry, ImageEntry, SpeechEntry, TaskEntries, TranscriptionEntry},
     error::StartupError,
     limits::Limits,
 };

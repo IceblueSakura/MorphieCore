@@ -594,7 +594,7 @@ fn cross_protocol(seen: &Mutex<usize>, body: &[u8], wire: &Value) -> Response {
                 "prompt_tokens_details":{"cached_tokens":0}}}),
     ];
     let mut attempt = Attempt::new(
-        GenerationCodec::new(GenerationApi::Chat, Dialect::ChatReasoning, None),
+        GenerationCodec::new(GenerationApi::Chat, Dialect::DeepSeek, None),
         1 << 20,
         SseLimits::default(),
     );

@@ -201,7 +201,6 @@ async fn selected_target_never_changes_after_dispatch() {
                 generation: ["b", "a"]
                     .into_iter()
                     .map(|id| Entry {
-                        chat_profile: Default::default(),
                         model: "public".into(),
                         protocol: crate::protocol::ClientProtocol::Responses,
                         endpoint: EndpointId::new(id).unwrap(),
@@ -291,7 +290,7 @@ async fn selected_target_never_changes_after_dispatch() {
 }
 
 #[tokio::test]
-async fn recovery_ownership_spans_final_handoff_and_distinguishes_deadlines() {
+async fn concurrent_recovery_and_final_handoff_distinguish_local_and_upstream_deadlines() {
     use std::{
         sync::atomic::{AtomicUsize, Ordering},
         time::Duration,
@@ -325,7 +324,6 @@ async fn recovery_ownership_spans_final_handoff_and_distinguishes_deadlines() {
         super::topology::topology_at(&origin),
         TaskEntries {
             generation: vec![Entry {
-                chat_profile: Default::default(),
                 model: "fixture-model".into(),
                 protocol: crate::protocol::ClientProtocol::Chat,
                 endpoint: EndpointId::new("fixture-chat").unwrap(),
@@ -357,13 +355,15 @@ async fn recovery_ownership_spans_final_handoff_and_distinguishes_deadlines() {
     tokio::time::advance(Duration::from_secs(1)).await;
     tokio::time::resume();
     mode.store(1, Ordering::SeqCst);
-    let probe = send().await.unwrap().unwrap();
-    assert_eq!(probe.status(), 200);
+    let first = send().await.unwrap().unwrap();
+    assert_eq!(first.status(), 200);
     // Upstream JSON and EOF are already valid, but the final body is unpolled.
-    let unavailable = send().await.unwrap().unwrap();
-    assert_eq!(unavailable.status(), 503);
-    assert_eq!(calls.load(Ordering::SeqCst), 3);
-    drop(probe);
+    // An expired cooldown allows ordinary concurrent requests, not one probe.
+    let concurrent = send().await.unwrap().unwrap();
+    assert_eq!(concurrent.status(), 200);
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
+    drop(first);
+    drop(concurrent);
     drop(
         tokio::time::timeout(
             Duration::from_secs(1),
@@ -444,7 +444,6 @@ async fn same_target_retry_reports_reused_upstream_request_adaptations() {
         super::topology::topology_at(&origin),
         TaskEntries {
             generation: vec![Entry {
-                chat_profile: Default::default(),
                 model: "limited-model".into(),
                 protocol: crate::protocol::ClientProtocol::Responses,
                 endpoint: EndpointId::new("limited-responses").unwrap(),

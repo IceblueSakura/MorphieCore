@@ -24,7 +24,6 @@ pub(super) enum Profile {
 pub(super) enum ReasoningShape {
     Summary,
     Opaque,
-    Readable,
     Signed,
 }
 impl Api {
@@ -1244,14 +1243,6 @@ fn assert_reasoning(api: Api, shape: ReasoningShape, value: &Value, history: boo
                     assert!(token.starts_with("mc1."));
                 }
             }
-        }
-        ReasoningShape::Readable => {
-            assert_eq!(api, Api::Chat);
-            let item = items
-                .iter()
-                .find(|i| i["reasoning_content"].is_string())
-                .unwrap();
-            assert_eq!(item["reasoning_content"], "Plan 🧪");
         }
         ReasoningShape::Signed => {
             assert_eq!(api, Api::Messages);

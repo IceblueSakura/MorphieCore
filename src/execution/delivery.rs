@@ -32,30 +32,21 @@ fn delivery_item_id(
     response: &str,
     owner: crate::semantic::task::generation::ItemId,
     prefix: &str,
-    compact: bool,
 ) -> String {
     let mut hash = Sha256::new();
     for value in [model, response] {
         hash.update((value.len() as u64).to_le_bytes());
         hash.update(value.as_bytes());
     }
-    if compact {
-        hash.update(owner.scope().get().to_le_bytes());
-        hash.update(owner.get().to_le_bytes());
-    }
     let digest: String = hash
         .finalize()
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect();
-    if compact {
-        format!("{prefix}_{}", &digest[..40])
-    } else {
-        format!(
-            "{}_{digest}",
-            crate::protocol::fidelity::generated_item_id(owner, prefix)
-        )
-    }
+    format!(
+        "{}_{digest}",
+        crate::protocol::fidelity::generated_item_id(owner, prefix)
+    )
 }
 
 fn response_id() -> Result<String, AttemptError> {
@@ -431,14 +422,9 @@ impl ResponseDelivery {
                             *owner,
                             if matches!(item, Item::Message(_) | Item::Instruction(_)) {
                                 "msg"
-                            } else if self.client.owner_replay()
-                                && matches!(item, Item::ToolCall(_))
-                            {
-                                "fc"
                             } else {
                                 "item"
                             },
-                            self.client.owner_replay(),
                         ),
                     )?;
                 }
@@ -591,7 +577,7 @@ impl ResponseDelivery {
             .items()
             .iter()
             .any(|(_, item)| item.has_replay_attachment());
-        if hidden && !self.managed_responses() && !self.client.owner_replay() {
+        if hidden && !self.managed_responses() {
             return Err(CodecError::Unsupported(CarrierReason::Replay).into());
         }
         if !self
@@ -599,11 +585,7 @@ impl ResponseDelivery {
             .as_ref()
             .is_some_and(|projection| projection.started())
         {
-            let wire = if self.client.owner_replay() {
-                response.clone()
-            } else {
-                crate::protocol::replay_projection::strip(&response, false)?
-            };
+            let wire = crate::protocol::replay_projection::strip(&response, false)?;
             self.project_events(attempt, &[], false)?;
             let projection = self.projection.as_mut().expect("projection");
             projection.update_fidelity(&wire.fidelity)?;
@@ -719,7 +701,6 @@ impl ResponseDelivery {
                 )?;
             }
             if !self.managed_responses()
-                && !self.client.owner_replay()
                 && attempt
                     .response()?
                     .semantic
@@ -809,7 +790,6 @@ impl ResponseDelivery {
         }
         let managed = self.managed_responses();
         if !managed
-            && !self.client.owner_replay()
             && events.iter().any(|event| match event {
                 StreamEvent::PartReplay { .. } => true,
                 StreamEvent::ItemStarted {
@@ -830,11 +810,7 @@ impl ResponseDelivery {
         let wire_events: Vec<_> = events
             .iter()
             .filter_map(|event| {
-                if self.client.owner_replay() {
-                    Some(event.clone())
-                } else {
-                    crate::protocol::replay_projection::wire_event(event, &context.fidelity)
-                }
+                crate::protocol::replay_projection::wire_event(event, &context.fidelity)
             })
             .collect();
         self.projection
@@ -870,14 +846,9 @@ impl ResponseDelivery {
                         *item,
                         if matches!(kind, ItemKind::Message { .. }) {
                             "msg"
-                        } else if self.client.owner_replay()
-                            && matches!(kind, ItemKind::ToolCall { .. })
-                        {
-                            "fc"
                         } else {
                             "item"
                         },
-                        self.client.owner_replay(),
                     );
                     let context = Arc::make_mut(&mut context);
                     context.accounted_bytes = Default::default();
@@ -961,13 +932,7 @@ impl ResponseDelivery {
         ))?;
         let events = events
             .iter()
-            .filter_map(|event| {
-                if self.client.owner_replay() {
-                    Some(event.clone())
-                } else {
-                    crate::protocol::replay_projection::wire_event(event, fidelity)
-                }
-            })
+            .filter_map(|event| crate::protocol::replay_projection::wire_event(event, fidelity))
             .map(|event| {
                 super::replay::seal_event(
                     event,

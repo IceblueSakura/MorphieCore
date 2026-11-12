@@ -59,6 +59,113 @@ async fn bounded_history_service(
 }
 
 #[tokio::test]
+async fn stateless_standard_history_survives_a_fresh_gateway_without_stored_response() {
+    use axum::{Json, Router, routing::post};
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .unwrap();
+    for stream in [false, true] {
+        let seen = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let received = seen.clone();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let _upstream = super::Guard(tokio::spawn(async move {
+            axum::serve(listener, Router::new().route("/responses", post(move |Json(body): Json<Value>| {
+                let received = received.clone();
+                async move {
+                    let mut seen = received.lock().unwrap();
+                    assert_eq!(body["store"], false);
+                    assert!(body.get("previous_response_id").is_none());
+                    let first = seen.is_empty();
+                    seen.push(body);
+                    let output = if first {
+                        json!([
+                            {"id":"reason","type":"reasoning","status":"completed",
+                             "summary":[{"type":"summary_text","text":"Read the value"}],
+                             "encrypted_content":"synthetic-native-replay"},
+                            {"id":"call-item","type":"function_call","status":"completed",
+                             "call_id":"call-read","name":"read","arguments":"{ \"key\": \"A\" }"}
+                        ])
+                    } else {
+                        json!([{"id":"answer","type":"message","role":"assistant","status":"completed",
+                            "content":[{"type":"output_text","text":"value-A","annotations":[],"logprobs":[]}]}])
+                    };
+                    let wire = crate::responses_wire::response_stream(json!({
+                        "id":if first {"first"} else {"second"}, "object":"response","created_at":1,
+                        "model":"private-model","status":"completed","output":output,
+                        "reasoning":{"effort":"low","summary":"auto"},"service_tier":"auto"
+                    }));
+                    ([("content-type","text/event-stream")], wire)
+                }
+            }))).await.unwrap();
+        }));
+        let (base, shutdown, mut server) = bounded_history_service(&origin).await;
+        let mut body = json!({"model":"public-model","store":false,"stream":stream,
+            "input":[{"role":"user","content":"Read A"}],
+            "reasoning":{"effort":"low","summary":"auto"},"service_tier":"auto",
+            "include":["reasoning.encrypted_content"],"tools":[{"type":"function","name":"read",
+                "parameters":{"type":"object","properties":{"key":{"type":"string"}}},"strict":false}]});
+        let first = request(&client, &base, super::support::CLIENT_KEY, &body).await;
+        assert_eq!(
+            client
+                .get(format!(
+                    "{base}/responses/{}",
+                    first["id"].as_str().unwrap()
+                ))
+                .bearer_auth(super::support::CLIENT_KEY)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            404
+        );
+        assert!(
+            first["output"][0]["encrypted_content"]
+                .as_str()
+                .unwrap()
+                .starts_with("mc1.")
+        );
+        body["input"]
+            .as_array_mut()
+            .unwrap()
+            .extend(first["output"].as_array().unwrap().iter().cloned());
+        body["input"].as_array_mut().unwrap().push(json!({
+            "type":"function_call_output","call_id":"call-read","output":"value-A"
+        }));
+        shutdown.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(3), &mut server.0)
+            .await
+            .unwrap()
+            .unwrap();
+        let (base, shutdown, mut server) = bounded_history_service(&origin).await;
+        let second = request(&client, &base, super::support::CLIENT_KEY, &body).await;
+        assert_eq!(second["output"][0]["content"][0]["text"], "value-A");
+        {
+            let sent = seen.lock().unwrap();
+            assert_eq!(sent.len(), 2);
+            let input = sent[1]["input"].as_array().unwrap();
+            assert_eq!(input.len(), 4);
+            assert_eq!(input[1]["encrypted_content"], "synthetic-native-replay");
+            assert_eq!(input[2]["call_id"], "call-read");
+            assert_eq!(input[2]["arguments"], "{ \"key\": \"A\" }");
+            assert_eq!(
+                input[3],
+                json!({"type":"function_call_output","call_id":"call-read","output":"value-A"})
+            );
+        }
+        shutdown.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(3), &mut server.0)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+}
+
+#[tokio::test]
 async fn stored_history_capacity_delete_and_restart_release_without_hidden_dispatch() {
     use std::{
         sync::{

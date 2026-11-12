@@ -1,5 +1,5 @@
-//! Bounded account/target health and success-owned conversation preferences.
-//! Foreground probes are atomic; neither health nor affinity performs network I/O.
+//! Advisory cooldowns and bounded, success-updated conversation preferences.
+//! Selection follows configured order; no request owns a health probe or affinity slot.
 use crate::{
     gateway::{ApiError, BoundCandidate},
     provider::{RecoveryClass, RecoveryPolicy},
@@ -7,12 +7,11 @@ use crate::{
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, HashMap},
-    sync::{Arc, Mutex},
+    sync::Mutex,
     time::Duration,
 };
 use tokio::time::Instant;
 mod bindings;
-pub(in crate::gateway) use bindings::Commit as AffinityCommit;
 type Key = [u8; 32];
 
 /// Account identity excludes origin; target identity includes operation and model.
@@ -116,37 +115,22 @@ impl Cooling {
 }
 #[derive(Default)]
 struct Health {
-    generation: u64,
     failures: u32,
     last_failure: Option<Instant>,
     constraints: BTreeMap<Class, Cooling>,
-    probe: Option<u64>,
-    target_probes: usize,
     latest_material: Option<u64>,
 }
 struct State {
     health: HashMap<Key, Health>,
-    next_ticket: u64,
     affinity: bindings::Bindings,
 }
 pub(in crate::gateway) struct Executors {
-    state: Arc<Mutex<State>>,
+    state: Mutex<State>,
     policies: BTreeMap<String, RecoveryPolicy>,
     defaults: RecoveryPolicy,
 }
-pub(in crate::gateway) struct BindingObservation {
-    state: Arc<Mutex<State>>,
-    observed: bindings::Observed,
-}
-impl Drop for BindingObservation {
-    fn drop(&mut self) {
-        self.state
-            .lock()
-            .expect("executor state")
-            .affinity
-            .release(&self.observed);
-    }
-}
+#[derive(Clone, Copy)]
+pub(in crate::gateway) struct PreferenceKey(Key);
 impl Default for Executors {
     fn default() -> Self {
         let limits = crate::gateway::Limits::default();
@@ -173,20 +157,6 @@ fn blocking(
             continue;
         };
         let scope = if index == 0 { "account" } else { "target" };
-        if health.probe.is_some()
-            || (index == 0 && !health.constraints.is_empty() && health.target_probes > 0)
-        {
-            return Some((
-                None,
-                Observation {
-                    reason: "probing",
-                    scope,
-                    source: "probe",
-                    retry_after_seconds: None,
-                    rate_or_quota_only: false,
-                },
-            ));
-        }
         for (class, cooling) in &health.constraints {
             if cooling.until <= now || cooling.superseded(*class, health.latest_material) {
                 continue;
@@ -272,11 +242,10 @@ impl Executors {
         policies: BTreeMap<String, RecoveryPolicy>,
     ) -> Self {
         Self {
-            state: Arc::new(Mutex::new(State {
+            state: Mutex::new(State {
                 health: HashMap::new(),
-                next_ticket: 0,
                 affinity: bindings::Bindings::new(ttl, capacity),
-            })),
+            }),
             policies,
             defaults: RecoveryPolicy::default(),
         }
@@ -300,8 +269,7 @@ impl Executors {
         agent: Option<&str>,
         model: &str,
         conversation: Option<&str>,
-        now: Instant,
-    ) -> Option<BindingObservation> {
+    ) -> Option<PreferenceKey> {
         let (agent, conversation) = (agent?, conversation?);
         let mut hash = Sha256::new();
         hash.update(b"affinity.binding.v1");
@@ -309,28 +277,18 @@ impl Executors {
             hash.update((value.len() as u64).to_le_bytes());
             hash.update(value.as_bytes());
         }
-        let observed = self
-            .state
-            .lock()
-            .expect("executor state")
-            .affinity
-            .observe(hash.finalize().into(), now)?;
-        Some(BindingObservation {
-            state: self.state.clone(),
-            observed,
-        })
+        Some(PreferenceKey(hash.finalize().into()))
     }
     /// Only an existing binding can earn one pre-dispatch cooldown wait.
     pub(in crate::gateway) fn preferred_wait<T: AsRef<BoundCandidate>>(
         &self,
-        observation: Option<&BindingObservation>,
+        observation: Option<&PreferenceKey>,
         candidates: &[T],
         now: Instant,
         max_wait: Duration,
     ) -> Option<Instant> {
         let state = self.state.lock().expect("executor state");
-        let observed = observation.filter(|o| Arc::ptr_eq(&o.state, &self.state))?;
-        let preferred = state.affinity.preferred(&observed.observed, now)?;
+        let preferred = state.affinity.preferred(&observation?.0, now)?;
         let candidate = candidates
             .iter()
             .find(|c| c.as_ref().cache_scope().as_str() == preferred)?;
@@ -339,14 +297,12 @@ impl Executors {
     }
     pub(in crate::gateway) fn order<T: AsRef<BoundCandidate>>(
         &self,
-        observation: Option<&BindingObservation>,
+        observation: Option<&PreferenceKey>,
         candidates: &mut [T],
         now: Instant,
     ) -> &'static str {
         let state = self.state.lock().expect("executor state");
-        let preferred = observation
-            .filter(|o| Arc::ptr_eq(&o.state, &self.state))
-            .and_then(|o| state.affinity.preferred(&o.observed, now));
+        let preferred = observation.and_then(|key| state.affinity.preferred(&key.0, now));
         let cooling = |c: &T| blocked(&state, &c.as_ref().health, now).is_some();
         let affine = candidates
             .iter()
@@ -372,135 +328,42 @@ impl Executors {
     ) -> Option<Observation> {
         blocked(&self.state.lock().expect("executor state"), scopes, now)
     }
-    /// Expired or replaced-material constraints require one atomic foreground probe.
-    pub(in crate::gateway) fn acquire<'a>(
-        &'a self,
-        candidate: &'a BoundCandidate,
-        now: Instant,
-    ) -> Result<Lease<'a>, Observation> {
-        let mut state = self.state.lock().expect("executor state");
-        if let Some(observation) = blocked(&state, &candidate.health, now) {
-            return Err(observation);
-        }
-        state.next_ticket += 1;
-        let ticket = state.next_ticket;
-        let mut generations = [0; 2];
-        #[cfg(test)]
-        let mut probing = false;
-        let mut target_probe = false;
-        for (index, key) in candidate.health.0.iter().enumerate() {
-            let health = state.health.entry(*key).or_default();
-            generations[index] = health.generation;
-            if !health.constraints.is_empty() {
-                health.probe = Some(ticket);
-                #[cfg(test)]
-                {
-                    probing = true;
-                }
-                target_probe |= index == 1;
-            }
-        }
-        if target_probe {
-            state
-                .health
-                .get_mut(&candidate.health.0[0])
-                .expect("account scope")
-                .target_probes += 1;
-        }
-        Ok(Lease {
-            owner: self,
-            candidate,
-            ticket,
-            generations,
-            #[cfg(test)]
-            probing,
-            target_probe,
-            sent_material: Mutex::new(None),
-        })
-    }
-}
-/// Drop releases ownership only. Independently observed failures are resolved by the request owner.
-pub(in crate::gateway) struct Lease<'a> {
-    owner: &'a Executors,
-    candidate: &'a BoundCandidate,
-    ticket: u64,
-    generations: [u64; 2],
-    #[cfg(test)]
-    pub probing: bool,
-    target_probe: bool,
-    sent_material: Mutex<Option<u64>>,
-}
-impl Lease<'_> {
-    pub(in crate::gateway) fn sent_material(&self, revision: Option<u64>) {
-        *self.sent_material.lock().expect("sent material") = revision;
-        if let Some(revision) = revision {
-            self.owner
-                .verified_material(&self.candidate.health, revision);
-        }
-    }
+    /// Successful delivery updates an advisory preference. Live cooldowns survive
+    /// concurrent successes; verified replacement only releases old auth material.
     pub(in crate::gateway) fn completed(
         &self,
-        binding: Option<&BindingObservation>,
+        candidate: &BoundCandidate,
+        binding: Option<&PreferenceKey>,
         now: Instant,
-    ) -> (bool, AffinityCommit) {
-        let material = *self.sent_material.lock().expect("sent material");
-        let mut state = self.owner.state.lock().expect("executor state");
-        let fresh = self.candidate.health.0.iter().enumerate().all(|(i, key)| {
+    ) {
+        let mut state = self.state.lock().expect("executor state");
+        for key in &candidate.health.0 {
+            if let Some(health) = state.health.get_mut(key) {
+                health.constraints.retain(|class, cooling| {
+                    cooling.until > now && !cooling.superseded(*class, health.latest_material)
+                });
+                if health.constraints.is_empty() {
+                    health.failures = 0;
+                    health.last_failure = None;
+                }
+            }
+        }
+        if let Some(binding) = binding {
             state
-                .health
-                .get(key)
-                .is_some_and(|h| h.generation == self.generations[i])
-        });
-        if !fresh {
-            return (
-                false,
-                if binding.is_some() {
-                    AffinityCommit::Stale
-                } else {
-                    AffinityCommit::NotApplicable
-                },
-            );
+                .affinity
+                .commit(binding.0, candidate.cache_scope().as_str(), now);
         }
-        for key in &self.candidate.health.0 {
-            let health = state.health.get_mut(key).expect("acquired scope");
-            let before = health.constraints.len();
-            health.constraints.retain(|class, cooling| {
-                *class == Class::Auth
-                    && cooling.material_revision.is_some()
-                    && health
-                        .latest_material
-                        .is_some_and(|latest| material.is_none_or(|sent| sent < latest))
-            });
-            if health.constraints.len() != before {
-                health.generation += 1;
-            }
-            health.failures = 0;
-            health.last_failure = None;
-            if health.probe == Some(self.ticket) {
-                health.probe = None;
-            }
-        }
-        let affinity = match binding {
-            None => AffinityCommit::NotApplicable,
-            Some(binding) if Arc::ptr_eq(&binding.state, &self.owner.state) => {
-                state.affinity.commit(
-                    &binding.observed,
-                    self.candidate.cache_scope().as_str(),
-                    now,
-                )
-            }
-            Some(_) => AffinityCommit::Stale,
-        };
-        (true, affinity)
     }
     #[cfg(test)]
     pub(in crate::gateway) fn failed(
         &self,
+        candidate: &BoundCandidate,
         error: ApiError,
         at: Instant,
         material_revision: Option<u64>,
     ) -> Option<Observation> {
-        self.resolve_failures(
+        self.record_failures(
+            candidate,
             &[FailureObservation {
                 error,
                 at,
@@ -510,16 +373,17 @@ impl Lease<'_> {
         )
     }
     /// One backoff advance per affected scope, even when two attempts differ.
-    pub(in crate::gateway) fn resolve_failures(
+    pub(in crate::gateway) fn record_failures(
         &self,
+        candidate: &BoundCandidate,
         failures: &[FailureObservation],
         now: Instant,
     ) -> Option<Observation> {
-        let policy = self.owner.policy(self.candidate);
-        let mut state = self.owner.state.lock().expect("executor state");
+        let policy = self.policy(candidate);
+        let mut state = self.state.lock().expect("executor state");
         let mut result: Option<(Instant, Observation)> = None;
-        for (index, key) in self.candidate.health.0.iter().enumerate() {
-            let health = state.health.get_mut(key).expect("acquired scope");
+        for (index, key) in candidate.health.0.iter().enumerate() {
+            let health = state.health.entry(*key).or_default();
             let selected: Vec<_> = failures
                 .iter()
                 .filter_map(|failure| {
@@ -570,7 +434,6 @@ impl Lease<'_> {
                 }
                 health.constraints.insert(class, cooling);
             }
-            health.generation += 1;
             if let Some((_, cooling)) = health.constraints.iter().max_by_key(|(_, c)| c.until)
                 && result
                     .as_ref()
@@ -592,25 +455,6 @@ impl Lease<'_> {
             }
         }
         result.map(|(_, observation)| observation)
-    }
-}
-impl Drop for Lease<'_> {
-    fn drop(&mut self) {
-        let mut state = self.owner.state.lock().expect("executor state");
-        if self.target_probe {
-            state
-                .health
-                .get_mut(&self.candidate.health.0[0])
-                .expect("account scope")
-                .target_probes -= 1;
-        }
-        for key in &self.candidate.health.0 {
-            if let Some(h) = state.health.get_mut(key)
-                && h.probe == Some(self.ticket)
-            {
-                h.probe = None;
-            }
-        }
     }
 }
 #[cfg(test)]

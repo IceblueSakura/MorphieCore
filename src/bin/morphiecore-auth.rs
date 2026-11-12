@@ -452,6 +452,8 @@ fn print_human(value: &Value) {
         println!();
     }
 }
+#[path = "support/shutdown.rs"]
+mod shutdown;
 #[tokio::main]
 async fn main() -> ExitCode {
     let options = match Options::try_parse() {
@@ -469,7 +471,14 @@ async fn main() -> ExitCode {
         }
     };
     let json = options.json;
-    let result = tokio::select! {result=execute(options)=>result,_=tokio::signal::ctrl_c()=>Err(Error::Credential(CredentialError::Superseded))};
+    let shutdown = match shutdown::signal() {
+        Ok(signal) => signal,
+        Err(error) => {
+            eprintln!("Shutdown signal setup failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let result = tokio::select! {result=execute(options)=>result,_=shutdown=>Err(Error::Credential(CredentialError::Superseded))};
     match result {
         Ok(value) => {
             if json {

@@ -307,19 +307,20 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
             }
         }
         let candidate = &entry.candidates[0];
-        let probe = gate.state.executors.acquire(candidate, Instant::now());
-        if matches!(mode, "content" | "hint" | "inband" | "inbandhint" | "empty") {
+        let cooling = gate
+            .state
+            .executors
+            .unavailable(&candidate.health, Instant::now());
+        if matches!(
+            mode,
+            "content" | "hint" | "inband" | "inbandhint" | "empty" | "silent" | "lifecycle"
+        ) {
             assert!(
-                !probe.unwrap().probing,
-                "recovery success discards the first penalty"
-            );
-        } else if matches!(mode, "silent" | "lifecycle") {
-            assert!(
-                probe.unwrap().probing,
-                "expired first failure remains probe-gated: {mode}"
+                cooling.is_none(),
+                "successful or expired recovery is available: {mode}"
             );
         } else {
-            assert!(probe.is_err(), "first failure remains cooling: {mode}");
+            assert!(cooling.is_some(), "first failure remains cooling: {mode}");
         }
         gate.shutdown();
         server.abort();

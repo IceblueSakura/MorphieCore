@@ -142,7 +142,7 @@ fn stateless_clients_reject_hidden_signatures_without_fabricated_reasoning() {
             TargetContract::full(),
         ),
         ClientAdapter::openai(
-            GenerationCodec::new(GenerationApi::Chat, Dialect::ChatReasoning, None),
+            GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
             TargetContract::full(),
         ),
     ] {

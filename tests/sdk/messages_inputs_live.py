@@ -43,7 +43,7 @@ def private_json(path, value):
 
 class Gateway:
     def __init__(self, binary, directory, budget, *, model=MODEL, binding=BINDING,
-                 accounts, store, chat_profile=None, diagnostics=None):
+                 accounts, store, diagnostics=None):
         require(accounts.is_absolute() and store.is_absolute(), "explicit_account_paths")
         self.root = directory
         self.budget = budget
@@ -58,13 +58,10 @@ class Gateway:
             service["diagnostics"] = {"endpoint": diagnostics}
         private_json(directory / "gateway.json", service)
         candidate = {"binding": binding, "maximum_output_tokens": CAP}
-        if chat_profile is None:
-            candidate["default_output_tokens"] = None
+        candidate["default_output_tokens"] = None
         selection = {
             "total_timeout_ms": DEADLINE_MS,
             "candidates": [candidate]}
-        if chat_profile is not None:
-            selection["chat_profile"] = chat_profile
         private_json(directory / "models.json", {"version": 1, "models": {model: selection}})
         # Only the production loader opens the explicitly selected account/store.
         self.process = subprocess.Popen([str(binary), "--config", str(directory / "gateway.json")],

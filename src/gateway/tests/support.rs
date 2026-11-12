@@ -22,7 +22,6 @@ pub(in crate::gateway) fn gateway(limits: Limits) -> Gateway {
         crate::gateway::TaskEntries {
             generation: [ClientProtocol::Chat, ClientProtocol::Messages]
                 .map(|protocol| Entry {
-                    chat_profile: Default::default(),
                     model: "fixture-model".into(),
                     protocol,
                     endpoint: EndpointId::new("fixture-chat").unwrap(),

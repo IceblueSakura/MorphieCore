@@ -24,7 +24,7 @@ class OpenCodeSummaryOracles(unittest.TestCase):
         body["messages"] = [
             {"role": "user", "content": f"<conversation-checkpoint>\n<summary>{summary.SUMMARY}</summary>"},
             {"role": "user", "content": summary.AFTER},
-            {"role": "assistant", "reasoning_content": PLAN, "tool_calls": [{
+            {"role": "assistant", "tool_calls": [{
                 "id": CALL, "type": "function", "function": {
                     "name": "read", "arguments": json.dumps({"path": str(self.path)})}}]},
             {"role": "tool", "tool_call_id": CALL, "content": TEXT},

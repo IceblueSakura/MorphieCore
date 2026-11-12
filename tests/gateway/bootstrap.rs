@@ -525,8 +525,32 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
     );
     // No admitted request is issued: the synthetic key must never reach a Provider.
     assert_eq!(calls.load(Ordering::SeqCst), 0);
-    process.kill().await.unwrap();
-    process.wait().await.unwrap();
+    #[cfg(unix)]
+    {
+        assert_eq!(
+            unsafe { libc::kill(process.id().unwrap() as libc::pid_t, libc::SIGTERM) },
+            0
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_secs(3), process.wait())
+                .await
+                .unwrap()
+                .unwrap()
+                .success()
+        );
+        assert!(
+            client
+                .get(format!("{origin}/v1/models"))
+                .send()
+                .await
+                .is_err()
+        );
+    }
+    #[cfg(not(unix))]
+    {
+        process.kill().await.unwrap();
+        process.wait().await.unwrap();
+    }
 }
 #[tokio::test]
 async fn private_failure_context_reaches_otlp_with_trusted_identity_and_redacted_bodies() {

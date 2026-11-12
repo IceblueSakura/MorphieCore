@@ -9,7 +9,7 @@ use axum::{
     Json, Router, body::Body, extract::State, http::HeaderMap, response::Response, routing::post,
 };
 use morphiecore::{
-    gateway::{ChatProfile, Entry, Gateway, Limits, TaskEntries},
+    gateway::{Entry, Gateway, Limits, TaskEntries},
     protocol::openai::GenerationApi,
     provider::{SecretMaterial, TrustedOrigin},
     topology::{self, GenerationProtocol, catalog},
@@ -236,64 +236,27 @@ async fn answer(
         .unwrap()
 }
 pub async fn start(profile: GenerationApi, fallback: bool) -> Fixture {
-    start_with_recovery(profile, fallback, false, ChatProfile::Standard, false, None).await
+    start_with_recovery(profile, fallback, false, false, None).await
 }
 
 #[allow(dead_code)] // The explicit SDK gate owns the connected nine-direction exit.
 pub async fn start_ordinary(target: GenerationProtocol) -> Fixture {
-    start_with_recovery(
-        GenerationApi::Chat,
-        false,
-        false,
-        ChatProfile::Standard,
-        false,
-        Some(target),
-    )
-    .await
+    start_with_recovery(GenerationApi::Chat, false, false, false, Some(target)).await
 }
 
 pub async fn start_recovery() -> Fixture {
-    start_with_recovery(
-        GenerationApi::Chat,
-        false,
-        true,
-        ChatProfile::Standard,
-        false,
-        None,
-    )
-    .await
-}
-
-pub async fn start_readable() -> Fixture {
-    start_with_recovery(
-        GenerationApi::Chat,
-        false,
-        false,
-        ChatProfile::ReadableReasoning,
-        true,
-        None,
-    )
-    .await
+    start_with_recovery(GenerationApi::Chat, false, true, false, None).await
 }
 
 #[allow(dead_code)] // Only the Router target exercises thinking-off fallback.
 pub async fn start_required_history() -> Fixture {
-    start_with_recovery(
-        GenerationApi::Chat,
-        false,
-        false,
-        ChatProfile::Standard,
-        true,
-        None,
-    )
-    .await
+    start_with_recovery(GenerationApi::Chat, false, false, true, None).await
 }
 
 async fn start_with_recovery(
     profile: GenerationApi,
     fallback: bool,
     recover: bool,
-    chat_profile: ChatProfile,
     required_history: bool,
     ordinary: Option<GenerationProtocol>,
 ) -> Fixture {
@@ -321,7 +284,7 @@ async fn start_with_recovery(
     .with_state(StateData {
         profile,
         ordinary,
-        thinking_off: required_history && chat_profile == ChatProfile::Standard,
+        thinking_off: required_history,
         seen: seen.clone(),
         control: control.clone(),
         recovery: recovery.clone(),
@@ -369,7 +332,6 @@ async fn start_with_recovery(
                 .unwrap();
         route.endpoints.push(secondary.id.clone());
         entries.push(Entry {
-            chat_profile,
             model: label.into(),
             protocol: profile.into(),
             endpoint: secondary.id.clone(),
@@ -386,7 +348,6 @@ async fn start_with_recovery(
         contract: public.contract.clone(),
     };
     entries.push(Entry {
-        chat_profile,
         model: label.into(),
         protocol: profile.into(),
         endpoint: endpoint.id.clone(),
@@ -399,7 +360,6 @@ async fn start_with_recovery(
         ]
         .into_iter()
         .map(|protocol| Entry {
-            chat_profile,
             model: label.into(),
             protocol,
             endpoint: endpoint.id.clone(),
@@ -431,7 +391,6 @@ async fn start_with_recovery(
         secondary.credential = accounts.provider(provider.id.as_str())[1].binding_id();
         route.endpoints.push(secondary.id.clone());
         entries.push(Entry {
-            chat_profile,
             model: label.into(),
             protocol: profile.into(),
             endpoint: secondary.id.clone(),

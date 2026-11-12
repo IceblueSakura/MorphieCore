@@ -505,7 +505,7 @@ pub(in crate::protocol::openai) fn check_semantic(
                     return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
                 Item::ToolResult(result) => {
-                    if !matches!(result.output, ToolOutput::Text(_)) {
+                    if !result.output.is_text_only() {
                         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                     }
                 }

@@ -96,6 +96,7 @@ impl Gateway {
         self.state.shutdown.cancel();
         self.state.history.clear();
     }
+    /// Own one listener and its credential maintenance for this runtime.
     pub async fn serve(
         self,
         listener: TcpListener,
@@ -104,11 +105,6 @@ impl Gateway {
         if !listener.local_addr()?.ip().is_loopback() {
             return Err(std::io::Error::other("listener must be loopback"));
         }
-        let state = self.state.clone();
-        let _serving = state
-            .serving
-            .try_lock()
-            .map_err(|_| std::io::Error::other("gateway is already serving"))?;
         // Listener-future cancellation must also release detached body workers.
         let _owner = self.state.shutdown.clone().drop_guard();
         let router = self.router();
@@ -243,22 +239,6 @@ async fn admit(
     if protocol == ClientProtocol::Messages {
         admission::messages_version(request.headers())?;
     }
-    let mut profiles = request
-        .headers()
-        .get_all(crate::protocol::openai::responses::owner_replay::HEADER)
-        .iter();
-    let owner_replay = if let Some(profile) = profiles.next() {
-        if protocol != ClientProtocol::Responses
-            || profiles.next().is_some()
-            || profile.as_bytes()
-                != crate::protocol::openai::responses::owner_replay::PROFILE.as_bytes()
-        {
-            return Err(ApiError::invalid());
-        }
-        true
-    } else {
-        false
-    };
     let conversation = admission::conversation(request.headers())?;
     let bytes = read_body(
         state,
@@ -271,7 +251,7 @@ async fn admit(
     let (entry, request, history) = match protocol {
         ClientProtocol::Responses => {
             let (entry, request, history) =
-                admission::prepare_responses(state, &bytes, &trace.report, owner_replay)?;
+                admission::prepare_responses(state, &bytes, &trace.report)?;
             (entry, request, Some(Box::new(history)))
         }
         protocol => {

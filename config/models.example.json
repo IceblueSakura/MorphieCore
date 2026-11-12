@@ -2,7 +2,6 @@
   "version": 1,
   "models": {
     "qwen3.8-flash": {
-      "chat_profile": "readable_reasoning",
       "candidates": [
         {
           "binding": "aliyun-tokenplan-cn-chat"

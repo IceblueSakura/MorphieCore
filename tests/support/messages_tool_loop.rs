@@ -264,7 +264,6 @@ async fn start_with_recovery(recover: bool) -> Fixture {
                 .into_iter()
                 .flat_map(|protocol| {
                     candidate_ids.iter().map(move |endpoint| Entry {
-                        chat_profile: Default::default(),
                         model: binding.model.into(),
                         protocol,
                         endpoint: endpoint.clone(),

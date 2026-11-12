@@ -1,7 +1,7 @@
 //! Trusted synthetic topology shared by Router and explicit SDK gates.
 use crate::embedding_support;
 use morphiecore::{
-    gateway::{ChatProfile, Entry, Gateway, Limits},
+    gateway::{Entry, Gateway, Limits},
     protocol::openai::TargetContract as Contract,
     provider::{
         AuthScheme, CredentialBindingId, CredentialKind, EndpointPath, ProviderDefinition,
@@ -24,27 +24,17 @@ mod speech_support;
 pub const CLIENT_KEY: &str = "synthetic-gateway-client-token-0001";
 #[allow(dead_code)] // Shared SDK gates use this variant; the Router smoke selects embeddings.
 pub fn gateway(origin: &str, limits: Limits) -> Gateway {
-    bound_gateway(origin, limits, false, false, ChatProfile::Standard)
+    bound_gateway(origin, limits, false, false)
 }
 #[allow(dead_code)]
 pub fn gateway_with_embeddings(origin: &str, limits: Limits) -> Gateway {
-    bound_gateway(origin, limits, true, false, ChatProfile::Standard)
+    bound_gateway(origin, limits, true, false)
 }
 #[allow(dead_code)]
 pub fn gateway_with_messages(origin: &str, limits: Limits) -> Gateway {
-    bound_gateway(origin, limits, false, true, ChatProfile::Standard)
+    bound_gateway(origin, limits, false, true)
 }
-#[allow(dead_code)] // The explicit SDK gate owns signed Chat JSON/SSE history.
-pub fn gateway_with_readable_chat(origin: &str, limits: Limits) -> Gateway {
-    bound_gateway(origin, limits, false, false, ChatProfile::ReadableReasoning)
-}
-fn bound_gateway(
-    origin: &str,
-    limits: Limits,
-    embeddings: bool,
-    messages: bool,
-    chat_profile: ChatProfile,
-) -> Gateway {
+fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool) -> Gateway {
     let provider = ProviderDefinition {
         id: ProviderId::new("fixture").unwrap(),
         origin: TrustedOrigin::parse(origin).unwrap(),
@@ -227,25 +217,21 @@ fn bound_gateway(
     .unwrap();
     let entries = vec![
         Entry {
-            chat_profile,
             model: "public-model".into(),
             protocol: morphiecore::protocol::ClientProtocol::Chat,
             endpoint: EndpointId::new("chat").unwrap(),
         },
         Entry {
-            chat_profile: Default::default(),
             model: "public-model".into(),
             protocol: morphiecore::protocol::ClientProtocol::Responses,
             endpoint: EndpointId::new("responses").unwrap(),
         },
         Entry {
-            chat_profile: Default::default(),
             model: "cross-model".into(),
             protocol: morphiecore::protocol::ClientProtocol::Responses,
             endpoint: EndpointId::new("chat").unwrap(),
         },
         Entry {
-            chat_profile,
             model: "cross-model".into(),
             protocol: morphiecore::protocol::ClientProtocol::Chat,
             endpoint: EndpointId::new("responses").unwrap(),
@@ -255,7 +241,6 @@ fn bound_gateway(
     if messages {
         for (model, endpoint) in [("public-model", "responses"), ("cross-model", "chat")] {
             entries.push(Entry {
-                chat_profile: Default::default(),
                 model: model.into(),
                 protocol: morphiecore::protocol::ClientProtocol::Messages,
                 endpoint: EndpointId::new(endpoint).unwrap(),
@@ -263,7 +248,6 @@ fn bound_gateway(
         }
     }
     entries.push(Entry {
-        chat_profile: Default::default(),
         model: "no-files-model".into(),
         protocol: morphiecore::protocol::ClientProtocol::Responses,
         endpoint: EndpointId::new("responses").unwrap(),

@@ -380,78 +380,45 @@ fn chat_function_contract_distinguishes_omission_null_and_target_name_grammar() 
 }
 
 #[test]
-fn public_chat_profiles_keep_controls_and_returned_reasoning_explicit() {
+fn public_chat_discards_provider_controls_without_changing_tool_schemas() {
     let standard = adapter(GenerationApi::Chat);
-    let readable = GenerationCodec::new(GenerationApi::Chat, Dialect::ChatReasoning, None);
     let base = json!({"model":"public","messages":[{"role":"user","content":"go"}],
         "reasoning_effort":"low"});
-    for codec in [&standard, &readable] {
-        let original = codec
-            .decode_client_request(base.to_string().as_bytes())
-            .unwrap()
-            .task;
-        for field in ["enable_thinking", "thinking_budget", "top_k"] {
-            for value in [Value::Null, json!(false), json!(32)] {
-                let mut body = base.clone();
-                body[field] = value;
-                assert_eq!(
-                    codec
-                        .decode_client_request(body.to_string().as_bytes())
-                        .unwrap()
-                        .task,
-                    original
-                );
-            }
+    let original = standard
+        .decode_client_request(base.to_string().as_bytes())
+        .unwrap()
+        .task;
+    for field in [
+        "enable_thinking",
+        "thinking_budget",
+        "top_k",
+        "preserve_thinking",
+    ] {
+        for value in [Value::Null, json!(false), json!(32)] {
+            let mut body = base.clone();
+            body[field] = value;
+            assert_eq!(
+                standard
+                    .decode_client_request(body.to_string().as_bytes())
+                    .unwrap()
+                    .task,
+                original
+            );
         }
-        let mut body = base.clone();
-        body["unknown_extension"] = json!({"reasoning_content":"not history"});
-        // Tool schema properties are not protocol controls.
-        body["tools"] = json!([{"type":"function","function":{"name":"inspect",
-            "parameters":{"type":"object","properties":{"enable_thinking":{"type":"boolean"}}},
-            "strict":false}}]);
-        codec
-            .decode_client_request(body.to_string().as_bytes())
-            .unwrap();
     }
-    let mut body = base.clone();
-    body["preserve_thinking"] = json!(false);
-    assert!(
-        standard
-            .decode_client_request(body.to_string().as_bytes())
-            .is_ok()
-    );
-    let decoded = readable
+    let mut body = base;
+    body["tools"] = json!([{"type":"function","function":{"name":"inspect",
+        "parameters":{"type":"object","properties":{"enable_thinking":{"type":"boolean"}}},
+        "strict":false}}]);
+    let request = standard
         .decode_client_request(body.to_string().as_bytes())
         .unwrap();
-    assert_eq!(decoded.task.semantic.reasoning().read_history, Some(false));
-    body["messages"] = json!([
-        {"role":"assistant","content":"answer","reasoning_content":"Plan 🧪"},
-        {"role":"user","content":"next"}]);
-    let decoded = readable
-        .decode_client_request(body.to_string().as_bytes())
-        .unwrap();
-    let [(_, Item::Reasoning(reasoning)), ..] = decoded.task.semantic.items() else {
-        panic!("missing reasoning owner");
+    let ToolDefinition::Function(tool) = &request.task.semantic.tools()[0] else {
+        panic!("function");
     };
-    assert_eq!(reasoning.parts.len(), 1);
-    assert!(
-        matches!(&reasoning.parts[0].1, ReasoningContent::Text(text) if text.as_str() == "Plan 🧪")
-    );
-    assert!(reasoning.replay.is_none());
-    for field in ["reasoning", "reasoning_details"] {
-        body["messages"][0][field] = Value::Null;
-        assert!(
-            readable
-                .decode_client_request(body.to_string().as_bytes())
-                .is_ok()
-        );
-        body["messages"][0].as_object_mut().unwrap().remove(field);
-    }
-    body.as_object_mut().unwrap().remove("preserve_thinking");
-    assert!(
-        standard
-            .decode_client_request(body.to_string().as_bytes())
-            .is_ok()
+    assert_eq!(
+        tool.parameters.as_ref().unwrap().root()["properties"]["enable_thinking"]["type"],
+        "boolean"
     );
 }
 

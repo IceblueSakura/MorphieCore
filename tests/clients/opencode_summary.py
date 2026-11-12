@@ -62,7 +62,7 @@ def assert_rebuilt(body, phase, path):
           and "<summary>" in checkpoint and READ not in text(history)
           and AFTER in text(history[1]["content"]), "opencode_rebuilt_checkpoint")
     if phase == "rebuilt-feedback":
-        check(history[2]["reasoning_content"] == PLAN, "opencode_rebuilt_reasoning")
+        check("reasoning_content" not in history[2], "opencode_rebuilt_standard_history")
         calls = history[2]["tool_calls"]
         check(len(calls) == 1 and calls[0]["id"] == CALL
               and calls[0]["function"]["name"] == "read"

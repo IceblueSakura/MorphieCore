@@ -155,17 +155,13 @@ impl CredentialManager {
     ) -> Result<ApiKeyStatus, Error> {
         valid_profile(domain)?;
         valid_alias(alias)?;
-        // Hold the key-store transaction while bounding/creating a new domain.
-        {
-            let tx = self.keys.transaction()?;
-            let domains = tx.namespaces()?;
-            if !domains.iter().any(|d| d == domain) && domains.len() >= 64 {
-                return Err(Error::Capacity);
-            }
-            tx.ensure_namespace(domain)?;
-        }
-        let _lock = self.keys.account_lock(domain, alias)?;
+        // Key mutations have no network phase; one store transaction owns the update.
         let tx = self.keys.transaction()?;
+        let domains = tx.namespaces()?;
+        if !domains.iter().any(|d| d == domain) && domains.len() >= 64 {
+            return Err(Error::Capacity);
+        }
+        tx.ensure_namespace(domain)?;
         let (existing, recovery) = tx.load_key(domain, alias)?;
         if recovery {
             return Err(Error::PersistenceUncertain);
@@ -231,7 +227,6 @@ impl CredentialManager {
         alias: &str,
         revision: u64,
     ) -> Result<ApiKeyStatus, Error> {
-        let _lock = self.existing_key_lock(domain, alias)?;
         let tx = self.keys.transaction()?;
         let (record, recovery) = tx.load_key(domain, alias)?;
         if record.is_none() && recovery && revision == 0 {
@@ -260,20 +255,6 @@ impl CredentialManager {
             },
         )
     }
-    fn existing_key_lock(
-        &self,
-        domain: &str,
-        alias: &str,
-    ) -> Result<crate::credential::storage::fs::FileLock, Error> {
-        {
-            let tx = self.keys.transaction()?;
-            let (record, recovery) = tx.load_key(domain, alias)?;
-            if record.is_none() && !recovery {
-                return Err(Error::KeyUnavailable);
-            }
-        }
-        self.keys.account_lock(domain, alias)
-    }
     fn mutate_key(
         &self,
         domain: &str,
@@ -281,7 +262,6 @@ impl CredentialManager {
         revision: u64,
         change: impl FnOnce(&mut KeyRecord, bool) -> Result<(), Error>,
     ) -> Result<ApiKeyStatus, Error> {
-        let _lock = self.existing_key_lock(domain, alias)?;
         let tx = self.keys.transaction()?;
         let (record, recovery) = tx.load_key(domain, alias)?;
         update(&tx, domain, alias, revision, record, recovery, change)

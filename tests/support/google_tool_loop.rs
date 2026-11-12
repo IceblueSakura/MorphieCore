@@ -208,7 +208,6 @@ async fn start_with(profile: GenerationApi, api: Api, messages: bool, strict: bo
         topology,
         TaskEntries {
             generation: vec![Entry {
-                chat_profile: Default::default(),
                 model: binding.model.into(),
                 protocol: if messages {
                     ClientProtocol::Messages

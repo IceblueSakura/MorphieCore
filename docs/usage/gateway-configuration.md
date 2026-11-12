@@ -30,7 +30,7 @@ The repository's [`config/`](../../config/) directory contains public templates,
 | [`gateway.example.json`](../../config/gateway.example.json) | All current service fields, default 50 ms / 16 KiB coalescing, disabled failure diagnostics |
 | [`auth.example.json`](../../config/auth.example.json) | Two independent Agent identities with deliberately too-short key placeholders; the unchanged file cannot start a gateway |
 | [`accounts.example.json`](../../config/accounts.example.json) | Ordered named API-key accounts referencing protected credential aliases, independently of model activation |
-| [`models.example.json`](../../config/models.example.json) | Narrow starting point: Qwen 3.8 Flash through the Token Plan Chat binding with readable Chat reasoning |
+| [`models.example.json`](../../config/models.example.json) | Narrow starting point: Qwen 3.8 Flash through the Token Plan Chat binding with standard Chat delivery |
 | [`models.advanced.example.json`](../../config/models.advanced.example.json) | Optional Generation controls: Messages/Google bindings, output limits, inherited-default clearing and both numeric thinking conversions |
 | [`models.tasks.example.json`](../../config/models.tasks.example.json) | Optional existing Embedding, Images, Speech and explicit Transcription binding selection, without Generation overrides |
 | [`nginx.example.conf`](../../config/nginx.example.conf) | Optional TLS virtual host, gzip SSE, proxy safety controls and example pre-authentication connection/upload limits; include from `http {}` |
@@ -179,7 +179,6 @@ Use `morphiecore --catalog` to select a registered public label and its catalog 
 |---|---|---|
 | File | `version` | Required current schema version, `1` |
 | Model | `candidates` | Nonempty ordered array of existing bindings for this public model |
-| Model | `chat_profile` | `standard` (default) or `readable_reasoning`; selects the downstream Chat contract for all candidates, never an upstream dialect. Responses/Messages remain unchanged; invalid on frozen tasks |
 | Model | `total_timeout_ms` | Optional model-local total deadline from the same request start, bounded by the service ceiling; route resolution cannot restart the clock |
 | Standalone task | `account` | Required enabled API-key account name in the selected binding's Provider |
 | Model | `thinking_tokens` | Optional six-level numeric table shared by this model's candidates |

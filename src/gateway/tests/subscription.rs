@@ -81,11 +81,15 @@ async fn consume(
     http.extensions_mut().insert(agent);
     let trace = diagnostics::Trace::for_request(None, &http);
     let earlier = tokio::time::Instant::now() - Duration::from_secs(2);
-    let prior = gate.state.executors.acquire(&candidate, earlier).unwrap();
-    prior
-        .failed(ApiError::failure(503, b"", Some(1)), earlier, None)
+    gate.state
+        .executors
+        .failed(
+            &candidate,
+            ApiError::failure(503, b"", Some(1)),
+            earlier,
+            None,
+        )
         .unwrap();
-    drop(prior);
     let mut builder = axum::http::Response::builder().status(200);
     for media in media {
         builder = builder.header(
@@ -144,21 +148,12 @@ async fn consume(
     .await
     .expect("bounded synthetic response consumption");
     if delivered.is_some() {
-        let later = tokio::time::Instant::now() + Duration::from_secs(3600);
-        let next = gate.state.executors.acquire(&candidate, later).unwrap();
-        assert_eq!(
-            next.probing, !eligible,
-            "only validated successful tasks recover health"
-        );
-        assert!(next.completed(None, later).0);
-        drop(next);
         let mut choices = [candidate];
         let now = tokio::time::Instant::now();
         let binding = gate.state.executors.observe(
             Some("fixture-agent"),
             "fixture-model",
             Some("synthetic-subscription"),
-            now,
         );
         let order = gate
             .state

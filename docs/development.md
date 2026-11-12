@@ -22,14 +22,14 @@ Acceptance notes are temporary development material. Keep the overall result and
 
 ## Overall acceptance status
 
-The Generation baseline has met the selected [partial-delivery exit](roadmap/index.md#partial-delivery-exit). Offline regression, connected SDK checks, isolated pi/OpenCode workflows and representative real Provider workflows support that delivery. Remaining qualification and production preparation stay within the [roadmap boundaries](roadmap/index.md#current-status).
+The Generation baseline has met the selected [partial-delivery exit](roadmap/index.md#partial-delivery-exit). The standard-only contract and simplified coordination pass offline regression, connected SDK checks and isolated current pi/OpenCode workflows. Representative real Provider evidence remains applicable only to unchanged contracts; standard-only real workflows and OAuth primary-path qualification stay in the [issue register](roadmap/unscheduled-issues.md#unscheduled-issues).
 
 | Area | Overall status |
 |---|---|
-| Generation protocols | Selected Chat, Responses and Messages request, JSON/SSE delivery, tools, reasoning and history paths are accepted. Google remains an upstream-only integration within its selected scope |
+| Generation protocols | Standard Chat, Responses and Messages request, JSON/SSE, tools and native reasoning/history paths are supported, including stateless Responses across a fresh runtime. Google remains upstream-only; ordinary signatures without a standard stateless carrier reject explicitly |
 | Agent workflows | Principal pi/OpenCode tool, coding/repair, recall, summary, session and cancellation/recovery workflows are accepted. Client-specific and Provider-specific qualifications remain in the roadmap |
 | Protocol integration | Independent directional checks, pinned upstream fixtures, strict SDK consumers and complete continuation histories are integrated |
-| Runtime and credentials | Selected retry/publication, cancellation, bounds, affinity, credential isolation, OAuth renewal and pending-verification recovery behavior is covered |
+| Runtime and credentials | Ordered routing with advisory cooldowns/preferences, bounded retry/publication, credential isolation, OAuth renewal and pending-verification recovery are covered; API-key updates use one transaction and Unix binaries handle SIGINT/SIGTERM |
 | Diagnostics | Application-side failure Logs, bounded private context, redaction and non-blocking lifecycle are delivered. Production receiver, persistence, access and retention remain unselected |
 | Embeddings | Independent text Embedding execution and selected float/Base64 and accounting conversions are accepted |
 | Stage 4 | Static image/audio paths provide a starting point; per-operation contracts, resource lifecycles and affected acceptance remain to be completed |

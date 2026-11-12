@@ -98,14 +98,14 @@ def assert_history(body, phase, native, path, *, profile=True):
         history = [m for m in body["messages"] if m["role"] != "system"]
         check([m["role"] for m in history] == (["user", "assistant", "tool"] if phase == 2 else
               ["user", "assistant", "tool", "assistant", "user"]), "chat_history_roles")
-        check(history[1]["reasoning_content"] == PLAN, "chat_readable_reasoning")
+        check(history[1].get("reasoning_content") in (None, ""), "chat_standard_history")
         calls = history[1]["tool_calls"]
         check(len(calls) == 1 and calls[0]["id"] == CALL and calls[0]["function"]["name"] == "read",
               "chat_tool_call_identity")
         check(json.loads(calls[0]["function"]["arguments"]) == {"path": str(path)}, "chat_tool_call_arguments")
         check(history[2]["tool_call_id"] == CALL and TEXT in text(history[2]["content"]), "chat_tool_result")
         if phase == 3:
-            check(history[3]["content"] == TEXT and history[3]["reasoning_content"] == "Synthetic final check",
+            check(history[3]["content"] == TEXT and history[3].get("reasoning_content") in (None, ""),
                   "chat_final_history")
 
 

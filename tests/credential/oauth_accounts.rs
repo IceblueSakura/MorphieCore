@@ -704,104 +704,106 @@ async fn browser_login_accepts_callback_urls_from_stdin_or_http() {
 }
 
 #[tokio::test]
-async fn binary_browser_callback_and_ctrl_c_are_owned_without_authority_traffic() {
+async fn binary_browser_callback_and_shutdown_are_owned_without_authority_traffic() {
     use std::process::Stdio;
     use tokio::{
         io::{AsyncBufReadExt, AsyncReadExt, BufReader},
         net::TcpListener,
     };
-    let dir = fixture();
-    let store = dir.path.join("sessions");
-    declare(&store, "grok", "personal");
-    let egress = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let proxy = format!("http://{}", egress.local_addr().unwrap());
-    let mut child = Command::new(env!("CARGO_BIN_EXE_morphiecore-auth"))
-        .args([
-            "login",
-            "--provider",
-            "grok",
-            "--account",
-            "personal",
-            "--method",
-            "browser",
-            "--callback-port",
-            "0",
-            "--store",
-        ])
-        .arg(&store)
-        .arg("--accounts")
-        .arg(store.parent().unwrap().join("accounts.json"))
-        .args(["--proxy", &proxy])
-        .env_clear()
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
-    let mut stderr = BufReader::new(child.stderr.take().unwrap().take(8192));
-    let mut authorization = None;
-    let redirect = timeout(Duration::from_secs(5), async {
-        for _ in 0..4 {
-            let mut line = String::new();
-            assert!(stderr.read_line(&mut line).await.unwrap() > 0);
-            if line.starts_with("https://auth.x.ai/") {
-                authorization = Some(url::Url::parse(line.trim()).unwrap());
+    for signal in [libc::SIGINT, libc::SIGTERM] {
+        let dir = fixture();
+        let store = dir.path.join("sessions");
+        declare(&store, "grok", "personal");
+        let egress = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy = format!("http://{}", egress.local_addr().unwrap());
+        let mut child = Command::new(env!("CARGO_BIN_EXE_morphiecore-auth"))
+            .args([
+                "login",
+                "--provider",
+                "grok",
+                "--account",
+                "personal",
+                "--method",
+                "browser",
+                "--callback-port",
+                "0",
+                "--store",
+            ])
+            .arg(&store)
+            .arg("--accounts")
+            .arg(store.parent().unwrap().join("accounts.json"))
+            .args(["--proxy", &proxy])
+            .env_clear()
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let mut stderr = BufReader::new(child.stderr.take().unwrap().take(8192));
+        let mut authorization = None;
+        let redirect = timeout(Duration::from_secs(5), async {
+            for _ in 0..4 {
+                let mut line = String::new();
+                assert!(stderr.read_line(&mut line).await.unwrap() > 0);
+                if line.starts_with("https://auth.x.ai/") {
+                    authorization = Some(url::Url::parse(line.trim()).unwrap());
+                }
+                if let Some(uri) = line.strip_prefix("Callback: ") {
+                    return uri.trim().to_owned();
+                }
             }
-            if let Some(uri) = line.strip_prefix("Callback: ") {
-                return uri.trim().to_owned();
-            }
-        }
-        panic!("browser callback prompt missing");
-    })
-    .await
-    .unwrap();
-    let authorization = authorization.unwrap();
-    let fields: std::collections::BTreeMap<_, _> =
-        authorization.query_pairs().into_owned().collect();
-    assert_eq!(fields["client_id"], "b1a00492-073a-47ea-816f-4c329264a828");
-    assert_eq!(fields["referrer"], "grok-build");
-    assert_eq!(
-        fields["scope"],
-        "openid profile email offline_access grok-cli:access api:access"
-    );
-    let uri = url::Url::parse(&redirect).unwrap();
-    assert_eq!(uri.scheme(), "http");
-    assert_eq!(uri.host_str(), Some("127.0.0.1"));
-    assert_eq!(uri.path(), "/callback");
-    let address = std::net::SocketAddr::from(([127, 0, 0, 1], uri.port().unwrap()));
-    let response = reqwest::Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(2))
-        .build()
-        .unwrap()
-        .get(format!("{redirect}?state=unrelated&error=access_denied"))
-        .send()
+            panic!("browser callback prompt missing");
+        })
         .await
         .unwrap();
-    assert_eq!(response.status(), 400);
-    assert!(child.try_wait().unwrap().is_none());
-    // This PID belongs to the child above; kill_on_drop is the failure-path guard.
-    assert_eq!(
-        unsafe { libc::kill(child.id().unwrap() as libc::pid_t, libc::SIGINT) },
-        0
-    );
-    assert!(
-        !timeout(Duration::from_secs(5), child.wait())
-            .await
+        let authorization = authorization.unwrap();
+        let fields: std::collections::BTreeMap<_, _> =
+            authorization.query_pairs().into_owned().collect();
+        assert_eq!(fields["client_id"], "b1a00492-073a-47ea-816f-4c329264a828");
+        assert_eq!(fields["referrer"], "grok-build");
+        assert_eq!(
+            fields["scope"],
+            "openid profile email offline_access grok-cli:access api:access"
+        );
+        let uri = url::Url::parse(&redirect).unwrap();
+        assert_eq!(uri.scheme(), "http");
+        assert_eq!(uri.host_str(), Some("127.0.0.1"));
+        assert_eq!(uri.path(), "/callback");
+        let address = std::net::SocketAddr::from(([127, 0, 0, 1], uri.port().unwrap()));
+        let response = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(2))
+            .build()
             .unwrap()
-            .unwrap()
-            .success()
-    );
-    let account = read(&store, "grok", "personal");
-    assert!(account["login_attempt"].is_null());
-    assert!(account["credential"].is_null());
-    assert_eq!(account["state"], "signed_out");
-    drop(TcpListener::bind(address).await.unwrap());
-    assert!(
-        timeout(Duration::from_millis(20), egress.accept())
+            .get(format!("{redirect}?state=unrelated&error=access_denied"))
+            .send()
             .await
-            .is_err()
-    );
+            .unwrap();
+        assert_eq!(response.status(), 400);
+        assert!(child.try_wait().unwrap().is_none());
+        // This PID belongs to the child above; kill_on_drop is the failure-path guard.
+        assert_eq!(
+            unsafe { libc::kill(child.id().unwrap() as libc::pid_t, signal) },
+            0
+        );
+        assert!(
+            !timeout(Duration::from_secs(5), child.wait())
+                .await
+                .unwrap()
+                .unwrap()
+                .success()
+        );
+        let account = read(&store, "grok", "personal");
+        assert!(account["login_attempt"].is_null());
+        assert!(account["credential"].is_null());
+        assert_eq!(account["state"], "signed_out");
+        drop(TcpListener::bind(address).await.unwrap());
+        assert!(
+            timeout(Duration::from_millis(20), egress.accept())
+                .await
+                .is_err()
+        );
+    }
 }

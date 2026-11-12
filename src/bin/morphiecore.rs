@@ -2,6 +2,8 @@
 use clap::Parser;
 use morphiecore::credential::{CredentialError, default_config_directory};
 use morphiecore::gateway::startup::bootstrap::Bootstrap;
+#[path = "support/shutdown.rs"]
+mod shutdown;
 #[derive(Parser)]
 struct Options {
     /// Validate through production construction without listening or starting maintenance.
@@ -105,6 +107,13 @@ async fn main() -> std::process::ExitCode {
             return std::process::ExitCode::FAILURE;
         }
     };
+    let shutdown = match shutdown::signal() {
+        Ok(signal) => signal,
+        Err(error) => {
+            eprintln!("Shutdown signal setup failed: {error}");
+            return std::process::ExitCode::FAILURE;
+        }
+    };
     let listener = match tokio::net::TcpListener::bind(bootstrap.listen).await {
         Ok(value) => value,
         Err(error) => {
@@ -115,9 +124,6 @@ async fn main() -> std::process::ExitCode {
     if let Ok(address) = listener.local_addr() {
         println!("MorphieCore listening on http://{address}");
     }
-    let shutdown = async {
-        let _ = tokio::signal::ctrl_c().await;
-    };
     let owner = bootstrap.gateway.clone();
     let result = bootstrap.gateway.serve(listener, shutdown).await;
     owner.flush_diagnostics().await;

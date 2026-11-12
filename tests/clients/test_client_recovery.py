@@ -101,14 +101,13 @@ class ClientRecoveryOracles(unittest.TestCase):
     def chat(self, final=False):
         history = [
             {"role": "user", "content": recovery.READ},
-            {"role": "assistant", "content": None, "reasoning_content": recovery.PLAN,
+            {"role": "assistant", "content": None,
              "tool_calls": [{"id": recovery.CALL, "type": "function", "function": {
                  "name": "read", "arguments": json.dumps({"path": str(self.path)})}}]},
             {"role": "tool", "tool_call_id": recovery.CALL, "content": recovery.TEXT},
         ]
         if final:
-            history.extend([{"role": "assistant", "content": recovery.TEXT,
-                             "reasoning_content": "Synthetic final check"},
+            history.extend([{"role": "assistant", "content": recovery.TEXT},
                             {"role": "user", "content": recovery.NEXT}])
         return {"model": "qwen3.8-flash", "stream": True, "max_completion_tokens": 2048,
                 "reasoning_effort": "low", "tools": [{"type": "function", "function": {
@@ -147,7 +146,7 @@ class ClientRecoveryOracles(unittest.TestCase):
     def test_history_failures_reach_the_intended_oracle(self):
         for native, original, cases in [
             (False, self.chat(), [
-                (("messages", 1, "reasoning_content"), "changed", "chat_readable_reasoning"),
+                (("messages", 1, "reasoning_content"), "changed", "chat_standard_history"),
                 (("messages", 2, "tool_call_id"), "changed", "chat_tool_result"),
                 (("messages", 1, "tool_calls", 0, "function", "arguments"), '{}', "chat_tool_call_arguments"),
             ]),

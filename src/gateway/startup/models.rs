@@ -1,9 +1,6 @@
 //! Explicit model contracts over account-bound catalog targets.
 use super::{
-    entries::{
-        ChatProfile, EmbeddingEntry, Entry, ImageEntry, SpeechEntry, TaskEntries,
-        TranscriptionEntry,
-    },
+    entries::{EmbeddingEntry, Entry, ImageEntry, SpeechEntry, TaskEntries, TranscriptionEntry},
     error::StartupError,
 };
 use crate::{
@@ -40,8 +37,6 @@ pub(super) struct Model {
     total_timeout_ms: Option<u64>,
     #[serde(default, deserialize_with = "crate::configuration::optional")]
     thinking_tokens: Option<ThinkingTokens>,
-    #[serde(default, deserialize_with = "crate::configuration::optional")]
-    chat_profile: Option<ChatProfile>,
 }
 
 #[derive(Deserialize)]
@@ -128,7 +123,6 @@ impl Models {
                 if config.candidates.is_some()
                     || config.total_timeout_ms.is_some()
                     || config.thinking_tokens.is_some()
-                    || config.chat_profile.is_some()
                 {
                     return Err(invalid());
                 }
@@ -342,8 +336,6 @@ impl Models {
                         } else {
                             "configured"
                         });
-                    described["chat_profile"] =
-                        serde_json::json!(format!("{:?}", config.chat_profile.unwrap_or_default()));
                     described["model_timeout_ms"] = serde_json::json!(config.total_timeout_ms);
                     explanation.push(described);
                     if !account.enabled {
@@ -372,11 +364,6 @@ impl Models {
                         .extend(ClientProtocol::ALL.map(|protocol| Entry {
                             model: label.clone(),
                             protocol,
-                            chat_profile: if protocol == ClientProtocol::Chat {
-                                config.chat_profile.unwrap_or_default()
-                            } else {
-                                ChatProfile::Standard
-                            },
                             endpoint: endpoint.id.clone(),
                         }));
                     endpoints.push((endpoint, provider));

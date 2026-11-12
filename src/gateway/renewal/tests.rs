@@ -248,15 +248,18 @@ async fn duplicate_bindings_renew_without_requests_and_short_grants_are_rate_bou
         .clone();
     candidate.secret = crate::gateway::startup::credentials::Source::Account(binding.clone());
     let now = tokio::time::Instant::now();
-    let stale = gate.state.executors.acquire(&candidate, now).unwrap();
-    let failure = gate.state.executors.acquire(&candidate, now).unwrap();
-    failure.failed(
+    gate.state.executors.failed(
+        &candidate,
         crate::gateway::ApiError::failure(401, b"", None),
         now,
         Some(original_material),
     );
-    drop(failure);
-    assert!(gate.state.executors.acquire(&candidate, now).is_err());
+    assert!(
+        gate.state
+            .executors
+            .unavailable(&candidate.health, now)
+            .is_some()
+    );
     let mut maintenance = Box::pin(gate.renew_credentials());
     scan_maintenance(&gate, &mut maintenance).await;
     assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -281,36 +284,30 @@ async fn duplicate_bindings_renew_without_requests_and_short_grants_are_rate_bou
     gate.state
         .executors
         .verified_material(&candidate.health, revision);
-    let probe = gate
-        .state
-        .executors
-        .acquire(&candidate, tokio::time::Instant::now())
-        .unwrap();
-    assert!(probe.probing);
     assert!(
         gate.state
             .executors
-            .acquire(&candidate, tokio::time::Instant::now())
-            .is_err()
+            .unavailable(&candidate.health, tokio::time::Instant::now())
+            .is_none()
     );
-    drop(probe);
-    stale.failed(
+    gate.state.executors.failed(
+        &candidate,
         crate::gateway::ApiError::failure(401, b"", None),
         tokio::time::Instant::now(),
         Some(original_material),
     );
-    drop(stale);
-    let probe = gate
-        .state
-        .executors
-        .acquire(&candidate, tokio::time::Instant::now())
-        .unwrap();
-    probe.failed(
+    assert!(
+        gate.state
+            .executors
+            .unavailable(&candidate.health, tokio::time::Instant::now())
+            .is_none()
+    );
+    gate.state.executors.failed(
+        &candidate,
         crate::gateway::ApiError::failure(402, b"", None),
         tokio::time::Instant::now(),
         Some(revision),
     );
-    drop(probe);
     // Another durable rotation cannot release independent account quota.
     manager.refresh("synthetic", "one").await.unwrap();
     let revision = candidate
@@ -325,8 +322,8 @@ async fn duplicate_bindings_renew_without_requests_and_short_grants_are_rate_bou
     assert!(
         gate.state
             .executors
-            .acquire(&candidate, tokio::time::Instant::now())
-            .is_err()
+            .unavailable(&candidate.health, tokio::time::Instant::now())
+            .is_some()
     );
     assert_eq!(calls.load(Ordering::SeqCst), 2);
     tokio::time::advance(std::time::Duration::from_secs(45)).await;
@@ -390,15 +387,6 @@ async fn listener_cancellation_stops_inflight_renewal_without_reusing_consumed_m
         tokio::time::timeout(std::time::Duration::from_secs(2), entered.notified())
             .await
             .unwrap();
-        let duplicate_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        assert!(
-            owner
-                .clone()
-                .serve(duplicate_listener, std::future::pending())
-                .await
-                .is_err()
-        );
-        assert!(!owner.state.shutdown.is_cancelled());
         if graceful {
             owner.shutdown();
             server.await.unwrap().unwrap();

@@ -198,7 +198,6 @@ fn gateway(origin: &str, profile: GenerationApi, dialect: Dialect) -> Gateway {
         topology,
         crate::gateway::TaskEntries {
             generation: vec![Entry {
-                chat_profile: Default::default(),
                 model: "public".into(),
                 protocol: profile.into(),
                 endpoint: EndpointId::new("endpoint").unwrap(),
@@ -348,7 +347,7 @@ async fn final_handoff_settles_recovery_and_affinity_before_consumer_drop() {
             let binding =
                 gate.state
                     .executors
-                    .observe(Some("fixture-agent"), "public", Some("session"), now);
+                    .observe(Some("fixture-agent"), "public", Some("session"));
             assert_eq!(
                 gate.state
                     .executors

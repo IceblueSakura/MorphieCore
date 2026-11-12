@@ -908,7 +908,7 @@ impl<'a> Target<'a> {
                         Item::ToolCall(call) if !call.context.is_direct() => {
                             table.set(Feature::Tools, Disposition::Reject("the selected tool-call carrier cannot preserve this call context"));
                         }
-                        Item::ToolResult(result) if !matches!(result.output, ToolOutput::Text(_)) => {
+                        Item::ToolResult(result) if !result.output.is_text_only() => {
                             table.set(Feature::Tools, Disposition::Reject("the selected function-output carrier is text-only; omitting feedback would change the tool result"));
                         }
                         Item::Reasoning(reasoning) if !crate::protocol::openai::dialect::bailian::responses_reasoning_carrier(reasoning) => {

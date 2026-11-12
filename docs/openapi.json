@@ -397,11 +397,10 @@
       "post": {
         "operationId": "response",
         "parameters": [
-          {"$ref": "#/components/parameters/ConversationId"},
-          {"$ref": "#/components/parameters/ResponsesProfile"}
+          {"$ref": "#/components/parameters/ConversationId"}
         ],
         "summary": "Generate with full history or gateway-managed Responses",
-        "description": "Optional owner-replay-v1 is an explicit stateless extension for adapted clients. It requires store:false and no nonnull previous_response_id. The morphiecore_replay field remains on its original assistant text-part or function-call owner in JSON and item-done/terminal SSE; clients return it unchanged with original boundaries. Unselected clients keep the official baseline.",
+        "description": "Standard Responses with full-history stateless input (explicit store:false and no nonnull previous_response_id) or explicit gateway-managed continuation. Ordinary Google text/call signatures have no standard stateless carrier and reject; no private replay profile is offered.",
         "requestBody": {
           "required": true,
           "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ResponsesRequest"}}}
@@ -505,11 +504,6 @@
       }
     },
     "parameters": {
-      "ResponsesProfile": {
-        "in": "header", "name": "X-MorphieCore-Responses-Profile", "required": false,
-        "schema": {"const": "owner-replay-v1"},
-        "description": "Explicit request-local stateless owner replay on POST /v1/responses only. Unknown/repeated values and stateful combinations reject. No Provider selection or server-side continuation authority."
-      },
       "ResponseId": {
         "in": "path", "name": "response_id", "required": true,
         "schema": {"type": "string", "minLength": 1},
@@ -3003,7 +2997,6 @@
       },
       "MessagesRequest": {
         "type": "object", "required": ["model", "max_tokens", "messages"],
-        "not": {"required": ["session_id"]},
         "properties": {
           "model": {"$ref": "#/components/schemas/PublicModelLabel"},
           "max_tokens": {"type": "integer", "minimum": 1},
@@ -3055,7 +3048,6 @@
       },
       "ChatRequest": {
         "type": "object", "required": ["model", "messages"],
-        "not": {"required": ["session_id"]},
         "properties": {
           "model": {"$ref": "#/components/schemas/PublicModelLabel"},
           "safety_identifier": {"type": ["string", "null"], "maxLength": 128, "description": "Independent opaque safety attribution. On single-carrier cross-protocol targets it takes priority over user; explicit null blocks fallback. Target bounds still apply; no normalization or credential/conversation-derived value."},
@@ -3072,12 +3064,6 @@
           "max_tokens": {"type": ["integer", "null"], "minimum": 1, "deprecated": true, "description": "Deprecated spelling of the same output cap; cannot be combined with max_completion_tokens."},
           "verbosity": {"type": ["string", "null"], "enum": ["low", "medium", "high", null], "description": "Output verbosity has Chat/Responses codec carriers; native Messages/Google projections use selected recorded omission rules. Model-effective support and binding admission remain separate."},
           "reasoning_effort": {"type": ["string", "null"], "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max", null], "description": "Official computation-effort control; model-effective admission remains separate. This is not a reasoning-text visibility or replay switch. Standard Chat has no private reasoning-content carrier."},
-          "preserve_thinking": {"type": "boolean", "description": "Only the explicitly configured readable_reasoning Chat profile accepts this historical reasoning-reading intent. Standard rejects it. Omission, true and false remain distinct; target carrier support is checked independently."},
-          "enable_thinking": false,
-          "thinking_budget": false,
-          "top_k": false,
-          "extra_body": false,
-          "parameters": false,
           "metadata": {"type": ["object", "null"], "maxProperties": 16, "propertyNames": {"maxLength": 64}, "additionalProperties": {"type": "string", "maxLength": 512}, "description": "Typed request hint, never copied into reported response metadata."},
           "service_tier": {"type": ["string", "null"], "enum": ["auto", "default", "flex", "scale", "priority", "fast", null], "description": "Request hint; the reported effective tier may differ. Endpoint context admission remains independent."},
           "logprobs": {"type": ["boolean", "null"], "description": "Return token probabilities when true; null/false are inactive controls."},
@@ -3088,7 +3074,7 @@
           {"not": {"required": ["max_tokens", "max_completion_tokens"]}}
         ],
         "additionalProperties": true,
-        "description": "Envelope subset, not an arbitrary upstream parameter bag. Known fields follow the selected codec; stop has a codec carrier but default binding admission remains narrower. SDK extra_body is flattened before HTTP transmission, not accepted as a wire bag. Known unowned hosted-search, execution and native RPC controls reject; other unknown fields are ignored by name. Active functions, function_call, web_search_options and store:true reject. Standard rejects private reasoning controls/history. Trusted per-model chat_profile:readable_reasoning adds assistant reasoning_content and optional preserve_thinking, not reasoning aliases, reasoning_details or opaque replay. Both profiles reject enable_thinking/thinking_budget/top_k. Schema properties summarize both configured profiles; model-specific restrictions remain enforced by the codec and binding. Named projection may omit container boundaries, not call/result identity."
+        "description": "Standard Chat envelope subset, not an upstream parameter bag. SDK extra_body is flattened before HTTP. Unknown wire bags, body session IDs and Provider-specific reasoning fields are discarded without retention, routing authority or passthrough; known unowned hosted/legacy controls retain rejection. Standard reasoning_effort controls computation. Required tool reasoning history uses the selected thinking-off fallback or rejects; no public reasoning profile is offered. Model-specific restrictions remain enforced by codec and binding. Named projection may omit container boundaries, not call/result identity."
       },
       "ChatTool": {
         "oneOf": [
@@ -3136,7 +3122,6 @@
       },
       "ResponsesRequest": {
         "type": "object", "required": ["model"],
-        "not": {"required": ["session_id"]},
         "properties": {
           "model": {"$ref": "#/components/schemas/PublicModelLabel"},
           "safety_identifier": {"type": ["string", "null"], "maxLength": 128, "description": "Independent opaque safety attribution. On single-carrier cross-protocol targets it takes priority over user; explicit null blocks fallback. Target bounds still apply; no normalization or credential/conversation-derived value."},
@@ -3164,11 +3149,6 @@
             "description": "Other reasoning controls and conflicting aliases are checked by the owning codec and selected target."
           },
           "stream": {"type": ["boolean", "null"], "default": false},
-          "enable_thinking": {"type": "boolean", "description": "Explicit current-turn activation; target capability and exact carrier are checked independently. Does not invent qualitative effort or a token budget."},
-          "thinking_budget": false,
-          "top_k": false,
-          "extra_body": false,
-          "parameters": false,
           "max_output_tokens": {"type": ["integer", "null"], "minimum": 1, "description": "Client-owned output cap. Selected targets may reject explicit caps; local limits alone do not bound upstream charges."}
         },
         "additionalProperties": true,

@@ -123,40 +123,6 @@ fn input(stream: bool) -> Value {
 }
 
 #[tokio::test]
-async fn readable_reasoning_survives_tool_feedback_and_next_turn() {
-    let client = reqwest::Client::builder().no_proxy().build().unwrap();
-    for stream in [false, true] {
-        let fixture = fixture::start_readable().await;
-        let mut body = input(stream);
-        body["messages"][0]["content"] = json!("reasoning");
-        body["preserve_thinking"] = json!(true);
-        for turn in 1..=3 {
-            let result = request(&client, &fixture.base, &body, "readable").await;
-            let message = result["choices"][0]["message"].clone();
-            assert_eq!(
-                message["reasoning_content"],
-                if turn == 1 { "Plan 🧪" } else { "Check" }
-            );
-            assert!(message.get("reasoning_details").is_none());
-            assert!(!message.to_string().contains("mca1."));
-            let history = body["messages"].as_array_mut().unwrap();
-            history.push(message);
-            if turn == 1 {
-                history.extend([
-                    json!({"role":"tool","tool_call_id":"call-second","content":"second-result"}),
-                    json!({"role":"tool","tool_call_id":"call-lookup","content":fixture::RESULT}),
-                ]);
-            } else {
-                history.push(json!({"role":"user","content":"next"}));
-            }
-        }
-        let seen = fixture.seen.lock().unwrap();
-        assert_eq!(seen.len(), 3);
-        assert!(seen.iter().all(|body| body["preserve_thinking"] == true));
-    }
-}
-
-#[tokio::test]
 async fn standard_chat_disables_thinking_for_required_tool_history_before_dispatch() {
     let client = reqwest::Client::builder().no_proxy().build().unwrap();
     for stream in [false, true] {

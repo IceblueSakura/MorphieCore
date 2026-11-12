@@ -9,7 +9,6 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 #[derive(Default)]
 struct StorageState {
     cancelled: bool,
-    committing: bool,
     account_lock: Option<FileLock>,
 }
 #[derive(Default)]
@@ -41,17 +40,12 @@ impl RefreshStorage {
         phase: impl FnOnce(&mut Option<FileLock>) -> Result<T, Error> + Send + 'static,
     ) -> Result<T, Error> {
         let shared = self.0.clone();
-        if commit {
-            state(&shared).committing = true;
-        }
         tokio::task::spawn_blocking(move || {
             let mut state = state(&shared);
             if state.cancelled && !commit {
                 return Err(Error::Superseded);
             }
-            let result = phase(&mut state.account_lock);
-            state.committing = false;
-            result
+            phase(&mut state.account_lock)
         })
         .await
         .map_err(|_| Error::Storage)?
@@ -65,9 +59,6 @@ impl Drop for RefreshStorage {
         // queued commit keeps the shared lock until its blocking task drops it.
         let mut state = state(&self.0);
         state.cancelled = true;
-        if !state.committing {
-            state.account_lock.take();
-        }
     }
 }
 enum Prepared {
@@ -155,53 +146,45 @@ impl CredentialManager {
         alias: &str,
         automatic: Option<&(AccessBinding, u64)>,
     ) -> Result<Prepared, Error> {
-        {
-            let tx = self.store.transaction()?;
-            let loaded = self.load(&tx, profile, alias)?;
-            if let Some((binding, ahead)) = automatic {
-                let Some(account) = loaded.account.as_ref() else {
-                    return Ok(Prepared::Skip);
-                };
-                binding.check_identity(account)?;
-                if let Some(pending) = &account.pending_renewal {
-                    // Verification needs no token exchange, so a transient
-                    // failure may be retried; anything else waits for an operator.
-                    return Ok(
-                        if loaded.recovery
-                            || account.login_attempt.is_some()
-                            || pending.requires_manual_verification
-                        {
-                            Prepared::Skip
-                        } else {
-                            Prepared::Pending(loaded.account.expect("loaded account"))
-                        },
-                    );
-                }
-                let deadline = super::super::model::now()?.saturating_add(*ahead);
-                if loaded.recovery
-                    || account.state != AccountState::Active
-                    || account.login_attempt.is_some()
-                    || !account.credential.as_ref().is_some_and(|credential| {
-                        credential.refresh.is_some()
-                            && credential
-                                .expires_at
-                                .is_some_and(|expiry| expiry <= deadline)
-                    })
-                {
-                    return Ok(Prepared::Skip);
-                }
+        let tx = self.store.transaction()?;
+        let loaded = self.load(&tx, profile, alias)?;
+        if let Some((binding, ahead)) = automatic {
+            let Some(account) = loaded.account.as_ref() else {
+                return Ok(Prepared::Skip);
+            };
+            binding.check_identity(account)?;
+            if let Some(pending) = &account.pending_renewal {
+                // Verification needs no token exchange, so a transient
+                // failure may be retried; anything else waits for an operator.
+                return Ok(
+                    if loaded.recovery
+                        || account.login_attempt.is_some()
+                        || pending.requires_manual_verification
+                    {
+                        Prepared::Skip
+                    } else {
+                        Prepared::Pending(loaded.account.expect("loaded account"))
+                    },
+                );
             }
-            if let Some(account) = loaded.account
-                && account.pending_renewal.is_some()
+            let deadline = super::super::model::now()?.saturating_add(*ahead);
+            if loaded.recovery
+                || account.state != AccountState::Active
+                || account.login_attempt.is_some()
+                || !account.credential.as_ref().is_some_and(|credential| {
+                    credential.refresh.is_some()
+                        && credential
+                            .expires_at
+                            .is_some_and(|expiry| expiry <= deadline)
+                })
             {
-                return Ok(Prepared::Pending(account));
+                return Ok(Prepared::Skip);
             }
         }
-        let tx = self.store.transaction()?;
-        let mut account = self
-            .load(&tx, profile, alias)?
-            .account
-            .ok_or(Error::LoginRequired)?;
+        let mut account = loaded.account.ok_or(Error::LoginRequired)?;
+        if account.pending_renewal.is_some() {
+            return Ok(Prepared::Pending(account));
+        }
         let previous = account.credential.take().ok_or(Error::LoginRequired)?;
         if previous.refresh.is_none() {
             return Err(Error::LoginRequired);

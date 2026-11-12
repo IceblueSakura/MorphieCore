@@ -207,7 +207,6 @@ enum Control {
     Uncapped,
     SummaryHistory,
     OpaqueHistory,
-    ReadableHistory,
     AdaptiveHistory,
     Incomplete { stored: bool },
     ReportedFacts { refusal: bool, stored: bool },
@@ -217,7 +216,6 @@ impl Control {
         match self {
             Self::SummaryHistory => Some(ReasoningShape::Summary),
             Self::OpaqueHistory => Some(ReasoningShape::Opaque),
-            Self::ReadableHistory => Some(ReasoningShape::Readable),
             Self::AdaptiveHistory => Some(ReasoningShape::Signed),
             _ => None,
         }
@@ -449,12 +447,9 @@ async fn observe_intake(
     let mut config = service();
     config["resources"] = json!({"concurrency":1});
     config["delivery"] = json!({"exchange_timeout_ms":3000,"delta_coalescing":null});
-    let mut models = json!({"models":{model:{"candidates":[{
+    let models = json!({"models":{model:{"candidates":[{
         "binding":binding
     }]}}});
-    if control == Control::ReadableHistory {
-        models["models"][model]["chat_profile"] = json!("readable_reasoning");
-    }
     let mut boot = if oauth.is_some() {
         Fixture::with_oauth(config, models, provider, pool)
     } else {
@@ -1076,44 +1071,11 @@ async fn catalog_subscription_production_lanes() {
 
 #[tokio::test]
 async fn native_reasoning_history_contracts_are_distinct() {
-    for entry in crate::topology::catalog::API_KEY_BINDINGS
-        .iter()
-        .filter(|entry| (entry.provider)().id.as_str() == "zhipu")
-    {
-        let endpoint = entry
-            .endpoint(crate::topology::GenerationProtocol::OpenAiChat)
-            .unwrap();
-        let provider = (entry.provider)();
-        let credential = entry.credential();
-        let binding = (
-            entry.model,
-            endpoint.id.as_str(),
-            provider.id.as_str(),
-            credential.as_str(),
-            Api::Chat,
-        );
-        assert_eq!(
-            transports(
-                &binding,
-                Api::Chat,
-                Profile::Reasoning,
-                Control::ReadableHistory
-            )
-            .await,
-            ACCEPT,
-            "Zhipu's always-thinking tool loop needs the selected readable profile"
-        );
-    }
     for (id, profile, control) in [
         (
             "dashscope-flash-responses",
             Profile::Text,
             Control::SummaryHistory,
-        ),
-        (
-            "deepseek-chat",
-            Profile::Reasoning,
-            Control::ReadableHistory,
         ),
         (
             "opencode-go-haiku-messages",

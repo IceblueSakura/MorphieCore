@@ -2,7 +2,6 @@
 pub mod envelope;
 mod history;
 pub(crate) mod managed;
-pub mod owner_replay;
 pub(crate) mod response;
 pub mod sse;
 pub use response::{decode as decode_response, encode as encode_response};

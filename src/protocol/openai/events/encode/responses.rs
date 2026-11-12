@@ -327,13 +327,7 @@ impl EventEncoder {
                 "item_id":self.fidelity.response_item_id(*item).ok_or(CodecError::invalid())?,
             })],
             StreamEvent::ItemFinished { item, .. } => {
-                let mut value = item_wire(self.state()?, *item, &self.fidelity)?;
-                if self.contract.adaptation.rules.responses_owner_replay {
-                    crate::protocol::openai::responses::owner_replay::write(
-                        &mut value,
-                        &self.state()?.item(*item)?.snapshot()?,
-                    )?;
-                }
+                let value = item_wire(self.state()?, *item, &self.fidelity)?;
                 if let Some(slot) = self.pending_program_outputs.remove(item) {
                     self.held_frames[slot]["item"]["status"] = value["status"].clone();
                 }
@@ -368,11 +362,6 @@ impl EventEncoder {
             | StreamEvent::TextMetadata { .. }
             | StreamEvent::Usage(_)
             | StreamEvent::UsageReport(_) => vec![],
-            StreamEvent::PartReplay { .. }
-                if self.contract.adaptation.rules.responses_owner_replay =>
-            {
-                vec![]
-            }
             StreamEvent::PartReplay { .. } => {
                 return Err(CodecError::Unsupported(CarrierReason::Replay));
             }

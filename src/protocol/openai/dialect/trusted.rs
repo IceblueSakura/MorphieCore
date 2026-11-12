@@ -12,8 +12,6 @@ use crate::{
 pub enum Dialect {
     #[default]
     Standard,
-    /// Explicit downstream readable-only Chat contract, never a Provider selector.
-    ChatReasoning,
     Siwc,
     Grok,
     MorphieCore,
@@ -34,15 +32,6 @@ impl Dialect {
     ) -> Adaptation {
         let (profile_id, mut rules) = match self {
             Self::Standard => ("standard-v1", WireRules::default()),
-            Self::ChatReasoning => (
-                "chat-readable-reasoning-v1",
-                WireRules {
-                    readable_reasoning: true,
-                    structured_chat_reasoning: true,
-                    chat_preserve_thinking: true,
-                    ..Default::default()
-                },
-            ),
             Self::Siwc => (
                 "openai-responses",
                 WireRules {
@@ -246,7 +235,7 @@ impl Dialect {
                 key: true,
                 ..Default::default()
             },
-            Self::Standard | Self::ChatReasoning => crate::protocol::cache::CacheTargetPolicy {
+            Self::Standard => crate::protocol::cache::CacheTargetPolicy {
                 session_id: false,
                 ..crate::protocol::cache::CacheTargetPolicy::all()
             },
@@ -283,7 +272,7 @@ impl Dialect {
             reasoning_policy: None,
             images,
             files: match self {
-                Self::Standard | Self::ChatReasoning | Self::MorphieCore | Self::Siwc => {
+                Self::Standard | Self::MorphieCore | Self::Siwc => {
                     crate::protocol::file_constraints::FileConstraints::all()
                 }
                 Self::OpenRouter => crate::protocol::file_constraints::FileConstraints {

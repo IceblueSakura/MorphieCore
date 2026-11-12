@@ -151,17 +151,12 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
         target.semantic.message_envelopes(),
         GenerationApi::Responses,
     )?;
-    let mut output = responses::items::encode_items(
+    let output = responses::items::encode_items(
         target.semantic.items(),
         target.fidelity,
         true,
         target.semantic.resources(),
     )?;
-    if target.adaptation.rules.responses_owner_replay {
-        for (value, (_, item)) in output.iter_mut().zip(target.semantic.items()) {
-            responses::owner_replay::write(value, item)?;
-        }
-    }
     let m = &target.metadata;
     let created = m
         .created

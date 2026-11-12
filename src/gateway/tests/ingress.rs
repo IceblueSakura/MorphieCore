@@ -22,52 +22,6 @@ use axum::{
 };
 use std::time::Duration;
 use tower::ServiceExt;
-#[test]
-fn client_profile_cannot_depend_on_candidate_order_or_select_responses_extensions() {
-    let entries = |profiles: &[(GenerationApi, ChatProfile)]| {
-        profiles
-            .iter()
-            .map(|(protocol, chat_profile)| Entry {
-                model: "fixture-model".into(),
-                protocol: (*protocol).into(),
-                chat_profile: *chat_profile,
-                endpoint: EndpointId::new("fixture-chat").unwrap(),
-            })
-            .collect()
-    };
-    for profiles in [
-        vec![
-            (GenerationApi::Chat, ChatProfile::Standard),
-            (GenerationApi::Chat, ChatProfile::ReadableReasoning),
-        ],
-        vec![
-            (GenerationApi::Chat, ChatProfile::ReadableReasoning),
-            (GenerationApi::Chat, ChatProfile::Standard),
-        ],
-        vec![(GenerationApi::Responses, ChatProfile::ReadableReasoning)],
-    ] {
-        assert!(
-            Gateway::new(
-                topology(),
-                TaskEntries {
-                    generation: entries(&profiles),
-                    ..Default::default()
-                },
-                BTreeMap::from([(
-                    CredentialBindingId::new("fixture-key").unwrap(),
-                    Arc::new(SecretMaterial::new("synthetic-upstream").unwrap())
-                )]),
-                std::collections::BTreeMap::from([(
-                    "fixture-agent".into(),
-                    SecretMaterial::new(KEY).unwrap()
-                )]),
-                Limits::default(),
-                None
-            )
-            .is_err()
-        );
-    }
-}
 
 #[tokio::test]
 async fn source_decode_and_planning_failures_have_separate_boundaries_without_attempts() {
@@ -169,7 +123,6 @@ async fn activated_members_keep_route_order_with_a_shared_client_carrier() {
     let entries = ["fixture-chat", "fixture-responses"]
         .into_iter()
         .map(|id| Entry {
-            chat_profile: Default::default(),
             model: "fixture-model".into(),
             protocol: crate::protocol::ClientProtocol::Responses,
             endpoint: EndpointId::new(id).unwrap(),
@@ -259,7 +212,6 @@ fn ingress_unwraps_only_the_candidate_compatible_opaque_and_never_selects_a_targ
         topology(),
         TaskEntries {
             generation: vec![Entry {
-                chat_profile: Default::default(),
                 model: "fixture-model".into(),
                 protocol: crate::protocol::ClientProtocol::Responses,
                 endpoint: EndpointId::new("fixture-responses").unwrap(),
@@ -342,7 +294,6 @@ async fn model_request_limits_do_not_suppress_client_reported_facts() {
         topology(),
         TaskEntries {
             generation: vec![Entry {
-                chat_profile: Default::default(),
                 model: "limited-model".into(),
                 protocol: crate::protocol::ClientProtocol::Responses,
                 endpoint: EndpointId::new("limited-responses").unwrap(),
@@ -774,7 +725,6 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
             generation: [GenerationApi::Chat, GenerationApi::Responses]
                 .into_iter()
                 .map(|protocol| Entry {
-                    chat_profile: Default::default(),
                     model: "fixture-model".into(),
                     protocol: protocol.into(),
                     endpoint: EndpointId::new("fixture-chat").unwrap(),
@@ -996,7 +946,6 @@ fn entries_cannot_escape_compiled_route_or_credential_ownership() {
         topo,
         TaskEntries {
             generation: vec![Entry {
-                chat_profile: Default::default(),
                 model: "fixture-model".into(),
                 protocol: crate::protocol::ClientProtocol::Chat,
                 endpoint: EndpointId::new("limited-responses").unwrap(),
@@ -1020,7 +969,6 @@ fn entries_cannot_escape_compiled_route_or_credential_ownership() {
         topology(),
         TaskEntries {
             generation: vec![Entry {
-                chat_profile: Default::default(),
                 model: "fixture-model".into(),
                 protocol: crate::protocol::ClientProtocol::Chat,
                 endpoint: EndpointId::new("fixture-chat").unwrap(),

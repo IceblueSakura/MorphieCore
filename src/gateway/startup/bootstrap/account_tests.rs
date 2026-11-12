@@ -80,19 +80,12 @@ fn resource_budgets_and_task_shapes_remain_strict() {
             .is_err()
         );
     }
-    for value in [
+    let result = Fixture::new(
+        service(),
         json!({"models":{"text-embedding-3-small":{"account":"primary","candidates":[]}}}),
-        json!({"models":{"text-embedding-3-small":{"account":"primary","chat_profile":null}}}),
-    ] {
-        let result = Fixture::new(
-            service(),
-            value,
-            &[("openrouter", "primary", "synthetic-key")],
-        );
-        assert!(
-            matches!(result, Err(super::StartupError::Detail(error)) if error.domain == "models")
-        );
-    }
+        &[("openrouter", "primary", "synthetic-key")],
+    );
+    assert!(matches!(result, Err(super::StartupError::Detail(error)) if error.domain == "models"));
 }
 
 #[test]
@@ -393,26 +386,25 @@ fn provider_recovery_configuration_reaches_bound_health_and_keeps_schema_strict(
         .unwrap()
         .candidates[0];
     let now = tokio::time::Instant::now();
-    boot.gateway
-        .state
-        .executors
-        .acquire(candidate, now)
-        .unwrap()
-        .failed(crate::gateway::ApiError::failure(503, b"", None), now, None);
-    assert!(
-        boot.gateway
-            .state
-            .executors
-            .acquire(candidate, now + Duration::from_millis(6))
-            .is_err()
+    boot.gateway.state.executors.failed(
+        candidate,
+        crate::gateway::ApiError::failure(503, b"", None),
+        now,
+        None,
     );
     assert!(
         boot.gateway
             .state
             .executors
-            .acquire(candidate, now + Duration::from_millis(7))
-            .unwrap()
-            .probing
+            .unavailable(&candidate.health, now + Duration::from_millis(6))
+            .is_some()
+    );
+    assert!(
+        boot.gateway
+            .state
+            .executors
+            .unavailable(&candidate.health, now + Duration::from_millis(7))
+            .is_none()
     );
     for invalid in [
         json!({"transient_cooldown_ms":"7"}),

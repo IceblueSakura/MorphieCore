@@ -248,26 +248,18 @@ fn key_documents_reject_wrong_kind_identity_and_inconsistent_material() {
     }
 }
 #[test]
-fn local_locks_and_record_binding_are_shared_but_domains_are_isolated() {
+fn key_records_remain_bound_to_their_declared_domain() {
     let dir = Directory::new();
     let manager = manager(&dir);
-    let one = manager
+    manager
         .add_api_key("alpha", "one", secret("synthetic-one"))
         .unwrap();
     manager
         .add_api_key("beta", "one", secret("synthetic-two"))
         .unwrap();
-    let lock = manager.keys.account_lock("alpha", "one").unwrap();
-    assert_eq!(
-        manager
-            .remove_api_key("alpha", "one", one.revision)
-            .unwrap_err(),
-        CredentialError::Busy
-    );
     manager
         .add_api_key("alpha", "two", secret("synthetic-three"))
         .unwrap();
-    drop(lock);
     std::fs::rename(dir.path.join("alpha.json"), dir.path.join("other.json")).unwrap();
     assert!(manager.bind_key_reference("alpha", "other").is_err());
     assert!(

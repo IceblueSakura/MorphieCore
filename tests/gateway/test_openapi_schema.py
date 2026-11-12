@@ -91,28 +91,18 @@ class OpenApiSchemaTests(unittest.TestCase):
         ):
             self.assertFalse(request.is_valid({**messages, "messages": [message]}))
 
-    def test_native_thinking_carriers_are_typed_without_an_extension_bag(self):
+    def test_standard_requests_ignore_provider_bags_but_validate_known_effort(self):
+        for name, body in (
+            ("ChatRequest", {"model": "synthetic", "messages": []}),
+            ("ResponsesRequest", {"model": "synthetic", "input": "go"}),
+        ):
+            for field in ("enable_thinking", "thinking_budget", "top_k", "preserve_thinking",
+                          "extra_body", "parameters", "session_id"):
+                for value in (None, False, 32, {"private": "ignored"}):
+                    validator(name).validate({**body, field: value})
         chat = {"model": "synthetic", "messages": []}
-        response = {"model": "synthetic", "input": "go"}
-        for name, body in (("ResponsesRequest", response),):
-            for value in (False, True):
-                validator(name).validate({**body, "enable_thinking": value})
-            for value in (None, 1, "true"):
-                self.assertFalse(validator(name).is_valid({**body, "enable_thinking": value}))
-            self.assertFalse(validator(name).is_valid({**body, "extra_body": {}}))
-            self.assertFalse(validator(name).is_valid({**body, "parameters": {"max_tokens": 64}}))
-        for field in ("enable_thinking", "thinking_budget", "top_k"):
-            for value in (None, False, True, 32):
-                self.assertFalse(validator("ChatRequest").is_valid({**chat, field: value}))
-        for value in (False, True):
-            validator("ChatRequest").validate({**chat, "preserve_thinking": value})
-        for value in (None, 1, "true"):
-            self.assertFalse(validator("ChatRequest").is_valid({**chat, "preserve_thinking": value}))
         validator("ChatRequest").validate({**chat, "reasoning_effort": "low"})
-        for patch in ({"reasoning_effort": "invalid"}, {"top_k": 0},
-                      {"top_k": 101}, {"top_k": 1.5}, {"extra_body": {}},
-                      {"parameters": {"max_tokens": 64}}):
-            self.assertFalse(validator("ChatRequest").is_valid({**chat, **patch}))
+        self.assertFalse(validator("ChatRequest").is_valid({**chat, "reasoning_effort": "invalid"}))
 
     def test_native_identity_and_history_reading_use_distinct_bounded_carriers(self):
         messages = {"model": "synthetic", "max_tokens": 64,
@@ -123,7 +113,7 @@ class OpenApiSchemaTests(unittest.TestCase):
                       {"metadata": {"user_id": "x" * 513}}):
             self.assertFalse(validator("MessagesRequest").is_valid({**messages, **value}))
 
-    def test_generation_has_one_neutral_conversation_header_and_no_provider_session_body(self):
+    def test_generation_routes_by_neutral_headers_and_ignores_body_session_extensions(self):
         parameter = DOCUMENT["components"]["parameters"]["ConversationId"]
         self.assertEqual(parameter["in"], "header")
         self.assertEqual(parameter["name"], "X-MorphieCore-Conversation-Id")
@@ -145,7 +135,7 @@ class OpenApiSchemaTests(unittest.TestCase):
             self.assertIn({"$ref": "#/components/parameters/ConversationId"},
                           DOCUMENT["paths"][path]["post"]["parameters"])
             for value in (None, "upstream-session"):
-                self.assertFalse(validator(schema).is_valid({**body, "session_id": value}))
+                validator(schema).validate({**body, "session_id": value})
         messages = DOCUMENT["paths"]["/v1/messages"]["post"]["responses"]
         self.assertIn("402", messages)
         self.assertIn("529", messages)
@@ -376,8 +366,6 @@ class ResponsesSchemaTests(unittest.TestCase):
         check.validate(base)
         for reasoning in (None, {}):
             check.validate({**base, "reasoning": reasoning})
-        for value in (None, "synthetic-session", {}):
-            self.assertFalse(check.is_valid({**base, "session_id": value}))
         for kind in ("function", "custom"):
             tool = {"type": kind, "name": "lookup"}
             check.validate({**base, "tools": [tool]})

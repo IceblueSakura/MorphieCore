@@ -11,8 +11,7 @@ import sys
 
 from drivers import (Child, NEXT, READ, TEXT, Pi, check, check_client_version,
                      check_opencode_session, environment, opencode_configuration,
-                     opencode_prompt, private_json, gateway_configuration, shutdown_gateway,
-                     run_reasoning_client)
+                     opencode_prompt, private_json, gateway_configuration, shutdown_gateway)
 from recovery import (State as RecoveryState, PLAN, SIGNATURE, REDACTED, CALL, assert_history, chat_events,
                       native_events, server, stage, text)
 
@@ -105,93 +104,6 @@ class MessagesState(DefaultState):
         check(self.deliveries == [200, 200, 200], "default_deliveries")
 
 
-class SignedChatState(MessagesState):
-    endpoint_path = "/v1/chat/completions"
-    upstream_endpoint_path = "/v1/messages"
-
-    def __init__(self, path, *, pi):
-        super().__init__(path, pi=pi)
-        self.returned_details = []
-        self.delivered_details = None
-
-    def observe_response(self, body, status, content_type, payload):
-        super().observe_response(body, status, content_type, payload)
-        if any(message["role"] == "assistant" for message in body["messages"]):
-            return
-        details = []
-        for line in payload.decode().splitlines():
-            if not line.startswith("data: ") or line == "data: [DONE]":
-                continue
-            for choice in json.loads(line.removeprefix("data: ")).get("choices", []):
-                details.extend(choice["delta"].get("reasoning_details", []))
-        check([detail["type"] for detail in details] == [
-            "reasoning.summary", "reasoning.encrypted", "reasoning.encrypted"],
-            "signed_chat_carrier_types")
-        check([detail["index"] for detail in details] == [0, 1, 2]
-              and all(detail["format"] == "openai-responses-v1" for detail in details)
-              and details[0]["summary"] == PLAN, "signed_chat_carrier_shape")
-        origins = []
-        for detail, kind, value in zip(details[1:],
-                ["anthropic-thinking", "anthropic-redacted-thinking"], [SIGNATURE, REDACTED]):
-            token = detail["data"]
-            check(token.startswith("mc1."), "signed_chat_missing_envelope")
-            encoded = token.removeprefix("mc1.")
-            envelope = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
-            check(envelope["f"] == kind and envelope["d"] == value, "signed_chat_native_envelope")
-            origins.append(envelope["o"])
-        check(bool(origins[0]) and origins[0] == origins[1], "signed_chat_envelope_origin")
-        self.delivered_details = details
-
-    def finish(self):
-        super().finish()
-        check(self.delivered_details is not None and len(self.returned_details) == 2
-              and all(details == self.delivered_details for details in self.returned_details),
-              "signed_chat_carrier_changed_in_client_history")
-
-    def incoming(self, headers, body):
-        check(body["model"] == MODEL and body["stream"] is True
-              and body["max_completion_tokens"] == 2048, "signed_chat_controls")
-        phase = len(self.ingress) + 1
-        assistants = [message for message in body["messages"] if message["role"] == "assistant"]
-        check(len(assistants) == phase - 1, "signed_chat_history_count")
-        if phase > 1:
-            check(bool(assistants[0].get("reasoning_details")), "signed_chat_details_missing")
-            self.returned_details.append(assistants[0]["reasoning_details"])
-        with self.lock:
-            self.ingress.append(phase)
-            check(self.ingress == [1, 2, 3][:len(self.ingress)], "signed_chat_request_order")
-
-    def upstream(self, headers, body):
-        phase = len(self.attempts) + 1
-        check(headers.get("x-api-key") == "synthetic-client-primary"
-              and headers.get("anthropic-version") == "2026-10-21", "signed_chat_upstream_auth")
-        check(body["model"] == MODEL and body["max_tokens"] == 2048, "signed_chat_upstream_controls")
-        history = [message for message in body["messages"] if message["role"] != "system"]
-        # Chat's reasoning and tool-call owners lower to adjacent assistant envelopes.
-        roles = ["user"] if phase == 1 else ["user", "assistant", "assistant", "user"]
-        if phase == 3:
-            roles += ["assistant", "user"]
-        check([message["role"] for message in history] == roles, "signed_chat_native_roles")
-        if phase > 1:
-            check(history[1]["content"] == [
-                {"type": "thinking", "thinking": PLAN, "signature": SIGNATURE},
-                {"type": "redacted_thinking", "data": REDACTED},
-            ], "signed_chat_exact_native_thinking")
-            check(history[2]["content"] == [{"type": "tool_use", "id": CALL, "name": "read",
-                  "input": {"path": str(self.path)}}], "signed_chat_native_call")
-            results = history[3]["content"]
-            check(len(results) == 1 and results[0].get("type") == "tool_result"
-                  and results[0].get("tool_use_id") == CALL
-                  and results[0].get("is_error", False) is False
-                  and TEXT in text(results[0].get("content")), "signed_chat_native_result")
-        if phase == 3:
-            check(history[4]["content"] == [{"type": "text", "text": TEXT}], "signed_chat_final_history")
-        with self.lock:
-            self.attempts.append(phase)
-            check(self.attempts == [1, 2, 3][:len(self.attempts)], "signed_chat_attempt_order")
-        return 200, native_events(phase, self.path), "text/event-stream"
-
-
 def assert_chat_profile(body, pi, *, upstream=False, gateway_profile=False):
     check(body["model"] == "deepseek-flash" and body["stream"] is True, "default_chat_model")
     cap = "max_tokens"
@@ -201,7 +113,8 @@ def assert_chat_profile(body, pi, *, upstream=False, gateway_profile=False):
           "default_chat_storage_and_usage")
     check(body.get("thinking") == {"type": "enabled"} if pi and not upstream and not gateway_profile
           else "thinking" not in body, "default_chat_thinking")
-    check(body.get("reasoning_effort") == "high" if pi else "reasoning_effort" not in body,
+    check(body.get("reasoning_effort") == "none" if upstream else
+          (body.get("reasoning_effort") == "high" if pi else "reasoning_effort" not in body),
           "default_effort")
     tools = body.get("tools", [])
     read = [tool["function"] for tool in tools if tool.get("type") == "function"
@@ -239,6 +152,10 @@ class ChatState(DefaultState):
         tools = assert_chat_profile(body, self.pi, upstream=True)
         phase = stage(body)
         assert_history(body, phase, False, self.path, profile=False)
+        # Built-in client compatibility may add empty reasoning fields. Standard
+        # ingress discards them; the upstream must not receive private history.
+        check(all("reasoning_content" not in message and "reasoning_details" not in message
+                  for message in body["messages"]), "default_upstream_standard_history")
         with self.lock:
             check(tools == self.tool_inventories.get(phase), "default_tool_inventory_changed")
             self.attempts.append(phase)
@@ -518,16 +435,12 @@ def main():
     protocol = case.split("-")[1]
     pi = case.startswith("pi-")
     gateway_profile = case == "pi-chat-gateway-profile"
-    signed = case.endswith("-signed")
     count = 3
     model_id, provider, binding, _ = PROFILES[protocol]
     if pi and protocol == "chat":
         # pi's builtin strict read tool needs the beta endpoint binding.
         provider, binding = "deepseek-beta", "deepseek-beta-chat"
-    if signed:
-        model_id, provider, binding = MODEL, PROVIDER, "opencode-go-haiku-messages"
-    state = (SignedChatState(path, pi=pi) if signed else
-             ChatState(path, pi=pi, gateway_profile=gateway_profile) if protocol == "chat" else
+    state = (ChatState(path, pi=pi, gateway_profile=gateway_profile) if protocol == "chat" else
              {"messages": MessagesState, "responses": ResponsesState}[protocol](path, pi=pi))
     env = environment(root)
     with Child([binary, "--version"], env, work) as client:
@@ -537,7 +450,7 @@ def main():
         origin = stack.enter_context(server(state, False))
         gateway_configuration(root, protocol == "messages", origin,
                               model=model_id, provider="openai" if protocol == "responses" else provider,
-                              binding=binding, api_root="/beta" if pi and protocol == "chat" and not signed else "/v1")
+                              binding=binding, api_root="/beta" if pi and protocol == "chat" else "/v1")
         gateway = stack.enter_context(Child([gateway_binary, "--config", str(root / "gateway.json"),
             "--credentials-dir", str(root / "credentials")], env, work))
         try:
@@ -549,13 +462,9 @@ def main():
         state.gateway = ready.removeprefix("MorphieCore listening on ")
         ingress = stack.enter_context(server(state, True))
         try:
-            if signed:
-                run_reasoning_client("pi-chat" if pi else "opencode-chat", binary, env, root, work,
-                                     ingress, path, model=MODEL)
-            else:
-                (run_pi if pi else run_opencode)(
-                    binary, env, root, work, ingress, path, protocol,
-                    **({"gateway_profile": gateway_profile} if pi else {}))
+            (run_pi if pi else run_opencode)(
+                binary, env, root, work, ingress, path, protocol,
+                **({"gateway_profile": gateway_profile} if pi else {}))
             gateway.process.send_signal(signal.SIGINT)
             gateway.wait(timeout=5)
         except Exception:
@@ -568,7 +477,6 @@ def main():
         "upstream_attempts": count, "extra_client_requests": 0,
         "tool_history": True,
         "next_turn_history": True,
-        **({"signed_reasoning_replayed": True, "opaque_reasoning_replayed": True} if signed else {}),
         **({"default_headers": True, "beta_header_seen": state.beta_seen,
             "block_binding_seen": state.block_binding_seen} if protocol == "messages" else {})}))
 

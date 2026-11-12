@@ -56,7 +56,7 @@ class ClientSummaryOracles(unittest.TestCase):
             ]
         else:
             body["messages"] += [
-                {"role": "assistant", "reasoning_content": PLAN, "tool_calls": [
+                {"role": "assistant", "tool_calls": [
                     {"id": CALL, "type": "function", "function": {
                         "name": "read", "arguments": json.dumps({"path": str(self.path)})}}]},
                 {"role": "tool", "tool_call_id": CALL, "content": TEXT},
