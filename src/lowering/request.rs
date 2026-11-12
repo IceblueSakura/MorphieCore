@@ -20,53 +20,6 @@ pub(crate) enum Target<'a> {
     GenerateContent(&'a crate::protocol::google::generate_content::TargetContract),
     Interactions(&'a crate::protocol::google::interactions::TargetContract),
 }
-/// Standard Chat cannot return required readable tool-cycle history. Resolve
-/// that known next-turn failure on the candidate copy, before target encoding.
-pub(crate) fn chat_history_fallback<'a>(
-    source: &'a Request,
-    contract: &OpenAiContract,
-) -> Result<Conversion<Cow<'a, Request>>, ConversionFailure> {
-    let mut output = Conversion {
-        value: Cow::Borrowed(source),
-        evidence: EvidenceDelta::default(),
-    };
-    if contract.reasoning_history
-        != Some(crate::protocol::reasoning::ReasoningHistory::RequiredWithTools)
-        || source.task.semantic.tools().is_empty()
-        || source.task.semantic.reasoning().activation.as_ref()
-            == Some(&ReasoningActivation::Disabled)
-    {
-        return Ok(output);
-    }
-    if source.task.semantic.reasoning().read_history.as_ref() == Some(&true)
-        || contract.adaptation.rules.reject_disabled_reasoning
-        || !contract.adaptation.rules.thinking_controls
-            && !contract.dispositions.native(Feature::Reasoning)
-    {
-        return Err(CodecError::Unsupported(CarrierReason::Reasoning).into());
-    }
-    admit_source(source)?;
-    let mut settings = source.task.semantic.settings().clone();
-    settings.effort = None;
-    settings.reasoning.presence = ReasoningPresence::Present;
-    settings.reasoning.activation = Some(ReasoningActivation::Disabled);
-    settings.reasoning.mode = Presence::Absent;
-    settings.reasoning.budget_tokens = None;
-    if settings.reasoning.presentation.visibility != Some(ReasoningDisplay::Omitted) {
-        settings.reasoning.presentation = ReasoningPresentation::default();
-    }
-    output.value.to_mut().task.semantic = source
-        .task
-        .semantic
-        .clone()
-        .with_settings(settings)
-        .map_err(CodecError::from)?;
-    output.evidence.push(
-        super::disposition::Rule::CHAT_FALLBACK_THINKING_OFF
-            .effect(ConversionBoundary::RequestProject),
-    );
-    Ok(output)
-}
 pub(crate) fn admit_source(source: &Request) -> Result<(), ConversionFailure> {
     source.check_grouping()?;
     source.task.semantic.validate().map_err(CodecError::from)?;

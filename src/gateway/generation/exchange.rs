@@ -698,16 +698,26 @@ pub(in crate::gateway) async fn run(
     let candidates = entry
         .eligible(&request, &runtime.affinity)
         .map_err(|cause| {
-            let error = ApiError::invalid();
-            use crate::execution::plan::PlanError;
-            let code = match cause {
+            use crate::execution::plan::{PlanError, RejectionReason};
+            let reason = match &cause {
+                PlanError::CandidateRejected(reason) => Some(reason),
+                PlanError::NoCandidate { rejections } => {
+                    rejections.first().map(|rejection| &rejection.reason)
+                }
+                _ => None,
+            };
+            let error = match reason {
+                Some(RejectionReason::ReasoningHistoryRequired) => ApiError::new(
+                    axum::http::StatusCode::BAD_REQUEST,
+                    crate::gateway::error::ErrorKind::ReasoningHistoryRequired,
+                ),
+                _ => ApiError::invalid(),
+            };
+            let code = match &cause {
                 PlanError::UnknownModel => "plan.unknown_model",
                 PlanError::InvalidRequest => "plan.invalid_request",
                 PlanError::CandidateLimit => "plan.candidate_limit",
-                PlanError::CandidateRejected(reason) => reason.code(),
-                PlanError::NoCandidate { rejections } => rejections
-                    .first()
-                    .map_or("plan.no_candidate", |r| r.reason.code()),
+                _ => reason.map_or("plan.no_candidate", RejectionReason::code),
             };
             trace.report.request_failure(code, error.status.as_u16());
             trace.outcome(crate::gateway::diagnostics::Outcome::Error);

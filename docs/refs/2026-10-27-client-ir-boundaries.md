@@ -533,6 +533,8 @@ The retention audit also reproduced an undercharge after filtering effects left 
 | R4 | [Planning](../../src/execution/plan.rs) | Unassessed TokenPlan Chat rejects even text; `required_with_tools` rejects Standard Chat tools | Delegation; thinking-off fallback |
 | R4 | [Replay opening](../../src/execution/replay.rs); Chat reasoning details intake | Unsealed or foreign reasoning is invalid | L3 visible-history transfer |
 
+The R4 thinking-off fallback above records the earlier disposition. The 2026-11-12 [runtime-owned strategy decision](../architecture/index.md#system-boundaries) supersedes it with pre-dispatch rejection; unassessed history delegation remains.
+
 Invariant sites confirmed outside the ladder: replay origin/format checks, body and total-size bounds, streaming capability, call-ID and contiguous-owner validation, incomplete-input execution guards, explicit `read_history`, published-usage retraction, trust headers and client file IDs.
 
 ## Production corpus and intake experiment (2026-10-30)

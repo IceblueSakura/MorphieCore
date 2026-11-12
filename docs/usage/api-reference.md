@@ -87,7 +87,7 @@ Tool-selection and declaration-history features assess these additional finite s
 
 These witnesses do not assess arbitrary declaration replacement/removal, collision resolution, schemas or complete replay loops. In particular, the mixed root/inline domain may be unavailable on a binding that supports inline-only declarations. Approved active-set collapse and allowed-inventory filtering expose their named loss rules; native or equivalent carriage remains faithful. The capabilities endpoint carries the corresponding finite `domain` alongside each request feature.
 
-`reasoning.history` reports the route-common [binding history fact](../architecture/history-and-replay.md#binding-reasoning-history-contract): `unsupported`, `ignored`, `accepted` or `required_with_tools`. Differing assessed candidates yield `non_uniform`; any unassessed candidate yields `not_assessed`. It is independent of wire carriers and full-loop acceptance. Required-history Chat tools use Standard Chat's named thinking-off fallback. If thinking cannot be disabled, or explicit `read_history: true` prevents that fallback, planning rejects.
+`reasoning.history` reports the route-common [binding history fact](../architecture/history-and-replay.md#binding-reasoning-history-contract): `unsupported`, `ignored`, `accepted` or `required_with_tools`. Differing assessed candidates yield `non_uniform`; any unassessed candidate yields `not_assessed`. It is independent of wire carriers and full-loop acceptance. Standard Chat thinking-enabled/default tools reject on required-history candidates; the gateway does not switch thinking off. An explicit runtime-selected off request is assessed independently. The default tool probe may therefore report `unavailable` even when an explicit off request is admissible.
 
 Limits are planning hints; `null` means unknown, not unlimited. Context/input capacities come from applicable trusted declarations, including explicit candidate configuration; missing or non-JSON-safe facts on any candidate leave the common value unknown. The [capacity evidence](../refs/2026-10-26-model-discovery.md) distinguishes exact native source facts from unknown proxy/subscription limits. A known output maximum is not a default; it does not guarantee the entire maximum can be visible output or combined with other maxima. Discovery implements no token counting and never substitutes an input maximum for a context window.
 
@@ -122,6 +122,8 @@ Generation JSON/SSE and successful Embedding responses carry `X-MorphieCore-Adap
 ## Errors and limits
 
 OpenAI routes return `{"error":{"message","type","param","code"}}`. Messages errors, including authentication failures before body polling, use Anthropic's `{"type":"error","error":{"type","message"}}` envelope. Unclassified Messages errors put the diagnostic `code` in the message, for example `The request could not be completed (upstream_error).` Messages 401 errors use `authentication_error`.
+
+When Standard Chat planning is blocked by required thinking history, HTTP 400 uses `error.type:"invalid_request_error"` and `error.code:"reasoning_history_required"`. Its fixed message explains the missing history carrier and suggests an explicit off request or a compatible model/API. The gateway neither dispatches the rejected request nor retries it with different thinking settings. This is a JSON error before SSE starts, including for `stream:true`; it needs no diagnostic extension. In mixed rejected routes, the first configured blocking candidate supplies the planning diagnosis.
 
 | HTTP | Meaning |
 |---|---|

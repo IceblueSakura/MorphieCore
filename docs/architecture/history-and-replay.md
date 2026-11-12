@@ -36,10 +36,9 @@ A Generation binding declares one reasoning-history contract: `Unsupported`, `Ig
 
 1. **Unassessed bindings (`None`)**: Planning does not reject on unassessed facts. The candidate sends carriable history and delegates validation to upstream (delegation under the conversion ladder); discovery publishes `not_assessed`. Delegation never applies to credentials, auth, or replay origin trust.
 2. **`RequiredWithTools` handling**: When a binding declares `RequiredWithTools` and a Standard Chat client sends tools with thinking active:
-   - If the candidate supports disabling thinking (`enable_thinking: false` or effort `none`), planning falls back to disabling thinking under named loss `chat.fallback-thinking-off.v1` (L3).
-   - The fallback changes allocation and its active presentation only; explicit context, history-read, hidden-display and replay-mismatch guarantees still reach ordinary target admission.
-   - If thinking cannot be turned off, or explicit `read_history: true` prevents the fallback, planning rejects (`admission.client_representation`).
-   - Tool-free requests or requests with thinking already off add no history requirement.
+   - Active or default thinking rejects before dispatch (`admission.reasoning_history_required`); the gateway does not clear effort/budget or disable thinking.
+   - If route planning fails on this requirement, HTTP 400 reports `reasoning_history_required` with guidance for the runtime to explicitly disable thinking or select a compatible model/API. Streaming requests receive the same pre-stream JSON error.
+   - A new request with explicit `reasoning_effort:"none"` or no tools adds no such history requirement; ordinary target checks still apply, including targets that cannot disable thinking and explicit context/history-read guarantees.
 3. **Discovery**: Discovery reads candidate declarations, publishing a common fact, `non_uniform` for differing assessed facts, or `not_assessed` if any candidate is unassessed.
 
 Request projection applies the same carrier and trust checks for planning, dispatch re-projection and prefix-cache copies. The executor selects a target; lowering owns its history projection. Neither a declaration nor successful encoding establishes full-loop carriage. Standard Chat's selected delivery omission below is independent of guessing a Provider history fact. DeepSeek's [thinking contract](https://api-docs.deepseek.com/guides/thinking_mode/) requires **all previous turns' reasoning** when a thinking request carries tools; Zhipu's documented requirement concerns the current tool cycle. The shared fact does not collapse those scopes or authorize dropping explicit read-history intent.
@@ -72,7 +71,7 @@ Reasoning envelopes carrying the former model-specific fingerprint do not match 
 
 ### Standard Chat reasoning
 
-Public Chat uses the official Standard dialect. It omits unsigned readable reasoning under `chat.omit-readable-reasoning.v1` and replay-bearing reasoning under `chat.omit-uncarried-reasoning.v1`, preserving visible content, tool links, usage and terminal authority. Reasoning is never moved into visible text or fabricated as a signature. Required tool-history bindings follow the [thinking-off fallback or rejection](#binding-reasoning-history-contract).
+Public Chat uses the official Standard dialect. It omits unsigned readable reasoning under `chat.omit-readable-reasoning.v1` and replay-bearing reasoning under `chat.omit-uncarried-reasoning.v1`, preserving visible content, tool links, usage and terminal authority. Reasoning is never moved into visible text or fabricated as a signature. Required tool-history bindings follow the [pre-dispatch rejection contract](#binding-reasoning-history-contract); only the runtime may choose to disable thinking.
 
 Provider-specific `reasoning_content`, `reasoning_details` and `preserve_thinking` remain upstream dialect concerns. Unknown downstream extension fields are discarded, not retained or forwarded. There is no public reasoning/replay profile or client-specific retention requirement.
 

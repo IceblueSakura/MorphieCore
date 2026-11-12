@@ -10,6 +10,7 @@ use serde_json::json;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ErrorKind {
     InvalidRequest,
+    ReasoningHistoryRequired,
     Upstream,
     Timeout,
     Shutdown,
@@ -37,6 +38,7 @@ impl ErrorKind {
     pub const fn diagnostic_code(self) -> &'static str {
         match self {
             Self::InvalidRequest => "gateway.invalid_request",
+            Self::ReasoningHistoryRequired => "gateway.reasoning_history_required",
             Self::Upstream => "gateway.upstream",
             Self::Timeout => "gateway.timeout",
             Self::Shutdown => "gateway.shutdown",
@@ -64,6 +66,7 @@ impl ErrorKind {
     pub const fn code(self) -> &'static str {
         match self {
             Self::InvalidRequest => "invalid_request",
+            Self::ReasoningHistoryRequired => "reasoning_history_required",
             Self::Upstream => "upstream_error",
             Self::Timeout => "upstream_timeout",
             Self::Shutdown => "shutting_down",
@@ -223,6 +226,10 @@ impl ApiError {
     pub fn body(&self) -> serde_json::Value {
         // OpenAI's codes and wording; pi matches the message, opencode the body.
         let (kind, message) = match self.kind {
+            ErrorKind::ReasoningHistoryRequired => (
+                "invalid_request_error",
+                "This target requires reasoning history for thinking-enabled tool use, but Standard Chat cannot return it. The gateway will not disable thinking automatically. Explicitly set reasoning_effort to none, or select a compatible model/API.".into(),
+            ),
             ErrorKind::ContextOverflow => (
                 "invalid_request_error",
                 "Your input exceeds the context window of this model. Please adjust your input and try again.".into(),

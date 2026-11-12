@@ -37,6 +37,10 @@ This page defines accepted principles, domain contracts, system boundaries, and 
 
 ## System boundaries
 
+MorphieCore provides stable protocol APIs to internal Agent runtimes. Runtimes choose submitted history, reasoning migration and execution strategy; pi is a reference for multi-Provider integration, not an Agent behavior specification for the gateway.
+
+The gateway converts fields and carriers under the accepted conversion ladder. When a target limitation instead requires changing execution strategy, reject before dispatch when the limitation is known and return a standard error with a stable reason and safe corrective guidance. Do not automatically disable thinking, replace a requested tool/output strategy, invent missing history or retry with semantically repaired input. The runtime decides whether to issue a different request. Existing field approximations and selected carrier omissions remain; configured candidate selection may still choose a target that can serve the submitted intent. Bounded transport retries retain their separate contract and cannot rewrite that intent.
+
 ### Protocols
 
 | Direction | Supported Protocols |

@@ -124,8 +124,8 @@ async fn opencode_responses_default_tool_history() {
 }
 
 #[tokio::test]
-#[ignore = "requires current installed OpenCode; native Chat defaults and tool/history"]
-async fn opencode_chat_default_tool_history() {
+#[ignore = "requires current installed OpenCode; default Chat history refusal without dispatch"]
+async fn opencode_chat_default_reasoning_history_rejection() {
     installed_case(
         "protocol_defaults",
         "opencode-chat-default",
@@ -136,8 +136,8 @@ async fn opencode_chat_default_tool_history() {
 }
 
 #[tokio::test]
-#[ignore = "requires current installed pi; builtin Chat strict tools dispatch through the beta binding"]
-async fn pi_chat_default_strict_guarantee() {
+#[ignore = "requires current installed pi; builtin Chat history refusal without dispatch"]
+async fn pi_chat_default_reasoning_history_rejection() {
     installed_case(
         "protocol_defaults",
         "pi-chat-default",
@@ -148,7 +148,7 @@ async fn pi_chat_default_strict_guarantee() {
 }
 
 #[tokio::test]
-#[ignore = "requires current installed pi; shipped gateway profile and strict tool/history loop"]
+#[ignore = "requires current installed pi; explicit thinking off with shipped gateway profile"]
 async fn pi_chat_gateway_profile() {
     installed_case(
         "protocol_defaults",

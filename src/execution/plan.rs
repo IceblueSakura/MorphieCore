@@ -54,7 +54,7 @@ pub enum RejectionReason {
     Semantic(crate::semantic::task::generation::Feature),
     Image,
     ReplayScope,
-    Representation,
+    ReasoningHistoryRequired,
     Conversion(Box<crate::protocol::ConversionFailure>),
 }
 impl RejectionReason {
@@ -65,7 +65,7 @@ impl RejectionReason {
             Self::Semantic(feature) => super::failure::feature_code(feature),
             Self::Image => "admission.image",
             Self::ReplayScope => "admission.replay_scope",
-            Self::Representation => "admission.client_representation",
+            Self::ReasoningHistoryRequired => "admission.reasoning_history_required",
             Self::Conversion(cause) => super::failure::conversion_code(cause),
         }
     }
@@ -100,24 +100,22 @@ pub(crate) fn project_candidate(
     {
         return Err(RejectionReason::Streaming);
     }
-    let fallback = if let Some(crate::adapter::ClientAdapter::OpenAi { adapter, .. }) = client
+    // History strategy belongs to the runtime; never disable thinking to make
+    // an otherwise incompatible client/target combination admissible.
+    if let Some(crate::adapter::ClientAdapter::OpenAi { adapter, .. }) = client
         && adapter.protocol == crate::protocol::openai::GenerationApi::Chat
-        && endpoint.protocol == crate::topology::GenerationProtocol::OpenAiChat
+        && endpoint.representation.openai().is_some_and(|contract| {
+            contract.reasoning_history
+                == Some(crate::protocol::reasoning::ReasoningHistory::RequiredWithTools)
+        })
+        && !request.task.semantic.tools().is_empty()
+        && request.task.semantic.reasoning().activation
+            != Some(crate::semantic::task::generation::ReasoningActivation::Disabled)
     {
-        endpoint
-            .representation
-            .openai()
-            .map(|contract| crate::lowering::request::chat_history_fallback(request, contract))
-            .transpose()
-            .map_err(|_| RejectionReason::Representation)?
-    } else {
-        None
-    };
-    let input = fallback
-        .as_ref()
-        .map_or(request, |projection| projection.value.as_ref());
-    let mut projection = endpoint
-        .encode_request_with_evidence(input)
+        return Err(RejectionReason::ReasoningHistoryRequired);
+    }
+    let projection = endpoint
+        .encode_request_with_evidence(request)
         .map_err(|error| {
             use crate::protocol::{ConversionFailure, conversion::generation::RepresentationError};
             match error {
@@ -145,9 +143,6 @@ pub(crate) fn project_candidate(
                 error => RejectionReason::Conversion(Box::new(error)),
             }
         })?;
-    if let Some(fallback) = fallback {
-        projection.evidence.extend(fallback.evidence);
-    }
     crate::execution::attempt::RequestProjection::new(
         projection,
         endpoint.execution.request_body_limit,
@@ -243,11 +238,10 @@ mod tests {
     use crate::topology::catalog::default_topology;
 
     #[test]
-    fn downstream_reasoning_requirements_fallback_or_delegate_without_reordering() {
+    fn downstream_reasoning_requirements_reject_or_delegate_without_mutation() {
         use crate::{
             adapter::ClientAdapter,
             protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
-            semantic::task::generation::{ReasoningContext, ReplayMismatch},
         };
         let topology = default_topology().unwrap();
         let endpoint = topology
@@ -282,44 +276,9 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
-        let projected = project_candidate(endpoint, &request, Some(&plain)).unwrap();
-        assert_eq!(projected.value()["reasoning_effort"], "none");
-        assert!(
-            projected
-                .evidence()
-                .contains_rule("chat.fallback-thinking-off.v1")
-        );
-        for (context, mismatch) in [
-            (
-                crate::semantic::value::Presence::Value(ReasoningContext::CurrentTurn),
-                None,
-            ),
-            (
-                crate::semantic::value::Presence::Absent,
-                Some(ReplayMismatch::Reject),
-            ),
-        ] {
-            let mut constrained = request.clone();
-            let mut settings = constrained.task.semantic.settings().clone();
-            settings.reasoning.context = context;
-            settings.reasoning.replay_mismatch = mismatch;
-            constrained.task.semantic = constrained.task.semantic.with_settings(settings).unwrap();
-            let before = constrained.clone();
-            assert!(endpoint.encode_request(&constrained).is_err());
-            assert!(project_candidate(endpoint, &constrained, Some(&plain)).is_err());
-            assert_eq!(constrained, before);
-        }
-        let mut always_thinking = endpoint.clone();
-        always_thinking
-            .representation
-            .openai_mut()
-            .unwrap()
-            .adaptation
-            .rules
-            .reject_disabled_reasoning = true;
         assert_eq!(
-            project_candidate(&always_thinking, &request, Some(&plain)).map(drop),
-            Err(RejectionReason::Representation)
+            project_candidate(endpoint, &request, Some(&plain)).map(drop),
+            Err(RejectionReason::ReasoningHistoryRequired)
         );
         let select = |policy, client: &ClientAdapter| {
             select_candidates_with(
@@ -331,11 +290,15 @@ mod tests {
             )
         };
         let (selected, rejected) = select(CandidatePolicy::SkipUnrepresentable, &plain).unwrap();
-        assert_eq!(selected, [0, 1]);
-        assert!(rejected.is_empty());
+        assert_eq!(selected, [1]);
+        assert_eq!(rejected.len(), 1);
         assert_eq!(
-            select(CandidatePolicy::RequireAll, &plain).unwrap().0.len(),
-            2
+            rejected[0].reason,
+            RejectionReason::ReasoningHistoryRequired
+        );
+        assert_eq!(
+            select(CandidatePolicy::RequireAll, &plain).unwrap_err(),
+            PlanError::CandidateRejected(RejectionReason::ReasoningHistoryRequired)
         );
         assert_eq!(request, original);
         let off = tool_request("none");
@@ -343,12 +306,8 @@ mod tests {
             endpoint.encode_request(&off).unwrap()["reasoning_effort"],
             "none"
         );
-        assert!(
-            !project_candidate(endpoint, &off, Some(&plain))
-                .unwrap()
-                .evidence()
-                .contains_rule("chat.fallback-thinking-off.v1")
-        );
+        let projected = project_candidate(endpoint, &off, Some(&plain)).unwrap();
+        assert_eq!(projected.value()["reasoning_effort"], "none");
         let mut settings = request.task.semantic.settings().clone();
         settings.tools = None;
         let mut text = request.clone();

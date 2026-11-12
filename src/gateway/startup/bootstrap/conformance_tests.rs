@@ -331,11 +331,6 @@ async fn observe_intake(
     });
     let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
     let captured = calls.clone();
-    let thinking_fallback = matches!(provider, "deepseek" | "deepseek-beta")
-        && upstream == Api::Chat
-        && client == Api::Chat
-        && profile != Profile::Text
-        && control == Control::Default;
     let beta_chat = binding == "deepseek-beta-chat";
     let handler = post(move |headers: HeaderMap, Json(body): Json<Value>| {
         let calls = captured.clone();
@@ -358,9 +353,6 @@ async fn observe_intake(
             if oauth == Some("openai") {
                 assert_eq!(body["stream"], true, "SIWC always streams upstream");
                 assert_eq!(body["store"], false, "upstream stays stateless");
-            }
-            if thinking_fallback {
-                assert_eq!(body["reasoning_effort"], "none");
             }
             if force_stream {
                 assert_eq!(body["stream"], true, "experiment must reach SSE intake");
@@ -1260,17 +1252,18 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
         [ACCEPT, ACCEPT, ACCEPT, ACCEPT],
     ),
     (
-        &["zhipu-chat", "zhipu-flash-chat"],
+        &[
+            "zhipu-chat",
+            "zhipu-flash-chat",
+            "deepseek-chat",
+            "deepseek-beta-chat",
+        ],
         [
             ACCEPT,
-            &["planning:[\"admission.client_representation\"]@0"],
+            &["planning:[\"admission.reasoning_history_required\"]@0"],
             ACCEPT,
             ACCEPT,
         ],
-    ),
-    (
-        &["deepseek-chat", "deepseek-beta-chat"],
-        [ACCEPT, ACCEPT, ACCEPT, ACCEPT],
     ),
     (
         &[
@@ -1332,7 +1325,9 @@ fn expected(binding: &str, client: Api, profile: Profile) -> &'static [&'static 
         ("dashscope-glm-chat" | "deepseek-chat", Messages, Reasoning) => ACCEPT,
         ("openrouter-responses", Messages, Reasoning) => ACCEPT,
         ("dashscope-flash-responses", Messages, Reasoning) => ACCEPT,
-        ("deepseek-chat", Chat, Reasoning) => ACCEPT,
+        ("deepseek-chat", Chat, Reasoning) => {
+            &["planning:[\"admission.reasoning_history_required\"]@0"]
+        }
         ("deepseek-chat", Responses, Reasoning) => ACCEPT,
         ("openrouter-responses", Responses, Reasoning) => ACCEPT,
         ("openrouter-responses" | "dashscope-flash-responses", Chat, Reasoning) => ACCEPT,

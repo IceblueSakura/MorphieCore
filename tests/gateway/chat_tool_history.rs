@@ -123,11 +123,35 @@ fn input(stream: bool) -> Value {
 }
 
 #[tokio::test]
-async fn standard_chat_disables_thinking_for_required_tool_history_before_dispatch() {
+async fn standard_chat_requires_runtime_choice_for_required_thinking_history() {
     let client = reqwest::Client::builder().no_proxy().build().unwrap();
     for stream in [false, true] {
         let fixture = fixture::start_required_history().await;
         let mut body = input(stream);
+        for effort in [Some("low"), None] {
+            if let Some(effort) = effort {
+                body["reasoning_effort"] = json!(effort);
+            } else {
+                body.as_object_mut().unwrap().remove("reasoning_effort");
+            }
+            let rejected = client
+                .post(format!("{}/chat/completions", fixture.base))
+                .bearer_auth(fixture::CLIENT_KEY)
+                .json(&body)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(rejected.status(), 400);
+            let error: Value = rejected.json().await.unwrap();
+            assert_eq!(error["error"]["type"], "invalid_request_error");
+            assert_eq!(error["error"]["code"], "reasoning_history_required");
+            let message = error["error"]["message"].as_str().unwrap();
+            assert!(message.contains("Standard Chat cannot return"));
+            assert!(message.contains("will not disable thinking"));
+            assert!(fixture.seen.lock().unwrap().is_empty());
+        }
+        // A new runtime-selected request may explicitly disable thinking.
+        body["reasoning_effort"] = json!("none");
         let result = request(&client, &fixture.base, &body, "thinking-off").await;
         assert_eq!(result["choices"][0]["finish_reason"], "tool_calls");
         let message = result["choices"][0]["message"].clone();

@@ -27,7 +27,7 @@ The Generation baseline has met the selected [partial-delivery exit](roadmap/ind
 | Area | Overall status |
 |---|---|
 | Generation protocols | Standard Chat, Responses and Messages request, JSON/SSE, tools and native reasoning/history paths are supported, including stateless Responses across a fresh runtime. Google remains upstream-only; ordinary signatures without a standard stateless carrier reject explicitly |
-| Agent workflows | Principal pi/OpenCode tool, coding/repair, recall, summary, session and cancellation/recovery workflows are accepted. Client-specific and Provider-specific qualifications remain in the roadmap |
+| Agent workflows | Principal pi/OpenCode tool, coding/repair, recall, summary, session and cancellation/recovery workflows are accepted. Required-history Standard Chat tools need runtime-selected thinking off; active/default thinking rejects with an actionable error. Client-specific and Provider-specific qualifications remain in the roadmap |
 | Protocol integration | Independent directional checks, pinned upstream fixtures, strict SDK consumers and complete continuation histories are integrated |
 | Runtime and credentials | Ordered routing with advisory cooldowns/preferences, bounded retry/publication, credential isolation, OAuth renewal and pending-verification recovery are covered; API-key updates use one transaction and Unix binaries handle SIGINT/SIGTERM |
 | Diagnostics | Application-side failure Logs, bounded private context, redaction and non-blocking lifecycle are delivered. Production receiver, persistence, access and retention remain unselected |

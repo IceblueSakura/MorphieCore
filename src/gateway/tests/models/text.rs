@@ -618,7 +618,7 @@ fn text_contract_uses_actual_dialect_checks_and_does_not_advertise_omitted_contr
     entry.candidates = vec![Arc::new(candidate)];
     assert_eq!(
         descriptor(entry)["features"]["function_tools"],
-        json!({"state":"approved_adaptation","rules":["chat.fallback-thinking-off.v1"]})
+        json!({"state":"unavailable"})
     );
 }
 

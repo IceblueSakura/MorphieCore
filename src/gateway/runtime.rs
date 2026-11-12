@@ -184,7 +184,7 @@ mod tests {
             let request = entry
                 .client
                 .decode_client_request(
-                    json!({"model":"fixture-model","reasoning_effort":"low",
+                    json!({"model":"fixture-model","reasoning_effort":"none",
                     "messages":[{"role":"user","content":"hello"}],
                     "tools":[{"type":"function","function":{"name":"lookup","strict":false,
                         "parameters":{"type":"object","properties":{},"default":annotation}}}]})
@@ -205,11 +205,6 @@ mod tests {
                 let conversion = planned
                     .into_projection(&request, &gate.state.affinity, &entry.client)
                     .unwrap();
-                assert!(
-                    conversion
-                        .evidence
-                        .contains_rule("chat.fallback-thinking-off.v1")
-                );
                 let secret = candidate.secret.resolve().unwrap().0;
                 let prepared = crate::execution::attempt::prepare_retained(
                     &candidate.endpoint,

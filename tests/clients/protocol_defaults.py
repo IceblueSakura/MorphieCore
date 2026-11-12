@@ -1,4 +1,4 @@
-"""Installed native protocol defaults through the CLI, without reasoning/compat overrides."""
+"""Installed protocol defaults and an explicit runtime-selected Chat thinking-off profile."""
 from contextlib import ExitStack, closing
 import base64
 import copy
@@ -113,7 +113,7 @@ def assert_chat_profile(body, pi, *, upstream=False, gateway_profile=False):
           "default_chat_storage_and_usage")
     check(body.get("thinking") == {"type": "enabled"} if pi and not upstream and not gateway_profile
           else "thinking" not in body, "default_chat_thinking")
-    check(body.get("reasoning_effort") == "none" if upstream else
+    check(body.get("reasoning_effort") == "none" if gateway_profile else
           (body.get("reasoning_effort") == "high" if pi else "reasoning_effort" not in body),
           "default_effort")
     tools = body.get("tools", [])
@@ -147,9 +147,10 @@ class ChatState(DefaultState):
                   "default_extra_or_reordered_client_request")
 
     def upstream(self, headers, body):
+        check(self.gateway_profile, "default_chat_must_not_dispatch")
         check(headers.get("authorization") == "Bearer synthetic-client-primary",
               "default_upstream_credential")
-        tools = assert_chat_profile(body, self.pi, upstream=True)
+        tools = assert_chat_profile(body, self.pi, upstream=True, gateway_profile=True)
         phase = stage(body)
         assert_history(body, phase, False, self.path, profile=False)
         # Built-in client compatibility may add empty reasoning fields. Standard
@@ -163,10 +164,26 @@ class ChatState(DefaultState):
                   "default_extra_or_reordered_upstream_attempt")
         return 200, chat_events(phase, self.path, model="deepseek-flash"), "text/event-stream"
 
+    def observe_response(self, body, status, content_type, payload):
+        if self.gateway_profile:
+            return super().observe_response(body, status, content_type, payload)
+        check(status == 400 and content_type.split(";")[0] == "application/json",
+              "required_history_pre_stream_error")
+        error = json.loads(payload)["error"]
+        check(error["type"] == "invalid_request_error"
+              and error["code"] == "reasoning_history_required"
+              and "will not disable thinking" in error["message"], "required_history_error")
+        with self.lock:
+            self.deliveries.append(status)
+
     def finish(self):
         check(not self.errors, "default_authority_errors:" + ",".join(self.errors))
-        check(self.ingress == self.attempts == [1, 2, 3], "default_exchange_counts")
-        check(self.deliveries == [200, 200, 200], "default_deliveries")
+        if self.gateway_profile:
+            check(self.ingress == self.attempts == [1, 2, 3], "default_exchange_counts")
+            check(self.deliveries == [200, 200, 200], "default_deliveries")
+        else:
+            check(self.ingress == [1] and not self.attempts and self.deliveries == [400],
+                  "required_history_no_dispatch_or_retry")
 
 
 def response_items(phase, path):
@@ -369,7 +386,8 @@ def run_pi(binary, env, root, work, origin, path, protocol, *, gateway_profile=F
         "provider": {"maxRetries": 0, "timeoutMs": 5000}},
         "compaction": {"enabled": False}, "cacheWarming": "off"})
     env = {**env, "PI_CODING_AGENT_DIR": str(agent), "PI_CACHE_RETENTION": "short"}
-    with Pi(binary, env, work, model_id, provider=provider, thinking=None) as client:
+    with Pi(binary, env, work, model_id, provider=provider,
+            thinking="off" if gateway_profile else None) as client:
         initial, _ = client.command("get_state")
         model = initial["model"]
         check(model["id"] == model_id and model["provider"] == provider
@@ -378,8 +396,19 @@ def run_pi(binary, env, root, work, origin, path, protocol, *, gateway_profile=F
         if protocol == "messages":
             check(model["compat"]["forceAdaptiveThinking"] is True
                   and model["compat"]["supportsTemperature"] is False, "pi_resolved_messages_metadata")
-        check(initial["thinkingLevel"] == ("high" if protocol == "chat" else "medium"),
+        check(initial["thinkingLevel"] ==
+              ("off" if gateway_profile else "high" if protocol == "chat" else "medium"),
               "pi_default_thinking_level")
+        if protocol == "chat" and not gateway_profile:
+            _, events = client.command("prompt", message=f"{READ}: Read {path}, then answer.")
+            assistants = [event["message"] for event in events if event.get("type") == "message_end"
+                          and event.get("message", {}).get("role") == "assistant"]
+            check(len(assistants) == 1 and assistants[0]["stopReason"] == "error"
+                  and "will not disable thinking" in assistants[0].get("errorMessage", ""),
+                  "pi_required_history_error")
+            check(not any(event["type"].startswith(("tool_execution", "auto_retry"))
+                          for event in events), "pi_required_history_no_execution_or_retry")
+            return
         client.prompt(f"{READ}: Read {path}, then answer.", ["toolUse", "stop"])
         client.prompt(f"{NEXT}: Repeat the answer without reading again.", ["stop"])
         final, _ = client.command("get_state")
@@ -408,6 +437,16 @@ def run_opencode(binary, env, root, work, origin, path, protocol):
     private_json(config, value)
     env = {**env, "OPENCODE_CONFIG": str(config), "OPENCODE_DISABLE_AUTOUPDATE": "1",
            "OPENCODE_DISABLE_MODELS_FETCH": "1", "OPENCODE_DISABLE_PROJECT_CONFIG": "1"}
+    if protocol == "chat":
+        def rejected(events):
+            check(not any(event.get("type") == "tool_use" for event in events)
+                  and any(event.get("type") == "error"
+                          and "will not disable thinking" in json.dumps(event)
+                          for event in events), "opencode_required_history_error")
+        opencode_prompt(binary, env, work, f"{READ}: Read {path}, then answer.",
+                        "protocol-default", model=f"{provider}/{model_id}",
+                        expected_status=1, check_output=rejected)
+        return
     session, events = opencode_prompt(binary, env, work,
         f"{READ}: Read {path}, then answer.", "protocol-default", model=f"{provider}/{model_id}")
     tools = [e["part"] for e in events if e.get("type") == "tool_use"]
@@ -435,7 +474,8 @@ def main():
     protocol = case.split("-")[1]
     pi = case.startswith("pi-")
     gateway_profile = case == "pi-chat-gateway-profile"
-    count = 3
+    rejected = protocol == "chat" and not gateway_profile
+    count = 1 if rejected else 3
     model_id, provider, binding, _ = PROFILES[protocol]
     if pi and protocol == "chat":
         # pi's builtin strict read tool needs the beta endpoint binding.
@@ -474,9 +514,10 @@ def main():
             raise
     state.finish()
     print(json.dumps({"case": case, "version": version, "client_requests": count,
-        "upstream_attempts": count, "extra_client_requests": 0,
-        "tool_history": True,
-        "next_turn_history": True,
+        "upstream_attempts": len(state.attempts), "extra_client_requests": 0,
+        "tool_history": not rejected,
+        "next_turn_history": not rejected,
+        **({"rejection": "reasoning_history_required"} if rejected else {}),
         **({"default_headers": True, "beta_header_seen": state.beta_seen,
             "block_binding_seen": state.block_binding_seen} if protocol == "messages" else {})}))
 

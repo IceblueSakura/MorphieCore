@@ -61,6 +61,11 @@ upstream adapter separately chooses native `max_tokens`. Workstation extensions
 that generate model declarations should apply the same profile; installing or
 activating such an extension remains an operator action.
 
+For required-history tool calls through Standard Chat, explicitly select thinking
+off in pi (`--thinking off`). Loading the profile alone does not change pi's default
+thinking level. Active/default thinking returns `reasoning_history_required`;
+MorphieCore does not switch it off on the runtime's behalf.
+
 ### Messages
 
 Send exactly one `anthropic-version: 2023-06-01` or `anthropic-version: 2026-10-21` header. Both use the current body grammar. Missing, duplicate, combined and unsupported versions return 400 before body collection. `anthropic-beta` headers are ignored; supported body fields and trusted upstream beta selection remain independent. Legacy `temperature`/`top_p` values in `[0,1]` and mathematically integral `top_k` in `[0,18446744073709551615]` are validated exactly, then omitted with named evidence. Equivalent decimal/exponent spellings such as `top_k:1.0` and `top_k:1e0` are accepted; no floating-point rounding can admit an out-of-range value. Null sampling defaults normalize without a loss receipt; malformed values still reject.
@@ -93,7 +98,7 @@ Bailian Responses request controls use the selected [presentation/continuity pol
 
 DashScope and TokenPlan share the [verified-only function-strictness policy](../architecture/adaptation-and-dialects.md#shared-aliyun-billing-dialect) on Chat and Responses. Unverified model/API pairs accept `strict:true` as best-effort under `bailian.relax-function-strictness.v1`, retaining the supplied schema unchanged. The current verified set is empty, so neither plan promises strict-function enforcement. Validate arguments before tool execution. Structured-text `strict`, required selection, seriality and thinking controls remain independent. Other Providers retain ordinary strict admission and conditional-default handling.
 
-Declared `required_with_tools` Chat bindings with active/default thinking use the named thinking-off fallback when the target can represent it; otherwise planning rejects. This is a recorded computation change, not reasoning moved into visible text. Unassessed history contracts delegate available standard history to upstream validation. See the [binding-history contract](../architecture/history-and-replay.md#binding-reasoning-history-contract).
+Standard Chat tool requests with active/default thinking reject on declared `required_with_tools` bindings before dispatch. The gateway never disables thinking or clears effort/budget to make them work. If this blocks route planning, HTTP 400 returns `reasoning_history_required`; the runtime may explicitly submit `reasoning_effort:"none"` or choose a compatible model/API. Targets without a thinking-off carrier still reject an explicit off request. Unassessed history contracts delegate available standard history to upstream validation. See the [binding-history contract](../architecture/history-and-replay.md#binding-reasoning-history-contract).
 
 Responses Client-history `output_text` may omit an empty `annotations` collection under the selected [L2 compatibility rule](../architecture/adaptation-and-dialects.md#semantic-equivalence-compatibility); explicit arrays are preserved and malformed values, including null, reject. Complete output-message history still needs its `type`, `id`, `role`, `content` and `status`; those fields are not inferred. Upstream response/event snapshots require the official annotations array. Official assistant string shorthand remains valid. SDK-derived `parsed`/`parsed_arguments` and Chat response-only annotations are unregistered Client fields: ignored, never authoritative over raw text/arguments. Chat audio history is an `id` reference, not a generated-audio response object. Standard input rejects nonstandard video content discriminators; declaring Provider dialects retain their separate carriers.
 

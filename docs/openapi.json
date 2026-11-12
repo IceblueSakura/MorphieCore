@@ -3074,7 +3074,7 @@
           {"not": {"required": ["max_tokens", "max_completion_tokens"]}}
         ],
         "additionalProperties": true,
-        "description": "Standard Chat envelope subset, not an upstream parameter bag. SDK extra_body is flattened before HTTP. Unknown wire bags, body session IDs and Provider-specific reasoning fields are discarded without retention, routing authority or passthrough; known unowned hosted/legacy controls retain rejection. Standard reasoning_effort controls computation. Required tool reasoning history uses the selected thinking-off fallback or rejects; no public reasoning profile is offered. Model-specific restrictions remain enforced by codec and binding. Named projection may omit container boundaries, not call/result identity."
+        "description": "Standard Chat envelope subset, not an upstream parameter bag. SDK extra_body is flattened before HTTP. Unknown wire bags, body session IDs and Provider-specific reasoning fields are discarded without retention, routing authority or passthrough; known unowned hosted/legacy controls retain rejection. Standard reasoning_effort controls computation. Thinking-enabled/default tools reject on required-history targets before dispatch; a blocking planning failure returns HTTP 400 with reasoning_history_required. The runtime may explicitly select reasoning_effort:none or a compatible model/API; the gateway never disables thinking automatically. No public reasoning profile is offered. Model-specific restrictions remain enforced by codec and binding. Named projection may omit container boundaries, not call/result identity."
       },
       "ChatTool": {
         "oneOf": [

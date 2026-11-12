@@ -248,7 +248,7 @@ pub async fn start_recovery() -> Fixture {
     start_with_recovery(GenerationApi::Chat, false, true, false, None).await
 }
 
-#[allow(dead_code)] // Only the Router target exercises thinking-off fallback.
+#[allow(dead_code)] // Only the Router target exercises required-history rejection.
 pub async fn start_required_history() -> Fixture {
     start_with_recovery(GenerationApi::Chat, false, false, true, None).await
 }
