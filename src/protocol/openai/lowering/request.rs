@@ -92,7 +92,7 @@ pub(crate) fn render_request<'a>(
                     ContentPart::Audio(_) | ContentPart::AudioReference(_)
                 ) {
                     fidelity
-                        .check_audio(p.id, &p.content, c.replay_origin.as_ref(), c.resource_time)
+                        .check_audio(p.id, &p.content, c.replay_origin(), c.resource_time)
                         .map_err(|_| RepresentationError::ReplayOrigin)?;
                 }
             }
@@ -136,7 +136,7 @@ pub(crate) fn render_request<'a>(
         r.items(),
         fidelity,
         profile,
-        c.replay_origin.as_ref(),
+        c.replay_origin(),
         &c.adaptation,
         Some(r),
     )?;

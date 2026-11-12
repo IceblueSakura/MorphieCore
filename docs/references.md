@@ -98,6 +98,7 @@ Keep dated evidence that is not better owned by a current source guide, accepted
 | [Google and cross-protocol distinctions, 2026-10-17 onward](refs/2026-10-17-generation-contracts.md) | Lifecycle/resource versus event meaning, unresolved streamed score scope, sparse accounting relationships and the 2026-11-01 official Chat terminal-label recheck |
 | [Instruction authority, 2026-10-25](refs/2026-10-25-instruction-authority.md) | Application versus vendor authority, legacy roles and Provider/Vercel comparisons |
 | [Model discovery, 2026-10-26](refs/2026-10-26-model-discovery.md) | Capacity source/applicability, unknown limits and pi image carriers; 2026-11-10 native-effort and pi planning follow-up |
+| [Generation binding contracts, 2026-11-12](refs/2026-11-12-generation-binding-contracts.md) | SIWC tool carriers, GPT strict/image support, model-effective reasoning restrictions and source-versus-carrier replay ownership |
 | [Chat custom tools, 2026-10-16](refs/2026-10-16-chat-custom-tools.md) | Original complete-value carriers; later SSE disagreement linked separately |
 | [Bailian compatible requests, 2026-10-19](refs/2026-10-19-bailian-compatible-requests.md) | Model-specific ceilings, ignored controls, aliases and compatible-versus-RPC distinctions; 2026-11-08 output-format refresh and [2026-11-09 function-guarantee recheck](refs/2026-10-19-bailian-compatible-requests.md#function-guarantee-recheck-2026-11-09) |
 

@@ -108,7 +108,7 @@ pub(crate) fn validate_response(
         r.items(),
         fidelity,
         profile,
-        c.replay_origin.as_ref(),
+        c.replay_origin(),
         &c.adaptation,
         None,
     )?;

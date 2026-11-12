@@ -652,7 +652,8 @@ impl<'a> Target<'a> {
                 table.set(ReasoningMode, Disposition::Equivalent);
             }
         }
-        if (matches!(self, Target::OpenAi(_, contract) if contract.adaptation.rules.reject_disabled_reasoning)
+        if (self.limits().reject_disabled_reasoning
+            || matches!(self, Target::OpenAi(_, contract) if contract.adaptation.rules.reject_disabled_reasoning)
             || matches!(self, Target::GenerateContent(_) | Target::Interactions(_)))
             && (source.reasoning().activation.as_ref() == Some(&crate::semantic::task::generation::ReasoningActivation::Disabled)
                 || source.items().iter().any(|(_, item)| matches!(item, Item::ConfigurationUpdate(update)
@@ -1853,6 +1854,19 @@ fn project_semantic_with_table<'a>(
             );
         }
     }
+    if matches!(target, Target::OpenAi(GenerationApi::Responses, contract)
+        if contract.adaptation.rules.responses_siwc)
+        && let Some(projected) =
+            super::tool_set::inline_root_tools(&semantic).map_err(CodecError::from)?
+    {
+        semantic = Cow::Owned(projected);
+        table.set(
+            Feature::Tools,
+            target.table(&semantic, model).get(Feature::Tools),
+        );
+        evidence
+            .push(super::disposition::INLINE_ROOT_TOOLS.effect(ConversionBoundary::RequestProject));
+    }
     if matches!(target, Target::Messages(_)) {
         semantic = Cow::Owned(crate::protocol::native::group_client_history(
             &semantic, true,
@@ -2106,14 +2120,11 @@ pub(crate) fn project<'a>(
     // foreign owner can disappear without making the retained history unsupported.
     let native_origin = native_target.map(|native| native.origin());
     let issuer = match target {
-        Target::OpenAi(_, contract) => contract
-            .replay_origin
-            .as_ref()
-            .or(contract.adaptation.scope.as_ref()),
+        Target::OpenAi(_, contract) => contract.replay_origin(),
         _ => Some(native_origin.as_ref().ok_or_else(CodecError::invalid)?),
     };
     let reasoning_issuer = match target {
-        Target::OpenAi(_, contract) => contract.adaptation.reasoning_origin(issuer),
+        Target::OpenAi(_, contract) => contract.reasoning_origin(),
         _ => None,
     };
     let mut stripped =

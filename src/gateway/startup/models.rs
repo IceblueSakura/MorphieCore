@@ -282,6 +282,7 @@ impl Models {
                         &table,
                     )?;
                     let limits = crate::protocol::model_limits::ModelLimits {
+                        reject_disabled_reasoning: false,
                         allowed_effort: candidate
                             .allowed_effort
                             .as_ref()

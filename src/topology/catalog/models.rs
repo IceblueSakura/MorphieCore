@@ -18,7 +18,7 @@ pub const MODELS: &[ModelDefinition] = &[
         id: "gpt-6-astra",
         images: true,
         files: true,
-        strict_tools: false,
+        strict_tools: true,
         released_at: 1_788_393_600,
         developer: "OpenAI",
     },
@@ -63,9 +63,9 @@ pub const MODELS: &[ModelDefinition] = &[
     // Source: https://openai.com/index/introducing-gpt-6-1-sol/ (2026-09-29).
     ModelDefinition {
         id: "gpt-6.1-sol",
-        images: false,
+        images: true,
         files: false,
-        strict_tools: false,
+        strict_tools: true,
         released_at: 1_790_640_000,
         developer: "OpenAI",
     },
@@ -223,6 +223,10 @@ pub fn contract(id: &str) -> Dispositions {
         .expect("explicit canonical reference");
     (Dispositions::text_images())
         .with_native(
+            crate::semantic::task::generation::Feature::CustomTools,
+            matches!(id, "gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna"),
+        )
+        .with_native(
             crate::semantic::task::generation::Feature::ImageInput,
             definition.images,
         )
@@ -264,7 +268,7 @@ pub fn canonical_models() -> Vec<CanonicalModel> {
         .collect()
 }
 
-pub(super) fn planning_limits(
+pub(super) fn model_limits(
     model: &str,
     provider: &str,
 ) -> crate::protocol::model_limits::ModelLimits {
@@ -274,7 +278,17 @@ pub(super) fn planning_limits(
         ("qwen3.8-max" | "qwen3.8-flash", "aliyun-dashscope-cn") => Some(1_000_000),
         _ => None,
     };
+    use crate::semantic::task::generation::EffortLevel as E;
+    let allowed_effort: Option<Box<[_]>> = match model {
+        "grok-4.7" => Some(vec![E::Low, E::Medium, E::High, E::XHigh].into()),
+        "gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna" => {
+            Some(vec![E::Low, E::Medium, E::High, E::XHigh, E::Max].into())
+        }
+        _ => None,
+    };
     crate::protocol::model_limits::ModelLimits {
+        reject_disabled_reasoning: matches!(model, "grok-4.7" | "gpt-6-astra" | "gpt-6.1-sol"),
+        allowed_effort,
         context_window_tokens,
         ..Default::default()
     }

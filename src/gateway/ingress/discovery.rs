@@ -19,7 +19,7 @@ use serde::Serialize;
 use std::{collections::BTreeMap, sync::Arc};
 
 const MAX_MODELS: usize = 64;
-const MAX_BYTES: usize = 256 << 10;
+const MAX_BYTES: usize = 1 << 20;
 
 pub(in crate::gateway) struct Contracts {
     pub(in crate::gateway) interfaces: BTreeMap<(ClientProtocol, String), contract::Interface>,

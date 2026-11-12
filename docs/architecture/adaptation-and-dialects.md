@@ -75,7 +75,7 @@ Four decoupled responsibilities:
 3. **Target encoding:** Validates target-specific constraints and formats native requests.
 4. **Provider egress dialect:** Translates standard target requests to vendor wire formats where required.
 
-Strict-tool admission follows the effective binding/API disposition in shared request projection, including direct library lowering; writers render that decision. Native OpenAI/SIWC Luna uses the strict carrier. OpenRouter Luna delegates its unassessed endpoint guarantee and discovery reports `not_assessed`. Bailian uses the separately selected [verified-only function-strictness policy](#shared-aliyun-billing-dialect), rather than canonical model flags or a blanket explicit-strict rejection. These carrier decisions do not attest arbitrary-schema enforcement.
+Strict-tool admission follows the effective binding/API disposition in shared request projection, including direct library lowering; writers render that decision. Native OpenAI/SIWC GPT bindings use the strict carrier. OpenRouter Luna delegates its unassessed endpoint guarantee and discovery reports `not_assessed`. Bailian uses the separately selected [verified-only function-strictness policy](#shared-aliyun-billing-dialect), rather than canonical model flags or a blanket explicit-strict rejection. These carrier decisions do not attest arbitrary-schema enforcement.
 
 #### Google strict function arguments
 
@@ -118,6 +118,8 @@ This explicitly accepts best-effort arguments and downstream validation/correcti
 SIWC (Sign-in with ChatGPT) and Grok use Responses endpoints with stateless upstream execution (`store: false`):
 - Prompt cache keys mapped via `prompt_cache_key`.
 - Streaming intake required for all client requests; terminal output reconstructed from event state.
+
+SIWC carries root namespaces natively. Flat function/custom definitions take the equivalent `siwc.inline-root-tools.v1` projection into one leading developer `additional_tools` batch. Preserve names, schemas, strictness, selection, call/result identities and existing inline order on candidate copies. No namespace alias or argument repair is introduced. Inactive dispatch and supported direct-call shapes remain required. [Source contracts](../refs/2026-11-12-generation-binding-contracts.md) distinguish these carriers from hosted tools and account eligibility.
 
 The qualified Grok recovery profiles retain upstream literal-label omissions and tool selection contrary to prompt-only prohibitions as scoped service limitations ([acceptance status](../development.md#overall-acceptance-status)). Preserve request text/order and explicit tool policy; prose does not synthesize `tool_choice:none`. Retain honest interruption, execution/feedback identities and original content assertions. No strictness relaxation, role/history rewrite, argument repair or retry is selected for these symptoms.
 
@@ -212,6 +214,7 @@ Existing rule families remain valid ladder applications:
 | Prediction / advisory controls | Preserve in IR; apply exact native carrier, or omit via named receipt |
 | Reasoning allocation / effort | Preserve budget and effort; apply directional quantization or scope approximation |
 | Tool-result errors | Preserve native error flag; wrap in `[tool result is_error=...]` if target lacks boolean carrier |
+| SIWC flat root tools | L2 `siwc.inline-root-tools.v1` moves function/custom declarations into a leading developer batch, preserving their leaf identities and existing history |
 | Chat JSON grouping | Concatenate contiguous plain assistant text before function/custom calls, preserving call identity, order and raw arguments/input. Do not flatten rich/replay-bearing parts or reorder text across calls; custom SSE remains unsupported |
 | Instruction roles | Canonical Developer mapping; preserve root vs. ordered lifetimes |
 | Output ceilings | Use the [output-ceiling disposition](#output-ceiling-adaptation); insert a target default only when the original client ceiling is absent |
@@ -385,6 +388,8 @@ The IR decouples reasoning activation from effort level and scope:
 - **Activation:** `ReasoningRequest` (enabled vs disabled).
 - **Effort Control:** `EffortControl { scope, level }` with [`EffortScope::Reasoning`](../../src/semantic/task/generation/content/reasoning.rs#L27) (per-thought) or [`EffortScope::Response`](../../src/semantic/task/generation/content/reasoning.rs#L27) (turn-wide).
 - Explicit `disabled` reasoning takes precedence over response-wide effort settings.
+
+Model-effective constraints independently declare whether disabled activation is unavailable and which positive effort levels are native. Grok 4.7 and GPT Astra/Sol reject explicit off; Luna retains off. Positive non-native levels use the existing nearest-level mapping, while omission remains omission. Discovery and dispatch consume the same constraint; dialect spelling does not create model support. See the [official source review](../refs/2026-11-12-generation-binding-contracts.md).
 
 ##### Ordered effort repair direction
 

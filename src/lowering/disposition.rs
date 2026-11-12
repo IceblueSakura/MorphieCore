@@ -524,6 +524,8 @@ pub(crate) const NAMED_TOOL_SUBSET: Rule = Rule::new(
     Field::ToolChoice,
     Change::Normalize,
 );
+pub(crate) const INLINE_ROOT_TOOLS: Rule =
+    Rule::new("siwc.inline-root-tools.v1", Field::Tools, Change::Normalize);
 /// Ordered additions keep a native carrier while their cache markers and
 /// presentation change; source history stays untouched.
 pub(crate) const RETAIN_ORDERED_ADDITIONS: Rule = Rule::new(

@@ -55,7 +55,8 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Conversion ladder | Semantics | Ordered precedence: same-name carrier → same-semantic substitution → partial lossy substitution → omission → reject only when omission misrepresents the response. Unknown target capabilities delegate to upstream validation with dedicated request- and delivery-side disposition owners. |
 | Runtime-owned execution strategy | Gateway | Reject known target limitations requiring strategy replacement and return an actionable standard error; do not automatically disable thinking or repair/retry history. This supersedes the earlier thinking-off fallback while retaining field/carrier adaptations. [Boundary](index.md#system-boundaries) |
 | Candidate request dispositions | Request | A single `Feature` vocabulary and target disposition owner replace separate admission/target feature gates. Conditional strict inference requires a known closed vocabulary; explicit strict delegates upstream, and native assertions preserve grammar and replay identity. |
-| Binding/API strict-tool ownership | Tools | Shared lowering owns explicit and conditional admission across codec and direct entry points. Native Luna carries strict, unassessed router Luna delegates with honest discovery, and Bailian follows the verified-only service policy. |
+| Binding/API strict-tool ownership | Tools | Shared lowering owns explicit and conditional admission across codec and direct entry points. Native GPT bindings carry strict, unassessed router Luna delegates with honest discovery, and Bailian follows the verified-only service policy. |
+| SIWC flat tool carriage | Tools | Candidate-local lowering moves flat function/custom definitions into a leading developer batch without renaming calls or changing schemas, strictness, selection or historical order. [Contract](adaptation-and-dialects.md#subscription-responses) |
 | Delivery dispositions | Delivery | A single adapter-owned event projection selects client facts; SSE renders events, and JSON/retained views reduce them. Replaced snapshot checks and encoder terminal lowering are removed; execution aliases and wire-only closure preserve identity and lifecycle. |
 | Client semantic boundary | Semantics | Unknown extension fields are discarded; known fields enter the conversion ladder rather than failing closed. |
 | Three-protocol fidelity | Protocols | Semantic fidelity across Chat, Responses, and Messages with stream normalization. |
@@ -73,6 +74,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Decision | Scope | Accepted Architectural Consequence |
 |---|---|---|
 | Independent activation & effort | Reasoning | Decouples boolean reasoning activation from scoped effort controls. |
+| Model-effective reasoning controls | Reasoning | One target constraint owns always-thinking activation and native effort levels across API-key and subscription bindings; discovery reuses dispatch projection. [Contract](adaptation-and-dialects.md#reasoning-activation-and-effort-scope) |
 | Strict downstream schemas | Schemas | Downstream schema completion fills missing fields via derivation or byte-based text estimates. |
 | User attribution mapping | Attribution | Unifies `safety_identifier`, `metadata.user_id`, and `labels.safety_identifier`. |
 | Phase transfer | Responses | Responses phase labels (`commentary`, `final_answer`) are omitted on Chat/Messages delivery copies. |

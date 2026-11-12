@@ -217,6 +217,18 @@ fn response() -> Value {
     json!({"status":"completed","output":[{"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"OK"}]}]})
 }
 #[test]
+fn failed_probe_reports_only_closed_upstream_error_codes() {
+    for event in [
+        json!({"type":"error","code":"subscription_sharing_unsupported_capability","message":"private upstream detail"}),
+        json!({"type":"response.failed","response":{"error":{"code":"subscription_sharing_unsupported_capability","message":"private upstream detail"}}}),
+    ] {
+        let bytes = format!("data: {event}\n\n");
+        let error = wire::responses_stream(bytes.as_bytes()).unwrap_err();
+        assert!(error.to_string().contains("SharingCapability"));
+        assert!(!error.to_string().contains("private upstream detail"));
+    }
+}
+#[test]
 fn probe_success_requires_text_and_an_honest_terminal() {
     for (protocol, source) in [
         (

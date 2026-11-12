@@ -441,11 +441,11 @@ mod tests {
         ));
         flat["tools"] = serde_json::json!([{"type":"function","name":"status","strict":false}]);
         let flat = client.decode_request(flat.to_string().as_bytes()).unwrap();
-        assert!(
-            target
-                .encode_request(&flat, "selected-slug", &contract)
-                .is_err()
-        );
+        let flat = target
+            .encode_request(&flat, "selected-slug", &contract)
+            .unwrap();
+        assert_eq!(flat["input"][0]["type"], "additional_tools");
+        assert_eq!(flat["input"][0]["tools"][0]["name"], "status");
         let approved = contract.clone();
         let mut extended = request.clone();
         extended.context.cache.prompt_cache_retention =

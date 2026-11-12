@@ -275,11 +275,9 @@ pub fn check_event(
             }
             if replay.as_ref().is_some_and(|r| {
                 !r.permits(if matches!(kind, ItemKind::Reasoning) {
-                    contract
-                        .adaptation
-                        .reasoning_origin(contract.replay_origin.as_ref())
+                    contract.reasoning_origin()
                 } else {
-                    contract.replay_origin.as_ref()
+                    contract.replay_origin()
                 })
             }) {
                 return Err(RepresentationError::ReplayOrigin);
@@ -292,11 +290,9 @@ pub fn check_event(
                         .item(*item)
                         .is_ok_and(|owner| matches!(owner.kind, ItemKind::Reasoning))
                     {
-                        contract
-                            .adaptation
-                            .reasoning_origin(contract.replay_origin.as_ref())
+                        contract.reasoning_origin()
                     } else {
-                        contract.replay_origin.as_ref()
+                        contract.replay_origin()
                     },
                 )
             }) =>

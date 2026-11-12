@@ -725,6 +725,19 @@ fn text_directory_bounds_cover_both_envelopes_and_empty_generation() {
         TextModelView::bind(&topology, &gate.state.entries, limit - 1),
         Err(StartupError::Limits)
     ));
+    let grown: BTreeMap<_, _> = (0..64)
+        .flat_map(|index| {
+            gate.state
+                .entries
+                .iter()
+                .map(move |((protocol, _), entry)| {
+                    ((*protocol, format!("model-{index}")), entry.clone())
+                })
+        })
+        .collect();
+    let grown = TextModelView::bind(&topology, &grown, 1 << 20).unwrap();
+    assert!(grown.list.len() > 256 << 10);
+    assert_eq!(grown.models.len(), 64);
     let entry = gate.state.entries.values().next().unwrap().clone();
     let many = (0..193)
         .map(|i| ((ClientProtocol::Chat, format!("label-{i}")), entry.clone()))

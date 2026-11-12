@@ -3,6 +3,8 @@ use crate::{protocol::CodecError, semantic::task::generation::EffortLevel};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ModelLimits {
+    /// A known always-thinking target cannot satisfy an explicit disabled request.
+    pub reject_disabled_reasoning: bool,
     /// Absence declares no additional level restriction; it grants no carrier.
     pub allowed_effort: Option<Box<[EffortLevel]>>,
     /// Trusted planning metadata, not a tokenizer or a request-admission rule.
@@ -52,6 +54,8 @@ impl ModelLimits {
             return Err(CodecError::invalid());
         }
         Ok(Self {
+            reject_disabled_reasoning: self.reject_disabled_reasoning
+                || configured.reject_disabled_reasoning,
             allowed_effort: configured
                 .allowed_effort
                 .or_else(|| self.allowed_effort.clone()),

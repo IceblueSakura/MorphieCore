@@ -109,7 +109,7 @@ fn generated_message_id_collisions_are_checked_only_on_responses_wire() {
 }
 
 #[test]
-fn luna_strict_namespaced_tools_reach_native_subscription_and_router_writers() {
+fn gpt_strict_namespaced_tools_reach_native_subscription_and_router_writers() {
     use morphiecore::topology::{
         GenerationProtocol,
         catalog::{API_KEY_BINDINGS, SUBSCRIPTION_BINDINGS},
@@ -122,12 +122,17 @@ fn luna_strict_namespaced_tools_reach_native_subscription_and_router_writers() {
     let before = source.clone();
     let endpoints = API_KEY_BINDINGS
         .iter()
-        .filter(|b| b.canonical_model == "gpt-6-luna")
+        .filter(|b| {
+            matches!(
+                b.canonical_model,
+                "gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna"
+            )
+        })
         .map(|b| b.endpoint(GenerationProtocol::OpenAiResponses).unwrap())
         .chain(
             SUBSCRIPTION_BINDINGS
                 .iter()
-                .filter(|b| b.model == "gpt-6-luna")
+                .filter(|b| matches!(b.model, "gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna"))
                 .map(|b| b.endpoint()),
         );
     let inline = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
@@ -148,6 +153,132 @@ fn luna_strict_namespaced_tools_reach_native_subscription_and_router_writers() {
     }
     assert_eq!(source, before);
     assert_eq!(inline, inline_before);
+}
+
+#[test]
+fn siwc_flat_tools_keep_names_schemas_choices_and_call_history() {
+    use morphiecore::topology::catalog::SUBSCRIPTION_BINDINGS;
+    let client = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+    let tools = json!([
+        {"type":"function","name":"lookup","strict":true,
+            "parameters":{"type":"object","properties":{"value":{"type":"string"}},
+                "required":["value"],"additionalProperties":false}},
+        {"type":"custom","name":"query","description":"Query","format":{"type":"text"}}
+    ]);
+    for choice in [
+        json!("auto"),
+        json!("none"),
+        json!("required"),
+        json!({"type":"function","name":"lookup"}),
+        json!({"type":"allowed_tools","mode":"required","tools":[{"type":"function","name":"lookup"}]}),
+    ] {
+        let body = json!({"model":"public","tools":tools,"tool_choice":choice,
+            "parallel_tool_calls":false,"input":[
+                {"role":"user","content":"go"},
+                {"type":"function_call","id":"item-1","call_id":"call-1","name":"lookup",
+                    "arguments":"{ \"value\": \"unchanged\" }","status":"completed"},
+                {"type":"function_call_output","call_id":"call-1","output":"result"},
+                {"role":"user","content":"next"}]});
+        let source = client
+            .decode_client_request(body.to_string().as_bytes())
+            .unwrap();
+        let before = source.clone();
+        for binding in SUBSCRIPTION_BINDINGS
+            .iter()
+            .filter(|b| b.profile == "openai")
+        {
+            let wire = binding.endpoint().encode_request(&source).unwrap();
+            assert!(
+                wire.get("tools")
+                    .is_none_or(|t| t.as_array().unwrap().is_empty())
+            );
+            assert_eq!(
+                wire["input"][0],
+                json!({"type":"additional_tools","role":"developer","tools":tools})
+            );
+            assert_eq!(wire["input"][2]["call_id"], "call-1");
+            assert_eq!(wire["input"][2]["name"], "lookup");
+            assert_eq!(
+                wire["input"][2]["arguments"],
+                "{ \"value\": \"unchanged\" }"
+            );
+            assert_eq!(wire["input"][3]["call_id"], "call-1");
+            assert_eq!(wire["input"][3]["output"], "result");
+            assert_eq!(wire["tool_choice"], choice);
+            assert_eq!(wire["parallel_tool_calls"], false);
+        }
+        let wire = client
+            .encode_request(&source, "m", &Contract::full())
+            .unwrap();
+        assert_eq!(wire["tools"], tools);
+        assert_eq!(source, before);
+    }
+}
+
+#[test]
+fn native_binding_reasoning_controls_match_model_activation_and_effort() {
+    use morphiecore::topology::catalog::SUBSCRIPTION_BINDINGS;
+    let client = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+    for binding in SUBSCRIPTION_BINDINGS {
+        let endpoint = binding.endpoint();
+        let off = client
+            .decode_client_request(
+                br#"{"model":"public","input":"go","reasoning":{"effort":"none"}}"#,
+            )
+            .unwrap();
+        let result = endpoint.encode_request(&off);
+        assert_eq!(
+            result.is_ok(),
+            binding.model == "gpt-6-luna",
+            "{}",
+            binding.model
+        );
+        use morphiecore::semantic::task::generation::{
+            ConfigurationBoundary, ConfigurationUpdate, Item, ItemId, ReasoningActivation,
+        };
+        let mut ordered = client
+            .decode_client_request(br#"{"model":"public","input":"go"}"#)
+            .unwrap();
+        let mut items = ordered.task.semantic.items().to_vec();
+        items.insert(
+            0,
+            (
+                ItemId::new(99),
+                Item::ConfigurationUpdate(ConfigurationUpdate {
+                    boundary: ConfigurationBoundary::FollowingResponse,
+                    activation: Some(ReasoningActivation::Disabled),
+                    effort: None,
+                }),
+            ),
+        );
+        ordered.task.semantic = ordered.task.semantic.with_items(items).unwrap();
+        assert_eq!(
+            endpoint.encode_request(&ordered).is_ok(),
+            binding.model == "gpt-6-luna"
+        );
+        for (effort, expected) in [
+            ("minimal", "low"),
+            ("high", "high"),
+            (
+                "max",
+                if binding.model == "grok-4.7" {
+                    "xhigh"
+                } else {
+                    "max"
+                },
+            ),
+        ] {
+            let source = client
+                .decode_client_request(
+                    json!({"model":"public","input":"go","reasoning":{"effort":effort}})
+                        .to_string()
+                        .as_bytes(),
+                )
+                .unwrap();
+            let wire = endpoint.encode_request(&source).unwrap();
+            assert_eq!(wire["reasoning"]["effort"], expected, "{}", binding.model);
+        }
+    }
 }
 
 #[test]

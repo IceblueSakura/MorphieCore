@@ -118,6 +118,11 @@ pub(super) enum Error {
     Response,
     #[error("probe did not complete with nonempty text; no retry")]
     Incomplete,
+    #[error("upstream reported {event} ({code:?}); response body suppressed; no retry")]
+    Reported {
+        event: &'static str,
+        code: Option<morphiecore::protocol::failure::FailureCode>,
+    },
 }
 struct Plan {
     provider: ProviderDefinition,

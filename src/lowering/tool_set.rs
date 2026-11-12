@@ -68,6 +68,44 @@ fn offered(tool: &ToolDefinition) -> bool {
         && !matches!(tool, ToolDefinition::Custom(t) if t.dispatch.defer_loading)
 }
 
+/// SIWC carries flat definitions in an initial developer batch. Namespaces stay
+/// root-owned; existing history and inline declaration order remain unchanged.
+pub(crate) fn inline_root_tools(
+    source: &GenerationRequest,
+) -> Result<Option<GenerationRequest>, GenerationError> {
+    let (root, flat): (Vec<_>, Vec<_>) = source
+        .tools()
+        .iter()
+        .cloned()
+        .partition(|tool| matches!(tool, ToolDefinition::Namespace(_)));
+    if flat.is_empty() {
+        return Ok(None);
+    }
+    if source.items().len() >= MAX_ITEMS {
+        return Err(GenerationError::Limit);
+    }
+    let used: BTreeSet<_> = source.items().iter().map(|(id, _)| *id).collect();
+    let owner = (0..=source.items().len() as u64)
+        .map(|id| ItemId::scoped(LocalScope::DERIVED, id))
+        .find(|id| !used.contains(id))
+        .expect("one more candidate than existing identities");
+    let mut items = Vec::with_capacity(source.items().len() + 1);
+    items.push((
+        owner,
+        Item::ToolBatch(ToolBatch {
+            role: ToolBatchRole::Developer,
+            tools: flat,
+        }),
+    ));
+    items.extend_from_slice(source.items());
+    let mut settings = source.settings().clone();
+    settings.tools = (!root.is_empty()).then_some(root);
+    source
+        .clone()
+        .with_items_and_settings(items, settings)
+        .map(Some)
+}
+
 /// Project one candidate's ordered tool declarations onto the target carrier.
 /// `initial` are the root declarations; `items` is the ordered item list.
 pub(crate) fn project(

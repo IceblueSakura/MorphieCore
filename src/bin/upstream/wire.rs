@@ -147,9 +147,23 @@ pub(super) fn responses_stream(bytes: &[u8]) -> Result<Value, Error> {
                 return Err(Error::Response);
             }
             match kind {
-                "error" | "response.failed" | "response.incomplete" => {
-                    return Err(Error::Incomplete);
+                "error" | "response.failed" => {
+                    let (event, error) = if kind == "response.failed" {
+                        ("response.failed", &value["response"]["error"])
+                    } else {
+                        ("error", &value)
+                    };
+                    let source = morphiecore::protocol::failure::SourceFailureEvidence::http(
+                        500,
+                        error.to_string().as_bytes(),
+                        morphiecore::protocol::failure::Observation::Complete,
+                    );
+                    return Err(Error::Reported {
+                        event,
+                        code: source.code.or(source.error_type).or(source.canonical),
+                    });
                 }
+                "response.incomplete" => return Err(Error::Incomplete),
                 "response.output_item.done" if value["item"]["type"] == "message" => {
                     let item = &value["item"];
                     let id = string(&item["id"])?;

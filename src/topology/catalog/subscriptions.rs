@@ -100,6 +100,7 @@ impl SubscriptionBinding {
             Some(scope.clone()),
         );
         let contract = TargetContract {
+            model_limits: models::model_limits(self.model, provider.id.as_str()),
             reasoning_history: self.reasoning_history,
             dispositions: self
                 .contract()

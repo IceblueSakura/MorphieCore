@@ -83,10 +83,12 @@ fn same_issuer_receives_its_original_value() {
         .decode_request(body.to_string().as_bytes())
         .unwrap();
     open_from_client(&mut request).unwrap();
-    assert!(
-        upstream("openai/model-a")
-            .encode_request(&request, "model-a", &Contract::full())
-            .is_err()
+    let inherited = upstream("openai/model-a")
+        .encode_request(&request, "model-a", &Contract::full())
+        .unwrap();
+    assert_eq!(
+        inherited["input"][1]["encrypted_content"],
+        "synthetic-final-token"
     );
     let wire = upstream("openai/model-a")
         .encode_request(&request, "model-a", &contract("openai/model-a"))

@@ -278,7 +278,7 @@ fn compaction_replay_rejects_incompatible_or_unbound_context_without_stripping()
             .is_err()
     );
     assert!(
-        upstream
+        GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
             .encode_request(&request, "synthetic", &TargetContract::full())
             .is_err()
     );

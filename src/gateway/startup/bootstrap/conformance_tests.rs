@@ -156,6 +156,56 @@ async fn unrepresentable_named_choice_never_dispatches_to_bailian() {
 }
 
 type Binding<'a> = (&'a str, &'a str, &'a str, &'a str, Api);
+#[tokio::test]
+async fn siwc_quota_event_keeps_its_failure_class_before_response_created() {
+    for stream in [false, true] {
+        let calls = Arc::new(Mutex::new(0usize));
+        let observed = calls.clone();
+        let router = Router::new().route(
+            "/v1/responses",
+            post(move || {
+                let calls = observed.clone();
+                async move {
+                    *calls.lock().unwrap() += 1;
+                    ([("content-type", "text/event-stream")],
+                        "event: error\ndata: {\"type\":\"error\",\"sequence_number\":0,\"code\":\"subscription_sharing_usage_limit_exceeded\",\"message\":\"synthetic quota exhausted\",\"param\":null}\n\n")
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let _server = Server(tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        }));
+        let mut boot = Fixture::with_oauth(
+            service(),
+            json!({"models":{"gpt-6.1-sol":{"candidates":[{"binding":"chatgpt-responses"}]}}}),
+            "chatgpt",
+            "synthetic",
+        )
+        .unwrap();
+        boot.loopback_authority(&origin);
+        let exporter = boot.record_failures();
+        let (status, bytes, failed) = send(
+            &boot,
+            Api::Responses,
+            json!({"model":"gpt-6.1-sol","input":"go","stream":stream}),
+            &[],
+        )
+        .await;
+        assert_eq!(
+            status,
+            if stream { 200 } else { 429 },
+            "{}",
+            disposition(&exporter, status, failed)
+        );
+        assert!(!failed);
+        let body = String::from_utf8(bytes).unwrap();
+        assert!(body.contains("quota") || body.contains("rate_limit_exceeded"));
+        assert_eq!(*calls.lock().unwrap(), 1);
+    }
+}
+
 const BINDINGS: &[Binding<'static>] = &[
     (
         "glm-5.3",
@@ -206,7 +256,7 @@ enum Control {
     ResolvedHeaders,
     Uncapped,
     SummaryHistory,
-    OpaqueHistory,
+    OpaqueHistory { stored: bool },
     AdaptiveHistory,
     Incomplete { stored: bool },
     ReportedFacts { refusal: bool, stored: bool },
@@ -215,7 +265,7 @@ impl Control {
     fn reasoning(self) -> Option<ReasoningShape> {
         match self {
             Self::SummaryHistory => Some(ReasoningShape::Summary),
-            Self::OpaqueHistory => Some(ReasoningShape::Opaque),
+            Self::OpaqueHistory { .. } => Some(ReasoningShape::Opaque),
             Self::AdaptiveHistory => Some(ReasoningShape::Signed),
             _ => None,
         }
@@ -378,7 +428,11 @@ async fn observe_intake(
                 assert!(body.get("include").is_none());
             }
             if let Some(parameters) = parameters {
-                let tools = body["tools"].as_array().unwrap();
+                let tools = if oauth == Some("openai") {
+                    body["input"][0]["tools"].as_array().unwrap()
+                } else {
+                    body["tools"].as_array().unwrap()
+                };
                 assert_eq!(tools.len(), parameters.len());
                 for (tool, parameters) in tools.iter().zip(parameters) {
                     let tool = if upstream == Api::Chat {
@@ -486,7 +540,7 @@ async fn observe_intake(
         control,
         Control::Stored
             | Control::SummaryHistory
-            | Control::OpaqueHistory
+            | Control::OpaqueHistory { stored: true }
             | Control::Incomplete { stored: true }
             | Control::ReportedFacts { stored: true, .. }
     );
@@ -1033,11 +1087,7 @@ async fn catalog_subscription_production_lanes() {
             for profile in [Profile::Text, Profile::Tools, Profile::Reasoning] {
                 // Common protocol controls, not each subscription's emitted reasoning shape.
                 let actual = transports(&binding, client, profile, Control::Default).await;
-                let expected = if entry.profile == "openai" && profile != Profile::Text {
-                    &["planning:[\"admission.tools\"]@0"][..]
-                } else {
-                    ACCEPT
-                };
+                let expected = ACCEPT;
                 assert_eq!(actual, expected, "{}/{client:?}/{profile:?}", binding.1);
             }
         }
@@ -1091,9 +1141,38 @@ async fn native_reasoning_history_contracts_are_distinct() {
     );
     // Grok may return an opaque reasoning owner even without a reasoning request.
     assert_eq!(
-        transports(&grok, Api::Responses, Profile::Text, Control::OpaqueHistory).await,
+        transports(
+            &grok,
+            Api::Responses,
+            Profile::Text,
+            Control::OpaqueHistory { stored: true }
+        )
+        .await,
         ACCEPT
     );
+}
+
+#[tokio::test]
+async fn muse_native_opaque_tool_history_survives_stateless_and_stored_continuation() {
+    let binding = (
+        "muse-spark-1.3-contributor",
+        "opencode-go-muse-responses",
+        "opencode-go",
+        "synthetic",
+        Api::Responses,
+    );
+    for stored in [false, true] {
+        assert_eq!(
+            transports(
+                &binding,
+                Api::Responses,
+                Profile::Tools,
+                Control::OpaqueHistory { stored }
+            )
+            .await,
+            ACCEPT
+        );
+    }
 }
 
 #[tokio::test]

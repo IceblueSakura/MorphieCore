@@ -7,6 +7,7 @@ pub struct TargetContract {
     pub reasoning_history: Option<crate::protocol::reasoning::ReasoningHistory>,
     /// Permit the named projection of foreign readable reasoning into assistant text.
     pub reasoning_as_text: bool,
+    /// Explicit origin for unbound callers; otherwise inherit the bound codec scope.
     pub replay_origin: Option<crate::semantic::value::ReplayOrigin>,
     /// Caller-supplied clock for checking a reported remote-resource expiry.
     pub resource_time: Option<u64>,
@@ -17,6 +18,14 @@ pub struct TargetContract {
     pub cache: crate::protocol::cache::CacheTargetPolicy,
 }
 impl TargetContract {
+    pub(crate) fn replay_origin(&self) -> Option<&crate::semantic::value::ReplayOrigin> {
+        self.replay_origin
+            .as_ref()
+            .or(self.adaptation.scope.as_ref())
+    }
+    pub(crate) fn reasoning_origin(&self) -> Option<&crate::semantic::value::ReplayOrigin> {
+        self.adaptation.reasoning_origin(self.replay_origin())
+    }
     pub fn full() -> Self {
         Self {
             adaptation: Default::default(),
