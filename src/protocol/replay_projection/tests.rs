@@ -223,6 +223,7 @@ fn foreign_signed_text_drops_only_replay_and_affected_call_aliases() {
     let copied = request
         .without_uncarried_reasoning(
             Some(&ReplayTarget::new("other", "other").unwrap().origin()),
+            None,
             |_, _| Ok(false),
         )
         .unwrap()
@@ -371,7 +372,7 @@ fn native_history_validates_deleted_anchors_before_partial_attachments() {
     .unwrap();
     assert!(matches!(
         request.without_uncarried_reasoning(
-            Some(&ReplayTarget::new("other", "other").unwrap().origin()), |_, _| Ok(false),
+            Some(&ReplayTarget::new("other", "other").unwrap().origin()), None, |_, _| Ok(false),
         ),
         Err(CodecError::Unsupported(reason)) if reason == CarrierReason::Replay
     ));

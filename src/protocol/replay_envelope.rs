@@ -8,7 +8,7 @@
 //! mc1.<base64url-json: {o: origin_digest, f: format_tag, d: payload}>
 //! ```
 //!
-//! - `o`: Origin fingerprint binding provider, canonical model, and deployment route.
+//! - `o`: Origin fingerprint for the owner's bound source (reasoning) or strict target.
 //! - `f`: Native format identifier (e.g. `anthropic-thinking`, `openai-responses`).
 //! - `d`: Raw upstream payload string.
 //!
@@ -17,8 +17,9 @@
 //! - **Tagged, Not Encrypted**: The envelope is tagged and Base64URL-encoded, not encrypted
 //!   or authenticated by MorphieCore. The upstream issuer cryptographically signs or encrypts
 //!   the underlying payload (`d`).
-//! - **Route Isolation**: The origin tag (`o`) prevents cross-model contamination by ensuring
-//!   that opaque tokens are only forwarded back to the matching upstream deployment route.
+//! - **Source Isolation**: The origin tag (`o`) limits replay to its matching source.
+//!   Bound OpenAI reasoning can cross model labels within that source; compaction and
+//!   other native signatures retain model-specific target identities.
 //! - **Opaque Client Representation**: Downstream clients must treat the entire `mc1.` string
 //!   as opaque and echo it verbatim without modification or parsing.
 use crate::semantic::{

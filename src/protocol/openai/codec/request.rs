@@ -231,10 +231,11 @@ impl GenerationCodec {
             input.semantic.items().len() + output.semantic.items().len()
         });
         if let Some(scope) = &self.adaptation.scope {
-            request
-                .task
-                .fidelity
-                .bind_replay_origin_for_items(scope, &request.task.semantic.items()[retained..])?;
+            request.task.fidelity.bind_openai_replay_origins_for_items(
+                scope,
+                self.adaptation.reasoning_origin(Some(scope)),
+                &request.task.semantic.items()[retained..],
+            )?;
         }
         for (_, item) in &request.task.semantic.items()[retained..] {
             if let crate::semantic::task::generation::Item::Message(m) = item {

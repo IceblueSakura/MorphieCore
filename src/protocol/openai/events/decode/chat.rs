@@ -288,7 +288,10 @@ impl EventDecoder {
                     ReplayFormat::ResponsesEncrypted,
                     text(&data, "encrypted reasoning", MAX_TEXT_BYTES)?,
                 ),
-                origin: self.origin.clone(),
+                origin: self
+                    .adaptation
+                    .reasoning_origin(self.origin.as_ref())
+                    .cloned(),
             };
             // The complete encrypted detail closes its reasoning owner before
             // the carrier content; never wait for response finish to invent it.

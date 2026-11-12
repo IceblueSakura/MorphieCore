@@ -236,8 +236,10 @@ fn bind_candidate(
     let cache_scope = cache_scope(namespace, &provenance, public, provider, &endpoint)?;
     endpoint.bound_replay_scope = Some(cache_scope);
     let scope = endpoint.replay_origin();
+    let reasoning_scope = reasoning_scope(namespace, &provenance, provider, &endpoint)?;
     if let Some(caps) = endpoint.representation.openai_mut() {
         caps.adaptation.scope = Some(scope.clone());
+        caps.adaptation.reasoning_scope = Some(reasoning_scope);
         if caps.replay_origin.is_some() {
             caps.replay_origin = Some(scope);
         }
@@ -251,7 +253,7 @@ fn bind_candidate(
     })
 }
 
-/// Private replay/cache scope of one candidate. Length prefixes avoid ambiguous
+/// Strict target/cache scope of one candidate. Length prefixes avoid ambiguous
 /// concatenation; provenance is neither a credential locator nor attestation
 /// of token issuance.
 fn cache_scope(
@@ -281,4 +283,33 @@ fn cache_scope(
         .map(|byte| format!("{byte:02x}"))
         .collect();
     ReplayOrigin::new(&format!("gateway-{digest}")).map_err(|_| StartupError::Binding)
+}
+
+/// Native OpenAI reasoning may return to this service after a model switch.
+/// Compaction, other signatures and routing/cache identity retain the strict scope.
+fn reasoning_scope(
+    namespace: &[u8; 32],
+    provenance: &str,
+    provider: &ProviderDefinition,
+    endpoint: &Endpoint,
+) -> Result<ReplayOrigin, StartupError> {
+    let mut hash = Sha256::new();
+    hash.update(b"MorphieCore.reasoning-source.v1\0");
+    hash.update(namespace);
+    hash.update([endpoint.protocol.identity_tag()]);
+    for value in [
+        provenance,
+        provider.id.as_str(),
+        endpoint.target.origin.as_str(),
+        endpoint.target.path.as_str(),
+    ] {
+        hash.update((value.len() as u64).to_le_bytes());
+        hash.update(value.as_bytes());
+    }
+    let digest: String = hash
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    ReplayOrigin::new(&format!("reasoning-{digest}")).map_err(|_| StartupError::Binding)
 }

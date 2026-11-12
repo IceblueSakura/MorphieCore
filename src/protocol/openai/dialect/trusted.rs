@@ -284,6 +284,7 @@ impl Dialect {
             cache,
             profile_id,
             scope,
+            reasoning_scope: None,
         }
     }
 }

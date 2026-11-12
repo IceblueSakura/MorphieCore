@@ -70,7 +70,9 @@ impl GenerationCodec {
             }
         };
         if let Some(scope) = &self.adaptation.scope {
-            decoded.fidelity.bind_replay_origin(scope)?;
+            decoded
+                .fidelity
+                .bind_openai_replay_origins(scope, self.adaptation.reasoning_origin(Some(scope)))?;
         }
         for (_, item) in decoded.semantic.items() {
             if let crate::semantic::task::generation::Item::Message(m) = item {

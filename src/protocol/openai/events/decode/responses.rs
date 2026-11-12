@@ -361,7 +361,12 @@ impl EventDecoder {
         self.fidelity
             .record_response_item_id(item, string(v, "id")?)?;
         let replay = if matches!(kind, ItemKind::Reasoning | ItemKind::Compaction) {
-            replay(v, self.origin.as_ref(), false)?
+            replay(
+                v,
+                self.origin.as_ref(),
+                self.adaptation.reasoning_origin(self.origin.as_ref()),
+                false,
+            )?
         } else {
             None
         };
@@ -1037,7 +1042,12 @@ impl EventDecoder {
             self.state()?.item(item)?.kind,
             ItemKind::Reasoning | ItemKind::Compaction
         ) {
-            replay(p, self.origin.as_ref(), true)?
+            replay(
+                p,
+                self.origin.as_ref(),
+                self.adaptation.reasoning_origin(self.origin.as_ref()),
+                true,
+            )?
         } else {
             None
         };

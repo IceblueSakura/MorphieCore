@@ -75,7 +75,7 @@ Affinity keys and advisory cache policies are defined in [`protocol::cache`](../
 - Prefix-cache indexing supplies advisory request hints, never an implicit conversation or account-routing key.
 - Target cache capabilities are enforced via [`CacheTargetPolicy`](../../src/protocol/cache.rs#L48), omitting unsupported advisory hints under declared loss rules.
 
-Bound replay issuers include configuration namespace, credential provenance and the exact public-model/target/operation identity. API-key replacement invalidates old private replay; normal OAuth material renewal preserves provenance. Codecs use the bound issuer for OpenAI, Messages and Google replay, not only prefix-cache keys.
+Route/cache identity includes configuration namespace, credential provenance and the exact public-model/target/operation identity. Native OpenAI reasoning uses a separate model-independent service-source identity; compaction and other native signatures remain strict. [History and replay](history-and-replay.md#reasoning-replay) owns the scope rules. API-key replacement invalidates old private replay; normal OAuth material renewal preserves provenance.
 
 ### Streaming and delivery
 

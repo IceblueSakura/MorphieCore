@@ -230,25 +230,27 @@ fn ingress_unwraps_only_the_candidate_compatible_opaque_and_never_selects_a_targ
         None,
     )
     .unwrap();
-    for (provider, model, matches) in [
-        ("fixture", "private-fixture", true),
-        ("other", "private-fixture", false),
-        ("fixture", "other", false),
+    let issuer = &gate.state.entries[&(
+        crate::protocol::ClientProtocol::Responses,
+        "fixture-model".into(),
+    )]
+        .candidates[0]
+        .endpoint;
+    let reasoning_origin = issuer
+        .representation
+        .openai()
+        .unwrap()
+        .adaptation
+        .reasoning_scope
+        .clone()
+        .unwrap();
+    for (origin, matches) in [
+        (reasoning_origin, true),
+        (replay_envelope::issuer("other", "private-fixture"), false),
+        (issuer.replay_origin(), false),
     ] {
-        let mut issuer = gate.state.entries[&(
-            crate::protocol::ClientProtocol::Responses,
-            "fixture-model".into(),
-        )]
-            .candidates[0]
-            .endpoint
-            .clone();
-        issuer.provider = crate::provider::ProviderId::new(provider).unwrap();
-        issuer.upstream_model = model.into();
-        if !matches {
-            issuer.bound_replay_scope = None;
-        }
         let token = replay_envelope::seal(
-            &issuer.replay_origin(),
+            &origin,
             ReplayFormat::ResponsesEncrypted,
             "synthetic-client-payload",
         )

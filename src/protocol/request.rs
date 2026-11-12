@@ -61,14 +61,18 @@ impl GenerationRequestEnvelope {
     pub(crate) fn without_uncarried_reasoning(
         &self,
         target: Option<&crate::semantic::value::ReplayOrigin>,
+        responses_reasoning_target: Option<&crate::semantic::value::ReplayOrigin>,
         uncarried: impl Fn(
             &crate::semantic::task::generation::ReasoningItem,
             Option<&crate::semantic::task::generation::Item>,
         ) -> Result<bool, CodecError>,
     ) -> Result<Option<GenerationRequestEnvelope>, CodecError> {
-        use crate::semantic::task::generation::{Item, ItemLifecycle, MessageRole};
+        use crate::semantic::task::generation::{Item, ItemLifecycle, MessageRole, ReplayFormat};
         let fidelity = &self.task.fidelity;
         fidelity.check_target_replay(&self.task.semantic, target)?;
+        if responses_reasoning_target.is_some() && responses_reasoning_target != target {
+            fidelity.check_target_replay(&self.task.semantic, responses_reasoning_target)?;
+        }
         // Compaction replaces context; losing a foreign value is not a safe projection.
         for (id, item) in self.task.semantic.items() {
             if let Item::Compaction(value) = item
@@ -81,13 +85,17 @@ impl GenerationRequestEnvelope {
         // Select backwards so shape checks see the next retained owner.
         let mut following = None;
         for (id, item) in self.task.semantic.items().iter().rev() {
-            if let Item::Reasoning(reasoning) = item
-                && (reasoning.replay.is_some()
-                    && (target.is_none() || fidelity.replay_origin(*id) != target)
-                    || uncarried(reasoning, following)?)
-            {
-                omitted.push(*id);
-                continue;
+            if let Item::Reasoning(reasoning) = item {
+                let origin = match reasoning.replay.as_ref().map(|value| value.format()) {
+                    Some(ReplayFormat::ResponsesEncrypted) => responses_reasoning_target.or(target),
+                    _ => target,
+                };
+                let foreign = reasoning.replay.is_some()
+                    && (origin.is_none() || fidelity.replay_origin(*id) != origin);
+                if foreign || uncarried(reasoning, following)? {
+                    omitted.push(*id);
+                    continue;
+                }
             }
             following = Some(item);
         }

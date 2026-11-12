@@ -408,3 +408,96 @@ fn foreign_replay_remains_bound_and_malformed_replay_rejects() {
         assert_eq!(request, saved);
     }
 }
+#[test]
+fn chat_json_and_sse_reasoning_follow_service_identity_not_model_labels() {
+    let mut source = GenerationCodec::new(
+        GenerationApi::Chat,
+        Dialect::OpenRouter,
+        Some(origin("model-a")),
+    );
+    source.adaptation.reasoning_scope = Some(origin("same-service"));
+    let mut target = GenerationCodec::new(
+        GenerationApi::Chat,
+        Dialect::OpenRouter,
+        Some(origin("model-b")),
+    );
+    target.adaptation.reasoning_scope = source.adaptation.reasoning_scope.clone();
+    let details = json!([{"type":"reasoning.encrypted","format":"openai-responses-v1",
+        "index":0,"id":"rs_source","data":"synthetic-native-token"}]);
+    for stream in [false, true] {
+        let mut response =
+            if stream {
+                let mut decoder = source.event_decoder();
+                for (delta, finish) in [
+                    (
+                        json!({"role":"assistant","reasoning_details":details}),
+                        Value::Null,
+                    ),
+                    (json!({"content":"visible"}), Value::Null),
+                    (json!({}), json!("stop")),
+                ] {
+                    decoder.push(&json!({
+                    "id":"chat","object":"chat.completion.chunk","created":1,"model":"model-a",
+                    "choices":[{"index":0,"delta":delta,"finish_reason":finish}]
+                })).unwrap();
+                }
+                decoder.done().unwrap();
+                decoder.materialize().unwrap()
+            } else {
+                source
+                    .decode_response(
+                        json!({
+                            "id":"chat","object":"chat.completion","created":1,"model":"model-a",
+                            "choices":[{"index":0,"message":{"role":"assistant","content":"visible",
+                                "reasoning_details":details},"finish_reason":"stop"}]
+                        })
+                        .to_string()
+                        .as_bytes(),
+                    )
+                    .unwrap()
+            };
+        seal_for_client(&mut response, &CLIENT_ORIGIN).unwrap();
+        let delivered = client()
+            .encode_response(&response, &contract(CLIENT_ORIGIN.as_str()))
+            .unwrap();
+        let mut input = vec![json!({"role":"user","content":"go"})];
+        input.extend(delivered["output"].as_array().unwrap().iter().cloned());
+        input.push(json!({"role":"user","content":"next"}));
+        let mut request = client()
+            .decode_client_request(
+                json!({"model":"model-b","input":input,"store":false})
+                    .to_string()
+                    .as_bytes(),
+            )
+            .unwrap();
+        open_from_client(&mut request).unwrap();
+        let before = request.clone();
+        let wire = target
+            .encode_request(&request, "model-b", &contract("model-b"))
+            .unwrap();
+        assert_eq!(wire["model"], "model-b");
+        assert_eq!(wire["messages"][1]["content"], "visible");
+        assert_eq!(
+            wire["messages"][1]["reasoning_details"][0]["data"],
+            "synthetic-native-token"
+        );
+        // Provider routing controls belong to egress, not semantic request intake.
+        let native = target
+            .decode_request(
+                json!({
+                    "model":"model-b","messages":wire["messages"]
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .unwrap();
+        let replayed = target
+            .encode_request(&native, "model-b", &contract("model-b"))
+            .unwrap();
+        assert_eq!(
+            replayed["messages"][1]["reasoning_details"][0]["data"],
+            "synthetic-native-token"
+        );
+        assert_eq!(request, before);
+    }
+}

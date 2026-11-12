@@ -273,17 +273,33 @@ pub fn check_event(
                 }
                 _ => {}
             }
-            if replay
-                .as_ref()
-                .is_some_and(|r| !r.permits(contract.replay_origin.as_ref()))
-            {
+            if replay.as_ref().is_some_and(|r| {
+                !r.permits(if matches!(kind, ItemKind::Reasoning) {
+                    contract
+                        .adaptation
+                        .reasoning_origin(contract.replay_origin.as_ref())
+                } else {
+                    contract.replay_origin.as_ref()
+                })
+            }) {
                 return Err(RepresentationError::ReplayOrigin);
             }
         }
-        StreamEvent::ItemFinished { replay, .. }
-            if replay
-                .as_ref()
-                .is_some_and(|r| !r.permits(contract.replay_origin.as_ref())) =>
+        StreamEvent::ItemFinished { item, replay, .. }
+            if replay.as_ref().is_some_and(|r| {
+                !r.permits(
+                    if state
+                        .item(*item)
+                        .is_ok_and(|owner| matches!(owner.kind, ItemKind::Reasoning))
+                    {
+                        contract
+                            .adaptation
+                            .reasoning_origin(contract.replay_origin.as_ref())
+                    } else {
+                        contract.replay_origin.as_ref()
+                    },
+                )
+            }) =>
         {
             return Err(RepresentationError::ReplayOrigin);
         }

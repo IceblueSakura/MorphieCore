@@ -181,5 +181,18 @@ pub struct Adaptation {
     pub cache: crate::protocol::cache::CacheTargetPolicy,
     /// Stable adapter contract identity, not a network or credential locator.
     pub profile_id: &'static str,
+    /// Strict target identity for compaction, audio and Provider-specific reports.
     pub scope: Option<ReplayOrigin>,
+    /// Bound service identity for native OpenAI reasoning, independent of model labels.
+    pub reasoning_scope: Option<ReplayOrigin>,
+}
+
+impl Adaptation {
+    /// A separate reasoning identity does not grant replay to an unbound target.
+    pub(crate) fn reasoning_origin<'a>(
+        &'a self,
+        origin: Option<&'a ReplayOrigin>,
+    ) -> Option<&'a ReplayOrigin> {
+        origin.map(|strict| self.reasoning_scope.as_ref().unwrap_or(strict))
+    }
 }

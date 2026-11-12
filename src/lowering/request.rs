@@ -2159,50 +2159,54 @@ pub(crate) fn project<'a>(
             .or(contract.adaptation.scope.as_ref()),
         _ => Some(native_origin.as_ref().ok_or_else(CodecError::invalid)?),
     };
-    let mut stripped = source.without_uncarried_reasoning(issuer, |reasoning, following| {
-        let carries = match target {
-            Target::OpenAi(GenerationApi::Responses, contract) => {
-                if contract.adaptation.rules.bailian_requests {
-                    crate::protocol::openai::dialect::bailian::responses_reasoning_carrier(
+    let reasoning_issuer = match target {
+        Target::OpenAi(_, contract) => contract.adaptation.reasoning_origin(issuer),
+        _ => None,
+    };
+    let mut stripped =
+        source.without_uncarried_reasoning(issuer, reasoning_issuer, |reasoning, following| {
+            let carries = match target {
+                Target::OpenAi(GenerationApi::Responses, contract) => {
+                    if contract.adaptation.rules.bailian_requests {
+                        crate::protocol::openai::dialect::bailian::responses_reasoning_carrier(
+                            reasoning,
+                        )
+                    } else {
+                        reasoning
+                            .replay
+                            .as_ref()
+                            .is_none_or(|value| value.format() == ReplayFormat::ResponsesEncrypted)
+                    }
+                }
+                Target::OpenAi(GenerationApi::Chat, contract) => {
+                    crate::protocol::openai::lowering::chat_reasoning_carrier(
                         reasoning,
-                    )
-                } else {
-                    reasoning
+                        following,
+                        &contract.adaptation.rules,
+                    ) && reasoning
                         .replay
                         .as_ref()
                         .is_none_or(|value| value.format() == ReplayFormat::ResponsesEncrypted)
                 }
-            }
-            Target::OpenAi(GenerationApi::Chat, contract) => {
-                crate::protocol::openai::lowering::chat_reasoning_carrier(
-                    reasoning,
-                    following,
-                    &contract.adaptation.rules,
-                ) && reasoning
-                    .replay
-                    .as_ref()
-                    .is_none_or(|value| value.format() == ReplayFormat::ResponsesEncrypted)
-            }
-            Target::Messages(_) => reasoning.replay.as_ref().is_some_and(|value| {
-                reasoning.status == ItemLifecycle::Completed
-                    && match value.format() {
-                        ReplayFormat::AnthropicMessagesThinking => {
-                            reasoning.parts.len() <= 1
-                                && reasoning
-                                    .parts
-                                    .iter()
-                                    .all(|(_, part)| matches!(part, ReasoningContent::Summary(_)))
+                Target::Messages(_) => reasoning.replay.as_ref().is_some_and(|value| {
+                    reasoning.status == ItemLifecycle::Completed
+                        && match value.format() {
+                            ReplayFormat::AnthropicMessagesThinking => {
+                                reasoning.parts.len() <= 1
+                                    && reasoning.parts.iter().all(|(_, part)| {
+                                        matches!(part, ReasoningContent::Summary(_))
+                                    })
+                            }
+                            ReplayFormat::AnthropicMessagesRedactedThinking => {
+                                reasoning.parts.is_empty()
+                            }
+                            _ => false,
                         }
-                        ReplayFormat::AnthropicMessagesRedactedThinking => {
-                            reasoning.parts.is_empty()
-                        }
-                        _ => false,
-                    }
-            }),
-            Target::GenerateContent(_) | Target::Interactions(_) => reasoning.replay.is_some(),
-        };
-        Ok(!carries)
-    })?;
+                }),
+                Target::GenerateContent(_) | Target::Interactions(_) => reasoning.replay.is_some(),
+            };
+            Ok(!carries)
+        })?;
     let mut transferred = stripped.is_some();
     // Citation syntax is protocol-owned. Keep carriable annotations; discard only
     // uncarriable historical annotations without changing their visible text.

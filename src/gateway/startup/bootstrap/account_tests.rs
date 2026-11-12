@@ -513,3 +513,213 @@ fn account_names_cannot_duplicate_one_security_target() {
         entry.candidates[1].cache_scope()
     );
 }
+
+#[test]
+fn model_switch_keeps_reasoning_but_not_compaction_or_cache_identity() {
+    use crate::{
+        execution::replay::{open_from_client, seal_for_client},
+        protocol::{
+            ClientProtocol,
+            openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
+            replay_envelope::CLIENT_ORIGIN,
+        },
+    };
+    let boot = Fixture::new(
+        service(),
+        json!({"models":{
+            "gpt-6-astra":{"candidates":[{"binding":"openai-astra-responses"}]},
+            "gpt-6-luna":{"candidates":[{"binding":"openai-luna-responses"}]}
+        }}),
+        &[
+            ("openai", "primary", "synthetic-key"),
+            ("openai", "secondary", "other-synthetic-key"),
+        ],
+    )
+    .unwrap();
+    let source = &boot.gateway.state.entries[&(ClientProtocol::Responses, "gpt-6-astra".into())]
+        .candidates[0];
+    let target = &boot.gateway.state.entries[&(ClientProtocol::Responses, "gpt-6-luna".into())]
+        .candidates[0];
+    assert_ne!(source.cache_scope(), target.cache_scope());
+    let codec = source.endpoint.adapter().unwrap().openai().unwrap().clone();
+    let client = GenerationCodec::new(
+        GenerationApi::Responses,
+        Dialect::Standard,
+        Some(CLIENT_ORIGIN.clone()),
+    );
+    let client_contract = TargetContract {
+        replay_origin: Some(CLIENT_ORIGIN.clone()),
+        ..TargetContract::full()
+    };
+    for compacted in [false, true] {
+        for stream in [false, true] {
+            let mut output = json!([
+                {"id":"reason","type":"reasoning","status":"completed","summary":[],
+                    "encrypted_content":"synthetic-reasoning"},
+                {"id":"call","type":"function_call","status":"completed",
+                    "call_id":"read-call","name":"read","arguments":"{ \"key\": \"A\" }"}
+            ]);
+            if compacted {
+                output.as_array_mut().unwrap().insert(
+                    0,
+                    json!({
+                        "id":"compact","type":"compaction","encrypted_content":"synthetic-context"
+                    }),
+                );
+            }
+            let wire = json!({
+                "id":"response","object":"response","created_at":1,"model":"gpt-6-astra",
+                "status":"completed","output":output
+            });
+            let mut response = if stream {
+                let mut decoder = codec.event_decoder();
+                let mut opening = wire.clone();
+                opening["status"] = json!("in_progress");
+                opening["output"] = json!([]);
+                decoder
+                    .push(&json!({"type":"response.created","response":opening}))
+                    .unwrap();
+                for (index, item) in output.as_array().unwrap().iter().enumerate() {
+                    let mut opening = item.clone();
+                    if item["type"] == "compaction" {
+                        opening["encrypted_content"] = json!("");
+                    } else {
+                        opening["status"] = json!("in_progress");
+                        if item["type"] == "reasoning" {
+                            opening.as_object_mut().unwrap().remove("encrypted_content");
+                        } else {
+                            opening["arguments"] = json!("");
+                        }
+                    }
+                    decoder.push(&json!({"type":"response.output_item.added","output_index":index,"item":opening})).unwrap();
+                    if item["type"] == "function_call" {
+                        decoder
+                            .push(&json!({"type":"response.function_call_arguments.delta",
+                        "output_index":index,"item_id":item["id"],"delta":item["arguments"]}))
+                            .unwrap();
+                        decoder
+                            .push(&json!({"type":"response.function_call_arguments.done",
+                        "output_index":index,"item_id":item["id"],"arguments":item["arguments"]}))
+                            .unwrap();
+                    }
+                    decoder.push(&json!({"type":"response.output_item.done","output_index":index,"item":item})).unwrap();
+                }
+                decoder
+                    .push(&json!({"type":"response.completed","response":wire}))
+                    .unwrap();
+                decoder.materialize().unwrap()
+            } else {
+                codec.decode_response(wire.to_string().as_bytes()).unwrap()
+            };
+            seal_for_client(&mut response, &CLIENT_ORIGIN).unwrap();
+            let delivered = client.encode_response(&response, &client_contract).unwrap();
+            let mut input = delivered["output"].as_array().unwrap().clone();
+            input.push(
+                json!({"type":"function_call_output","call_id":"read-call","output":"value-A"}),
+            );
+            let mut request = client
+                .decode_client_request(
+                    json!({
+                        "model":"gpt-6-luna","store":false,"input":input
+                    })
+                    .to_string()
+                    .as_bytes(),
+                )
+                .unwrap();
+            open_from_client(&mut request).unwrap();
+            let before = request.clone();
+            let encode = |candidate: &crate::gateway::BoundCandidate| {
+                if compacted {
+                    // Exercise compaction ownership independently of catalog activation.
+                    let adapter = candidate.endpoint.adapter().unwrap();
+                    adapter.openai().unwrap().encode_request(
+                        &request,
+                        &candidate.endpoint.upstream_model,
+                        &TargetContract {
+                            replay_origin: Some(candidate.endpoint.replay_origin()),
+                            ..TargetContract::full()
+                        },
+                    )
+                } else {
+                    candidate.endpoint.encode_request(&request)
+                }
+            };
+            let same = encode(source).unwrap();
+            assert!(
+                same["input"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|item| item["encrypted_content"] == "synthetic-reasoning")
+            );
+            let switched = encode(target);
+            if compacted {
+                assert_eq!(
+                    switched.unwrap_err().cause,
+                    crate::protocol::conversion::ConversionCause::Codec(
+                        crate::protocol::CodecError::Unsupported(
+                            crate::protocol::failure::CarrierReason::Replay
+                        )
+                    ),
+                );
+            } else {
+                let switched = switched.unwrap();
+                assert_eq!(switched["model"], "gpt-6-luna");
+                assert_eq!(
+                    switched["input"][0]["encrypted_content"],
+                    "synthetic-reasoning"
+                );
+                assert_eq!(switched["input"][1]["call_id"], "read-call");
+                assert_eq!(switched["input"][1]["arguments"], "{ \"key\": \"A\" }");
+                assert_eq!(switched["input"][2]["output"], "value-A");
+                let native = target
+                    .endpoint
+                    .adapter()
+                    .unwrap()
+                    .openai()
+                    .unwrap()
+                    .decode_request(switched.to_string().as_bytes())
+                    .unwrap();
+                let replayed = target.endpoint.encode_request(&native).unwrap();
+                assert_eq!(
+                    replayed["input"][0]["encrypted_content"],
+                    "synthetic-reasoning"
+                );
+                let other = &boot.gateway.state.entries
+                    [&(ClientProtocol::Responses, "gpt-6-luna".into())]
+                    .candidates[1];
+                let transferred = other.endpoint.encode_request(&request).unwrap();
+                assert_eq!(transferred["input"].as_array().unwrap().len(), 2);
+                assert_eq!(transferred["input"][0]["call_id"], "read-call");
+                assert_eq!(transferred["input"][1]["output"], "value-A");
+
+                let mut explicit = request.clone();
+                let mut settings = explicit.task.semantic.settings().clone();
+                settings.reasoning.presence =
+                    crate::semantic::task::generation::ReasoningPresence::Present;
+                settings.reasoning.read_history = Some(true);
+                explicit.task.semantic = explicit.task.semantic.with_settings(settings).unwrap();
+                assert_eq!(
+                    other.endpoint.encode_request(&explicit).unwrap_err().cause,
+                    crate::protocol::conversion::ConversionCause::Codec(
+                        crate::protocol::CodecError::Unsupported(
+                            crate::protocol::failure::CarrierReason::Reasoning
+                        )
+                    ),
+                );
+
+                // Missing recorded owners must fail before target-specific pruning.
+                let mut missing = request.clone();
+                missing.task.semantic = missing
+                    .task
+                    .semantic
+                    .retain_items(|_, item| {
+                        !matches!(item, crate::semantic::task::generation::Item::Reasoning(_))
+                    })
+                    .unwrap();
+                assert!(target.endpoint.encode_request(&missing).is_err());
+            }
+            assert_eq!(request, before);
+        }
+    }
+}

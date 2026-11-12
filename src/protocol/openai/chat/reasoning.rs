@@ -287,7 +287,8 @@ pub(in crate::protocol::openai) fn decode_static(
             status: ItemLifecycle::Completed,
             replay,
         };
-        b.fidelity.record_replay(id, &item, a.scope.clone())?;
+        b.fidelity
+            .record_replay(id, &item, a.reasoning_origin(a.scope.as_ref()).cloned())?;
         b.items.push((id, Item::Reasoning(item)));
     }
     if a.rules.structured_chat_reasoning || a.rules.unversioned_chat_reasoning_view {

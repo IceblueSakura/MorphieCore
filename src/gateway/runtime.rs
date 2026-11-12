@@ -25,6 +25,7 @@ pub(super) struct BoundCandidate {
     pub(super) health: executors::Scopes,
 }
 impl BoundCandidate {
+    /// Model-specific target identity; never use the broader reasoning source here.
     pub(super) fn cache_scope(&self) -> &crate::semantic::value::ReplayOrigin {
         self.endpoint
             .bound_replay_scope

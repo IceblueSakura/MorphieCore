@@ -12,6 +12,7 @@ pub(super) fn lifecycle(value: &str) -> Result<ItemLifecycle, CodecError> {
 pub(super) fn replay(
     o: &Map<String, Value>,
     origin: Option<&ReplayOrigin>,
+    reasoning_origin: Option<&ReplayOrigin>,
     final_value: bool,
 ) -> Result<Option<ItemReplay>, CodecError> {
     if o.get("type").and_then(Value::as_str) == Some("compaction") {
@@ -25,7 +26,7 @@ pub(super) fn replay(
         Some(Value::String(s)) => {
             let value = text(s, "encrypted reasoning", MAX_TEXT_BYTES)?;
             Ok(Some(ItemReplay {
-                origin: origin.cloned(),
+                origin: reasoning_origin.cloned(),
                 value: if final_value {
                     ReplayValue::final_value(ReplayFormat::ResponsesEncrypted, value)
                 } else {

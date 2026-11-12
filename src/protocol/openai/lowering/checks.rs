@@ -156,8 +156,15 @@ pub(super) fn represent_reasoning(
                 return Err(RepresentationError::ReplayFormat);
             }
             if !history.map_or_else(
-                || fidelity.replay_matches(*id, reasoning, origin),
-                |request| fidelity.replay_matches_request(*id, reasoning, origin, request),
+                || fidelity.replay_matches(*id, reasoning, adaptation.reasoning_origin(origin)),
+                |request| {
+                    fidelity.replay_matches_request(
+                        *id,
+                        reasoning,
+                        adaptation.reasoning_origin(origin),
+                        request,
+                    )
+                },
             ) {
                 return Err(RepresentationError::ReplayOrigin);
             }

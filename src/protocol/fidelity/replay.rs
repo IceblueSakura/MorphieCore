@@ -329,28 +329,45 @@ impl FidelityRecords {
     }
     /// Bind origin only at a trusted decode boundary, never from business JSON.
     pub fn bind_replay_origin(&mut self, origin: &ReplayOrigin) -> Result<(), CodecError> {
-        self.bind_origins(origin, None)
+        self.bind_origins(origin, None, None)
     }
-    /// A typed retained prefix keeps its original owner-local associations.
-    pub(crate) fn bind_replay_origin_for_items(
+    /// OpenAI intake alone can distinguish reasoning from strict opaque context.
+    pub(crate) fn bind_openai_replay_origins(
         &mut self,
         origin: &ReplayOrigin,
+        reasoning_origin: Option<&ReplayOrigin>,
+    ) -> Result<(), CodecError> {
+        self.bind_origins(origin, None, reasoning_origin)
+    }
+    /// A typed retained prefix keeps its original owner-local associations.
+    pub(crate) fn bind_openai_replay_origins_for_items(
+        &mut self,
+        origin: &ReplayOrigin,
+        reasoning_origin: Option<&ReplayOrigin>,
         items: &[(ItemId, Item)],
     ) -> Result<(), CodecError> {
         let owners = items.iter().map(|(id, _)| *id).collect();
-        self.bind_origins(origin, Some(&owners))
+        self.bind_origins(origin, Some(&owners), reasoning_origin)
     }
     fn bind_origins(
         &mut self,
         origin: &ReplayOrigin,
         owners: Option<&std::collections::BTreeSet<ItemId>>,
+        reasoning_origin: Option<&ReplayOrigin>,
     ) -> Result<(), CodecError> {
+        let selected = |binding: &ReplayBinding| {
+            if binding.kind == ReplayOwnerKind::Reasoning {
+                reasoning_origin.unwrap_or(origin)
+            } else {
+                origin
+            }
+        };
         if self
             .item_replay
             .iter()
             .chain(self.part_replay.iter().map(|((owner, _), r)| (owner, r)))
             .filter(|(owner, _)| owners.is_none_or(|owners| owners.contains(owner)))
-            .any(|(_, r)| r.origin.as_ref().is_some_and(|old| old != origin))
+            .any(|(_, r)| r.origin.as_ref().is_some_and(|old| old != selected(r)))
         {
             return Err(CodecError::invalid());
         }
@@ -364,7 +381,7 @@ impl FidelityRecords {
             )
             .filter(|(owner, _)| owners.is_none_or(|owners| owners.contains(owner)))
         {
-            replay.1.origin = Some(origin.clone());
+            replay.1.origin = Some(selected(replay.1).clone());
         }
         Ok(())
     }
