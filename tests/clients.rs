@@ -30,14 +30,28 @@ async fn installed_case(script: &str, case: &str, variable: &str, arguments: &[&
         "aliyun-tokenplan-cn"
     };
     let manager = CredentialManager::new(root.join("credentials"), vec![]).unwrap();
-    for alias in ["primary", "secondary"] {
-        manager
-            .add_api_key(
-                domain,
-                alias,
-                Secret::new(format!("synthetic-client-{alias}")).unwrap(),
-            )
-            .unwrap();
+    let domains = if script == "discovery" {
+        vec![
+            "deepseek",
+            "google",
+            "opencode-go",
+            "modelbest",
+            "aliyun-dashscope-cn",
+            "aliyun-tokenplan-cn",
+        ]
+    } else {
+        vec![domain]
+    };
+    for domain in domains {
+        for alias in ["primary", "secondary"] {
+            manager
+                .add_api_key(
+                    domain,
+                    alias,
+                    Secret::new(format!("synthetic-client-{alias}")).unwrap(),
+                )
+                .unwrap();
+        }
     }
     let mut command = tokio::process::Command::new(
         std::env::var_os("MORPHIECORE_CLIENT_PYTHON").unwrap_or_else(|| "python3".into()),
@@ -60,6 +74,14 @@ async fn installed_case(script: &str, case: &str, variable: &str, arguments: &[&
         assert!(nginx.is_absolute() && nginx.is_file());
         command.arg(nginx);
     }
+    if script == "discovery" {
+        let extension = PathBuf::from(
+            std::env::var_os("MORPHIECORE_PI_EXTENSION")
+                .expect("set the current MorphieCore pi extension entry"),
+        );
+        assert!(extension.is_absolute() && extension.is_file());
+        command.arg(extension);
+    }
     let output = child_process::run(&mut command, b"", Duration::from_secs(120), 16 << 10)
         .await
         .expect("bounded installed-client process");
@@ -73,6 +95,12 @@ async fn installed_case(script: &str, case: &str, variable: &str, arguments: &[&
     // The Python driver records the current host binary's actual version.
     assert!(report["version"].as_str().is_some_and(|v| !v.is_empty()));
     eprintln!("{report}");
+}
+
+#[tokio::test]
+#[ignore = "requires current installed pi and MorphieCore extension; real gateway discovery and native storage"]
+async fn pi_gateway_context_discovery() {
+    installed_case("discovery", "pi-discovery", "MORPHIECORE_PI_BIN", &[]).await;
 }
 
 #[tokio::test]

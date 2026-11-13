@@ -49,11 +49,11 @@ Stateless Responses requires explicit `store:false`, no nonnull `previous_respon
 For pi's DeepSeek gateway profile, merge the provider entry from
 [`pi-deepseek.example.json`](../../config/pi-deepseek.example.json) into test-owned or
 operator-managed pi `models.json`. Set the gateway origin and resolve the Agent
-key through the client's environment. Publish `deepseek-flash` in MorphieCore
-when using this built-in model override; a different public label needs its own
-client model declaration with the same compatibility settings.
+key through the client's environment. The explicit client model declaration uses
+MorphieCore's public `deepseek-v4.1-flash-1017` ID. The dynamic MorphieCore provider
+can instead discover this identity and its route-common capacities automatically.
 
-The override preserves pi's built-in model metadata and enabled effort levels.
+The declaration carries the native service's sourced context/output maxima and effort levels.
 Both `compat.thinkingFormat:"openai"` and `thinkingLevelMap.off:"none"` are
 required: pi then sends standard `reasoning_effort:"none"` for off, without
 the native `thinking` extension discarded by public Chat intake. DeepSeek's

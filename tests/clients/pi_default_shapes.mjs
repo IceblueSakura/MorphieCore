@@ -12,6 +12,10 @@ const manifest = JSON.parse(readFileSync(`${root}/package.json`, "utf8"));
 assert.equal(manifest.name, "@earendil-works/pi-ai");
 const { streamSimple } = await import(pathToFileURL(`${root}/dist/compat.js`));
 const { getBuiltinModel } = await import(pathToFileURL(`${root}/dist/providers/all.js`));
+if (process.argv[3] === "deepseek-model") {
+  console.log(JSON.stringify(getBuiltinModel("deepseek", "deepseek-flash")));
+  process.exit(0);
+}
 const result = { source: `${manifest.name}@${manifest.version}`, requests: {} };
 for (const [api, name] of [
   ["openai-completions", "chat"],
@@ -125,13 +129,13 @@ assert(!Object.hasOwn(resolved.requests.reasoning, "temperature"));
 // Native built-in characterization above remains independent.
 const gatewayProfile = JSON.parse(readFileSync(
   new URL("../../config/pi-deepseek.example.json", import.meta.url), "utf8",
-)).providers.deepseek.modelOverrides["deepseek-flash"];
+)).providers.deepseek.models[0];
 const deepseek = getBuiltinModel("deepseek", "deepseek-flash");
 assert(deepseek);
 for (const level of ["off", "high"]) {
   let calls = 0;
   const model = {
-    ...deepseek, baseUrl: "http://127.0.0.1:1/v1",
+    ...deepseek, ...gatewayProfile, baseUrl: "http://127.0.0.1:1/v1",
     compat: { ...deepseek.compat, ...gatewayProfile.compat },
     thinkingLevelMap: { ...deepseek.thinkingLevelMap, ...gatewayProfile.thinkingLevelMap },
   };

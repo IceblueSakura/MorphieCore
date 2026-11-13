@@ -262,7 +262,7 @@ fn subscription_and_metered_entries_never_exchange_credentials_or_origins() {
 
 #[test]
 fn bootstrap_is_loopback_and_requires_explicit_auth_and_provider_keys() {
-    let models = selected_models(&["deepseek-flash"], &["deepseek"]);
+    let models = selected_models(&["deepseek-v4.1-flash-1017"], &["deepseek"]);
     let credentials = [("deepseek", "deepseek-api-key", "synthetic-upstream-only")];
     assert!(Fixture::new(service(), models.clone(), &credentials).is_ok());
     // Omitted auth_file selects the fixture's required private auth.json.

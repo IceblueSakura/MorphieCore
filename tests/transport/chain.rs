@@ -544,11 +544,11 @@ fn unified_request_projection_keeps_targets_trusted_and_debug_redacted() {
         .endpoint(&EndpointId::new("deepseek-chat").unwrap())
         .unwrap();
     let client = GenerationCodec::new(GenerationApi::Responses, Dialect::MorphieCore, None);
-    let request = client.decode_request(json!({"model":"deepseek-flash","input":"hello","stream":true,"prompt_cache_key":"session"}).to_string().as_bytes()).unwrap();
+    let request = client.decode_request(json!({"model":"deepseek-v4.1-flash-1017","input":"hello","stream":true,"prompt_cache_key":"session"}).to_string().as_bytes()).unwrap();
     admit(
         catalog::default_topology()
             .unwrap()
-            .model("deepseek-flash")
+            .model("deepseek-v4.1-flash-1017")
             .unwrap(),
         &request,
     )
@@ -572,7 +572,7 @@ fn unified_request_projection_keeps_targets_trusted_and_debug_redacted() {
     assert!(prepare(endpoint, &providers::xiaomi(), &secret, &request).is_err());
     let mut no_temperature = catalog::default_topology()
         .unwrap()
-        .model("deepseek-flash")
+        .model("deepseek-v4.1-flash-1017")
         .unwrap()
         .clone();
     no_temperature.contract.set_native(
@@ -581,7 +581,7 @@ fn unified_request_projection_keeps_targets_trusted_and_debug_redacted() {
     );
     let request = client
         .decode_request(
-            json!({"model":"deepseek-flash","input":"hello","temperature":0.5})
+            json!({"model":"deepseek-v4.1-flash-1017","input":"hello","temperature":0.5})
                 .to_string()
                 .as_bytes(),
         )
@@ -593,12 +593,14 @@ fn unified_request_projection_keeps_targets_trusted_and_debug_redacted() {
         0.5
     );
     let request = client
-        .decode_request(br#"{"model":"deepseek-flash","input":"hello","service_tier":"auto"}"#)
+        .decode_request(
+            br#"{"model":"deepseek-v4.1-flash-1017","input":"hello","service_tier":"auto"}"#,
+        )
         .unwrap();
     admit(
         catalog::default_topology()
             .unwrap()
-            .model("deepseek-flash")
+            .model("deepseek-v4.1-flash-1017")
             .unwrap(),
         &request,
     )

@@ -12,7 +12,7 @@ const ROTATED: &str = "synthetic-rotated-agent-secret-000003";
 fn fixture() -> Fixture {
     Fixture::new(
         service(),
-        selected_models(&["deepseek-flash"], &["deepseek"]),
+        selected_models(&["deepseek-v4.1-flash-1017"], &["deepseek"]),
         &[("deepseek", "deepseek-api-key", "synthetic-upstream")],
     )
     .unwrap()

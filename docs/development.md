@@ -30,6 +30,7 @@ The Generation baseline has met the selected [partial-delivery exit](roadmap/ind
 | Agent workflows | Principal pi/OpenCode tool, coding/repair, recall, summary, session and cancellation/recovery workflows are accepted. Required-history Standard Chat tools need runtime-selected thinking off; active/default thinking rejects with an actionable error. Client-specific and Provider-specific qualifications remain in the roadmap |
 | Protocol integration | Independent directional checks, pinned upstream fixtures, strict SDK consumers and complete continuation histories are integrated |
 | Generation binding repairs | Production-constructed SIWC flat-tool carriage, GPT strict/image and reasoning constraints, native opaque replay continuation and growing discovery directories are covered offline. Connected SDK consumers and current installed pi/OpenCode tool/history loops remain accepted; real endpoint prerequisites stay in the [issue register](roadmap/unscheduled-issues.md#content-and-client-qualification) |
+| Context discovery | Service-qualified total/input capacities reach current Pi through authenticated gateway discovery, native model storage, selected-session accounting and offline RPC restoration. Unknown multi-candidate capacities retain client fallbacks; explicit per-model planning caps remain effective |
 | Runtime and credentials | Ordered routing with advisory cooldowns/preferences, bounded retry/publication, credential isolation, OAuth renewal and pending-verification recovery are covered; API-key updates use one transaction and Unix binaries handle SIGINT/SIGTERM |
 | Diagnostics | Application-side failure Logs, bounded private context, redaction and non-blocking lifecycle are delivered. Production receiver, persistence, access and retention remain unselected |
 | Embeddings | Independent text Embedding execution and selected float/Base64 and accounting conversions are accepted |
@@ -103,6 +104,8 @@ Binary bodies, multipart inputs and asynchronous job states belong to their oper
 Use the current installed pi/OpenCode with safe unwrapped launchers, isolated HOME/XDG/session state and bounded child processes. Retain built-in model declarations for default-profile checks; select nondefault profiles explicitly. Do not patch serialized requests or returned history, downgrade clients to source pins, inspect personal configuration or retain historical compatibility branches.
 
 The existing client drivers own request budgets, timeout/cancellation, scratch state and independent authority oracles. Check actual tool execution, final state, continuation and request counts. Recharacterize changed serializers and controls at their affected boundary, using source and test-owned state.
+
+The `pi_gateway_context_discovery` gate additionally takes the current MorphieCore extension entry in `MORPHIECORE_PI_EXTENSION`. It connects real gateway discovery to native Pi model storage, selected-session context accounting and a separate offline RPC process. It checks metadata loading, not large-context inference quality or upstream token enforcement.
 
 ### Real Provider checks
 

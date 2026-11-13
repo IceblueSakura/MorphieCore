@@ -272,10 +272,31 @@ pub(super) fn model_limits(
     model: &str,
     provider: &str,
 ) -> crate::protocol::model_limits::ModelLimits {
-    // Exact model IDs and native service scope only. See docs/refs/2026-10-26-model-discovery.md.
-    // Do not transfer native API limits to TokenPlan, Go, OpenRouter or subscriptions.
+    // Exact model and service scope. See the dated capacity audit in
+    // docs/refs/2026-10-26-model-discovery.md; never inherit another service's limits.
     let context_window_tokens = match (model, provider) {
+        ("gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna", "openai") => Some(1_050_000),
+        // SIWC's advertised current window, not its larger configurable maximum.
+        ("gpt-6.1-sol", "chatgpt") => Some(500_000),
+        ("gpt-6-astra" | "gpt-6-luna", "chatgpt") => Some(272_000),
+        ("gpt-6-luna", "openrouter") => Some(1_050_000),
+        ("gpt-audio-mini", "openrouter") => Some(128_000),
+        ("grok-4.7", "grok") => Some(500_000),
+        ("deepseek-flash", "deepseek" | "deepseek-beta") => Some(1_048_576),
+        ("claude-haiku-5-5", "opencode-go") => Some(1_000_000),
+        ("mimo-v2.6-flash" | "mimo-v2.6-pro" | "muse-spark-1.3-contributor", "opencode-go") => {
+            Some(1_048_576)
+        }
+        ("hy4-preview", "opencode-go") => Some(1_024_000),
+        ("minicpm5-1b" | "minicpm5-2b", "modelbest") => Some(128_000),
+        ("MiniCPM-V-4.7-1B" | "MiniCPM-V-4.7-35B-A3B", "modelbest") => Some(256_000),
         ("qwen3.8-max" | "qwen3.8-flash", "aliyun-dashscope-cn") => Some(1_000_000),
+        ("glm-5.3" | "glm-5.3-prime" | "kimi-k3", "aliyun-dashscope-cn") => Some(1_048_576),
+        _ => None,
+    };
+    let maximum_input_tokens = match (model, provider) {
+        ("gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna", "openai") => Some(922_000),
+        ("glm-5.3" | "glm-5.3-prime" | "kimi-k3", "aliyun-dashscope-cn") => Some(1_048_576),
         _ => None,
     };
     use crate::semantic::task::generation::EffortLevel as E;
@@ -290,6 +311,7 @@ pub(super) fn model_limits(
         reject_disabled_reasoning: matches!(model, "grok-4.7" | "gpt-6-astra" | "gpt-6.1-sol"),
         allowed_effort,
         context_window_tokens,
+        maximum_input_tokens,
         ..Default::default()
     }
 }

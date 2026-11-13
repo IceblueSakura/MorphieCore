@@ -4,23 +4,58 @@
 
 ## Capacity sources
 
-Official pages read on 2026-10-26:
+### Service-qualified capacity audit — 2026-11-13
 
-| Model | Context window | Independent input maximum | Published output maximum | Source |
-|---|---:|---:|---:|---|
-| `gpt-6.1-sol` | 1,050,000 | 922,000 | 128,000 | [OpenAI model specification](https://platform.openai.com/docs/models/gpt-6.1-sol.md) |
-| `gpt-6-astra` | 1,050,000 | Unknown | 128,000 | [OpenAI model specification](https://platform.openai.com/docs/models/gpt-6-astra) |
-| `grok-4.7` | 500,000 | Unknown | No separate text output limit stated | [xAI guide](https://docs.x.ai/developers/grok-4-7) |
-| `qwen3.8-max`, `qwen3.8-flash` | 1,000,000 | Unknown | Unknown | [Model Studio](https://help.aliyun.com/zh/model-studio/text-generation-model), explicitly `100万` |
-| `gemini-3.8-flash` | Unknown | 1,048,576 | 65,536 | [Google model specification](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash) |
+The following exact integer declarations were read from official service sources.
+Context is a total window; independent input capacity is never calculated by
+subtracting output, and input plus output never creates a new context fact.
 
-These are model/API planning facts, not account entitlements, reserved capacity, a measured attention-quality boundary or a promise that all maxima fit together. Google's input maximum is not a published total context window. Grok's wording does not justify an infinity sentinel. OpenAI's published output maxima are not inserted defaults or a new inference limit in this metadata slice; existing bound output declarations remain authoritative.
+| Model / service | Context window | Independent input maximum | Source |
+|---|---:|---:|---|
+| `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-luna` / OpenAI API | 1,050,000 | 922,000 | [Astra](https://developers.openai.com/api/docs/models/gpt-6-astra.md), [Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol.md), [Luna](https://developers.openai.com/api/docs/models/gpt-6-luna.md) |
+| `gpt-6.1-sol` / SIWC | 500,000 | Unknown | Loader-mediated SIWC model directory; [service catalog contract](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference.md) |
+| `gpt-6-astra`, `gpt-6-luna` / SIWC | 272,000 | Unknown | Same SIWC directory |
+| `grok-4.7` / Grok OAuth | 500,000 | Unknown | Loader-mediated subscription model directory, `context_length`; corroborating [native API guide](https://docs.x.ai/developers/grok-4-7.md) |
+| `deepseek-v4.1-flash-1017` / native DeepSeek and beta | 1,048,576 | Unknown | Loader-mediated native directory, `context_window`; [model-list definition](https://api-docs.deepseek.com/api/list-models.md), [alias/version relationship](https://api-docs.deepseek.com/quick_start/pricing.md) |
+| `claude-haiku-5-5` / OpenCode Go | 1,000,000 | Unknown | [Go service directory](https://opencode.ai/inference/go/v1/models), `limit.context` |
+| `mimo-v2.6-flash`, `mimo-v2.6-pro`, `muse-spark-1.3-contributor` / OpenCode Go | 1,048,576 | Unknown | Same Go directory |
+| `hy4-preview` / OpenCode Go | 1,024,000 | Unknown | Same Go directory |
+| `minicpm5-1b`, `minicpm5-2b` / ModelBest | 128,000 | Unknown | [Hosted service directory](https://platform.modelbest.cn/api/models), `context_window`; [API service](https://github.com/OpenBMB/MiniCPM-V/blob/main/docs/api.md) |
+| `MiniCPM-V-4.7-1B`, `MiniCPM-V-4.7-35B-A3B` / ModelBest | 256,000 | Unknown | Same hosted directory |
+| `qwen3.8-max`, `qwen3.8-flash` / DashScope | 1,000,000 | Mode-dependent; not seeded | [Max](https://help.aliyun.com/zh/model-studio/qwen3-8-max), [Flash](https://help.aliyun.com/zh/model-studio/qwen3-8-flash) |
+| `glm-5.3`, `glm-5.3-prime` / DashScope | 1,048,576 | 1,048,576 | [GLM service table](https://help.aliyun.com/zh/model-studio/glm-5-3); [Prime retains base limits](https://help.aliyun.com/zh/model-studio/prime-mode) |
+| `kimi-k3` / DashScope | 1,048,576 | 1,048,576 | [Detailed service limit table](https://help.aliyun.com/zh/model-studio/kimi-k3) |
+| `gemini-3.8-flash` / Google | Unknown | 1,048,576 | [Google specification](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash); output maximum remains independently 65,536 |
+| `gpt-6-luna` / OpenRouter | 1,050,000 | Unknown | [Endpoint inventory](https://openrouter.ai/api/v1/models/openai/gpt-6-luna/endpoints); all listed endpoints agree on context, not input |
+| `gpt-audio-mini` / OpenRouter | 128,000 | Unknown | [Endpoint inventory](https://openrouter.ai/api/v1/models/openai/gpt-audio-mini/endpoints) |
 
-New numeric seeds are limited to exact IDs on their native catalog bindings. Model Studio evidence does not certify TokenPlan; native model pages do not certify OpenRouter/OpenCode Go capacities. SIWC/Grok subscription service limits are not established by public API model pages and remain unknown unless explicitly supplied by trusted deployment configuration. A configured upstream-model, origin or endpoint-path replacement invalidates inherited context/input planning facts unless the deployment explicitly declares replacements.
+SIWC's selected model records also return `max_context_window:872000`. Use their
+smaller `context_window` as the current planning window, not that configurable
+maximum or the public OpenAI API's 1,050,000. These are service planning defaults,
+not quota, entitlement or measured attention quality. Discovery remains startup-only
+and never performs these network queries; the audit used one bounded model-list
+request per credential-backed service and retained only safe capacity fields.
 
-Xiaomi V2.6 and DeepSeek Flash sources use `1M`/`128K`/`384K` notation; no decimal/binary expansion is selected here. The inspected Claude Haiku 5.5 overview likewise uses `1M`/`128K`; its 300K Batch-only opt-in is not the ordinary Messages capacity. Other catalog models remain unknown rather than borrowing family, weight-file, client-default or unrelated endpoint limits.
+DeepSeek's model-list definition explicitly counts input plus output in the total
+and supplies exact integers, resolving the earlier `1M` ambiguity. The public
+dated ID still sends the native `deepseek-flash` alias; it is not an immutable
+upstream snapshot guarantee. ModelBest's hosted values take precedence over weight
+configuration sizes; its `max_output_tokens:0` is not a usable positive maximum.
 
-Catalog declarations and candidate configuration retain context, input and output as independent optional values. Missing evidence never means unlimited. Common route capacity requires comparable facts for every candidate. A deployment may narrow known declarations or supply an unknown one explicitly; discovery never calls an upstream or runs a tokenizer.
+Unknown service facts stay unknown: TokenPlan Qwen/GLM, native Xiaomi and Zhipu
+context abbreviations, NVIDIA Responses context, and heterogeneous OpenRouter
+GLM Flash capacities are not filled from another service. In particular,
+[GLM Flash router endpoints](https://openrouter.ai/api/v1/models/z-ai/glm-5.3-flash/endpoints)
+publish different context values; the largest advertised value is not route-common.
+Qwen's input maxima depend on thinking mode. Kimi's introductory “100 万” differs
+from its explicit 1,048,576 service table; the latter supplies the binding fact.
+
+Catalog declarations and candidate configuration keep context, input and output
+independent. This audit fills context/input metadata, not new output ceilings or
+defaults. A common route value requires a comparable declaration on every candidate;
+one unknown candidate keeps it null. Trusted deployment configuration may narrow
+a known declaration or supply an unknown one. An upstream-model, origin or path
+replacement invalidates inherited context/input facts unless explicitly redeclared.
 
 ## Installed Pi domain
 
@@ -28,13 +63,13 @@ Pi 1.4.0's `pi-ai` model union has chat, classifier and image operations, not em
 
 Pi's image metadata is not a universal enforcement layer. `inputLimits.images.resize` is client preprocessing; count/request-byte fields do not automatically constrain every request path. The gateway's finite discovery domain is not a general size/count guarantee. Schema fields and client-generated payload behavior require separate checks.
 
-Current public model admission intentionally remains narrower than official model specifications in places, including the existing `gpt-6.1-sol` image flag. This slice reports those effective domains; it does not broaden admission from native marketing/specification claims.
+Public model admission may be narrower than official model specifications. Discovery reports the effective input domains; capacity evidence alone does not broaden media admission.
 
 ## Native effort and Pi planning follow-up — 2026-11-10
 
 Re-read the official DeepSeek [thinking guide](https://api-docs.deepseek.com/guides/thinking_mode/), [Chat request reference](https://api-docs.deepseek.com/api/create-chat-completion/) and [Responses request reference](https://api-docs.deepseek.com/api/create-response/). They distinguish native `low/high/max` from compatibility inputs: `minimal → low`, `medium → high`, `xhigh → high`; `none` disables thinking. The native `deepseek-flash` Chat/Responses and beta Chat bindings now declare this exact mapping. Do not copy Bailian's independently selected mapping to native DeepSeek, or assume an accepted source spelling is a distinct effective level. No new model, API or `ultra` source enum is activated.
 
-The 2026-11-10 installed Pi 1.5.1 source exposes `Model.thinkingLevelMap`, `getSupportedThinkingLevels` and `clampThinkingLevel`. Explicit null entries hide unsupported choices; a low/high/max model clamps a medium preference upward to high. Its public model metadata has `contextWindow` and `maxTokens`, without an independent input-token maximum. The user selected actual total context first, then an input-only maximum as a planning fallback when total context is absent; never add input and output, or publish that fallback as a new total-context fact. This does not resolve the decimal/binary abbreviations left unknown above or establish proxy/account capacities.
+The 2026-11-10 installed Pi source exposes `Model.thinkingLevelMap`, `getSupportedThinkingLevels` and `clampThinkingLevel`. Explicit null entries hide unsupported choices; a low/high/max model clamps a medium preference upward to high. Its public model metadata has `contextWindow` and `maxTokens`, without an independent input-token maximum. The user selected actual total context first, then an input-only maximum as a planning fallback when total context is absent; never add input and output, or publish that fallback as a new total-context fact. Unresolved service abbreviations still need independent numeric evidence.
 
 Successful registry refresh does not itself replace an already active/scoped model object. The adapter reconciles metadata at idle boundaries through public `setModel`/`setThinkingLevel`; the native preference/clamping policy stays in Pi. Offline/failed refresh retains qualified cached metadata rather than guessing new facts.
 

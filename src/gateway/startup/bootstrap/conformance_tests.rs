@@ -215,7 +215,7 @@ const BINDINGS: &[Binding<'static>] = &[
         Api::Chat,
     ),
     (
-        "deepseek-flash",
+        "deepseek-v4.1-flash-1017",
         "deepseek-chat",
         "deepseek",
         "deepseek-api-key",

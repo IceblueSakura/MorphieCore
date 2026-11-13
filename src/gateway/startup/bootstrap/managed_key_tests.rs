@@ -10,7 +10,7 @@ fn setup() -> (tempfile::TempDir, CredentialManager) {
     write_configuration(
         dir.path(),
         serde_json::json!({"auth_file":"auth.json"}),
-        selected_models(&["deepseek-flash"], &["deepseek"]),
+        selected_models(&["deepseek-v4.1-flash-1017"], &["deepseek"]),
     );
     manager
         .add_api_key(
@@ -34,7 +34,7 @@ fn bootstrap_loads_selected_key_and_requires_reactivation_after_rotation() {
     let first = Bootstrap::from_directory(dir.path()).unwrap();
     let entry = &first.gateway.state.entries[&(
         crate::protocol::ClientProtocol::Responses,
-        "deepseek-flash".into(),
+        "deepseek-v4.1-flash-1017".into(),
     )];
     let candidate = &entry.candidates[0];
     let (key, grant) = candidate.secret.resolve().unwrap();
@@ -42,7 +42,7 @@ fn bootstrap_loads_selected_key_and_requires_reactivation_after_rotation() {
     let (_, request) = crate::gateway::ingress::admission::prepare(
         &first.gateway.state,
         ClientProtocol::Responses,
-        br#"{"model":"deepseek-flash","input":"synthetic request"}"#,
+        br#"{"model":"deepseek-v4.1-flash-1017","input":"synthetic request"}"#,
         &crate::execution::report::Report::default(),
     )
     .unwrap();
@@ -58,7 +58,7 @@ fn bootstrap_loads_selected_key_and_requires_reactivation_after_rotation() {
     .unwrap();
     let mut replay=entry.client.as_openai().unwrap().0.decode_request(
         &serde_json::to_vec(&serde_json::json!({
-            "model":"deepseek-flash","input":[{"type":"compaction","id":"cmp","encrypted_content":sealed.as_str()}]
+            "model":"deepseek-v4.1-flash-1017","input":[{"type":"compaction","id":"cmp","encrypted_content":sealed.as_str()}]
         })).unwrap()
     ).unwrap();
     crate::execution::replay::open_from_client(&mut replay).unwrap();
@@ -86,7 +86,7 @@ fn bootstrap_loads_selected_key_and_requires_reactivation_after_rotation() {
     let next = Bootstrap::from_directory(dir.path()).unwrap();
     let next = &next.gateway.state.entries[&(
         crate::protocol::ClientProtocol::Responses,
-        "deepseek-flash".into(),
+        "deepseek-v4.1-flash-1017".into(),
     )];
     assert_eq!(
         entry.client.as_openai().unwrap().1.replay_origin,

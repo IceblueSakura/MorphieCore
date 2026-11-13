@@ -58,7 +58,7 @@ class ProtocolDefaultOracles(unittest.TestCase):
 
     def test_chat_default_strictness_is_client_owned_and_cannot_be_downgraded(self):
         for pi in (True, False):
-            body = {"model": "deepseek-flash", "stream": True, "max_tokens": 2048,
+            body = {"model": defaults.PROFILES["chat"][0], "stream": True, "max_tokens": 2048,
                     "stream_options": {"include_usage": True}, "tools": [{"type": "function",
                     "function": {"name": "read", "strict": pi, "parameters": {"type": "object",
                         "properties": {"path": {"type": "string"}}, "required": ["path"]}}}]}

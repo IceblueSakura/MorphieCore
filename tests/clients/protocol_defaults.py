@@ -7,6 +7,7 @@ from pathlib import Path
 import queue
 import signal
 import sqlite3
+import subprocess
 import sys
 
 from drivers import (Child, NEXT, READ, TEXT, Pi, check, check_client_version,
@@ -19,7 +20,7 @@ MODEL = "claude-haiku-5-5"
 PROVIDER = "opencode-go"
 PROFILES = {
     "messages": (MODEL, PROVIDER, "opencode-go-haiku-messages", "anthropic-messages"),
-    "chat": ("deepseek-flash", "deepseek", "deepseek-chat", "openai-completions"),
+    "chat": ("deepseek-v4.1-flash-1017", "deepseek", "deepseek-chat", "openai-completions"),
     "responses": ("gpt-6.1-sol", "opencode", "openai-sol-responses", "openai-responses"),
 }
 
@@ -105,7 +106,8 @@ class MessagesState(DefaultState):
 
 
 def assert_chat_profile(body, pi, *, upstream=False, gateway_profile=False):
-    check(body["model"] == "deepseek-flash" and body["stream"] is True, "default_chat_model")
+    check(body["model"] == ("deepseek-flash" if upstream else PROFILES["chat"][0])
+          and body["stream"] is True, "default_chat_model")
     cap = "max_tokens"
     check(body[cap] == 2048,
           "default_operational_output_cap")
@@ -375,13 +377,22 @@ def run_pi(binary, env, root, work, origin, path, protocol, *, gateway_profile=F
     agent = root / "pi-agent"
     agent.mkdir(mode=0o700)
     override = {"maxTokens": 2048}
+    configuration = {"baseUrl": origin if protocol == "messages" else origin + "/v1",
+                     "apiKey": "$INGRESS_KEY", "modelOverrides": {model_id: override}}
+    if protocol == "chat":
+        package = Path(binary).resolve().parents[1] / "lib/pi/node_modules/@earendil-works/pi-ai"
+        captured = subprocess.run(["node", str(Path(__file__).with_name("pi_default_shapes.mjs")),
+                                   str(package), "deepseek-model"],
+                                  capture_output=True, check=True, timeout=5)
+        selected = json.loads(captured.stdout)
+        selected.update(id=model_id, baseUrl=origin + "/v1", maxTokens=2048)
+        configuration.pop("modelOverrides")
+        configuration.update(api=api, models=[selected])
     if gateway_profile:
         profile = json.loads((Path(__file__).resolve().parents[2] /
                               "config/pi-deepseek.example.json").read_text())
-        override.update(profile["providers"]["deepseek"]["modelOverrides"][model_id])
-    private_json(agent / "models.json", {"providers": {provider: {
-        "baseUrl": origin if protocol == "messages" else origin + "/v1", "apiKey": "$INGRESS_KEY",
-        "modelOverrides": {model_id: override}}}})
+        selected.update(profile["providers"]["deepseek"]["models"][0], maxTokens=2048)
+    private_json(agent / "models.json", {"providers": {provider: configuration}})
     private_json(agent / "settings.json", {"retry": {"enabled": False,
         "provider": {"maxRetries": 0, "timeoutMs": 5000}},
         "compaction": {"enabled": False}, "cacheWarming": "off"})

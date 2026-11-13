@@ -19,7 +19,7 @@ async fn configured_body_budgets_apply_before_execution_and_release_capacity() {
         let boot = Fixture::new(
             json!({"resources":{"concurrency":1,"request_bytes":1024,"body_timeout_ms":20},
             "delivery":{"exchange_timeout_ms":exchange_ms}}),
-            json!({"models":{"deepseek-flash":{"candidates":[{"binding":"deepseek-chat"}]}}}),
+            json!({"models":{"deepseek-v4.1-flash-1017":{"candidates":[{"binding":"deepseek-chat"}]}}}),
             &[("deepseek", "primary", "synthetic-key")],
         )
         .unwrap();
@@ -62,7 +62,8 @@ async fn configured_body_budgets_apply_before_execution_and_release_capacity() {
 
 #[test]
 fn resource_budgets_and_task_shapes_remain_strict() {
-    let models = json!({"models":{"deepseek-flash":{"candidates":[{"binding":"deepseek-chat"}]}}});
+    let models =
+        json!({"models":{"deepseek-v4.1-flash-1017":{"candidates":[{"binding":"deepseek-chat"}]}}});
     for settings in [
         json!({"routing":null}),
         json!({"resources":{"request_bytes":null}}),
@@ -127,7 +128,7 @@ fn account_failures_locate_records_without_echoing_names_or_aliases() {
     for declarations in [json!([account]), json!([account, account])] {
         let error = Fixture::with_accounts(
             service(),
-            json!({"models":{"deepseek-flash":{"candidates":[{"binding":"deepseek-chat"}]}}}),
+            json!({"models":{"deepseek-v4.1-flash-1017":{"candidates":[{"binding":"deepseek-chat"}]}}}),
             &[],
             json!({"version":1,"providers":{"deepseek":{"accounts":declarations}}}),
         )
@@ -219,10 +220,7 @@ async fn public_label_preserves_upstream_identity_and_discovery() {
     });
     let mut boot = Fixture::with_accounts(
         service(),
-        json!({"models":{
-            LABEL:{"candidates":[{"binding":"deepseek-beta-chat"}]},
-            "deepseek-flash":{"candidates":[{"binding":"deepseek-beta-chat"}]}
-        }}),
+        json!({"models":{LABEL:{"candidates":[{"binding":"deepseek-beta-chat"}]}}}),
         &[("deepseek-beta", "primary", "synthetic-key")],
         json!({"version":1,"providers":{"deepseek-beta":{"accounts":[
             {"name":"primary","enabled":true,"credential":{"alias":"primary"},"base_url":root}
@@ -246,9 +244,8 @@ async fn public_label_preserves_upstream_identity_and_discovery() {
             .unwrap();
         let value: Value = serde_json::from_slice(&bytes).unwrap();
         let rows = value["data"].as_array().unwrap();
-        assert_eq!(rows.len(), 2);
-        assert!(rows.iter().any(|row| row["id"] == LABEL));
-        assert!(rows.iter().any(|row| row["id"] == "deepseek-flash"));
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["id"], LABEL);
     }
     let request = axum::http::Request::builder()
         .method("POST")
@@ -305,7 +302,7 @@ async fn loader_binds_named_accounts_without_switching_after_dispatch() {
     ]}}});
     let boot = Fixture::with_accounts(
         service(),
-        json!({"models":{"deepseek-flash":{"candidates":[{"binding":"deepseek-responses"}]}}}),
+        json!({"models":{"deepseek-v4.1-flash-1017":{"candidates":[{"binding":"deepseek-responses"}]}}}),
         &[
             ("deepseek", "primary", "synthetic-primary"),
             ("deepseek", "backup", "synthetic-backup"),
@@ -323,7 +320,7 @@ async fn loader_binds_named_accounts_without_switching_after_dispatch() {
             )
             .header("content-type", "application/json")
             .body(axum::body::Body::from(
-                r#"{"model":"deepseek-flash","input":"go","store":false}"#,
+                r#"{"model":"deepseek-v4.1-flash-1017","input":"go","store":false}"#,
             ))
             .unwrap();
         let response = boot.gateway.router().oneshot(request).await.unwrap();
@@ -367,8 +364,7 @@ fn provider_recovery_configuration_reaches_bound_health_and_keeps_schema_strict(
     use std::time::Duration;
     let mut settings = service();
     settings["routing"] = json!({"max_wait_ms":0});
-    let models =
-        json!({"models":{"deepseek-flash":{"candidates":[{"binding":"deepseek-responses"}]}}});
+    let models = json!({"models":{"deepseek-v4.1-flash-1017":{"candidates":[{"binding":"deepseek-responses"}]}}});
     let keys = [("deepseek", "primary", "synthetic-key")];
     let mut accounts = json!({"version":1,"providers":{"deepseek":{
         "accounts":[{"name":"primary","enabled":true,"credential":{"alias":"primary"}}],
@@ -426,18 +422,17 @@ fn enabled_account_expansion_has_one_request_bound_independent_of_candidate_coun
         .iter()
         .map(|name| ("deepseek", name.as_str(), "synthetic-key"))
         .collect();
-    let models =
-        json!({"models":{"deepseek-flash":{"candidates":[{"binding":"deepseek-responses"}]}}});
+    let models = json!({"models":{"deepseek-v4.1-flash-1017":{"candidates":[{"binding":"deepseek-responses"}]}}});
     let single = Fixture::new(service(), models, &keys).unwrap();
     let entry = &single.gateway.state.entries[&(
         crate::protocol::ClientProtocol::Responses,
-        "deepseek-flash".into(),
+        "deepseek-v4.1-flash-1017".into(),
     )];
     assert_eq!(entry.candidates.len(), 64);
     assert!(
         Fixture::new(
             service(),
-            json!({"models":{"deepseek-flash":{"candidates":[
+            json!({"models":{"deepseek-v4.1-flash-1017":{"candidates":[
                 {"binding":"deepseek-responses"},{"binding":"deepseek-chat"}
             ]}}}),
             &keys
@@ -449,7 +444,7 @@ fn enabled_account_expansion_has_one_request_bound_independent_of_candidate_coun
 async fn read_only_validation_checks_observation_configuration_without_creating_sinks() {
     let boot = Fixture::new(
         service(),
-        json!({"models":{"deepseek-flash":{"candidates":[{"binding":"deepseek-responses"}]}}}),
+        json!({"models":{"deepseek-v4.1-flash-1017":{"candidates":[{"binding":"deepseek-responses"}]}}}),
         &[("deepseek", "primary", "synthetic-primary")],
     )
     .unwrap();
@@ -493,8 +488,7 @@ fn account_names_cannot_duplicate_one_security_target() {
         {"name":"primary","enabled":true,"credential":{"alias":"shared"}},
         {"name":"another-name","enabled":true,"credential":{"alias":"shared"}}
     ]}}});
-    let models =
-        json!({"models":{"deepseek-flash":{"candidates":[{"binding":"deepseek-responses"}]}}});
+    let models = json!({"models":{"deepseek-v4.1-flash-1017":{"candidates":[{"binding":"deepseek-responses"}]}}});
     let keys = [("deepseek", "shared", "synthetic-key")];
     assert!(matches!(
         Fixture::with_accounts(service(), models.clone(), &keys, accounts.clone()),
@@ -505,7 +499,7 @@ fn account_names_cannot_duplicate_one_security_target() {
     let distinct = Fixture::with_accounts(service(), models, &keys, accounts).unwrap();
     let entry = &distinct.gateway.state.entries[&(
         crate::protocol::ClientProtocol::Responses,
-        "deepseek-flash".into(),
+        "deepseek-v4.1-flash-1017".into(),
     )];
     assert_eq!(entry.candidates.len(), 2);
     assert_ne!(

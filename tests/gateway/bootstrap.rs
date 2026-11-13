@@ -415,7 +415,7 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
         .unwrap();
     let binding = morphiecore::topology::catalog::API_KEY_BINDINGS
         .iter()
-        .find(|b| b.model == "deepseek-flash")
+        .find(|b| b.model == "deepseek-v4.1-flash-1017")
         .unwrap()
         .endpoint_id(morphiecore::topology::GenerationProtocol::OpenAiResponses);
     options
@@ -423,7 +423,7 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
         .unwrap()
         .write_all(
             &serde_json::to_vec(&json!({"version":1,"models":{
-                "deepseek-flash":{"candidates":[{"binding":binding.as_str()}]},
+                "deepseek-v4.1-flash-1017":{"candidates":[{"binding":binding.as_str()}]},
                 "qwen-audio-3.0-tts-flash":{"account":"speech"}
             }}))
             .unwrap(),

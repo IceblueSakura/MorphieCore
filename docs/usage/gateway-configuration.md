@@ -174,7 +174,7 @@ The SDK queue holds 64 records, batches at most four and schedules a 100 ms flus
 
 Use `morphiecore --catalog` to select a registered public label and its catalog endpoint IDs. Each candidate expands that Provider's enabled accounts in declaration order; account names, targets and credential references belong only in [accounts.json](credentials-and-diagnostics.md#configure-accounts). Binding definitions are in [the catalog](../../src/topology/catalog.rs). Omitted model controls inherit the binding's values.
 
-`deepseek-v4.1-flash-1017` is an additional registered public label for canonical `deepseek-flash`; upstream requests still use `deepseek-flash`. It accepts the existing DeepSeek bindings, including `deepseek-beta-chat` under Provider `deepseek-beta`. Select it explicitly to publish that name. The label does not pin the moving upstream alias to an immutable model revision.
+`deepseek-v4.1-flash-1017` is the public DeepSeek ID. Native upstream requests still use `deepseek-flash`; DashScope uses its exact dated upstream name. The public ID accepts the existing DeepSeek bindings, including `deepseek-beta-chat` under Provider `deepseek-beta`. It does not pin the native service's moving upstream alias to an immutable model revision.
 
 | Scope | Field | Meaning |
 |---|---|---|
