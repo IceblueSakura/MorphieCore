@@ -370,13 +370,13 @@ fn model_binding_and_local_delivery_prefs_cannot_be_bypassed_by_direct_native_ad
     assert_eq!(out["reasoning_effort"], "xhigh");
     assert_eq!(rules, ["bailian.qwen3.8-flash.effort.v1"]);
     wire = chat();
-    wire["model"] = json!("kimi-k3");
+    wire["model"] = json!("kimi-k3.1-pro");
     wire["reasoning_effort"] = json!("none");
     for result in [
         native(GenerationApi::Chat).decode_request(wire.to_string().as_bytes()),
         native(GenerationApi::Chat).decode_client_request(wire.to_string().as_bytes()),
     ] {
-        assert!(result.is_err());
+        result.expect("Kimi K3.1 supports explicit thinking off");
     }
     let input = client(GenerationApi::Chat)
         .decode_client_request(wire.to_string().as_bytes())
@@ -848,11 +848,15 @@ fn responses_serial_auto_tools_keep_the_native_control_and_source() {
         assert!(rules.is_empty());
         assert_eq!(source, before);
     }
-    wire["model"] = json!("kimi-k3");
-    assert!(
+    wire["model"] = json!("kimi-k3.1-pro");
+    assert_eq!(
         native(GenerationApi::Responses)
             .decode_request(wire.to_string().as_bytes())
-            .is_err()
+            .unwrap()
+            .task
+            .semantic
+            .parallel_tool_calls(),
+        Some(false)
     );
 }
 
@@ -1223,5 +1227,101 @@ fn responses_associate_grouped_results_by_call_id_without_reordering() {
             matches!(rejected, Err(CodecError::Semantic(_))),
             "{history}: {rejected:?}"
         );
+    }
+}
+#[test]
+fn qwen4_native_output_caps_include_thinking_without_changing_older_chat_caps() {
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
+        let wire = if profile == GenerationApi::Chat {
+            json!({"model":"qwen4-max-preview","messages":[{"role":"user","content":"go"}],
+                "reasoning_effort":"medium","max_tokens":512})
+        } else {
+            json!({"model":"qwen4-max-preview","input":[{"role":"user","content":"go"}],
+                "reasoning":{"effort":"medium"},"max_output_tokens":512})
+        };
+        let source = native(profile)
+            .decode_request(wire.to_string().as_bytes())
+            .unwrap();
+        assert_eq!(source.task.semantic.controls().max_output_tokens, Some(512));
+        let protocol = if profile == GenerationApi::Chat {
+            GenerationProtocol::OpenAiChat
+        } else {
+            GenerationProtocol::OpenAiResponses
+        };
+        let (projected, rules) = endpoint("tokenplan-qwen4", protocol)
+            .encode_request_with_rules(&source)
+            .unwrap();
+        let cap = if profile == GenerationApi::Chat {
+            "max_completion_tokens"
+        } else {
+            "max_output_tokens"
+        };
+        assert_eq!(projected[cap], 512);
+        assert!(!rules.iter().any(|rule| rule.contains("reply-only")));
+        assert_eq!(
+            native(profile)
+                .decode_request(projected.to_string().as_bytes())
+                .unwrap()
+                .task
+                .semantic
+                .controls()
+                .max_output_tokens,
+            Some(512)
+        );
+    }
+    let old = json!({"model":"qwen3.8-max","messages":[{"role":"user","content":"go"}],
+        "reasoning_effort":"medium","max_tokens":512});
+    assert!(
+        native(GenerationApi::Chat)
+            .decode_request(old.to_string().as_bytes())
+            .is_err()
+    );
+
+    let wire = json!({"model":"kimi-k3.1-pro","messages":[{"role":"user","content":"go"}],
+        "reasoning_effort":"medium"});
+    let source = client(GenerationApi::Chat)
+        .decode_client_request(wire.to_string().as_bytes())
+        .unwrap();
+    let (projected, _) = endpoint("dashscope-kimi", GenerationProtocol::OpenAiChat)
+        .encode_request_with_rules(&source)
+        .unwrap();
+    assert_eq!(projected["reasoning_effort"], "medium");
+}
+#[test]
+fn kimi_fixed_sampling_is_projected_without_mutating_source_or_ignoring_thinking_off() {
+    for effort in ["none", "medium"] {
+        for (temperature, top_p, penalty, omitted) in
+            [(0.5, 0.8, 0.2, true), (1.0, 0.95, 0.0, false)]
+        {
+            let wire = json!({"model":"kimi-k3.1-pro","messages":[{"role":"user","content":"go"}],
+                "reasoning_effort":effort,"temperature":temperature,"top_p":top_p,"presence_penalty":penalty});
+            assert_eq!(
+                native(GenerationApi::Chat)
+                    .decode_request(wire.to_string().as_bytes())
+                    .is_err(),
+                omitted
+            );
+            let request = client(GenerationApi::Chat)
+                .decode_client_request(wire.to_string().as_bytes())
+                .unwrap();
+            let original = request.clone();
+            let (projected, rules) = endpoint("dashscope-kimi", GenerationProtocol::OpenAiChat)
+                .encode_request_with_rules(&request)
+                .unwrap();
+            for key in ["temperature", "top_p", "presence_penalty"] {
+                if omitted {
+                    assert!(projected.get(key).is_none(), "{key}");
+                } else {
+                    assert!(projected.get(key).is_none_or(|value| value == &wire[key]));
+                }
+            }
+            for rule in ["generation.omit-temperature.v1", "generation.omit-top-p.v1"] {
+                assert_eq!(rules.contains(&rule), omitted);
+            }
+            if omitted {
+                assert!(rules.contains(&"generation.omit-presence-penalty.v1"));
+            }
+            assert_eq!(request, original);
+        }
     }
 }

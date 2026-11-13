@@ -27,20 +27,18 @@ fn deepseek_chat_preserves_the_native_cap_and_standard_thinking_off_control() {
         )
         .unwrap();
     let before = source.clone();
-    for prefix in ["deepseek", "deepseek-beta"] {
-        let endpoint = API_KEY_BINDINGS
-            .iter()
-            .find(|b| b.endpoint_prefix == prefix)
-            .unwrap()
-            .endpoint(GenerationProtocol::OpenAiChat)
-            .unwrap();
-        let (wire, rules) = endpoint.encode_request_with_rules(&source).unwrap();
-        assert_eq!(wire["max_tokens"], 1);
-        assert!(wire.get("max_completion_tokens").is_none());
-        assert_eq!(wire["reasoning_effort"], "none");
-        assert!(wire.get("thinking").is_none());
-        assert!(rules.is_empty());
-    }
+    let endpoint = API_KEY_BINDINGS
+        .iter()
+        .find(|b| b.endpoint_prefix == "deepseek")
+        .unwrap()
+        .endpoint(GenerationProtocol::OpenAiChat)
+        .unwrap();
+    let (wire, rules) = endpoint.encode_request_with_rules(&source).unwrap();
+    assert_eq!(wire["max_tokens"], 1);
+    assert!(wire.get("max_completion_tokens").is_none());
+    assert_eq!(wire["reasoning_effort"], "none");
+    assert!(wire.get("thinking").is_none());
+    assert!(rules.is_empty());
     assert_eq!(source, before);
     let standard = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
         .encode_request(&source, "m", &Contract::full())
@@ -54,16 +52,18 @@ fn go_standard_effort_controls_survive_model_scoped_projection() {
         semantic::context::ConversationContext,
         topology::{GenerationProtocol, catalog::API_KEY_BINDINGS},
     };
-    for (prefix, protocol, levels) in [
+    for (prefix, protocol, levels, supports_off) in [
         (
             "opencode-go",
             GenerationProtocol::OpenAiChat,
             vec![("high", "high"), ("medium", "high")],
+            true,
         ),
         (
-            "opencode-go-muse",
-            GenerationProtocol::OpenAiResponses,
-            vec![("low", "low"), ("max", "xhigh")],
+            "opencode-go-minimax",
+            GenerationProtocol::OpenAiChat,
+            vec![("low", "low"), ("max", "max")],
+            false,
         ),
     ] {
         let endpoint = API_KEY_BINDINGS
@@ -74,7 +74,7 @@ fn go_standard_effort_controls_survive_model_scoped_projection() {
             .unwrap();
         for api in [GenerationApi::Chat, GenerationApi::Responses] {
             for (input, expected) in std::iter::once((None, None))
-                .chain(std::iter::once((Some("none"), Some("none"))))
+                .chain(supports_off.then_some((Some("none"), Some("none"))))
                 .chain(levels.iter().map(|&(a, b)| (Some(a), Some(b))))
             {
                 let mut body = match api {
@@ -127,7 +127,7 @@ fn deepseek_chat_rejects_schema_and_thinking_forcing_without_restricting_respons
     let responses = binding
         .endpoint(GenerationProtocol::OpenAiResponses)
         .unwrap();
-    for prefix in ["deepseek", "deepseek-beta"] {
+    for prefix in ["deepseek", "deepseek"] {
         let chat = API_KEY_BINDINGS
             .iter()
             .find(|b| b.endpoint_prefix == prefix)
@@ -315,14 +315,19 @@ fn gpt_strict_namespaced_tools_reach_native_subscription_and_router_writers() {
         .filter(|b| {
             matches!(
                 b.canonical_model,
-                "gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna"
+                "gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna" | "gpt-6.1-terra"
             )
         })
         .map(|b| b.endpoint(GenerationProtocol::OpenAiResponses).unwrap())
         .chain(
             SUBSCRIPTION_BINDINGS
                 .iter()
-                .filter(|b| matches!(b.model, "gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna"))
+                .filter(|b| {
+                    matches!(
+                        b.model,
+                        "gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna" | "gpt-6.1-terra"
+                    )
+                })
                 .map(|b| b.endpoint()),
         );
     let inline = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
@@ -419,7 +424,7 @@ fn native_binding_reasoning_controls_match_model_activation_and_effort() {
         let result = endpoint.encode_request(&off);
         assert_eq!(
             result.is_ok(),
-            binding.model == "gpt-6-luna",
+            matches!(binding.model, "gpt-6-luna" | "gpt-6.1-terra"),
             "{}",
             binding.model
         );
@@ -444,7 +449,7 @@ fn native_binding_reasoning_controls_match_model_activation_and_effort() {
         ordered.task.semantic = ordered.task.semantic.with_items(items).unwrap();
         assert_eq!(
             endpoint.encode_request(&ordered).is_ok(),
-            binding.model == "gpt-6-luna"
+            matches!(binding.model, "gpt-6-luna" | "gpt-6.1-terra")
         );
         for (effort, expected) in [
             ("minimal", "low"),
@@ -581,9 +586,8 @@ fn binding_parallel_omission_preserves_serial_guarantees_and_source() {
     let client = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     for prefix in [
         "openrouter",
-        "opencode-go",
-        "opencode-go-muse",
-        "openrouter-audio",
+        "opencode-go-mimo-pro",
+        "opencode-go-mimo-flash",
     ] {
         let binding = API_KEY_BINDINGS
             .iter()
@@ -986,7 +990,7 @@ fn unversioned_readable_views_are_closed_and_never_restore_deleted_reasoning() {
     stream.push(&json!({"id":"c1","object":"chat.completion.chunk","model":"m","created":1,"choices":[],"usage":source["usage"]})).unwrap();
     stream.done().unwrap();
     assert_eq!(stream.materialize().unwrap().semantic, decoded.semantic);
-    let history = json!({"model":"hy4-preview","messages":[source["choices"][0]["message"],{"role":"user","content":"next"}],"max_tokens":37});
+    let history = json!({"model":"hy4","messages":[source["choices"][0]["message"],{"role":"user","content":"next"}],"max_tokens":37});
     let mut request = provider
         .decode_request(history.to_string().as_bytes())
         .unwrap();
@@ -1001,7 +1005,7 @@ fn unversioned_readable_views_are_closed_and_never_restore_deleted_reasoning() {
     reason.parts[0].1 = ReasoningContent::Text(Text::new("replacement", "reasoning", 256).unwrap());
     request.task.semantic = request.task.semantic.clone().with_items(items).unwrap();
     let changed = provider
-        .encode_request(&request, "hy4-preview", &Contract::full())
+        .encode_request(&request, "hy4", &Contract::full())
         .unwrap();
     assert_eq!(changed["messages"][0]["reasoning"], "replacement");
     assert!(changed["messages"][0].get("reasoning_details").is_none());
@@ -1016,7 +1020,7 @@ fn unversioned_readable_views_are_closed_and_never_restore_deleted_reasoning() {
         .retain_items(|_, i| !matches!(i, Item::Reasoning(_)))
         .unwrap();
     let deleted = provider
-        .encode_request(&request, "hy4-preview", &Contract::full())
+        .encode_request(&request, "hy4", &Contract::full())
         .unwrap();
     assert!(deleted["messages"][0].get("reasoning").is_none());
     assert!(deleted["messages"][0].get("reasoning_details").is_none());

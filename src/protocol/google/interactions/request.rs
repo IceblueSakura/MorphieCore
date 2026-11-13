@@ -326,6 +326,10 @@ fn thinking(
             level: EffortLevel::High,
             ..
         }) => Some("high"),
+        Some(EffortControl {
+            level: EffortLevel::XHigh,
+            ..
+        }) => Some("xhigh"),
         Some(_) => return Err(unsupported()),
     };
     if let Some(level) = level {

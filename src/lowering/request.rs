@@ -88,7 +88,9 @@ impl<'a> Target<'a> {
         use EffortLevel::*;
         match self {
             Self::Messages(_) => &[Low, Medium, High, XHigh, Max],
-            Self::GenerateContent(_) | Self::Interactions(_) => &[Minimal, Low, Medium, High],
+            Self::GenerateContent(_) | Self::Interactions(_) => {
+                &[Minimal, Low, Medium, High, XHigh]
+            }
             _ => &[Minimal, Low, Medium, High, XHigh, Max],
         }
     }
@@ -110,7 +112,7 @@ impl<'a> Target<'a> {
                     && !c.adaptation.effort_mapping.is_some_and(|mapping| {
                         matches!(
                             mapping.canonical_model,
-                            "glm-5.3" | "glm-5.3-prime" | "kimi-k3"
+                            "glm-5.3" | "glm-5.3-prime" | "kimi-k3.1-pro"
                         )
                     })
             }
@@ -260,6 +262,14 @@ impl<'a> Target<'a> {
                     table.set_native(feature, c.dispositions.native(feature));
                 }
                 table.set_native(TopK, api == GenerationApi::Chat && rules.thinking_controls);
+                if rules.sampling_requires_reasoning_off
+                    && source.resolved_configuration().active.activation
+                        != Some(crate::semantic::task::generation::ReasoningActivation::Disabled)
+                {
+                    for feature in [Temperature, TopP, Logprobs] {
+                        omit(&mut table, feature);
+                    }
+                }
                 table.set_native(
                     ToolBudget,
                     api == GenerationApi::Responses
@@ -303,6 +313,20 @@ impl<'a> Target<'a> {
                     }
                 }
                 if rules.bailian_requests {
+                    for (feature, value) in [
+                        (Temperature, controls.temperature()),
+                        (TopP, controls.top_p()),
+                        (PresencePenalty, controls.presence_penalty()),
+                    ] {
+                        if crate::protocol::openai::dialect::bailian::fixed_sampling_value(
+                            model, feature,
+                        )
+                        .zip(value)
+                        .is_some_and(|(expected, value)| expected != value)
+                        {
+                            omit(&mut table, feature);
+                        }
+                    }
                     table.set(
                         StrictTools,
                         crate::protocol::openai::dialect::bailian::function_strictness(model, api),
@@ -322,7 +346,7 @@ impl<'a> Target<'a> {
                         if controls.max_output_tokens.is_some_and(|n| n < 16) {
                             omit(&mut table, MaxOutputTokens);
                         } else if !model.is_empty()
-                            && !matches!(model, "qwen3.8-flash" | "qwen3.8-max")
+                            && !crate::protocol::openai::dialect::bailian::total_output_ceiling(model, api)
                             && source.reasoning().activation.as_ref()
                                 != Some(&crate::semantic::task::generation::ReasoningActivation::Disabled)
                         {
@@ -349,7 +373,7 @@ impl<'a> Target<'a> {
                     if controls.top_p().is_some_and(|v| v <= 0.0) {
                         omit(&mut table, TopP);
                     }
-                    if controls.top_k.is_some_and(|v| v > 100) || model == "kimi-k3" {
+                    if controls.top_k.is_some_and(|v| v > 100) {
                         omit(&mut table, TopK);
                     }
                     if controls
@@ -402,11 +426,7 @@ impl<'a> Target<'a> {
                 );
                 omit(&mut table, ExplicitCache);
                 omit(&mut table, AutomaticPrefixCache);
-                if rules.parallel_tools_always_enabled
-                    || api == GenerationApi::Responses
-                        && rules.bailian_requests
-                        && model == "kimi-k3"
-                {
+                if rules.parallel_tools_always_enabled {
                     table.set(ParallelTools, Disposition::Equivalent);
                     table.set(
                         SerialTools,
@@ -781,6 +801,16 @@ impl<'a> Target<'a> {
         {
             table.set(Feature::Tools, Disposition::Reject("the selected native tool contract requires inactive namespaces and namespace-qualified direct calls"));
         }
+        if contract.adaptation.rules.auto_tool_choice_only
+            && source
+                .tool_choice()
+                .is_some_and(|choice| !matches!(choice, ToolChoice::Auto))
+        {
+            table.set(
+                Feature::ToolChoice,
+                Disposition::Reject("this target only supports automatic tool selection"),
+            );
+        }
         if contract.adaptation.rules.deepseek_chat_requests && api == GenerationApi::Chat {
             if matches!(source.tool_choice(), Some(ToolChoice::Allowed { .. })) {
                 table.set(
@@ -824,9 +854,8 @@ impl<'a> Target<'a> {
             let disabled =
                 settings.reasoning.activation.as_ref() == Some(&ReasoningActivation::Disabled);
             if api == GenerationApi::Chat
-                && (glm && !matches!(source.output(), OutputConstraint::Text)
-                    || model == "kimi-k3"
-                        && matches!(source.output(), OutputConstraint::JsonSchema { .. }))
+                && glm
+                && !matches!(source.output(), OutputConstraint::Text)
             {
                 table.set(
                     Feature::StructuredOutput,

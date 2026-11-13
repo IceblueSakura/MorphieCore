@@ -47,10 +47,10 @@ for (const [id, { contextWindow, maxTokens }] of Object.entries(expected)) {
     assert.equal(model.thinkingLevelMap.off, "none", `thinking off ${id}`);
     assert.equal(model.thinkingLevelMap.medium, "medium", `thinking on ${id}`);
   }
-  if (id === "hy4-preview" || id === "muse-spark-1.3-contributor") {
+  if (id === "hy4" || id === "minimax-m3.1-flash") {
     assert.equal(model.reasoning, true, `Go thinking available ${id}`);
     assert.equal(model.thinkingLevelMap.high, "high", `Go native high ${id}`);
-    if (id === "hy4-preview") {
+    if (id === "hy4") {
       assert.equal(model.thinkingLevelMap.off, "none", "HY4 thinking off");
       assert.equal(model.thinkingLevelMap.medium, null, "HY4 aliases hidden");
     }

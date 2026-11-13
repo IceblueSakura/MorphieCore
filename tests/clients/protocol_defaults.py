@@ -488,9 +488,6 @@ def main():
     rejected = protocol == "chat" and not gateway_profile
     count = 1 if rejected else 3
     model_id, provider, binding, _ = PROFILES[protocol]
-    if pi and protocol == "chat":
-        # pi's builtin strict read tool needs the beta endpoint binding.
-        provider, binding = "deepseek-beta", "deepseek-beta-chat"
     state = (ChatState(path, pi=pi, gateway_profile=gateway_profile) if protocol == "chat" else
              {"messages": MessagesState, "responses": ResponsesState}[protocol](path, pi=pi))
     env = environment(root)
@@ -501,7 +498,7 @@ def main():
         origin = stack.enter_context(server(state, False))
         gateway_configuration(root, protocol == "messages", origin,
                               model=model_id, provider="openai" if protocol == "responses" else provider,
-                              binding=binding, api_root="/beta" if pi and protocol == "chat" else "/v1")
+                              binding=binding, api_root="/beta" if protocol == "chat" else "/v1")
         gateway = stack.enter_context(Child([gateway_binary, "--config", str(root / "gateway.json"),
             "--credentials-dir", str(root / "credentials")], env, work))
         try:

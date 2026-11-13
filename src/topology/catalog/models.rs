@@ -31,34 +31,32 @@ pub const MODELS: &[ModelDefinition] = &[
         released_at: 1_790_035_200,
         developer: "Xiaomi",
     },
-    // Family publication, not Contributor-tier listing time.
-    // https://research.meta.ai/blog/introducing-muse-spark-1-3 (2026-09-02).
+    // https://www.minimax.io/blog/minimax-m31f (2026-10-19).
     ModelDefinition {
-        id: "muse-spark-1.3-contributor",
+        id: "minimax-m3.1-flash",
         images: true,
         files: false,
         strict_tools: false,
-        released_at: 1_788_307_200,
-        developer: "Meta",
+        released_at: 1792368000,
+        developer: "MiniMax",
     },
-    // Original publication, not the later announcement update.
-    // https://www.kimi.com/en/blog/ (2026-07-16).
+    // https://www.kimi.com/en/blog/kimi-k3-1-pro (2026-10-24).
     ModelDefinition {
-        id: "kimi-k3",
+        id: "kimi-k3.1-pro",
         images: true,
         files: false,
         strict_tools: false,
-        released_at: 1_784_160_000,
+        released_at: 1792800000,
         developer: "Moonshot AI",
     },
-    // https://platform.openai.com/docs/changelog (2025-10-06 release).
+    // https://research.meta.ai/blog/muse-ember (2026-11-09).
     ModelDefinition {
-        id: "gpt-audio-mini",
-        images: false,
-        files: false,
+        id: "muse-ember",
+        images: true,
+        files: true,
         strict_tools: false,
-        released_at: 1_759_708_800,
-        developer: "OpenAI",
+        released_at: 1794182400,
+        developer: "Meta",
     },
     // Source: https://openai.com/index/introducing-gpt-6-1-sol/ (2026-09-29).
     ModelDefinition {
@@ -183,13 +181,13 @@ pub const MODELS: &[ModelDefinition] = &[
         released_at: 1_791_763_200,
         developer: "ModelBest",
     },
-    // Source: https://www.tencent.com/tencent-releases-and-open-sources-tencent-hy4-preview/ (2026-08-28).
+    // https://www.tencent.com/tencent-launches-hy4-joining-the-ranks-of-the-worlds-leading-open-source-ai-models/ (2026-11-04).
     ModelDefinition {
-        id: "hy4-preview",
-        images: false,
+        id: "hy4",
+        images: true,
         files: false,
         strict_tools: false,
-        released_at: 1_787_875_200,
+        released_at: 1793750400,
         developer: "Tencent",
     },
     // Source: https://docs.bigmodel.cn/cn/update/new-releases#2026-8-19 (2026-08-19).
@@ -210,6 +208,33 @@ pub const MODELS: &[ModelDefinition] = &[
         released_at: 1_787_702_400,
         developer: "Zhipu AI",
     },
+    // https://developers.openai.com/api/docs/models/gpt-6.1-terra (2026-10-26).
+    ModelDefinition {
+        id: "gpt-6.1-terra",
+        images: true,
+        files: true,
+        strict_tools: true,
+        released_at: 1792972800,
+        developer: "OpenAI",
+    },
+    // https://help.aliyun.com/zh/model-studio/qwen4-max-preview (2026-11-11).
+    ModelDefinition {
+        id: "qwen4-max-preview",
+        images: true,
+        files: false,
+        strict_tools: true,
+        released_at: 1794355200,
+        developer: "Alibaba",
+    },
+    // https://www.stepfun.com/news/step-5-preview (2026-09-20).
+    ModelDefinition {
+        id: "step-5-preview",
+        images: true,
+        files: false,
+        strict_tools: false,
+        released_at: 1789862400,
+        developer: "StepFun",
+    },
 ];
 pub fn contract(id: &str) -> Dispositions {
     if let Some(binding) = super::MESSAGES_BINDINGS.iter().find(|b| b.model == id) {
@@ -224,7 +249,10 @@ pub fn contract(id: &str) -> Dispositions {
     (Dispositions::text_images())
         .with_native(
             crate::semantic::task::generation::Feature::CustomTools,
-            matches!(id, "gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna"),
+            matches!(
+                id,
+                "gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna" | "gpt-6.1-terra"
+            ),
         )
         .with_native(
             crate::semantic::task::generation::Feature::ImageInput,
@@ -236,14 +264,20 @@ pub fn contract(id: &str) -> Dispositions {
         )
         .with_native(
             crate::semantic::task::generation::Feature::AudioInput,
-            id == "gpt-audio-mini",
+            id == "muse-ember",
         )
         // Sources: MiniCPM-V docs/api.md and the Zhipu Chat reference (docs/refs/multimodal.md).
         .with_native(
             crate::semantic::task::generation::Feature::VideoInput,
             matches!(
                 id,
-                "MiniCPM-V-4.7-1B" | "MiniCPM-V-4.7-35B-A3B" | "glm-5.3-flash"
+                "MiniCPM-V-4.7-1B"
+                    | "MiniCPM-V-4.7-35B-A3B"
+                    | "glm-5.3-flash"
+                    | "minimax-m3.1-flash"
+                    | "step-5-preview"
+                    | "muse-ember"
+                    | "qwen4-max-preview"
             ),
         )
         .with_native(
@@ -272,56 +306,70 @@ pub(super) fn model_limits(
     model: &str,
     provider: &str,
 ) -> crate::protocol::model_limits::ModelLimits {
-    // Service-qualified declarations and explicitly selected planning policy.
-    // See docs/refs/2026-10-26-model-discovery.md.
+    // Service-qualified declarations; see docs/refs/2026-11-13-model-catalog-expansion.md.
     let context_window_tokens = match (model, provider) {
-        // Operator-selected SIWC planning window matches the public OpenAI API.
-        ("gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna", "openai" | "chatgpt") => Some(1_050_000),
-        ("gpt-6-luna", "openrouter") => Some(1_050_000),
-        ("gpt-audio-mini", "openrouter") => Some(128_000),
-        ("grok-4.7", "grok") => Some(500_000),
-        ("deepseek-flash", "deepseek" | "deepseek-beta") => Some(1_048_576),
-        ("claude-haiku-5-5", "opencode-go") => Some(1_000_000),
-        ("mimo-v2.6-flash" | "mimo-v2.6-pro" | "muse-spark-1.3-contributor", "opencode-go") => {
-            Some(1_048_576)
+        // Operator-selected SIWC planning windows match the official API.
+        ("gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna" | "gpt-6.1-terra", "openai" | "chatgpt") => {
+            Some(1_050_000)
         }
-        ("hy4-preview", "opencode-go") => Some(1_024_000),
+        ("gpt-6-luna", "openrouter") => Some(1_050_000),
+        ("muse-ember", "openrouter") => Some(1_048_576),
+        ("grok-4.7", "grok") => Some(500_000),
+        ("deepseek-flash", "deepseek") => Some(1_048_576),
+        ("claude-haiku-5-5", "opencode-go") => Some(1_000_000),
+        ("mimo-v2.6-flash" | "mimo-v2.6-pro" | "hy4", "opencode-go") => Some(1_048_576),
+        ("minimax-m3.1-flash" | "step-5-preview", "opencode-go") => Some(1_000_000),
         ("minicpm5-1b" | "minicpm5-2b", "modelbest") => Some(128_000),
         ("MiniCPM-V-4.7-1B" | "MiniCPM-V-4.7-35B-A3B", "modelbest") => Some(256_000),
         ("qwen3.8-max" | "qwen3.8-flash", "aliyun-dashscope-cn") => Some(1_000_000),
-        ("glm-5.3" | "glm-5.3-prime" | "kimi-k3", "aliyun-dashscope-cn") => Some(1_048_576),
+        ("glm-5.3" | "glm-5.3-prime" | "kimi-k3.1-pro", "aliyun-dashscope-cn") => Some(1_048_576),
         _ => None,
     };
     let maximum_input_tokens = match (model, provider) {
-        ("gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna", "openai") => Some(922_000),
-        ("glm-5.3" | "glm-5.3-prime" | "kimi-k3", "aliyun-dashscope-cn") => Some(1_048_576),
+        ("gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna" | "gpt-6.1-terra", "openai") => Some(922_000),
+        ("glm-5.3" | "glm-5.3-prime" | "kimi-k3.1-pro", "aliyun-dashscope-cn") => Some(1_048_576),
+        ("hy4", "opencode-go") => Some(983_010),
+        ("step-5-preview", "opencode-go") => Some(1_000_000),
         _ => None,
     };
     let maximum_output_tokens = match (model, provider) {
-        ("deepseek-flash", "deepseek" | "deepseek-beta") => Some(393_216),
+        ("gpt-6.1-terra", "openai") => Some(128_000),
+        ("deepseek-flash", "deepseek") => Some(393_216),
         ("claude-haiku-5-5", "opencode-go") => Some(128_000),
-        ("hy4-preview", "opencode-go") => Some(64_000),
-        ("muse-spark-1.3-contributor" | "mimo-v2.6-flash" | "mimo-v2.6-pro", "opencode-go") => {
-            Some(131_072)
-        }
+        ("hy4" | "step-5-preview", "opencode-go") => Some(65_536),
+        ("minimax-m3.1-flash", "opencode-go") => Some(512_000),
+        ("mimo-v2.6-flash" | "mimo-v2.6-pro", "opencode-go") => Some(131_072),
         ("gpt-6-luna", "openrouter") => Some(128_000),
-        ("gpt-audio-mini", "openrouter") => Some(16_384),
+        ("kimi-k3.1-pro", "aliyun-dashscope-cn") => Some(1_048_576),
+        ("qwen4-max-preview", "aliyun-tokenplan-cn") => Some(393_216),
         _ => None,
     };
     use crate::semantic::task::generation::EffortLevel as E;
     let allowed_effort: Option<Box<[_]>> = match (model, provider) {
-        ("hy4-preview", "opencode-go") => Some(vec![E::High].into()),
-        ("muse-spark-1.3-contributor", "opencode-go") => {
-            Some(vec![E::Minimal, E::Low, E::Medium, E::High, E::XHigh].into())
+        ("hy4", "opencode-go") => Some(vec![E::High].into()),
+        ("step-5-preview", _) => Some(vec![E::Low, E::Medium, E::High].into()),
+        ("minimax-m3.1-flash", "opencode-go") => {
+            Some(vec![E::Low, E::Medium, E::High, E::XHigh, E::Max].into())
+        }
+        ("muse-ember", "openrouter") => {
+            Some(vec![E::Minimal, E::Low, E::Medium, E::High, E::XHigh, E::Max].into())
         }
         ("grok-4.7", _) => Some(vec![E::Low, E::Medium, E::High, E::XHigh].into()),
-        ("gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna", _) => {
+        ("gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna" | "gpt-6.1-terra", _) => {
             Some(vec![E::Low, E::Medium, E::High, E::XHigh, E::Max].into())
         }
         _ => None,
     };
     crate::protocol::model_limits::ModelLimits {
-        reject_disabled_reasoning: matches!(model, "grok-4.7" | "gpt-6-astra" | "gpt-6.1-sol"),
+        reject_disabled_reasoning: matches!(
+            model,
+            "grok-4.7"
+                | "gpt-6-astra"
+                | "gpt-6.1-sol"
+                | "minimax-m3.1-flash"
+                | "muse-ember"
+                | "step-5-preview"
+        ),
         allowed_effort,
         context_window_tokens,
         maximum_input_tokens,

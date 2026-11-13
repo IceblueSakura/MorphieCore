@@ -16,12 +16,7 @@ async fn installed_case(script: &str, case: &str, variable: &str, arguments: &[&
     let root = directory.path();
     let native = case.contains("messages");
     let domain = if script == "protocol_defaults" && case.contains("chat") {
-        // pi's builtin strict read tool routes through the beta endpoint binding.
-        if case.starts_with("pi-chat") {
-            "deepseek-beta"
-        } else {
-            "deepseek"
-        }
+        "deepseek"
     } else if case.contains("responses") {
         "openai"
     } else if native {

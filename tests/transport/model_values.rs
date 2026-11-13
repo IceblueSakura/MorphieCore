@@ -48,12 +48,6 @@ fn service_output_ceilings_bound_prepared_requests_without_filling_unknown_servi
             393216,
         ),
         (
-            "deepseek-beta",
-            GenerationProtocol::OpenAiChat,
-            "max_tokens",
-            393216,
-        ),
-        (
             "deepseek",
             GenerationProtocol::OpenAiResponses,
             "max_output_tokens",
@@ -63,13 +57,13 @@ fn service_output_ceilings_bound_prepared_requests_without_filling_unknown_servi
             "opencode-go",
             GenerationProtocol::OpenAiChat,
             "max_tokens",
-            64000,
+            65536,
         ),
         (
-            "opencode-go-muse",
-            GenerationProtocol::OpenAiResponses,
-            "max_output_tokens",
-            131072,
+            "opencode-go-step",
+            GenerationProtocol::OpenAiChat,
+            "max_tokens",
+            65536,
         ),
         (
             "opencode-go-mimo-pro",
@@ -84,10 +78,10 @@ fn service_output_ceilings_bound_prepared_requests_without_filling_unknown_servi
             128000,
         ),
         (
-            "openrouter-audio",
-            GenerationProtocol::OpenAiChat,
-            "max_completion_tokens",
-            16384,
+            "openai-terra",
+            GenerationProtocol::OpenAiResponses,
+            "max_output_tokens",
+            128000,
         ),
     ] {
         let binding = API_KEY_BINDINGS
@@ -1077,4 +1071,80 @@ fn google_sampling_omission_is_binding_selected_and_preparation_matches_prefligh
         );
     }
     assert_eq!(request, original);
+}
+#[test]
+fn hydrogen_xhigh_uses_both_native_carriers_without_reactivating_disabled_thinking() {
+    let binding = GOOGLE_BINDINGS
+        .iter()
+        .find(|b| b.model == "gemini-4-hydrogen")
+        .unwrap();
+    let request = source(json!({"model":binding.model,"input":"go",
+        "reasoning":{"effort":"xhigh"},"temperature":0.4,"top_p":0.8}));
+    let before = request.clone();
+    let generated = binding.endpoint().encode_request(&request).unwrap();
+    assert_eq!(
+        generated["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+        "XHIGH"
+    );
+    assert!(generated["generationConfig"].get("temperature").is_none());
+    assert!(generated["generationConfig"].get("topP").is_none());
+    let interaction = binding
+        .interactions_endpoint()
+        .encode_request(&request)
+        .unwrap();
+    assert_eq!(interaction["generation_config"]["thinking_level"], "xhigh");
+    assert!(
+        interaction["generation_config"]
+            .get("temperature")
+            .is_none()
+    );
+    assert!(interaction["generation_config"].get("top_p").is_none());
+    assert_eq!(request, before);
+    let off = source(json!({"model":binding.model,"input":"go","reasoning":{"effort":"none"}}));
+    assert!(representable(&binding.endpoint(), &off).is_err());
+    assert!(representable(&binding.interactions_endpoint(), &off).is_err());
+}
+
+#[test]
+fn terra_sampling_is_available_only_with_explicit_thinking_off() {
+    use morphiecore::topology::{GenerationProtocol, catalog::API_KEY_BINDINGS};
+    let binding = API_KEY_BINDINGS
+        .iter()
+        .find(|b| b.endpoint_prefix == "openai-terra")
+        .unwrap();
+    let endpoint = binding
+        .endpoint(GenerationProtocol::OpenAiResponses)
+        .unwrap();
+    for effort in ["none", "low"] {
+        let request = source(json!({"model":binding.model,"input":"go",
+            "reasoning":{"effort":effort},"temperature":0.4,"top_p":0.8}));
+        let original = request.clone();
+        let wire = endpoint.encode_request(&request).unwrap();
+        assert_eq!(wire["reasoning"]["effort"], effort);
+        if effort == "none" {
+            assert_eq!(wire["temperature"], 0.4);
+            assert_eq!(wire["top_p"], 0.8);
+        } else {
+            assert!(wire.get("temperature").is_none());
+            assert!(wire.get("top_p").is_none());
+        }
+        assert_eq!(request, original);
+    }
+    for (root, update, effective_off) in [("none", "high", false), ("low", "none", true)] {
+        let request = source(json!({"model":binding.model,"temperature":0.4,"top_p":0.8,
+            "reasoning":{"effort":root},"input":[{"role":"user","content":"go"},
+                {"type":"configuration_update","reasoning":{"effort":update}}]}));
+        let original = request.clone();
+        let wire = endpoint.encode_request(&request).unwrap();
+        assert_eq!(wire.get("temperature").is_some(), effective_off);
+        assert_eq!(wire.get("top_p").is_some(), effective_off);
+        assert!(
+            wire["input"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item["type"] == "configuration_update")
+        );
+        assert_eq!(request, original);
+    }
 }

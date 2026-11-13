@@ -38,7 +38,7 @@ fn shared_metadata_selects_targets_without_cli_endpoint_overrides() {
     ])
     .plan()
     .unwrap();
-    assert_eq!(plan.path.as_str(), "/chat/completions");
+    assert_eq!(plan.path.as_str(), "/beta/chat/completions");
     assert_eq!(
         plan.body.unwrap(),
         json!({"model":"not-in-catalog","messages":[{"role":"user","content":"Reply with the single word OK."}],"stream":false})
@@ -111,7 +111,7 @@ fn native_probe_paths_and_headers_follow_the_shared_entries() {
         (
             "opencode-go",
             "anthropic",
-            "/zen/go/v1/messages",
+            "/inference/go/anthropic/v1/messages",
             AuthScheme::ApiKeyHeader("x-api-key"),
             json!({"model":"new","messages":[{"role":"user","content":"Reply with the single word OK."}],"max_tokens":1024,"stream":false}),
         ),

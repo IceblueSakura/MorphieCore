@@ -402,6 +402,10 @@ fn thinking(
             level: EffortLevel::High,
             ..
         }) => Some("HIGH"),
+        Some(EffortControl {
+            level: EffortLevel::XHigh,
+            ..
+        }) => Some("XHIGH"),
         Some(_) => return Err(unsupported()),
     };
     let mut config = Map::new();

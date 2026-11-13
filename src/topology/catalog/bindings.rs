@@ -12,8 +12,7 @@ use crate::{
 pub enum RequestSlice {
     Canonical,
     RestrictedLuna,
-    OpenCodeHy4,
-    AudioText,
+    LimitedControls,
     /// Do not inherit a canonical model's endpoint-specific strict guarantee.
     NonStrictTools,
 }
@@ -38,7 +37,7 @@ impl RequestSlice {
                 false,
             );
         }
-        if matches!(self, Self::OpenCodeHy4) {
+        if matches!(self, Self::LimitedControls) {
             // A coding-model listing does not establish these optional request controls.
             // Source: https://opencode.ai/docs/go/#endpoints
             contract.set_native(
@@ -53,23 +52,6 @@ impl RequestSlice {
                 crate::semantic::task::generation::Feature::Truncation,
                 false,
             );
-            contract.set_native(
-                crate::semantic::task::generation::Feature::ParallelTools,
-                false,
-            );
-        }
-        if matches!(self, Self::AudioText) {
-            contract.set_native(crate::semantic::task::generation::Feature::Reasoning, false);
-            contract.set_native(crate::semantic::task::generation::Feature::Verbosity, false);
-            contract.set_native(
-                crate::semantic::task::generation::Feature::Truncation,
-                false,
-            );
-            contract.set_native(
-                crate::semantic::task::generation::Feature::StructuredOutput,
-                false,
-            );
-            contract.set_native(crate::semantic::task::generation::Feature::Logprobs, false);
             contract.set_native(
                 crate::semantic::task::generation::Feature::ParallelTools,
                 false,
@@ -157,10 +139,30 @@ impl ApiKeyBinding {
         if self.dialect == Dialect::OpenCodeGo
             && matches!(
                 self.canonical_model,
-                "hy4-preview" | "muse-spark-1.3-contributor"
+                "hy4" | "minimax-m3.1-flash" | "step-5-preview"
             )
         {
             adapter.adaptation.rules.reject_reasoning_controls = false;
+        }
+        if self.dialect == Dialect::OpenCodeGo {
+            adapter.adaptation.rules.chat_video_url = matches!(
+                self.canonical_model,
+                "minimax-m3.1-flash" | "step-5-preview"
+            );
+            adapter.adaptation.rules.auto_tool_choice_only =
+                self.canonical_model == "minimax-m3.1-flash";
+            if matches!(
+                self.canonical_model,
+                "hy4" | "minimax-m3.1-flash" | "step-5-preview"
+            ) {
+                adapter.adaptation.rules.reasoning_alias = false;
+            }
+        }
+        if self.dialect == Dialect::OpenRouter && self.canonical_model == "muse-ember" {
+            adapter.adaptation.rules.auto_tool_choice_only = true;
+        }
+        if self.dialect == Dialect::Standard && self.canonical_model == "gpt-6.1-terra" {
+            adapter.adaptation.rules.sampling_requires_reasoning_off = true;
         }
         // Hosted MiniCPM5 uses the canonical readable field; V4.7 uses `reasoning`.
         if self.dialect == Dialect::ModelBest
@@ -439,15 +441,15 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
     ApiKeyBinding {
         provider: catalog::opencode_go,
         dialect: Dialect::OpenCodeGo,
-        endpoint_prefix: "opencode-go-muse",
+        endpoint_prefix: "opencode-go-minimax",
         effort_mappings: &[],
-        model: "muse-spark-1.3-contributor",
-        canonical_model: "muse-spark-1.3-contributor",
-        upstream: "muse-spark-1.3-contributor",
-        protocols: RESPONSES,
-        reasoning_history: &[],
-        public_slice: RequestSlice::OpenCodeHy4,
-        endpoint_slice: RequestSlice::OpenCodeHy4,
+        model: "minimax-m3.1-flash",
+        canonical_model: "minimax-m3.1-flash",
+        upstream: "minimax-m3.1-flash",
+        protocols: CHAT,
+        reasoning_history: ACCEPTED_HISTORY,
+        public_slice: RequestSlice::Canonical,
+        endpoint_slice: RequestSlice::Canonical,
     },
     ApiKeyBinding {
         provider: catalog::opencode_go,
@@ -460,7 +462,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         protocols: CHAT,
         reasoning_history: &[],
         public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::OpenCodeHy4,
+        endpoint_slice: RequestSlice::LimitedControls,
     },
     ApiKeyBinding {
         provider: catalog::opencode_go,
@@ -473,7 +475,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         protocols: CHAT,
         reasoning_history: &[],
         public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::OpenCodeHy4,
+        endpoint_slice: RequestSlice::LimitedControls,
     },
     ApiKeyBinding {
         provider: catalog::aliyun_dashscope_cn,
@@ -488,15 +490,15 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         public_slice: RequestSlice::Canonical,
         endpoint_slice: RequestSlice::Canonical,
     },
-    // https://help.aliyun.com/en/model-studio/kimi-k3
+    // https://help.aliyun.com/zh/model-studio/kimi-k3-1-pro
     ApiKeyBinding {
         provider: catalog::aliyun_dashscope_cn,
         dialect: Dialect::Bailian,
         endpoint_prefix: "dashscope-kimi",
         effort_mappings: &[],
-        model: "kimi-k3",
-        canonical_model: "kimi-k3",
-        upstream: "kimi-k3",
+        model: "kimi-k3.1-pro",
+        canonical_model: "kimi-k3.1-pro",
+        upstream: "kimi-k3.1-pro",
         protocols: CHAT,
         reasoning_history: &[],
         public_slice: RequestSlice::Canonical,
@@ -551,24 +553,24 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "glm-5.3",
         canonical_model: "glm-5.3",
         upstream: "glm-5.3",
-        protocols: CHAT,
+        protocols: RESPONSES,
         reasoning_history: &[],
         public_slice: RequestSlice::Canonical,
         endpoint_slice: RequestSlice::Canonical,
     },
-    // https://openrouter.ai/api/v1/models/openai/gpt-audio-mini/endpoints
+    // https://openrouter.ai/api/v1/models/meta/muse-ember/endpoints
     ApiKeyBinding {
         provider: catalog::openrouter,
         dialect: Dialect::OpenRouter,
-        endpoint_prefix: "openrouter-audio",
+        endpoint_prefix: "openrouter-ember",
         effort_mappings: &[],
-        model: "gpt-audio-mini",
-        canonical_model: "gpt-audio-mini",
-        upstream: "openai/gpt-audio-mini",
-        protocols: CHAT,
-        reasoning_history: &[],
-        public_slice: RequestSlice::AudioText,
-        endpoint_slice: RequestSlice::AudioText,
+        model: "muse-ember",
+        canonical_model: "muse-ember",
+        upstream: "meta/muse-ember",
+        protocols: BOTH,
+        reasoning_history: ACCEPTED_HISTORY,
+        public_slice: RequestSlice::Canonical,
+        endpoint_slice: RequestSlice::Canonical,
     },
     ApiKeyBinding {
         provider: catalog::deepseek,
@@ -585,22 +587,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         reasoning_history: TOOL_HISTORY,
         public_slice: RequestSlice::Canonical,
         // https://api-docs.deepseek.com/guides/tool_calls/
-        endpoint_slice: RequestSlice::NonStrictTools,
-    },
-    // Endpoint-qualified strict-tool validation on the DeepSeek beta chat path.
-    // Activation still requires an explicit models-file candidate and account.
-    // Source: https://api-docs.deepseek.com/guides/tool_calls/
-    ApiKeyBinding {
-        provider: catalog::deepseek_beta,
-        dialect: Dialect::DeepSeek,
-        endpoint_prefix: "deepseek-beta",
-        effort_mappings: &[(GenerationProtocol::OpenAiChat, &DEEPSEEK_FLASH_EFFORT)],
-        model: "deepseek-v4.1-flash-1017",
-        canonical_model: "deepseek-flash",
-        upstream: "deepseek-flash",
-        protocols: CHAT,
-        reasoning_history: TOOL_HISTORY,
-        public_slice: RequestSlice::Canonical,
         endpoint_slice: RequestSlice::Canonical,
     },
     ApiKeyBinding {
@@ -757,13 +743,13 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         dialect: Dialect::OpenCodeGo,
         endpoint_prefix: "opencode-go",
         effort_mappings: &[],
-        model: "hy4-preview",
-        canonical_model: "hy4-preview",
-        upstream: "hy4-preview",
+        model: "hy4",
+        canonical_model: "hy4",
+        upstream: "hy4",
         protocols: CHAT,
-        reasoning_history: &[],
-        public_slice: RequestSlice::OpenCodeHy4,
-        endpoint_slice: RequestSlice::OpenCodeHy4,
+        reasoning_history: ACCEPTED_HISTORY,
+        public_slice: RequestSlice::Canonical,
+        endpoint_slice: RequestSlice::Canonical,
     },
     ApiKeyBinding {
         provider: catalog::zhipu,
@@ -823,6 +809,58 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         upstream: "z-ai/glm-5.3-flash",
         protocols: BOTH,
         reasoning_history: &[],
+        public_slice: RequestSlice::Canonical,
+        endpoint_slice: RequestSlice::Canonical,
+    },
+    ApiKeyBinding {
+        provider: catalog::openai,
+        dialect: Dialect::Standard,
+        endpoint_prefix: "openai-terra",
+        effort_mappings: &[],
+        model: "gpt-6.1-terra",
+        canonical_model: "gpt-6.1-terra",
+        upstream: "gpt-6.1-terra",
+        protocols: RESPONSES,
+        reasoning_history: ACCEPTED_HISTORY,
+        public_slice: RequestSlice::Canonical,
+        endpoint_slice: RequestSlice::Canonical,
+    },
+    ApiKeyBinding {
+        provider: catalog::opencode_go,
+        dialect: Dialect::OpenCodeGo,
+        endpoint_prefix: "opencode-go-step",
+        effort_mappings: &[],
+        model: "step-5-preview",
+        canonical_model: "step-5-preview",
+        upstream: "step-5-preview",
+        protocols: CHAT,
+        reasoning_history: ACCEPTED_HISTORY,
+        public_slice: RequestSlice::Canonical,
+        endpoint_slice: RequestSlice::Canonical,
+    },
+    ApiKeyBinding {
+        provider: catalog::openrouter,
+        dialect: Dialect::OpenRouter,
+        endpoint_prefix: "openrouter-step",
+        effort_mappings: &[],
+        model: "step-5-preview",
+        canonical_model: "step-5-preview",
+        upstream: "stepfun/step-5-preview",
+        protocols: BOTH,
+        reasoning_history: ACCEPTED_HISTORY,
+        public_slice: RequestSlice::Canonical,
+        endpoint_slice: RequestSlice::Canonical,
+    },
+    ApiKeyBinding {
+        provider: catalog::aliyun_tokenplan_cn,
+        dialect: Dialect::Bailian,
+        endpoint_prefix: "tokenplan-qwen4",
+        effort_mappings: &[],
+        model: "qwen4-max-preview",
+        canonical_model: "qwen4-max-preview",
+        upstream: "qwen4-max-preview",
+        protocols: BOTH,
+        reasoning_history: ACCEPTED_HISTORY,
         public_slice: RequestSlice::Canonical,
         endpoint_slice: RequestSlice::Canonical,
     },

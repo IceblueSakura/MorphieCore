@@ -271,7 +271,7 @@ async fn start_with_recovery(
             match target {
                 GenerationProtocol::OpenAiChat => "/compatible-mode/v1/chat/completions",
                 GenerationProtocol::OpenAiResponses => "/api/v1/responses",
-                GenerationProtocol::AnthropicMessages => "/zen/go/v1/messages",
+                GenerationProtocol::AnthropicMessages => "/inference/go/anthropic/v1/messages",
                 _ => unreachable!(),
             },
             post(answer),

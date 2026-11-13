@@ -125,7 +125,6 @@ macro_rules! providers {
 }
 providers! {
     openai => "openai", chatgpt => "chatgpt", grok => "grok", deepseek => "deepseek", xiaomi => "xiaomi",
-    deepseek_beta => "deepseek-beta",
     modelbest => "modelbest", openrouter => "openrouter", opencode_go => "opencode-go",
     nvidia => "nvidia", aliyun_dashscope_cn => "aliyun-dashscope-cn",
     aliyun_tokenplan_cn => "aliyun-tokenplan-cn", zhipu => "zhipu", google => "google",

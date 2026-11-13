@@ -10,31 +10,17 @@
         "suffix": "/models"
       },
       "chat_completions": {
-        "path": "/chat/completions",
+        "path": "/beta/chat/completions",
         "suffix": "/chat/completions"
       },
       "responses": {
-        "path": "/responses",
+        "path": "/beta/responses",
         "suffix": "/responses"
       }
     },
     "sources": [
       "https://api-docs.deepseek.com/api/list-models/",
-      "https://api-docs.deepseek.com/guides/responses_api/"
-    ]
-  },
-  "deepseek-beta": {
-    "base_url": "https://api.deepseek.com",
-    "auth": {
-      "kind": "bearer"
-    },
-    "endpoints": {
-      "chat_completions": {
-        "path": "/beta/chat/completions",
-        "suffix": "/chat/completions"
-      }
-    },
-    "sources": [
+      "https://api-docs.deepseek.com/guides/responses_api/",
       "https://api-docs.deepseek.com/guides/tool_calls/"
     ]
   },
@@ -82,15 +68,15 @@
         "suffix": "/models"
       },
       "chat_completions": {
-        "path": "/zen/go/v1/chat/completions",
+        "path": "/inference/go/openai/v1/chat/completions",
         "suffix": "/chat/completions"
       },
       "responses": {
-        "path": "/zen/go/v1/responses",
+        "path": "/inference/go/openai/v1/responses",
         "suffix": "/responses"
       },
       "messages": {
-        "path": "/zen/go/v1/messages",
+        "path": "/inference/go/anthropic/v1/messages",
         "auth": {
           "kind": "x_api_key"
         },
@@ -98,8 +84,8 @@
       }
     },
     "sources": [
-      "https://opencode.ai/docs/go/#endpoints",
-      "https://opencode.ai/v2/docs/console/go"
+      "https://opencode.ai/docs/console/go/#endpoints",
+      "https://opencode.ai/inference/go/v1/models"
     ]
   },
   "openrouter": {

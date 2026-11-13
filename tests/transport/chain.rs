@@ -560,7 +560,7 @@ fn unified_request_projection_keeps_targets_trusted_and_debug_redacted() {
     assert_eq!(body["stream_options"]["include_usage"], true);
     assert!(body.get("prompt_cache_key").is_none());
     assert_eq!(upstream.origin, "https://api.deepseek.com");
-    assert_eq!(upstream.path, "/chat/completions");
+    assert_eq!(upstream.path, "/beta/chat/completions");
     assert!(!format!("{upstream:?}").contains("synthetic-only-secret"));
     assert!(!format!("{upstream:?}").contains("hello"));
     let mut no_stream = endpoint.clone();
@@ -764,7 +764,7 @@ fn opencode_go_projects_neutral_conversations_independently_of_cache_groups() {
             "e23057785e022471a99de0c9051856d3",
         ),
     ] {
-        let mut body = json!({"model":"hy4-preview","messages":[{"role":"user","content":"keep"}],"max_completion_tokens":37});
+        let mut body = json!({"model":"hy4","messages":[{"role":"user","content":"keep"}],"max_completion_tokens":37});
         if let Some(key) = key {
             body["prompt_cache_key"] = json!(key);
         }
@@ -791,7 +791,7 @@ fn opencode_go_projects_neutral_conversations_independently_of_cache_groups() {
         assert_eq!(projected, Some(expected));
         for (id, model) in [
             ("opencode-go-haiku-messages", "claude-haiku-5-5"),
-            ("opencode-go-muse-responses", "muse-spark-1.3-contributor"),
+            ("opencode-go-step-chat", "step-5-preview"),
         ] {
             let mut next = request.clone();
             next.model = model.into();
@@ -824,31 +824,18 @@ fn opencode_go_projects_neutral_conversations_independently_of_cache_groups() {
         );
     }
     let missing = client
-        .decode_request(br#"{"model":"hy4-preview","messages":[{"role":"user","content":"keep"}]}"#)
+        .decode_request(br#"{"model":"hy4","messages":[{"role":"user","content":"keep"}]}"#)
         .unwrap();
     assert!(prepare(endpoint, &provider, &secret, &missing).is_err());
     assert!(morphiecore::execution::ExecutionPlan::for_request(&topology, &missing).is_err());
-    let unsupported = client.decode_request(br#"{"model":"hy4-preview","session_id":"conversation-\u2603","messages":[{"role":"user","content":"keep"}]}"#).unwrap();
+    let unsupported = client.decode_request(br#"{"model":"hy4","session_id":"conversation-\u2603","messages":[{"role":"user","content":"keep"}]}"#).unwrap();
     assert!(prepare(endpoint, &provider, &secret, &unsupported).is_err());
     assert!(morphiecore::execution::ExecutionPlan::for_request(&topology, &unsupported).is_err());
     assert!(
         client
-            .decode_request(
-                br#"{"model":"hy4-preview","session_id":"x\r\nInjected: yes","messages":[]}"#
-            )
+            .decode_request(br#"{"model":"hy4","session_id":"x\r\nInjected: yes","messages":[]}"#)
             .is_err()
     );
-    let mut unsupported = client.decode_request(br#"{"model":"hy4-preview","messages":[{"role":"user","content":"keep"}],"response_format":{"type":"json_object"}}"#).unwrap();
-    unsupported.conversation =
-        Some(ConversationContext::conversation("synthetic-conversation").unwrap());
-    admit(topology.model("hy4-preview").unwrap(), &unsupported).unwrap();
-    assert_eq!(
-        morphiecore::execution::plan::representable(endpoint, &unsupported)
-            .unwrap_err()
-            .code(),
-        "admission.structured_output"
-    );
-    assert!(prepare(endpoint, &provider, &secret, &unsupported).is_err());
 }
 
 #[test]
@@ -991,4 +978,38 @@ fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
         wire["max_output_tokens"], 64,
         "API-key access does not inherit SIWC controls"
     );
+}
+#[test]
+fn auto_only_targets_reject_forced_tool_selection_instead_of_ignoring_it() {
+    use morphiecore::semantic::context::ConversationContext;
+    let topology = catalog::default_topology().unwrap();
+    for id in [
+        "opencode-go-minimax-chat",
+        "openrouter-ember-chat",
+        "openrouter-ember-responses",
+    ] {
+        let endpoint = topology.endpoint(&EndpointId::new(id).unwrap()).unwrap();
+        let mut request = standard(GenerationApi::Responses).decode_request(
+            br#"{"model":"m","input":"go","tools":[{"type":"function","name":"read",
+                "description":"Read a synthetic marker","parameters":{"type":"object","properties":{}},
+                "strict":false}],"tool_choice":"required"}"#).unwrap();
+        request.conversation =
+            Some(ConversationContext::conversation("synthetic-auto-only").unwrap());
+        assert_eq!(
+            morphiecore::execution::plan::representable(endpoint, &request)
+                .unwrap_err()
+                .code(),
+            "admission.tool_choice"
+        );
+        let mut settings = request.task.semantic.settings().clone();
+        settings.tool_choice = Some(morphiecore::semantic::task::generation::ToolChoice::Auto);
+        request.task.semantic = request
+            .task
+            .semantic
+            .clone()
+            .with_settings(settings)
+            .unwrap();
+        let wire = endpoint.encode_request(&request).unwrap();
+        assert_eq!(wire["tool_choice"], "auto");
+    }
 }

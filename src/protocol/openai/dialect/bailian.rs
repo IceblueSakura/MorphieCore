@@ -45,6 +45,28 @@ const UNOWNED: &[&str] = &[
     "ocr_options",
 ];
 
+/// Whether the documented ceiling includes thinking as well as visible output.
+pub(crate) fn total_output_ceiling(model: &str, profile: GenerationApi) -> bool {
+    model == "qwen4-max-preview"
+        || match profile {
+            GenerationApi::Chat => matches!(model, "glm-5.3" | "glm-5.3-prime"),
+            GenerationApi::Responses => matches!(model, "qwen3.8-flash" | "qwen3.8-max"),
+        }
+}
+
+/// Kimi's hosted API only accepts these exact sampling defaults, including with thinking off.
+pub(crate) fn fixed_sampling_value(model: &str, feature: Feature) -> Option<f64> {
+    if model != "kimi-k3.1-pro" {
+        return None;
+    }
+    match feature {
+        Feature::Temperature => Some(1.0),
+        Feature::TopP => Some(0.95),
+        Feature::PresencePenalty => Some(0.0),
+        _ => None,
+    }
+}
+
 /// Registered controls cannot disappear under the unknown-field policy.
 pub(in crate::protocol::openai) fn source(
     value: &Value,
@@ -61,7 +83,7 @@ pub(in crate::protocol::openai) fn source(
                 .and_then(Value::as_object)
                 .and_then(|r| r.get("effort"))
         };
-        if matches!(model, "kimi-k3" | "glm-5.3" | "glm-5.3-prime")
+        if matches!(model, "glm-5.3" | "glm-5.3-prime")
             && effort.is_some_and(|v| v.as_str() == Some("none"))
         {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
@@ -71,7 +93,7 @@ pub(in crate::protocol::openai) fn source(
         // source-direction conversion. Target approximation is separate.
         if profile == GenerationApi::Responses
             && !model.is_empty()
-            && !matches!(model, "qwen3.8-flash" | "qwen3.8-max")
+            && !total_output_ceiling(model, profile)
             && o.get("max_output_tokens").is_some_and(|v| !v.is_null())
             && o.get("enable_thinking") != Some(&json!(false))
             && effort.and_then(Value::as_str) != Some("none")
@@ -144,7 +166,7 @@ pub(in crate::protocol::openai) fn source(
         let model = o.get("model").and_then(Value::as_str).unwrap_or("");
         let disabled = o.get("enable_thinking") == Some(&json!(false))
             || o.get("reasoning_effort") == Some(&json!("none"));
-        if !matches!(model, "glm-5.3" | "glm-5.3-prime") && !disabled {
+        if !total_output_ceiling(model, profile) && !disabled {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     }
@@ -300,9 +322,34 @@ const GLM_CHAT: ReasoningEffortMapping = ReasoningEffortMapping {
     ],
 };
 const KIMI_CHAT: ReasoningEffortMapping = ReasoningEffortMapping {
-    canonical_model: "kimi-k3",
-    rule: "bailian.kimi-k3.chat.effort.v1",
-    ..GLM_CHAT
+    canonical_model: "kimi-k3.1-pro",
+    rule: "bailian.kimi-k3.1-pro.chat.effort.v1",
+    scope: EffortScope::Reasoning,
+    native_levels: &[
+        EffortLevel::Low,
+        EffortLevel::Medium,
+        EffortLevel::High,
+        EffortLevel::Max,
+    ],
+    encode: &[
+        (EffortLevel::Minimal, EffortLevel::Low),
+        (EffortLevel::Low, EffortLevel::Low),
+        (EffortLevel::Medium, EffortLevel::Medium),
+        (EffortLevel::High, EffortLevel::High),
+        (EffortLevel::XHigh, EffortLevel::Max),
+        (EffortLevel::Max, EffortLevel::Max),
+    ],
+    decode: &[
+        (EffortLevel::Low, EffortLevel::Low),
+        (EffortLevel::Medium, EffortLevel::Medium),
+        (EffortLevel::High, EffortLevel::High),
+        (EffortLevel::Max, EffortLevel::Max),
+    ],
+};
+const QWEN4_MAX: ReasoningEffortMapping = ReasoningEffortMapping {
+    canonical_model: "qwen4-max-preview",
+    rule: "bailian.qwen4-max-preview.effort.v1",
+    ..QWEN_FLASH
 };
 // Native low/high/max controls qualified on both Bailian APIs, 2026-11-07.
 const DEEPSEEK: ReasoningEffortMapping = ReasoningEffortMapping {
@@ -329,9 +376,10 @@ pub(crate) fn effort_mapping(
     match (model, profile) {
         ("qwen3.8-flash", _) => Some(&QWEN_FLASH),
         ("qwen3.8-max", _) => Some(&QWEN_MAX),
+        ("qwen4-max-preview", _) => Some(&QWEN4_MAX),
         ("glm-5.3" | "glm-5.3-prime", GenerationApi::Chat) => Some(&GLM_CHAT),
         ("glm-5.3" | "glm-5.3-prime", GenerationApi::Responses) => Some(&GLM_RESPONSES),
-        ("kimi-k3", GenerationApi::Chat) => Some(&KIMI_CHAT),
+        ("kimi-k3.1-pro", GenerationApi::Chat) => Some(&KIMI_CHAT),
         ("deepseek-flash" | "deepseek-v4.1-flash-1017", _) => Some(&DEEPSEEK),
         _ => None,
     }
@@ -402,6 +450,18 @@ pub(in crate::protocol::openai) fn check_semantic(
     }
     let qwen = matches!(model, "qwen3.8-flash" | "qwen3.8-max");
     let glm = matches!(model, "glm-5.3" | "glm-5.3-prime");
+    for (feature, value) in [
+        (Feature::Temperature, c.temperature()),
+        (Feature::TopP, c.top_p()),
+        (Feature::PresencePenalty, c.presence_penalty()),
+    ] {
+        if fixed_sampling_value(model, feature)
+            .zip(value)
+            .is_some_and(|(expected, value)| expected != value)
+        {
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+        }
+    }
     let disabled = r.activation.as_ref() == Some(&ReasoningActivation::Disabled);
     if qwen && !disabled && c.temperature().is_some_and(|v| v < 0.6) {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
@@ -409,10 +469,10 @@ pub(in crate::protocol::openai) fn check_semantic(
     if glm && disabled {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
-    if r.budget_tokens.is_some() && (glm || model == "kimi-k3" || !s.effort.is_none()) {
+    if r.budget_tokens.is_some() && (glm || model == "kimi-k3.1-pro" || !s.effort.is_none()) {
         return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
-    if c.top_k.is_some_and(|n| n > 100) || c.top_k.is_some() && model == "kimi-k3" {
+    if c.top_k.is_some_and(|n| n > 100) {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     if c.seed.is_some_and(|n| !(0..=2147483647).contains(&n))
@@ -420,7 +480,7 @@ pub(in crate::protocol::openai) fn check_semantic(
     {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
-    if (qwen || glm || model == "kimi-k3") && c.logprobs == Some(true) {
+    if (qwen || glm || model == "kimi-k3.1-pro") && c.logprobs == Some(true) {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     if r.presence == ReasoningPresence::Null {
@@ -434,9 +494,7 @@ pub(in crate::protocol::openai) fn check_semantic(
         return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
     if profile == GenerationApi::Chat {
-        if (glm && !matches!(s.output(), OutputConstraint::Text))
-            || model == "kimi-k3" && matches!(s.output(), OutputConstraint::JsonSchema { .. })
-        {
+        if glm && !matches!(s.output(), OutputConstraint::Text) {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         for tool in semantic.tools() {
@@ -469,7 +527,6 @@ pub(in crate::protocol::openai) fn check_semantic(
         if c.has_extended_controls()
             || c.truncation.is_some()
             || s.text.verbosity.is_some()
-            || model == "kimi-k3" && s.parallel_tool_calls == Some(false)
             || r.encrypted_output()
             || r.budget_tokens.is_some()
             || !r.read_history.is_none()

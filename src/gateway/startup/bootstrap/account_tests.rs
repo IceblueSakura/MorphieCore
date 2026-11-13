@@ -220,9 +220,9 @@ async fn public_label_preserves_upstream_identity_and_discovery() {
     });
     let mut boot = Fixture::with_accounts(
         service(),
-        json!({"models":{LABEL:{"candidates":[{"binding":"deepseek-beta-chat"}]}}}),
-        &[("deepseek-beta", "primary", "synthetic-key")],
-        json!({"version":1,"providers":{"deepseek-beta":{"accounts":[
+        json!({"models":{LABEL:{"candidates":[{"binding":"deepseek-chat"}]}}}),
+        &[("deepseek", "primary", "synthetic-key")],
+        json!({"version":1,"providers":{"deepseek":{"accounts":[
             {"name":"primary","enabled":true,"credential":{"alias":"primary"},"base_url":root}
         ]}}}),
     )

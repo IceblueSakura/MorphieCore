@@ -206,7 +206,7 @@ async fn start_with_recovery(recover: bool) -> Fixture {
     let origin =
         TrustedOrigin::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
     let app = Router::new()
-        .route("/zen/go/v1/messages", post(answer))
+        .route("/inference/go/anthropic/v1/messages", post(answer))
         .with_state(StateData {
             seen: seen.clone(),
             recovery: recovery.clone(),
@@ -224,7 +224,7 @@ async fn start_with_recovery(recover: bool) -> Fixture {
     let (credentials, store) = if recover {
         let (accounts, store) = crate::credential_recovery::accounts(
             provider.id.as_str(),
-            &format!("{}/zen/go/v1", provider.origin.as_str()),
+            &format!("{}/inference/go/anthropic/v1", provider.origin.as_str()),
         );
         endpoints[0].credential = accounts.provider(provider.id.as_str())[0].binding_id();
         let mut secondary = endpoints[0].clone();

@@ -97,6 +97,10 @@ Module layout mirrors `vendor / api / responsibility`:
 - `protocol::anthropic::messages`
 - `protocol::google::{generate_content, interactions}`
 
+##### OpenAI Terra
+
+Terra retains sampling and logprobs only when the effective reasoning configuration is explicitly off, after resolving native history updates. Active/default thinking uses the existing named field omissions without changing the source controls or collapsing otherwise-native configuration history. Official API and SIWC service limits remain distinct; [source contracts](../refs/2026-11-13-model-catalog-expansion.md#openai-terra-and-siwc) own the model-specific evidence.
+
 ##### Native DeepSeek Chat
 
 Native DeepSeek Chat rejects JSON Schema text constraints and forced tool selection
@@ -109,14 +113,17 @@ keep these restrictions distinct from beta function strictness and Bailian.
 
 ##### OpenCode Go controls
 
-HY4 and Muse carry standard effort through their selected Chat and Responses
-bindings, respectively. Their service-native positive level domains constrain
+HY4, MiniMax M3.1 Flash and Step 5 Preview carry standard effort through native
+Chat bindings. Their service-native positive level domains constrain
 projection and discovery; other positive inputs use the existing
 `generation.project-effort.v1` nearest-level adaptation. Explicit off keeps its
-standard carrier, not an omitted control or an inferred positive level. HY4 off
-is qualified; unassessed Muse off behavior remains delegated to upstream validation.
+standard carrier for HY4. MiniMax and Step's always-thinking contracts reject off
+rather than omitting it or inferring a positive level.
 Absent controls keep upstream defaults. Go MiMo controls and optional output
-guarantees are not activated by this repair.
+guarantees retain their existing scope. MiniMax and OpenRouter Muse Ember only
+support automatic tool selection; explicit restrictive choices reject before
+dispatch. [Current service contracts](../refs/2026-11-13-model-catalog-expansion.md#opencode-go)
+own the directory evidence and native endpoint paths.
 
 OpenRouter Luna preserves verbosity through the ordinary Chat and Responses
 carriers. Its sampling, truncation, parallel-tool and strictness policies remain
@@ -136,7 +143,8 @@ DashScope and Aliyun TokenPlan share the `Bailian` wire dialect for Chat and Res
 - Readable reasoning mapped to `reasoning_content` with `preserve_thinking`.
 - Chat total output ceilings mapped to `max_completion_tokens`; Responses uses `max_output_tokens` with the model-specific scope in [output-ceiling adaptation](#output-ceiling-adaptation).
 - Responses output constraints use the existing standard `text.format` carrier, preserving schema, name, description and explicit strictness. Do not reject the whole text configuration because verbosity lacks a native carrier. The [source refresh](../refs/2026-10-19-bailian-compatible-requests.md#responses-output-format-refresh-2026-11-08) distinguishes documented layouts, observed SDK-flat carriage and model-specific qualification.
-- Responses carries explicit `parallel_tool_calls`; Kimi's unavailable serial guarantee remains rejected. Default/enabled-thinking `qwen3.8-flash` and `glm-5.3` reject required, required-subset and specific selection because both required spellings fail the [qualified native controls](../refs/2026-10-19-bailian-compatible-requests.md#responses-tool-policy-refresh-2026-11-08). Serial admission does not supply that independent forcing guarantee. Model-bound direct lowering retains the existing mapping identity for the same checks; unbound task encoding does not qualify a model.
+- Responses carries explicit `parallel_tool_calls`. Default/enabled-thinking `qwen3.8-flash` and `glm-5.3` reject required, required-subset and specific selection because both required spellings fail the [qualified native controls](../refs/2026-10-19-bailian-compatible-requests.md#responses-tool-policy-refresh-2026-11-08). Retired K3 restrictions are not inherited by K3.1 Pro. Serial admission does not supply an independent forcing guarantee. Model-bound direct lowering retains the mapping identity for the same checks; unbound task encoding does not qualify a model.
+- Kimi K3.1 Pro accepts only temperature 1.0, top-p 0.95 and presence penalty 0.0, including with thinking off. Incompatible optional values take the existing named field omissions on candidate copies; native source validation retains rejection of these known invalid values. [Current model contract](../refs/2026-11-13-model-catalog-expansion.md#kimi-k31-pro).
 
 **Function strictness selected 2026-11-09:** these are two plans of the same upstream service, so `aliyun-dashscope-cn` and `aliyun-tokenplan-cn` share one default policy on Chat and Responses. Preserve strictness only for an independently verified exact model/API pair; otherwise relax explicit true and conditional defaults under `bailian.relax-function-strictness.v1` (L3). The current verified set is empty: existing Qwen capability flags and isolated DeepSeek successes do not establish enforced function schemas. New models default to relaxation.
 
@@ -272,6 +280,8 @@ A client output ceiling is an adaptable generation control. Prefer retaining use
 Resolve spelling, scope and supported values for the actual binding/API, not a shared model label. Record approximations and omissions through the existing conversion evidence; no client echo is required. Preserve original intent on the source request, including absence versus a ceiling omitted by projection, so default insertion cannot overwrite it.
 
 `generation.reply-only-output-ceiling.v1` records total-to-reply scope adaptation on thinking-enabled non-Qwen Bailian Responses targets. Values below that API's minimum take the existing ceiling-omission rule. Native source decoding retains its separate scope restriction: reply-only source values are not silently reinterpreted as total-output ceilings. DeepSeek Chat uses native `max_tokens`; Standard Chat keeps its own spelling.
+
+Qwen4 Max Preview has total-output semantics for Chat `max_tokens` and `max_completion_tokens`, and Responses `max_output_tokens`. Its native source decoder and target projection share that model-qualified scope. Older Qwen Chat's reply-only `max_tokens` restriction remains separate.
 
 Gateway request/response byte limits, deadlines, model bounds and honest terminal reporting remain independent. The adaptation introduces neither gateway-side token counting nor fabricated length termination or a general formula for increasing thinking budgets.
 
@@ -436,7 +446,7 @@ Named local effort is admitted only on system messages; omitted system content i
 
 ##### Google response-effort projection
 
-`google.gemini-3.8-flash.response-effort-to-thinking.v1` maps response-scoped low/medium/high to Gemini thinking effort levels via [`ReasoningConversion::Scope`](../../src/protocol/reasoning.rs#L131).
+The model-qualified `google.<model>.response-effort-to-thinking.v1` rules map response-scoped effort to Gemini thinking effort via [`ReasoningConversion::Scope`](../../src/protocol/reasoning.rs#L131). Gemini 3.8 Flash, Gemini 4 Argon and Carbon map low/medium/high; Hydrogen also carries xhigh as native `XHIGH` on GenerateContent and `xhigh` on Interactions. Gemini 4 planning records its unified context window rather than relabeling it as independent input capacity. Sampling is ignored by these selected models; the existing named omission rules preserve that distinction. The selected 3.8-only terminal projections remain unchanged.
 
 #### Reasoning level calibration
 

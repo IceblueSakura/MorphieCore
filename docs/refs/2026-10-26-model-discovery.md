@@ -2,6 +2,8 @@
 
 [Architecture](../architecture/adaptation-and-dialects.md#generation-text-model-discovery) owns the selected design. This note records source evidence, not runtime health or authorization to activate tasks.
 
+The [model catalog refresh](2026-11-13-model-catalog-expansion.md) owns changed and added model/service declarations, including replacement IDs and the unified DeepSeek entry. The observations below retain their original scope and source dates.
+
 ## Capacity sources
 
 ### Service-qualified capacity audit — 2026-11-13

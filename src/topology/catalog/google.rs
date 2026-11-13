@@ -1,4 +1,4 @@
-//! Google AI Studio bindings. One public model, its Google endpoints in failover order.
+//! Google AI Studio bindings. Explicit public models and their native Google endpoint candidates.
 use crate::lowering::disposition::Dispositions;
 use crate::{
     protocol::{
@@ -15,28 +15,62 @@ pub struct GoogleBinding {
     pub released_at: u64,
     pub developer: &'static str,
 }
-/// Selected development target; registration is not account or inference evidence.
-pub const GOOGLE_BINDINGS: &[GoogleBinding] = &[GoogleBinding {
-    model: "gemini-3.8-flash",
-    upstream: "gemini-3.8-flash",
-    // Source: https://ai.google.dev/gemini-api/docs/changelog (2026-09-02).
-    released_at: 1_788_307_200,
-    developer: "Google",
-}];
+/// Selected models; registration is not account or inference evidence.
+pub const GOOGLE_BINDINGS: &[GoogleBinding] = &[
+    GoogleBinding {
+        model: "gemini-3.8-flash",
+        upstream: "gemini-3.8-flash",
+        // https://ai.google.dev/gemini-api/docs/changelog (2026-09-02).
+        released_at: 1_788_307_200,
+        developer: "Google",
+    },
+    GoogleBinding {
+        model: "gemini-4-argon",
+        upstream: "gemini-4-argon",
+        // https://ai.google.dev/gemini-api/docs/changelog (2026-10-13).
+        released_at: 1_791_849_600,
+        developer: "Google",
+    },
+    GoogleBinding {
+        model: "gemini-4-hydrogen",
+        upstream: "gemini-4-hydrogen",
+        // https://ai.google.dev/gemini-api/docs/changelog (2026-11-12).
+        released_at: 1_794_441_600,
+        developer: "Google",
+    },
+    GoogleBinding {
+        model: "gemini-4-carbon",
+        upstream: "gemini-4-carbon",
+        // https://ai.google.dev/gemini-api/docs/changelog (2026-11-10).
+        released_at: 1_794_268_800,
+        developer: "Google",
+    },
+];
 impl GoogleBinding {
     pub fn credential(&self) -> CredentialBindingId {
         CredentialBindingId::new(self.provider().id.as_str()).expect("catalog Provider identity")
     }
     fn reasoning_policy(&self) -> Option<ReasoningRequestPolicy> {
         use crate::semantic::task::generation::{EffortLevel::*, EffortScope};
-        // Selected scope approximation, not equivalence of response-wide effort.
-        (self.model == "gemini-3.8-flash").then(|| ReasoningRequestPolicy {
+        // Scope approximation is named per selected model, not a response-effort equivalence.
+        let rule = match self.model {
+            "gemini-3.8-flash" => "google.gemini-3.8-flash.response-effort-to-thinking.v1",
+            "gemini-4-argon" => "google.gemini-4-argon.response-effort-to-thinking.v1",
+            "gemini-4-hydrogen" => "google.gemini-4-hydrogen.response-effort-to-thinking.v1",
+            "gemini-4-carbon" => "google.gemini-4-carbon.response-effort-to-thinking.v1",
+            _ => return None,
+        };
+        Some(ReasoningRequestPolicy {
             canonical_model: self.model.into(),
-            rule: "google.gemini-3.8-flash.response-effort-to-thinking.v1",
+            rule,
             conversion: ReasoningConversion::Scope {
                 from: EffortScope::Response,
                 to: EffortScope::Reasoning,
-                levels: &[(Low, Low), (Medium, Medium), (High, High)],
+                levels: if self.model == "gemini-4-hydrogen" {
+                    &[(Low, Low), (Medium, Medium), (High, High), (XHigh, XHigh)]
+                } else {
+                    &[(Low, Low), (Medium, Medium), (High, High)]
+                },
             },
         })
     }
@@ -55,14 +89,19 @@ impl GoogleBinding {
     }
 
     fn model_limits(&self) -> ModelLimits {
-        use crate::semantic::task::generation::EffortLevel::{High, Low, Medium};
-        // https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash (2026-10-20).
+        use crate::semantic::task::generation::EffortLevel::{High, Low, Medium, XHigh};
+        let levels = if self.model == "gemini-4-hydrogen" {
+            vec![Low, Medium, High, XHigh]
+        } else {
+            vec![Low, Medium, High]
+        };
+        // Gemini 4 is a unified input + thinking + output window, not a separate input allowance.
         ModelLimits {
-            allowed_effort: Some(vec![Low, Medium, High].into()),
-            // The source labels this input capacity, not a total context window.
-            maximum_input_tokens: Some(1_048_576),
+            allowed_effort: Some(levels.into()),
+            reject_disabled_reasoning: self.model != "gemini-3.8-flash",
+            context_window_tokens: (self.model != "gemini-3.8-flash").then_some(1_048_576),
+            maximum_input_tokens: (self.model == "gemini-3.8-flash").then_some(1_048_576),
             maximum_output_tokens: Some(65_536),
-            ..Default::default()
         }
     }
     pub fn provider(&self) -> ProviderDefinition {
@@ -73,7 +112,6 @@ impl GoogleBinding {
     }
     pub fn endpoint(&self) -> Endpoint {
         let provider = self.provider();
-        let ignored_sampling = self.model == "gemini-3.8-flash";
         let collection = provider
             .generation_entry(crate::provider::GenerationOperation::GoogleGenerateContent)
             .expect("declared path")
@@ -98,17 +136,10 @@ impl GoogleBinding {
                 dispositions: (generate_content::semantic_contract())
                     .with_native(
                         crate::semantic::task::generation::Feature::Temperature,
-                        !ignored_sampling,
+                        false,
                     )
-                    .with_native(
-                        crate::semantic::task::generation::Feature::TopP,
-                        !ignored_sampling,
-                    ),
-                sampling: if ignored_sampling {
-                    crate::protocol::google::SamplingPolicy::Ignored
-                } else {
-                    crate::protocol::google::SamplingPolicy::Native
-                },
+                    .with_native(crate::semantic::task::generation::Feature::TopP, false),
+                sampling: crate::protocol::google::SamplingPolicy::Ignored,
                 model_limits: self.model_limits(),
                 reasoning_policy: self.reasoning_policy(),
                 messages_terminal_projection: self.model == "gemini-3.8-flash",
@@ -148,11 +179,7 @@ impl GoogleBinding {
             .path
             .clone();
         endpoint.representation = interactions::TargetContract {
-            sampling: if self.model == "gemini-3.8-flash" {
-                crate::protocol::google::SamplingPolicy::Ignored
-            } else {
-                crate::protocol::google::SamplingPolicy::Reject
-            },
+            sampling: crate::protocol::google::SamplingPolicy::Ignored,
             model_limits: self.model_limits(),
             reasoning_policy: self.reasoning_policy(),
             messages_terminal_projection: self.model == "gemini-3.8-flash",

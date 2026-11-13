@@ -31,18 +31,20 @@ def main():
     bindings = {
         "deepseek-v4.1-flash-1017": ["deepseek-responses"],
         "claude-haiku-5-5": ["opencode-go-haiku-messages"],
-        "muse-spark-1.3-contributor": ["opencode-go-muse-responses"],
-        "hy4-preview": ["opencode-go-chat"],
+        "minimax-m3.1-flash": ["opencode-go-minimax-chat"],
+        "hy4": ["opencode-go-chat"],
         "mimo-v2.6-flash": ["opencode-go-mimo-flash-chat"],
         "mimo-v2.6-pro": ["opencode-go-mimo-pro-chat", "xiaomi-responses"],
         "gpt-6-luna": ["openrouter-responses"],
-        "gpt-audio-mini": ["openrouter-audio-chat"],
+        "muse-ember": ["openrouter-ember-chat"],
         "minicpm5-1b": ["modelbest-minicpm5-1b-chat"],
         "minicpm5-2b": ["modelbest-minicpm5-2b-chat"],
         "MiniCPM-V-4.7-1B": ["modelbest-minicpm-v-4.7-1b-chat"],
         "MiniCPM-V-4.7-35B-A3B": ["modelbest-minicpm-v-4.7-35b-a3b-chat"],
         "gemini-3.8-flash": ["google-gemini-3.8-flash-generate-content"],
-        "kimi-k3": ["dashscope-kimi-chat"],
+        "gemini-4-hydrogen": ["google-gemini-4-hydrogen-generate-content"],
+        "qwen4-max-preview": ["tokenplan-qwen4-responses"],
+        "kimi-k3.1-pro": ["dashscope-kimi-chat"],
         # A known native capacity must not fill an unknown subscription candidate.
         "qwen3.8-flash": ["dashscope-flash-responses", "aliyun-tokenplan-cn-responses"],
     }
@@ -80,8 +82,8 @@ def main():
               "unknown_candidate_is_not_native_capacity")
         check(rows["mimo-v2.6-pro"]["token_limits"]["max_output_tokens"] is None,
               "unknown_candidate_is_not_go_output_capacity")
-        for model, levels in [("hy4-preview", ["high"]),
-                              ("muse-spark-1.3-contributor", ["minimal", "low", "medium", "high", "xhigh"])]:
+        for model, levels in [("hy4", ["high"]),
+                              ("minimax-m3.1-flash", ["low", "medium", "high", "xhigh", "max"])]:
             check(rows[model]["reasoning"]["effort"]["reasoning"]["values"] == levels,
                   "go_native_effort_domain")
         for model in bindings:
@@ -94,7 +96,7 @@ def main():
         policy = {"baseUrl": f"http://127.0.0.1:{port}", "protocols": ["responses"],
                   "contextWindow": 131072, "maxTokens": 2048, "timeoutSeconds": 5,
                   "modelOverrides": {"MiniCPM-V-4.7-1B": {"contextWindow": 200000},
-                                     "hy4-preview": {"maxTokens": 48000}}}
+                                     "hy4": {"maxTokens": 48000}}}
         expected = {}
         for model, generation in rows.items():
             limits = generation["token_limits"]

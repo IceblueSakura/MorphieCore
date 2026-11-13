@@ -320,7 +320,7 @@ async fn native_fixture() -> NativeFixture {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let origin = format!("http://{}", listener.local_addr().unwrap());
     let app = Router::new()
-        .route("/zen/go/v1/messages", post(answer))
+        .route("/inference/go/anthropic/v1/messages", post(answer))
         .with_state((seen.clone(), control.clone()));
     let upstream = Guard(tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap()

@@ -23,7 +23,7 @@ fn native_response_binding_activates_only_when_listed() {
     let haiku = "claude-haiku-5-5";
     let boot = Fixture::new(
         service(),
-        selected_models(&["muse-spark-1.3-contributor"], &["opencode-go"]),
+        selected_models(&["minimax-m3.1-flash"], &["opencode-go"]),
         &credentials,
     )
     .unwrap();
@@ -52,7 +52,10 @@ fn native_response_binding_activates_only_when_listed() {
             endpoint.protocol,
             crate::topology::GenerationProtocol::AnthropicMessages
         );
-        assert_eq!(endpoint.target.path.as_str(), "/zen/go/v1/messages");
+        assert_eq!(
+            endpoint.target.path.as_str(),
+            "/inference/go/anthropic/v1/messages"
+        );
     }
     let mixed = Fixture::new(
         service(),

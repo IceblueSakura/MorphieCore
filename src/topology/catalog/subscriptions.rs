@@ -14,6 +14,15 @@ pub struct SubscriptionBinding {
 pub const SUBSCRIPTION_BINDINGS: &[SubscriptionBinding] = &[
     SubscriptionBinding {
         profile: "openai",
+        identity: "chatgpt-terra",
+        reasoning_history: Some(crate::protocol::reasoning::ReasoningHistory::Accepted),
+        model: "gpt-6.1-terra",
+        upstream: "gpt-6.1-terra",
+        dialect: Dialect::Siwc,
+        provider: catalog::chatgpt,
+    },
+    SubscriptionBinding {
+        profile: "openai",
         identity: "chatgpt",
         reasoning_history: Some(crate::protocol::reasoning::ReasoningHistory::Accepted),
         model: "gpt-6.1-sol",

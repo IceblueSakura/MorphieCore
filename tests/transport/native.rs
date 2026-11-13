@@ -649,7 +649,7 @@ mod native_catalog {
                 &request,
             )
             .unwrap();
-            assert_eq!(prepared.path, "/zen/go/v1/messages");
+            assert_eq!(prepared.path, "/inference/go/anthropic/v1/messages");
             assert_eq!(prepared.auth_header.0, "x-api-key");
             assert!(
                 prepared

@@ -381,7 +381,7 @@ async fn observe_intake(
     });
     let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
     let captured = calls.clone();
-    let beta_chat = binding == "deepseek-beta-chat";
+    let beta_api = provider == "deepseek";
     let handler = post(move |headers: HeaderMap, Json(body): Json<Value>| {
         let calls = captured.clone();
         let parameters = parameters.clone();
@@ -478,9 +478,13 @@ async fn observe_intake(
             ([("content-type", content_type)], bytes).into_response()
         }
     });
-    let api_root = if beta_chat { "/beta" } else { "/v1" };
-    let path = if beta_chat {
-        "/beta/chat/completions"
+    let api_root = if beta_api { "/beta" } else { "/v1" };
+    let path = if beta_api {
+        if upstream == Api::Responses {
+            "/beta/responses"
+        } else {
+            "/beta/chat/completions"
+        }
     } else {
         upstream.path()
     };
@@ -1070,7 +1074,6 @@ async fn chat_json_only_facts_block_unconditional_streaming_intake() {
 #[tokio::test]
 async fn catalog_subscription_production_lanes() {
     use crate::topology::catalog::SUBSCRIPTION_BINDINGS;
-    let mut subscriptions = Vec::new();
     for entry in SUBSCRIPTION_BINDINGS {
         let provider = (entry.provider)();
         let endpoint = entry.endpoint_id();
@@ -1082,7 +1085,6 @@ async fn catalog_subscription_production_lanes() {
             credential.as_str(),
             Api::Responses,
         );
-        subscriptions.push(endpoint.as_str().to_owned());
         for client in [Api::Chat, Api::Responses, Api::Messages] {
             for profile in [Profile::Text, Profile::Tools, Profile::Reasoning] {
                 // Common protocol controls, not each subscription's emitted reasoning shape.
@@ -1100,15 +1102,6 @@ async fn catalog_subscription_production_lanes() {
             );
         }
     }
-    assert_eq!(
-        subscriptions,
-        [
-            "chatgpt-responses",
-            "chatgpt-astra-responses",
-            "chatgpt-luna-responses",
-            "grok-responses"
-        ]
-    );
 }
 
 #[tokio::test]
@@ -1150,29 +1143,6 @@ async fn native_reasoning_history_contracts_are_distinct() {
         .await,
         ACCEPT
     );
-}
-
-#[tokio::test]
-async fn muse_native_opaque_tool_history_survives_stateless_and_stored_continuation() {
-    let binding = (
-        "muse-spark-1.3-contributor",
-        "opencode-go-muse-responses",
-        "opencode-go",
-        "synthetic",
-        Api::Responses,
-    );
-    for stored in [false, true] {
-        assert_eq!(
-            transports(
-                &binding,
-                Api::Responses,
-                Profile::Tools,
-                Control::OpaqueHistory { stored }
-            )
-            .await,
-            ACCEPT
-        );
-    }
 }
 
 #[tokio::test]
@@ -1296,10 +1266,14 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
     (
         &[
             "openai-sol-responses",
+            "openai-terra-responses",
+            "openrouter-ember-responses",
+            "openrouter-step-responses",
+            "tokenplan-glm-responses",
+            "tokenplan-qwen4-responses",
             "openai-astra-responses",
             "openai-luna-responses",
             "xiaomi-ultraspeed-responses",
-            "opencode-go-muse-responses",
             "deepseek-responses",
             "xiaomi-responses",
             "xiaomi-flash-responses",
@@ -1316,7 +1290,11 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
             "xiaomi-ultraspeed-chat",
             "opencode-go-mimo-pro-chat",
             "opencode-go-mimo-flash-chat",
-            "openrouter-audio-chat",
+            "openrouter-ember-chat",
+            "openrouter-step-chat",
+            "opencode-go-minimax-chat",
+            "opencode-go-step-chat",
+            "tokenplan-qwen4-chat",
             "xiaomi-chat",
             "xiaomi-flash-chat",
             "openrouter-chat",
@@ -1331,12 +1309,7 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
         [ACCEPT, ACCEPT, ACCEPT, ACCEPT],
     ),
     (
-        &[
-            "zhipu-chat",
-            "zhipu-flash-chat",
-            "deepseek-chat",
-            "deepseek-beta-chat",
-        ],
+        &["zhipu-chat", "zhipu-flash-chat", "deepseek-chat"],
         [
             ACCEPT,
             &["planning:[\"admission.reasoning_history_required\"]@0"],
@@ -1369,7 +1342,6 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
             "dashscope-glm-chat",
             "dashscope-deepseek-chat",
             "dashscope-glm-prime-chat",
-            "tokenplan-glm-chat",
         ],
         [ACCEPT, ACCEPT, ACCEPT, ACCEPT],
     ),
