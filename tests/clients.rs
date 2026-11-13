@@ -38,6 +38,8 @@ async fn installed_case(script: &str, case: &str, variable: &str, arguments: &[&
             "modelbest",
             "aliyun-dashscope-cn",
             "aliyun-tokenplan-cn",
+            "openrouter",
+            "xiaomi",
         ]
     } else {
         vec![domain]

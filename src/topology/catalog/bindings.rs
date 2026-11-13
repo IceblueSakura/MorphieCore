@@ -29,7 +29,6 @@ impl RequestSlice {
             );
             contract.set_native(crate::semantic::task::generation::Feature::TopP, false);
             contract.set_native(crate::semantic::task::generation::Feature::Logprobs, false);
-            contract.set_native(crate::semantic::task::generation::Feature::Verbosity, false);
             contract.set_native(
                 crate::semantic::task::generation::Feature::Truncation,
                 false,
@@ -154,6 +153,15 @@ impl ApiKeyBinding {
         };
         let scope = crate::protocol::replay_envelope::issuer(provider.id.as_str(), self.upstream);
         let mut adapter = GenerationCodec::new(family, self.dialect, Some(scope.clone()));
+        // The Go directory declares standard effort controls for these models.
+        if self.dialect == Dialect::OpenCodeGo
+            && matches!(
+                self.canonical_model,
+                "hy4-preview" | "muse-spark-1.3-contributor"
+            )
+        {
+            adapter.adaptation.rules.reject_reasoning_controls = false;
+        }
         // Hosted MiniCPM5 uses the canonical readable field; V4.7 uses `reasoning`.
         if self.dialect == Dialect::ModelBest
             && matches!(self.canonical_model, "minicpm5-1b" | "minicpm5-2b")

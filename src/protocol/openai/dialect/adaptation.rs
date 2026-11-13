@@ -67,6 +67,8 @@ pub struct WireRules {
     pub chat_template_thinking: bool,
     /// The documented Bailian request subset, separate from upstream report shapes.
     pub bailian_requests: bool,
+    /// Native DeepSeek Chat's output-format and reasoning-sensitive tool subset.
+    pub deepseek_chat_requests: bool,
     /// Preserve reasoning items while rejecting unverified active request controls.
     /// A readable history carrier does not establish reasoning-effort admission.
     pub reject_reasoning_controls: bool,

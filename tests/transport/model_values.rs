@@ -31,6 +31,131 @@ fn messages(value: Value) -> Request {
 }
 
 #[test]
+fn service_output_ceilings_bound_prepared_requests_without_filling_unknown_services() {
+    use morphiecore::{
+        semantic::context::ConversationContext,
+        topology::{
+            GenerationProtocol,
+            catalog::{API_KEY_BINDINGS, MESSAGES_BINDINGS},
+        },
+    };
+    let secret = SecretMaterial::new("synthetic").unwrap();
+    for (prefix, protocol, key, maximum) in [
+        (
+            "deepseek",
+            GenerationProtocol::OpenAiChat,
+            "max_tokens",
+            393216,
+        ),
+        (
+            "deepseek-beta",
+            GenerationProtocol::OpenAiChat,
+            "max_tokens",
+            393216,
+        ),
+        (
+            "deepseek",
+            GenerationProtocol::OpenAiResponses,
+            "max_output_tokens",
+            393216,
+        ),
+        (
+            "opencode-go",
+            GenerationProtocol::OpenAiChat,
+            "max_tokens",
+            64000,
+        ),
+        (
+            "opencode-go-muse",
+            GenerationProtocol::OpenAiResponses,
+            "max_output_tokens",
+            131072,
+        ),
+        (
+            "opencode-go-mimo-pro",
+            GenerationProtocol::OpenAiChat,
+            "max_tokens",
+            131072,
+        ),
+        (
+            "openrouter",
+            GenerationProtocol::OpenAiResponses,
+            "max_output_tokens",
+            128000,
+        ),
+        (
+            "openrouter-audio",
+            GenerationProtocol::OpenAiChat,
+            "max_completion_tokens",
+            16384,
+        ),
+    ] {
+        let binding = API_KEY_BINDINGS
+            .iter()
+            .find(|b| b.endpoint_prefix == prefix)
+            .unwrap();
+        let endpoint = binding.endpoint(protocol).unwrap();
+        let mut request = source(json!({"model":"public","input":"go","max_output_tokens":500000}));
+        request.conversation =
+            Some(ConversationContext::independent_request("synthetic-output").unwrap());
+        let before = request.clone();
+        assert_eq!(representable(&endpoint, &request), Ok(()));
+        let (_, rules) = endpoint.encode_request_with_rules(&request).unwrap();
+        assert!(rules.contains(&"generation.clamp-output-to-model-maximum.v1"));
+        let prepared = prepare(&endpoint, &(binding.provider)(), &secret, &request).unwrap();
+        let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
+        assert_eq!(wire[key], maximum, "{prefix}");
+        assert_eq!(request, before);
+    }
+    // A native Xiaomi binding must not inherit the Go ceiling for the same model.
+    let native = API_KEY_BINDINGS
+        .iter()
+        .find(|b| b.endpoint_prefix == "xiaomi")
+        .unwrap()
+        .endpoint(GenerationProtocol::OpenAiResponses)
+        .unwrap();
+    let request = source(json!({"model":"public","input":"go","max_output_tokens":500000}));
+    assert_eq!(
+        native.encode_request(&request).unwrap()["max_output_tokens"],
+        500000
+    );
+    let deepseek = API_KEY_BINDINGS
+        .iter()
+        .find(|b| b.endpoint_prefix == "deepseek")
+        .unwrap()
+        .endpoint(GenerationProtocol::OpenAiResponses)
+        .unwrap();
+    for cap in [None, Some(64)] {
+        let mut body = json!({"model":"public","input":"go"});
+        if let Some(cap) = cap {
+            body["max_output_tokens"] = json!(cap);
+        }
+        let (wire, rules) = deepseek.encode_request_with_rules(&source(body)).unwrap();
+        assert_eq!(
+            wire.get("max_output_tokens"),
+            cap.map(|n| json!(n)).as_ref()
+        );
+        assert!(rules.is_empty());
+    }
+    let haiku = &MESSAGES_BINDINGS[0];
+    let endpoint = haiku.endpoint();
+    for (cap, expected) in [(Some(500000), 128000), (None, 32000)] {
+        let mut body = json!({"model":"public","input":"go"});
+        if let Some(cap) = cap {
+            body["max_output_tokens"] = json!(cap);
+        }
+        let mut request = source(body);
+        request.conversation =
+            Some(ConversationContext::independent_request("synthetic-output").unwrap());
+        let prepared = prepare(&endpoint, &haiku.provider(), &secret, &request).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&prepared.body).unwrap()["max_tokens"],
+            expected
+        );
+    }
+}
+
+#[test]
 fn google_response_effort_is_a_selected_direction_not_native_support() {
     use morphiecore::{execution::admit, topology::*};
     let binding = &GOOGLE_BINDINGS[0];

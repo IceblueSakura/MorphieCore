@@ -53,11 +53,29 @@ Qwen's input maxima depend on thinking mode. Kimi's introductory “100 万” d
 from its explicit 1,048,576 service table; the latter supplies the binding fact.
 
 Catalog declarations and candidate configuration keep context, input and output
-independent. This audit fills context/input metadata, not new output ceilings or
-defaults. A common route value requires a comparable declaration on every candidate;
+independent. Output maxima below do not change service defaults.
+A common route value requires a comparable declaration on every candidate;
 one unknown candidate keeps it null. Trusted deployment configuration may narrow
 a known declaration or supply an unknown one. An upstream-model, origin or path
 replacement invalidates inherited context/input facts unless explicitly redeclared.
+
+### Service-qualified output maxima — 2026-11-13
+
+| Model / service | Maximum output tokens | Source |
+|---|---:|---|
+| Native DeepSeek Flash and beta | 393,216 | Loader-mediated native directory, `max_output_tokens`; [Chat reference](https://api-docs.deepseek.com/api/create-chat-completion/) |
+| Haiku / OpenCode Go | 128,000 | [Go service directory](https://opencode.ai/inference/go/v1/models), `limit.output` |
+| HY4 / OpenCode Go | 64,000 | Same Go directory |
+| Muse, MiMo Flash and MiMo Pro / OpenCode Go | 131,072 | Same Go directory |
+| Luna / OpenRouter | 128,000 | [Endpoint inventory](https://openrouter.ai/api/v1/models/openai/gpt-6-luna/endpoints), common `max_completion_tokens` |
+| Audio Mini / OpenRouter | 16,384 | [Endpoint inventory](https://openrouter.ai/api/v1/models/openai/gpt-audio-mini/endpoints), `max_completion_tokens` |
+
+These maxima belong only to the named services. They do not supply SIWC, native
+OpenAI, Xiaomi, Bailian or another router model's missing values. Haiku's existing
+32,000-token missing-ceiling default is independent of its maximum. Candidate
+projection uses the existing named maximum clamp; discovery keeps a mixed
+known/unknown route's maximum null. Pi consumes a known maximum before its policy
+fallback and still applies explicit per-model caps.
 
 ## Installed Pi domain
 

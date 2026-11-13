@@ -70,6 +70,7 @@ impl Dialect {
             Self::DeepSeek => (
                 "deepseek-v1",
                 WireRules {
+                    deepseek_chat_requests: profile == GenerationApi::Chat,
                     legacy_max_tokens: profile == GenerationApi::Chat,
                     chat_finish_reasons: &[
                         (

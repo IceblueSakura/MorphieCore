@@ -764,13 +764,13 @@ fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
             json!({"model":"gpt-6-luna","messages":[
             {"role":"user","content":"hello"},
             {"role":"assistant","content":"pong","reasoning_content":"think"}],
-            "max_completion_tokens":64,"reasoning_effort":"low","stream":true}),
+            "max_completion_tokens":64,"reasoning_effort":"low","verbosity":"high","stream":true}),
         ),
         (
             GenerationApi::Responses,
             "responses",
             json!({"model":"gpt-6-luna","input":"hello",
-            "max_output_tokens":64,"reasoning":{"effort":"low"},"stream":true}),
+            "max_output_tokens":64,"reasoning":{"effort":"low"},"text":{"verbosity":"high"},"stream":true}),
         ),
     ] {
         let client = GenerationCodec::new(profile, Dialect::MorphieCore, None);
@@ -807,10 +807,12 @@ fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
             )
         );
         if profile == GenerationApi::Chat {
+            assert_eq!(wire["verbosity"], "high");
             assert_eq!(wire["messages"][1]["reasoning"], "think");
             assert!(wire["messages"][1].get("reasoning_content").is_none());
             assert_eq!(wire["max_completion_tokens"], 64);
         } else {
+            assert_eq!(wire["text"]["verbosity"], "high");
             assert_eq!(wire["store"], false);
             assert_eq!(wire["max_output_tokens"], 64);
         }
@@ -833,6 +835,7 @@ fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
         );
         let (_, rules) = endpoint.encode_request_with_rules(&unsupported).unwrap();
         assert!(rules.contains(&"generation.omit-temperature.v1"));
+        assert!(!rules.contains(&"generation.omit-verbosity.v1"));
         body.as_object_mut().unwrap().remove("temperature");
         body["provider"] = json!({"require_parameters":false,"order":["untrusted"]});
         assert!(client.decode_request(body.to_string().as_bytes()).is_err());

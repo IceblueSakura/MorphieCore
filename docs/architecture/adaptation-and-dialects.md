@@ -97,6 +97,31 @@ Module layout mirrors `vendor / api / responsibility`:
 - `protocol::anthropic::messages`
 - `protocol::google::{generate_content, interactions}`
 
+##### Native DeepSeek Chat
+
+Native DeepSeek Chat rejects JSON Schema text constraints and forced tool selection
+under active or default thinking. Explicit off retains ordinary required selection;
+the gateway never disables thinking to make a request admissible. An allowed set
+covering the entire function inventory uses equivalent `auto/required`; a proper
+subset rejects rather than deleting declarations. Native Responses retains its
+separate format and selection carriers. [Source contracts](../refs/2026-11-12-generation-binding-contracts.md#parameter-contract-recheck--2026-11-13)
+keep these restrictions distinct from beta function strictness and Bailian.
+
+##### OpenCode Go controls
+
+HY4 and Muse carry standard effort through their selected Chat and Responses
+bindings, respectively. Their service-native positive level domains constrain
+projection and discovery; other positive inputs use the existing
+`generation.project-effort.v1` nearest-level adaptation. Explicit off keeps its
+standard carrier, not an omitted control or an inferred positive level. HY4 off
+is qualified; unassessed Muse off behavior remains delegated to upstream validation.
+Absent controls keep upstream defaults. Go MiMo controls and optional output
+guarantees are not activated by this repair.
+
+OpenRouter Luna preserves verbosity through the ordinary Chat and Responses
+carriers. Its sampling, truncation, parallel-tool and strictness policies remain
+separate.
+
 ##### Hosted MiniCPM Chat
 
 The four ModelBest MiniCPM bindings use `chat_template_kwargs.enable_thinking` as their native Boolean activation carrier. Explicit on/off survives projection; absence keeps each hosted model's default. A positive reasoning-scoped effort also enables thinking, while its standard `reasoning_effort` spelling remains available for upstream validation. Thinking budgets and top-k do not acquire a carrier through this switch.
@@ -200,6 +225,7 @@ Applications selected on 2026-10-30 are implemented, including request strictnes
 | Google strictness/serial intent with explicit `tool_choice:none` | L2 `google.no-call-tool-guarantees.v1`: native no-call mode satisfies both guarantees, preserving all declarations and schemas without strict-default fallback; enabled calls retain their independent admission gates |
 | Effort | Nearest supported level, ties upward, across Reasoning/Response scopes at the same level (L3); manual budgets on adaptive-only bindings convert to adaptive plus effort. When an explicit effort already exists, preserve it rather than replacing it with a budget-derived level; omit the uncarriable numeric budget under a named loss |
 | ModelBest Chat thinking | L2 `modelbest.chat-template-thinking.v1`: explicit activation uses the nested Boolean; positive reasoning effort also activates thinking and retains the same-name effort field. Absence keeps the hosted default |
+| DeepSeek Chat whole-inventory selection | L2 `deepseek.full-tool-inventory-choice.v1`: a complete function allowed set uses scalar `auto/required`, preserving every declaration and selection intent; proper subsets and thinking-mode forcing retain rejection |
 | Output ceilings | Preserve equivalent carriers; clamp to a known model maximum or retain a narrower accounting scope with loss (L3); omit when no useful carrier exists (L4). See [output-ceiling adaptation](#output-ceiling-adaptation) |
 | `required_with_tools` history with a Standard Chat client | Thinking-enabled/default tool requests reject at planning; the gateway never disables thinking to satisfy the history requirement. Explicitly disabled thinking and tool-free requests retain ordinary admission |
 | Uncarried reasoning in delivery or history | Omit the owner, keep visible content and tool links (L3); applies to opaque reasoning on Standard Chat and unsigned reasoning on Messages; never forged |

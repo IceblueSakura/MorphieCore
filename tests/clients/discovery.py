@@ -21,7 +21,7 @@ def main():
         version = process.wait(timeout=5).decode().strip()
     check_client_version(case, version)
     domains = ["deepseek", "google", "opencode-go", "modelbest",
-               "aliyun-dashscope-cn", "aliyun-tokenplan-cn"]
+               "aliyun-dashscope-cn", "aliyun-tokenplan-cn", "openrouter", "xiaomi"]
     private_json(root / "accounts.json", {"version": 1, "providers": {
         domain: {"accounts": [{"name": "primary", "enabled": True,
                                "credential": {"alias": "primary"}}]}
@@ -32,6 +32,11 @@ def main():
         "deepseek-v4.1-flash-1017": ["deepseek-responses"],
         "claude-haiku-5-5": ["opencode-go-haiku-messages"],
         "muse-spark-1.3-contributor": ["opencode-go-muse-responses"],
+        "hy4-preview": ["opencode-go-chat"],
+        "mimo-v2.6-flash": ["opencode-go-mimo-flash-chat"],
+        "mimo-v2.6-pro": ["opencode-go-mimo-pro-chat", "xiaomi-responses"],
+        "gpt-6-luna": ["openrouter-responses"],
+        "gpt-audio-mini": ["openrouter-audio-chat"],
         "minicpm5-1b": ["modelbest-minicpm5-1b-chat"],
         "minicpm5-2b": ["modelbest-minicpm5-2b-chat"],
         "MiniCPM-V-4.7-1B": ["modelbest-minicpm-v-4.7-1b-chat"],
@@ -73,6 +78,12 @@ def main():
               "input_capacity_is_not_total")
         check(rows["qwen3.8-flash"]["token_limits"]["context_window_tokens"] is None,
               "unknown_candidate_is_not_native_capacity")
+        check(rows["mimo-v2.6-pro"]["token_limits"]["max_output_tokens"] is None,
+              "unknown_candidate_is_not_go_output_capacity")
+        for model, levels in [("hy4-preview", ["high"]),
+                              ("muse-spark-1.3-contributor", ["minimal", "low", "medium", "high", "xhigh"])]:
+            check(rows[model]["reasoning"]["effort"]["reasoning"]["values"] == levels,
+                  "go_native_effort_domain")
         for model in bindings:
             if "minicpm" in model.lower():
                 reasoning = rows[model]["reasoning"]
@@ -82,12 +93,17 @@ def main():
                       "minicpm_standard_effort_carrier")
         policy = {"baseUrl": f"http://127.0.0.1:{port}", "protocols": ["responses"],
                   "contextWindow": 131072, "maxTokens": 2048, "timeoutSeconds": 5,
-                  "modelOverrides": {"MiniCPM-V-4.7-1B": {"contextWindow": 200000}}}
+                  "modelOverrides": {"MiniCPM-V-4.7-1B": {"contextWindow": 200000},
+                                     "hy4-preview": {"maxTokens": 48000}}}
         expected = {}
         for model, generation in rows.items():
             limits = generation["token_limits"]
             window = limits["context_window_tokens"] or limits["max_input_tokens"] or policy["contextWindow"]
-            expected[model] = min(window, policy["modelOverrides"].get(model, {}).get("contextWindow", window))
+            override = policy["modelOverrides"].get(model, {})
+            window = min(window, override.get("contextWindow", window))
+            output = limits["max_output_tokens"] or override.get("maxTokens", policy["maxTokens"])
+            expected[model] = {"contextWindow": window,
+                               "maxTokens": min(output, override.get("maxTokens", output), window)}
         private_json(root / "expected.json", expected)
         private_json(root / "policy.json", {"morphiecore": policy})
         env["PI_EXTENSIONS_CONFIG"] = str(root / "policy.json")
@@ -107,15 +123,17 @@ def main():
     with Pi(binary, env, root, "deepseek-v4.1-flash-1017", provider="morphiecore",
             extensions=[extension]) as client:
         available, _ = client.command("get_available_models")
-        actual = {model["id"]: model["contextWindow"] for model in available["models"]
+        actual = {model["id"]: {key: model[key] for key in ["contextWindow", "maxTokens"]}
+                  for model in available["models"]
                   if model["provider"] == "morphiecore"}
         check(actual == expected, "offline_native_store_restore")
-        for model, window in expected.items():
+        for model, limits in expected.items():
             client.command("set_model", provider="morphiecore", modelId=model)
             state, _ = client.command("get_state")
             stats, _ = client.command("get_session_stats")
-            check(state["model"]["contextWindow"] == window, "selected_rpc_context")
-            check(stats["contextUsage"]["contextWindow"] == window, "rpc_context_accounting")
+            check(all(state["model"][key] == value for key, value in limits.items()),
+                  "selected_rpc_planning_limits")
+            check(stats["contextUsage"]["contextWindow"] == limits["contextWindow"], "rpc_context_accounting")
     print(json.dumps({"case": case, "version": version, "status": "passed",
                       "models": actual}), flush=True)
 

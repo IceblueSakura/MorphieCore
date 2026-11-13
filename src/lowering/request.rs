@@ -781,6 +781,43 @@ impl<'a> Target<'a> {
         {
             table.set(Feature::Tools, Disposition::Reject("the selected native tool contract requires inactive namespaces and namespace-qualified direct calls"));
         }
+        if contract.adaptation.rules.deepseek_chat_requests && api == GenerationApi::Chat {
+            if matches!(source.tool_choice(), Some(ToolChoice::Allowed { .. })) {
+                table.set(
+                    Feature::ToolChoice,
+                    Disposition::Reject(
+                        "DeepSeek Chat cannot carry an allowed-tool subset without changing declaration visibility",
+                    ),
+                );
+            }
+            if matches!(source.output(), OutputConstraint::JsonSchema { .. }) {
+                table.set(
+                    Feature::StructuredOutput,
+                    Disposition::Reject(
+                        "DeepSeek Chat cannot enforce the requested JSON Schema output constraint",
+                    ),
+                );
+            }
+            if settings.reasoning.activation != Some(ReasoningActivation::Disabled)
+                && matches!(
+                    source.tool_choice(),
+                    Some(
+                        ToolChoice::Required
+                            | ToolChoice::Specific(_)
+                            | ToolChoice::Custom(_)
+                            | ToolChoice::Qualified(_)
+                            | ToolChoice::Allowed { required: true, .. }
+                    )
+                )
+            {
+                table.set(
+                    Feature::ToolChoice,
+                    Disposition::Reject(
+                        "DeepSeek Chat cannot enforce forced tool selection while thinking is enabled",
+                    ),
+                );
+            }
+        }
         if contract.adaptation.rules.bailian_requests {
             let qwen = matches!(model, "qwen3.8-flash" | "qwen3.8-max");
             let glm = matches!(model, "glm-5.3" | "glm-5.3-prime");
@@ -1287,6 +1324,25 @@ fn project_semantic_with_table<'a>(
                 super::disposition::NAMED_TOOL_SUBSET.effect(ConversionBoundary::RequestProject),
             );
         }
+    }
+    // Selecting the entire inventory needs no subset carrier or visibility loss.
+    if matches!(target, Target::OpenAi(GenerationApi::Chat, contract)
+        if contract.adaptation.rules.deepseek_chat_requests)
+        && let Some(ToolChoice::Allowed { required, tools }) = &settings.tool_choice
+        && semantic.available_tool_count() == Ok(tools.len())
+        && tools
+            .iter()
+            .all(|r| r.kind == ToolKind::Function && r.namespace.is_none())
+    {
+        settings.tool_choice = Some(if *required {
+            ToolChoice::Required
+        } else {
+            ToolChoice::Auto
+        });
+        evidence.push(
+            super::disposition::FULL_TOOL_INVENTORY_CHOICE
+                .effect(ConversionBoundary::RequestProject),
+        );
     }
     if matches!(target, Target::OpenAi(_, contract) if contract.adaptation.rules.bailian_requests)
         && settings.text.format == Some(OutputConstraint::Text)

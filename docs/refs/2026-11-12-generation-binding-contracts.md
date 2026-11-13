@@ -20,6 +20,30 @@ The official [reasoning guide](https://docs.x.ai/developers/model-capabilities/t
 
 Grok 4.7 returns Responses encrypted reasoning by default and documents unchanged next-request replay. The [Responses streaming contract](https://developers.openai.com/api/reference/resources/responses/streaming-events) supplies owner closure and native replay shapes independently of binding history assessment.
 
+## Parameter contract recheck — 2026-11-13
+
+The loader-mediated [OpenCode Go directory](https://opencode.ai/inference/go/v1/models)
+declares HY4 reasoning efforts `none/high`, and Muse positive efforts
+`minimal/low/medium/high/xhigh`. HY4's standard Chat effort carrier distinguishes
+enabled reasoning from explicit off; Muse accepts the standard Responses effort
+carrier. These facts do not qualify Go MiMo controls, Muse off behavior, numeric
+thinking budgets or structured-text enforcement. Missing controls retain the
+service default. Non-native positive levels use the existing nearest-level rule.
+
+The [Luna router endpoint inventory](https://openrouter.ai/api/v1/models/openai/gpt-6-luna/endpoints)
+lists `verbosity` on every listed endpoint. It does not justify removing Luna's
+other selected request restrictions or certifying arbitrary nested guarantees.
+
+The native DeepSeek [Chat reference](https://api-docs.deepseek.com/api/create-chat-completion/)
+allows `response_format.type` only as `text/json_object`. Default thinking is on;
+`required` and named forcing require explicit thinking off. Its native selection
+enum has no `allowed_tools` carrier. Selecting the complete function inventory is
+equivalent to `auto/required`; filtering a proper subset would remove declaration
+visibility and is not selected. The [Responses guide](https://api-docs.deepseek.com/guides/responses_api/)
+separately supports `text.format` and required selection. Chat restrictions
+therefore belong to native Chat target projection, not public Chat intake,
+canonical model flags, native Responses or the Bailian-hosted model.
+
 ## Replay identity and carrier
 
 A bound target's source identity and its protocol carrier are separate facts. Projection and final request/response/event checks must resolve the same identity. The explicit library origin wins for strict target resolution; otherwise the bound codec scope is used. Native reasoning then uses the separately bound service-source scope when present, while compaction and other strict attachments retain target-specific identity. An unbound reasoning scope alone grants no replay authority.

@@ -688,7 +688,7 @@ fn text_reasoning_uses_source_scopes_and_never_advertises_noop_activation_or_def
     candidate.endpoint.bound_replay_scope = entry.candidates[0].endpoint.bound_replay_scope.clone();
     entry.candidates = vec![Arc::new(candidate)];
     let value = descriptor(entry);
-    assert_eq!(value["token_limits"]["max_output_tokens"], Value::Null);
+    assert_eq!(value["token_limits"]["max_output_tokens"], 128000);
     assert_eq!(
         value["reasoning"]["activation"],
         json!({

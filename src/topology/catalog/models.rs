@@ -297,10 +297,25 @@ pub(super) fn model_limits(
         ("glm-5.3" | "glm-5.3-prime" | "kimi-k3", "aliyun-dashscope-cn") => Some(1_048_576),
         _ => None,
     };
+    let maximum_output_tokens = match (model, provider) {
+        ("deepseek-flash", "deepseek" | "deepseek-beta") => Some(393_216),
+        ("claude-haiku-5-5", "opencode-go") => Some(128_000),
+        ("hy4-preview", "opencode-go") => Some(64_000),
+        ("muse-spark-1.3-contributor" | "mimo-v2.6-flash" | "mimo-v2.6-pro", "opencode-go") => {
+            Some(131_072)
+        }
+        ("gpt-6-luna", "openrouter") => Some(128_000),
+        ("gpt-audio-mini", "openrouter") => Some(16_384),
+        _ => None,
+    };
     use crate::semantic::task::generation::EffortLevel as E;
-    let allowed_effort: Option<Box<[_]>> = match model {
-        "grok-4.7" => Some(vec![E::Low, E::Medium, E::High, E::XHigh].into()),
-        "gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna" => {
+    let allowed_effort: Option<Box<[_]>> = match (model, provider) {
+        ("hy4-preview", "opencode-go") => Some(vec![E::High].into()),
+        ("muse-spark-1.3-contributor", "opencode-go") => {
+            Some(vec![E::Minimal, E::Low, E::Medium, E::High, E::XHigh].into())
+        }
+        ("grok-4.7", _) => Some(vec![E::Low, E::Medium, E::High, E::XHigh].into()),
+        ("gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna", _) => {
             Some(vec![E::Low, E::Medium, E::High, E::XHigh, E::Max].into())
         }
         _ => None,
@@ -310,6 +325,6 @@ pub(super) fn model_limits(
         allowed_effort,
         context_window_tokens,
         maximum_input_tokens,
-        ..Default::default()
+        maximum_output_tokens,
     }
 }
