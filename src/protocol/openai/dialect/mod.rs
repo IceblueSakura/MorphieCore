@@ -6,6 +6,7 @@ pub mod adaptation;
 pub(crate) mod adapter_shapes;
 pub(crate) mod bailian;
 pub(in crate::protocol::openai) mod inference_shapes;
+pub(crate) mod modelbest;
 mod trusted;
 
 pub use trusted::Dialect;

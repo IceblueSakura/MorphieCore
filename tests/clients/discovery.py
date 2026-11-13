@@ -33,7 +33,9 @@ def main():
         "claude-haiku-5-5": ["opencode-go-haiku-messages"],
         "muse-spark-1.3-contributor": ["opencode-go-muse-responses"],
         "minicpm5-1b": ["modelbest-minicpm5-1b-chat"],
+        "minicpm5-2b": ["modelbest-minicpm5-2b-chat"],
         "MiniCPM-V-4.7-1B": ["modelbest-minicpm-v-4.7-1b-chat"],
+        "MiniCPM-V-4.7-35B-A3B": ["modelbest-minicpm-v-4.7-35b-a3b-chat"],
         "gemini-3.8-flash": ["google-gemini-3.8-flash-generate-content"],
         "kimi-k3": ["dashscope-kimi-chat"],
         # A known native capacity must not fill an unknown subscription candidate.
@@ -71,6 +73,13 @@ def main():
               "input_capacity_is_not_total")
         check(rows["qwen3.8-flash"]["token_limits"]["context_window_tokens"] is None,
               "unknown_candidate_is_not_native_capacity")
+        for model in bindings:
+            if "minicpm" in model.lower():
+                reasoning = rows[model]["reasoning"]
+                check("disabled" in reasoning["activation"]["values"],
+                      "minicpm_thinking_off")
+                check("medium" in reasoning["effort"]["reasoning"]["values"],
+                      "minicpm_standard_effort_carrier")
         policy = {"baseUrl": f"http://127.0.0.1:{port}", "protocols": ["responses"],
                   "contextWindow": 131072, "maxTokens": 2048, "timeoutSeconds": 5,
                   "modelOverrides": {"MiniCPM-V-4.7-1B": {"contextWindow": 200000}}}

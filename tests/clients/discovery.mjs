@@ -41,6 +41,11 @@ for (const [id, contextWindow] of Object.entries(expected)) {
   const model = runtime.getModel("morphiecore", id);
   assert(model, `discovered model ${id}`);
   assert.equal(model.contextWindow, contextWindow, `registry context ${id}`);
+  if (id.toLowerCase().includes("minicpm")) {
+    assert.equal(model.reasoning, true, `thinking available ${id}`);
+    assert.equal(model.thinkingLevelMap.off, "none", `thinking off ${id}`);
+    assert.equal(model.thinkingLevelMap.medium, "medium", `thinking on ${id}`);
+  }
   const { session } = await createAgentSession({ cwd: directory, agentDir, modelRuntime: runtime,
     model, settingsManager, resourceLoader: resources, noTools: "all",
     sessionManager: SessionManager.inMemory(directory), thinkingLevel: "low" });

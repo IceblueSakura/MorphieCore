@@ -88,8 +88,15 @@ pub(super) fn represent_reasoning(
     {
         return Err(RepresentationError::Reasoning);
     }
+    let standard;
+    let checked_settings = if request && adaptation.rules.chat_template_thinking {
+        standard = crate::protocol::openai::dialect::modelbest::standard_reasoning(settings);
+        &standard
+    } else {
+        settings
+    };
     if crate::protocol::openai::dialect::bailian::extended(
-        settings,
+        checked_settings,
         profile,
         request && adaptation.rules.thinking_controls,
     ) {

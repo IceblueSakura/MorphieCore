@@ -16,6 +16,161 @@ fn chunk(delta: Value, finish: Value) -> Value {
     json!({"id":"r","object":"chat.completion.chunk","model":"synthetic-model","created":1,"choices":[{"index":0,"delta":delta,"finish_reason":finish}]})
 }
 #[test]
+fn modelbest_thinking_switch_preserves_standard_controls_and_absence() {
+    let client = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
+    for (effort, enabled) in [
+        (Some("high"), Some(true)),
+        (Some("none"), Some(false)),
+        (None, None),
+    ] {
+        let mut wire = json!({"model":"m","messages":[{"role":"user","content":"hello"}]});
+        if let Some(effort) = effort {
+            wire["reasoning_effort"] = json!(effort);
+        }
+        let source = client
+            .decode_request(&serde_json::to_vec(&wire).unwrap())
+            .unwrap();
+        let before = source.clone();
+        let encoded = provider()
+            .encode_request(&source, "m", &Contract::full())
+            .unwrap();
+        assert_eq!(
+            encoded.get("chat_template_kwargs"),
+            enabled
+                .map(|value| json!({"enable_thinking":value}))
+                .as_ref()
+        );
+        assert_eq!(
+            encoded.get("reasoning_effort"),
+            if effort == Some("none") {
+                None
+            } else {
+                wire.get("reasoning_effort")
+            }
+        );
+        assert!(encoded.get("enable_thinking").is_none());
+        assert_eq!(source, before);
+    }
+    // Public extension fields cannot choose the trusted native carrier.
+    let wire = json!({"model":"m","messages":[{"role":"user","content":"hello"}],
+        "chat_template_kwargs":{"enable_thinking":true}});
+    let source = client
+        .decode_client_request(&serde_json::to_vec(&wire).unwrap())
+        .unwrap();
+    assert!(
+        provider()
+            .encode_request(&source, "m", &Contract::full())
+            .unwrap()
+            .get("chat_template_kwargs")
+            .is_none()
+    );
+}
+
+#[test]
+fn modelbest_native_template_thinking_has_a_typed_owner() {
+    // Hosted guide: OpenBMB/MiniCPM-V@4dbbb6c58b6f8a004d6689028417296719f0831a/docs/api.md.
+    use morphiecore::semantic::task::generation::ReasoningActivation;
+    for (enabled, activation) in [
+        (true, ReasoningActivation::Enabled),
+        (false, ReasoningActivation::Disabled),
+    ] {
+        let wire = json!({"model":"m","messages":[{"role":"user","content":"hello"}],
+            "chat_template_kwargs":{"enable_thinking":enabled}});
+        let source = provider()
+            .decode_request(&serde_json::to_vec(&wire).unwrap())
+            .unwrap();
+        assert_eq!(
+            source.task.semantic.reasoning().activation,
+            Some(activation)
+        );
+        assert_eq!(
+            provider()
+                .encode_request(&source, "m", &Contract::full())
+                .unwrap(),
+            wire
+        );
+    }
+    for value in [Value::Null, json!("true"), json!(1), json!({})] {
+        let wire = json!({"model":"m","messages":[{"role":"user","content":"hello"}],
+            "chat_template_kwargs":{"enable_thinking":value}});
+        assert!(
+            provider()
+                .decode_request(&serde_json::to_vec(&wire).unwrap())
+                .is_err()
+        );
+    }
+    for (effort, enabled) in [("none", true), ("high", false)] {
+        let wire = json!({"model":"m","messages":[{"role":"user","content":"hello"}],
+            "reasoning_effort":effort,"chat_template_kwargs":{"enable_thinking":enabled}});
+        assert!(
+            provider()
+                .decode_request(&serde_json::to_vec(&wire).unwrap())
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn modelbest_tool_history_uses_the_hosted_models_reasoning_field() {
+    let client = GenerationCodec::new(GenerationApi::Chat, Dialect::MorphieCore, None);
+    let source = client.decode_request(&serde_json::to_vec(&json!({
+        "model":"m","reasoning_effort":"medium","messages":[
+            {"role":"user","content":"look up cedar"},
+            {"role":"assistant","reasoning_content":"thought","content":null,
+             "tool_calls":[{"id":"call","type":"function","function":{"name":"lookup","arguments":"{}"}}]},
+            {"role":"tool","tool_call_id":"call","content":"Cedar-73"}]
+    })).unwrap()).unwrap();
+    for (id, field) in [
+        ("minicpm5-1b", "reasoning_content"),
+        ("MiniCPM-V-4.7-1B", "reasoning"),
+    ] {
+        let binding = morphiecore::topology::catalog::API_KEY_BINDINGS
+            .iter()
+            .find(|binding| binding.model == id)
+            .unwrap();
+        let endpoint = binding
+            .endpoint(morphiecore::topology::GenerationProtocol::OpenAiChat)
+            .unwrap();
+        let (wire, _) = endpoint.encode_request_with_rules(&source).unwrap();
+        assert_eq!(wire["messages"][1][field], "thought");
+        assert_eq!(wire["messages"][1]["tool_calls"][0]["id"], "call");
+        assert_eq!(wire["messages"][2]["tool_call_id"], "call");
+        assert_eq!(wire["chat_template_kwargs"]["enable_thinking"], true);
+    }
+}
+
+#[test]
+fn modelbest_reasoning_aliases_have_independent_json_and_stream_delivery() {
+    let client = GenerationCodec::new(GenerationApi::Chat, Dialect::MorphieCore, None);
+    for field in ["reasoning", "reasoning_content"] {
+        let mut message = json!({"role":"assistant","content":"answer"});
+        message[field] = json!("thought");
+        let wire = json!({"id":"r","object":"chat.completion","model":"synthetic-model","created":1,
+            "choices":[{"index":0,"message":message,"finish_reason":"stop"}]});
+        let decoded = provider()
+            .decode_response(&serde_json::to_vec(&wire).unwrap())
+            .unwrap();
+        let delivered = client.encode_response(&decoded, &Contract::full()).unwrap();
+        assert_eq!(
+            delivered["choices"][0]["message"]["reasoning_content"],
+            "thought"
+        );
+        assert_eq!(delivered["choices"][0]["message"]["content"], "answer");
+        let mut stream = provider().event_decoder();
+        for delta in ["th", "ought"] {
+            let mut body = json!({});
+            body[field] = json!(delta);
+            stream.push(&chunk(body, Value::Null)).unwrap();
+        }
+        stream
+            .push(&chunk(json!({"content":"answer"}), json!("stop")))
+            .unwrap();
+        stream.done().unwrap();
+        assert_eq!(stream.materialize().unwrap().semantic, decoded.semantic);
+    }
+}
+
+#[test]
 fn modelbest_flat_reasoning_counts_and_stop_diagnostics_are_scoped_and_editable() {
     let wire = json!({"id":"r","object":"chat.completion","model":"synthetic-model","created":1,
         "choices":[{"index":0,"message":{"role":"assistant","content":"pong","reasoning_content":null,"tool_calls":null},"finish_reason":"stop","logprobs":null,"matched_stop":777}],

@@ -97,6 +97,12 @@ Module layout mirrors `vendor / api / responsibility`:
 - `protocol::anthropic::messages`
 - `protocol::google::{generate_content, interactions}`
 
+##### Hosted MiniCPM Chat
+
+The four ModelBest MiniCPM bindings use `chat_template_kwargs.enable_thinking` as their native Boolean activation carrier. Explicit on/off survives projection; absence keeps each hosted model's default. A positive reasoning-scoped effort also enables thinking, while its standard `reasoning_effort` spelling remains available for upstream validation. Thinking budgets and top-k do not acquire a carrier through this switch.
+
+MiniCPM5 uses `reasoning_content` for readable history; MiniCPM-V 4.7 uses `reasoning`. Both response spellings normalize to one typed reasoning owner in JSON and SSE. Historical reasoning consumption remains `not_assessed`; neither spelling declares an omission requirement. The [hosted contract sources](../refs/2026-10-27-client-ir-boundaries.md#hosted-minicpm-control-recheck-2026-11-13) distinguish activation, output and history evidence.
+
 ##### Shared Aliyun billing dialect
 
 Responses function feedback accepts strings and ordered arrays of text parts without flattening or reordering. Media tool results remain outside this qualified carrier.
@@ -193,6 +199,7 @@ Applications selected on 2026-10-30 are implemented, including request strictnes
 | Explicit `strict:true` without an equivalent carrier | L5 unless a concrete loss is selected, as in the [Bailian service policy](#shared-aliyun-billing-dialect) (L3). Conditional (omitted) strictness is always resolvable without a compatibility classifier: an already-closed schema on a target with an equivalent strict carrier stays strict, every other case resolves non-strict under the conditional-default loss (L3); a request-wide strict grammar overflow resolves all conditional definitions non-strict, and rejects only when explicit strict tools alone overflow |
 | Google strictness/serial intent with explicit `tool_choice:none` | L2 `google.no-call-tool-guarantees.v1`: native no-call mode satisfies both guarantees, preserving all declarations and schemas without strict-default fallback; enabled calls retain their independent admission gates |
 | Effort | Nearest supported level, ties upward, across Reasoning/Response scopes at the same level (L3); manual budgets on adaptive-only bindings convert to adaptive plus effort. When an explicit effort already exists, preserve it rather than replacing it with a budget-derived level; omit the uncarriable numeric budget under a named loss |
+| ModelBest Chat thinking | L2 `modelbest.chat-template-thinking.v1`: explicit activation uses the nested Boolean; positive reasoning effort also activates thinking and retains the same-name effort field. Absence keeps the hosted default |
 | Output ceilings | Preserve equivalent carriers; clamp to a known model maximum or retain a narrower accounting scope with loss (L3); omit when no useful carrier exists (L4). See [output-ceiling adaptation](#output-ceiling-adaptation) |
 | `required_with_tools` history with a Standard Chat client | Thinking-enabled/default tool requests reject at planning; the gateway never disables thinking to satisfy the history requirement. Explicitly disabled thinking and tool-free requests retain ordinary admission |
 | Uncarried reasoning in delivery or history | Omit the owner, keep visible content and tool links (L3); applies to opaque reasoning on Standard Chat and unsigned reasoning on Messages; never forged |

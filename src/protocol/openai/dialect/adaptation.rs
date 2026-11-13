@@ -63,6 +63,8 @@ pub struct WireRules {
     pub chat_preserve_thinking: bool,
     /// Exact enable_thinking, Chat thinking_budget and positive top_k carriers.
     pub thinking_controls: bool,
+    /// ModelBest Chat's nested Boolean activation, independent of budget/top-k.
+    pub chat_template_thinking: bool,
     /// The documented Bailian request subset, separate from upstream report shapes.
     pub bailian_requests: bool,
     /// Preserve reasoning items while rejecting unverified active request controls.

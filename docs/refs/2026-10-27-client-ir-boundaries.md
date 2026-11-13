@@ -341,6 +341,19 @@ Reviewed the catalog and public endpoint contracts at `5611943`. These are sourc
 | NVIDIA hosted | The [model-specific Chat schema](https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3-super-120b-a12b-infer.md) documents reasoning output but closes message input over role/content; its tool examples also exceed that input schema | Keep schema/deployment inconsistency explicit. Hosted Responses history is not established by general self-hosted NIM documentation |
 | ModelBest / non-Messages Go | The [hosted MiniCPM guide](https://github.com/OpenBMB/MiniCPM-V/blob/main/docs/api.md) documents output thinking; [Go endpoint docs](https://opencode.ai/docs/go/#endpoints) establish native endpoint bindings, not full history semantics | History acceptance/ignoring remains unestablished. Do not copy native Xiaomi facts through Go or treat absent documentation as unsupported Provider behavior |
 
+#### Hosted MiniCPM control recheck (2026-11-13)
+
+The [pinned hosted guide](https://github.com/OpenBMB/MiniCPM-V/blob/4dbbb6c58b6f8a004d6689028417296719f0831a/docs/api.md#minicpm-v-47) documents `chat_template_kwargs:{"enable_thinking":true}` for both MiniCPM-V 4.7 sizes, thinking off by default, readable `message.reasoning`, and image/video input. The [hosted directory](https://platform.modelbest.cn/api/models) independently lists `deep_thinking:true` for both; `show_reasoning:false` is not a thinking-admission flag.
+
+Bounded native wire characterization establishes these current service shapes:
+
+| Hosted models | Default thinking | Activation carrier | Readable JSON/SSE field |
+|---|---|---|---|
+| `MiniCPM5-1B`, `MiniCPM5-2B` | Enabled | Nested `enable_thinking` Boolean | `reasoning_content` |
+| `MiniCPM-V-4.7-1B`, `MiniCPM-V-4.7-35B-A3B` | Disabled | Same Boolean | `reasoning` |
+
+All four accept explicit on/off and the same-name `reasoning_effort:"medium"` alongside enabled thinking. Boolean activation is independently characterized; qualitative level calibration remains upstream-owned. The two output aliases have one semantic owner. Native tool-call/result continuations preserve the returned readable field, while whether history is consumed, ignored or required remains unassessed. The [MiniCPM5 deployment guide](https://github.com/OpenBMB/MiniCPM/blob/f4293a1a7bde05d1acce99488235792615fc241b/docs/deployment/sglang.md) and model templates are self-hosted references, not authority for hosted history requirements.
+
 The minimal S11 distinction is a reasoning-emitting assistant tool turn followed by its actual result, versus a completed assistant answer followed by another user turn. A successful syntax check or one generic stream cannot establish whether the binding consumes, ignores or requires the historical value. Unestablished cases retain current behavior pending endpoint-specific qualification.
 
 **Endpoint qualification recheck (2026-10-28, `a5634c8`):** the current [DeepSeek thinking guide](https://api-docs.deepseek.com/guides/thinking_mode/) requires reasoning from **all previous turns**, including non-tool turns, whenever a thinking request carries `tools`; incorrect return produces HTTP 400. Without tools, returned reasoning is ignored. This is broader than Zhipu's documented current-tool-cycle requirement. Do not encode `required_with_tools` as current-cycle-only, or treat it as an unconditional requirement on tool-free requests.

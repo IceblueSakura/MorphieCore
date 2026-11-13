@@ -426,7 +426,9 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         o.insert("preserve_thinking".into(), json!(read_history));
         settings.reasoning.read_history = None;
     }
-    if target.adaptation.rules.thinking_controls {
+    if target.adaptation.rules.chat_template_thinking {
+        crate::protocol::openai::dialect::modelbest::write(&settings, o)?;
+    } else if target.adaptation.rules.thinking_controls {
         crate::protocol::openai::dialect::bailian::write_reasoning(
             &settings,
             o,

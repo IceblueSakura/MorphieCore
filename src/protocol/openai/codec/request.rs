@@ -94,6 +94,13 @@ impl GenerationCodec {
                 }
             }
         }
+        let template_thinking = if self.adaptation.rules.chat_template_thinking {
+            value
+                .as_object_mut()
+                .and_then(|o| o.shift_remove("chat_template_kwargs"))
+        } else {
+            None
+        };
         let cache_session = if let Some(session) = value
             .as_object_mut()
             .and_then(|o| o.shift_remove("session_id"))
@@ -176,6 +183,11 @@ impl GenerationCodec {
                 }
             }
         };
+        if let Some(template) = template_thinking {
+            let mut settings = request.task.semantic.settings().clone();
+            openai::dialect::modelbest::read(&template, &mut settings)?;
+            request.task.semantic = request.task.semantic.with_settings(settings)?;
+        }
         if !native_controls.is_empty() || self.adaptation.rules.bailian_requests {
             let mut settings = request.task.semantic.settings().clone();
             openai::dialect::bailian::read_controls(

@@ -154,6 +154,12 @@ impl ApiKeyBinding {
         };
         let scope = crate::protocol::replay_envelope::issuer(provider.id.as_str(), self.upstream);
         let mut adapter = GenerationCodec::new(family, self.dialect, Some(scope.clone()));
+        // Hosted MiniCPM5 uses the canonical readable field; V4.7 uses `reasoning`.
+        if self.dialect == Dialect::ModelBest
+            && matches!(self.canonical_model, "minicpm5-1b" | "minicpm5-2b")
+        {
+            adapter.adaptation.rules.reasoning_alias = false;
+        }
         // This binding emits reasoning_text in reasoning.content, unlike the
         // Qwen summary alias. Keep the event and final snapshot domains equal.
         if self.dialect == Dialect::Bailian

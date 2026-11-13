@@ -234,7 +234,8 @@ impl<'a> Target<'a> {
                     );
                 }
                 let rules = &c.adaptation.rules;
-                if rules.thinking_controls || rules.bailian_requests {
+                if rules.thinking_controls || rules.bailian_requests || rules.chat_template_thinking
+                {
                     table.set(ReasoningActivation, Disposition::Native);
                 }
                 if self.has_effort()
@@ -627,6 +628,7 @@ impl<'a> Target<'a> {
             }
             if !contract.adaptation.rules.thinking_controls
                 && !contract.adaptation.rules.bailian_requests
+                && !contract.adaptation.rules.chat_template_thinking
                 && source.reasoning().activation.as_ref()
                     == Some(&crate::semantic::task::generation::ReasoningActivation::Enabled)
                 && (!self.has_effort()

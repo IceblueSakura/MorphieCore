@@ -125,8 +125,8 @@ impl Dialect {
                     ..Default::default()
                 },
             ),
-            // Hosted Chat grammar and readable reasoning are distinct from
-            // reasoning control admission; no native Responses operation is inferred.
+            // Hosted Chat has nested activation and readable reasoning carriers;
+            // no native Responses operation or numeric thinking budget is inferred.
             // https://github.com/OpenBMB/MiniCPM-V/blob/main/docs/api.md
             Self::ModelBest => (
                 "modelbest-v1",
@@ -140,7 +140,8 @@ impl Dialect {
                     chunk_created_drift: true,
                     chat_inference_response_shape: true,
                     legacy_max_tokens: true,
-                    reject_reasoning_controls: true,
+                    chat_template_thinking: profile == GenerationApi::Chat,
+                    reject_reasoning_controls: profile != GenerationApi::Chat,
                     ..Default::default()
                 },
             ),
