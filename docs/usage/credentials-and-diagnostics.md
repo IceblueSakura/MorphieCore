@@ -30,10 +30,10 @@ Build the CLIs:
 
 ```sh
 cargo build --locked --offline --bins
-ROOT="$HOME/.local/share/morphiecore-next"
+ROOT="$HOME/.local/share/morphiecore"
 ```
 
-Choose a new explicit directory for the breaking schema; existing deployments and stores remain operator-owned. Copy the [configuration templates](gateway-configuration.md#configuration-templates) before provisioning. The examples use `morphiecore-auth` as shorthand for `cargo run --locked --offline --bin morphiecore-auth --`.
+`ROOT` is the default application directory, so the `--accounts "$ROOT/accounts.json"` and `--store "$ROOT/credentials"` arguments below may be omitted when configuration lives there; keep them explicit for any other directory. A new explicit directory for the breaking schema is also valid, and existing deployments and stores remain operator-owned. Copy the [configuration templates](gateway-configuration.md#configuration-templates) before provisioning. The examples use `morphiecore-auth` as shorthand for `cargo run --locked --offline --bin morphiecore-auth --`.
 
 ### Add an API key
 

@@ -341,8 +341,10 @@ Keep private configuration and credentials outside release directories. For an e
 [Service]
 WorkingDirectory=%h/.local/lib/morphiecore
 ExecStart=
-ExecStart=%h/.local/lib/morphiecore/current/morphiecore --config %h/.local/share/morphiecore-next/gateway.json
+ExecStart=%h/.local/lib/morphiecore/current/morphiecore
 ```
+
+Omitting `--config` selects `$HOME/.local/share/morphiecore/gateway.json`, whose `accounts_file` and `credentials_dir` resolve inside that same directory. The CLIs share those defaults, so `morphiecore-auth` needs no path flags there; pass `--config`, `--accounts` and `--store` only for non-default installations.
 
 After an authorized unit change, run `systemctl --user daemon-reload`. For noninteractive SSH, set `XDG_RUNTIME_DIR=/run/user/$(id -u)` when the login environment does not provide it.
 
@@ -371,7 +373,7 @@ export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 cd "$HOME/.local/lib/morphiecore"
 release="releases/$1"
 chmod 755 "$release"/morphiecore{,-auth,-upstream}
-"$release/morphiecore" --validate --config "$HOME/.local/share/morphiecore-next/gateway.json"
+"$release/morphiecore" --validate
 ln -s "$release" current.next
 mv -Tf current.next current
 mkdir -p "$HOME/.local/bin"
