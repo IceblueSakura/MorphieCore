@@ -219,11 +219,13 @@ Use `X-MorphieCore-Conversation-Id` for one logical conversation. Keep it stable
 The ID must be 1–256 visible ASCII characters, without commas, in one header. If it is absent, ingress checks these agent headers in order:
 
 1. opencode: `X-Session-Id`
-2. pi: `session_id`
-3. Codex: `session-id`
+2. `session_id`
+3. pi Responses / Codex: `session-id`
 4. pi Chat/Messages: `x-session-affinity`
+5. OpenCode native affinity: `x-opencode-session`
+6. OpenCode native identity: `x-opencode-session-id`
 
-For pi's ordinary API-key Chat and Messages integrations, enable `compat.sendSessionAffinityHeaders: true`; automatic session headers also require `cacheRetention` other than `none`. Responses normally sends `session_id` without that compatibility flag. Installed pi 1.3.0 transport carrier checks corroborate the pinned-source behavior; they do not establish full-client or Provider acceptance. Existing header precedence is unchanged; an invalid selected header rejects rather than falling through. `x-client-request-id` is not a conversation source.
+For pi's ordinary API-key Chat and Messages integrations, enable `compat.sendSessionAffinityHeaders: true`; automatic session headers also require `cacheRetention` other than `none`. Responses normally sends `session-id` without that compatibility flag. Native OpenCode affinity takes precedence over its session identity because child/forked sessions can intentionally share an affinity. An invalid selected header rejects rather than falling through. `x-client-request-id` is not a conversation source.
 
-This ID groups routing and cache affinity; it does not store history. Body `session_id` is rejected. Standard `prompt_cache_key` is a separate cache-grouping intent. Without a declared conversation, the optional prefix index offers best-effort cache reuse, not executor affinity or replay permission.
+This ID groups routing and cache affinity; it does not store history. Body `session_id` is not a standard downstream conversation carrier and is discarded as an unknown extension. Standard `prompt_cache_key` is a separate cache-grouping intent. Without a declared conversation, the optional prefix index offers best-effort cache reuse, not executor affinity or replay permission. [Upstream session projection](../architecture/runtime-and-routing.md#upstream-session-projection) owns SIWC, Go and OpenRouter carrier selection; clients need not send Provider-specific headers.
 

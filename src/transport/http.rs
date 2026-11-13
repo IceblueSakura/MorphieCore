@@ -183,7 +183,7 @@ impl HttpTransport {
             // Session grouping is high-cardinality context, not ordinary observable metadata.
             value.set_sensitive(matches!(
                 name.as_str(),
-                "x-opencode-session" | "chatgpt-account-id"
+                "x-opencode-session" | "session-id" | "chatgpt-account-id"
             ));
             request = request.header(name, value);
         }

@@ -99,6 +99,7 @@ impl Dialect {
                     responses_input_video: true,
                     readable_reasoning: true,
                     routing_extras: true,
+                    openrouter_session: true,
                     response_extras: true,
                     responses_reasoning_format: true,
                     responses_done_marker: true,
@@ -242,8 +243,8 @@ impl Dialect {
                 ..crate::protocol::cache::CacheTargetPolicy::all()
             },
             Self::MorphieCore => crate::protocol::cache::CacheTargetPolicy::all(),
-            // The standard cache key is explicitly accepted as an affinity fallback.
-            // session_id is a separate caller-supplied grouping value, never synthesized.
+            // Explicit sessions or declared conversations activate session stickiness.
+            // Cache keys alone retain the separate upstream affinity fallback.
             // https://openrouter.ai/docs/guides/best-practices/prompt-caching
             // https://openrouter.ai/docs/client-sdks/typescript/models/responsesrequest
             Self::OpenRouter => crate::protocol::cache::CacheTargetPolicy {

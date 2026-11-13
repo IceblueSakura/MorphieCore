@@ -226,3 +226,72 @@ fn scoped_session_and_standard_cache_key_remain_independent_on_both_wires() {
         }
     }
 }
+
+#[test]
+fn openrouter_sessions_follow_declared_conversations_not_cache_keys() {
+    use morphiecore::semantic::context::ConversationContext;
+    let mut across_protocols = None;
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
+        let mut body = request(profile);
+        body["prompt_cache_key"] = json!("shared-cache");
+        let mut source = client(profile)
+            .decode_request(body.to_string().as_bytes())
+            .unwrap();
+        source.conversation = Some(ConversationContext::conversation("conversation-one").unwrap());
+        let before = source.clone();
+        let target = GenerationCodec::new(profile, Dialect::OpenRouter, None);
+        let wire = target
+            .encode_request(&source, "upstream", &Contract::full())
+            .unwrap();
+        let session = wire["session_id"].as_str().unwrap().to_owned();
+        assert_eq!(session.len(), 64);
+        assert_ne!(session, "conversation-one");
+        assert_eq!(wire["prompt_cache_key"], "shared-cache");
+        assert_eq!(source, before);
+        if let Some(previous) = across_protocols {
+            assert_eq!(session, previous);
+        }
+        across_protocols = Some(session.clone());
+        source.context.cache.prompt_cache_key = Some("changed-cache".into());
+        assert_eq!(
+            target
+                .encode_request(&source, "upstream", &Contract::full())
+                .unwrap()["session_id"],
+            session
+        );
+        source.conversation = Some(ConversationContext::conversation("conversation-two").unwrap());
+        assert_ne!(
+            target
+                .encode_request(&source, "upstream", &Contract::full())
+                .unwrap()["session_id"],
+            session
+        );
+        for conversation in [
+            None,
+            Some(ConversationContext::independent_request("not-a-session").unwrap()),
+        ] {
+            source.conversation = conversation;
+            let wire = target
+                .encode_request(&source, "upstream", &Contract::full())
+                .unwrap();
+            assert!(wire.get("session_id").is_none());
+            assert_eq!(wire["prompt_cache_key"], "changed-cache");
+        }
+        source.conversation = Some(ConversationContext::conversation("conversation-one").unwrap());
+        let standard = GenerationCodec::new(profile, Dialect::Standard, None);
+        let mut without_sessions = Contract::full();
+        without_sessions.cache.session_id = false;
+        let wire = target
+            .encode_request(&source, "upstream", &without_sessions)
+            .unwrap();
+        assert!(wire.get("session_id").is_none());
+        assert_eq!(wire["prompt_cache_key"], "changed-cache");
+        assert!(
+            standard
+                .encode_request(&source, "upstream", &Contract::full())
+                .unwrap()
+                .get("session_id")
+                .is_none()
+        );
+    }
+}

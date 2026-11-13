@@ -44,6 +44,38 @@ separately supports `text.format` and required selection. Chat restrictions
 therefore belong to native Chat target projection, not public Chat intake,
 canonical model flags, native Responses or the Bailian-hosted model.
 
+## Session carriers — 2026-11-13
+
+- OpenCode Go's [official integration contract](https://github.com/anomalyco/opencode/blob/a5170d6e019341864d948189d1420096005de8e0/services/site/src/docs/content/console/go.mdx#L112-L116)
+  names a stable per-conversation `x-opencode-session` and an application
+  User-Agent for routing and prompt caching. It does not require a UUID, a
+  `ses_` prefix, a 30-character wire limit or a body `session_id`.
+- The [stable OpenCode request builder](https://github.com/anomalyco/opencode/blob/v1.19.5/packages/opencode/src/session/llm/request.ts#L186-L205)
+  sends native session headers on its OpenCode-provider path instead of the
+  generic fallback headers. The [current builder](https://github.com/anomalyco/opencode/blob/a5170d6e019341864d948189d1420096005de8e0/packages/core/src/session/model-request.ts#L321-L336)
+  distinguishes actual session identity from parent/fork
+  [affinity](https://github.com/anomalyco/opencode/blob/a5170d6e019341864d948189d1420096005de8e0/packages/core/src/session/affinity.ts#L6-L8).
+  `x-opencode-request` changes per request and is not a conversation carrier.
+- OpenRouter's [official caching guide](https://openrouter.ai/docs/guides/best-practices/prompt-caching#using-session_id-for-sticky-sessions)
+  and [pinned documentation](https://github.com/OpenRouterTeam/docs/blob/a174c7eaf53336d04ef759ed1d9cfa25c16a199f/guides/best-practices/prompt-caching.mdx)
+  accept body `session_id` or header `x-session-id`, with body precedence and a
+  256-character session limit. Chat and Responses accept both carriers.
+  Explicit sessions activate stickiness on successful requests before a cache
+  hit; absent sessions fall back to `prompt_cache_key` and cache-observed
+  activation. Sessions also group observability, so these inputs are not
+  semantically interchangeable. Provider availability, manual order and expiry
+  keep stickiness best effort.
+- Current Pi's Responses serializer sends a stable `session-id` alongside
+  `prompt_cache_key`. Public SIWC documentation does not establish that header
+  as mandatory. Controlled service observations with fixed synthetic bodies
+  and keys establish it as an effective cache-affinity carrier for Luna and
+  Sol, with raw cache counts preserved by the codecs. This is target-scoped
+  behavior, not a universal cache-hit or backend-worker guarantee.
+
+The accepted [projection contract](../architecture/runtime-and-routing.md#upstream-session-projection)
+owns derivation, ingress precedence and scope. These references do not activate
+additional endpoints or credential lifecycle operations.
+
 ## Replay identity and carrier
 
 A bound target's source identity and its protocol carrier are separate facts. Projection and final request/response/event checks must resolve the same identity. The explicit library origin wins for strict target resolution; otherwise the bound codec scope is used. Native reasoning then uses the separately bound service-source scope when present, while compaction and other strict attachments retain target-specific identity. An unbound reasoning scope alone grants no replay authority.

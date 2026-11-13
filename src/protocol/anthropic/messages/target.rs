@@ -103,10 +103,11 @@ impl TargetContract {
         context.identity = Default::default();
         let go = self.dialect == Dialect::OpenCodeGo;
         if go {
-            self.cache.opencode_session(
+            self.cache.session_id(
                 request.conversation.as_ref(),
                 request.cache_session.as_ref(),
                 request.inferred_affinity,
+                crate::protocol::cache::SessionNamespace::OpenCodeGo,
             )?;
         }
         if context != ExecutionHints::default() || request.n.value().is_some_and(|n| *n != 1) {
@@ -177,10 +178,11 @@ impl TargetContract {
             headers.push(("anthropic-beta".into(), betas.join(",")));
         }
         if self.dialect == Dialect::OpenCodeGo {
-            let session = self.cache.opencode_session(
+            let session = self.cache.session_id(
                 request.conversation.as_ref(),
                 request.cache_session.as_ref(),
                 request.inferred_affinity,
+                crate::protocol::cache::SessionNamespace::OpenCodeGo,
             )?;
             headers.push(("x-opencode-session".into(), session));
         }

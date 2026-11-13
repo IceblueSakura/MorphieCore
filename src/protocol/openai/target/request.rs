@@ -18,15 +18,28 @@ impl GenerationCodec {
         &self,
         request: &Request,
         mut cache: crate::protocol::cache::CacheTargetPolicy,
+        effective_cache_key: Option<&str>,
     ) -> Result<Vec<(String, String)>, CodecError> {
+        if self.adaptation.rules.responses_siwc {
+            return Ok(effective_cache_key
+                .map(|key| {
+                    (
+                        "session-id".into(),
+                        crate::protocol::cache::SessionNamespace::Siwc.cache_key(key),
+                    )
+                })
+                .into_iter()
+                .collect());
+        }
         if !self.adaptation.rules.opencode_go_headers {
             return Ok(vec![]);
         }
         cache.intersect(self.adaptation.cache);
-        let session = cache.opencode_session(
+        let session = cache.session_id(
             request.conversation.as_ref(),
             request.cache_session.as_ref(),
             request.inferred_affinity,
+            crate::protocol::cache::SessionNamespace::OpenCodeGo,
         )?;
         let mut headers = vec![(
             "user-agent".into(),
@@ -89,8 +102,7 @@ impl GenerationCodec {
                 return Err(CodecError::ProfileMismatch.into());
             }
             let context = request.context.clone();
-            // Candidate preflight uses this same encoder, so invalid header carriers cannot reach I/O.
-            self.request_headers(request, contract.cache)?;
+            let cache = contract.cache;
             let target = render_request(
                 Cow::Borrowed(&request.task.semantic),
                 &request.task.fidelity,
@@ -176,11 +188,26 @@ impl GenerationCodec {
                 && !self.adaptation.rules.opencode_go_headers
             {
                 value["session_id"] = serde_json::json!(session.as_str());
+            } else if self.adaptation.rules.openrouter_session
+                && cache.session_id
+                && let Some(group) = request
+                    .conversation
+                    .as_ref()
+                    .filter(|group| group.is_conversation_scoped())
+            {
+                value["session_id"] = serde_json::json!(cache.session_id(
+                    Some(group),
+                    None,
+                    None,
+                    crate::protocol::cache::SessionNamespace::OpenRouter,
+                )?);
             }
             if self.adaptation.rules.require_parameters {
                 // Fixed adapter policy, not a user-controlled routing extension.
                 value["provider"] = serde_json::json!({"require_parameters": true});
             }
+            // Preflight and materialization use the final projected cache key.
+            self.request_headers(request, cache, value["prompt_cache_key"].as_str())?;
             crate::semantic::value::json_size(
                 &value,
                 crate::semantic::task::generation::MAX_TOTAL_BYTES,

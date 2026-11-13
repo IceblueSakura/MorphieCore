@@ -197,10 +197,11 @@ impl Endpoint {
         body: &serde_json::Value,
     ) -> Result<Vec<(String, String)>, crate::protocol::CodecError> {
         match &self.representation {
-            TargetContract::OpenAi(caps) => self
-                .adapter()?
-                .openai()?
-                .request_headers(request, caps.cache),
+            TargetContract::OpenAi(caps) => self.adapter()?.openai()?.request_headers(
+                request,
+                caps.cache,
+                body["prompt_cache_key"].as_str(),
+            ),
             TargetContract::AnthropicMessages(caps) => caps.request_headers(request, body),
             TargetContract::GoogleGenerateContent(caps) => Ok(caps.request_headers()),
             TargetContract::GoogleInteractions(caps) => Ok(caps.request_headers()),

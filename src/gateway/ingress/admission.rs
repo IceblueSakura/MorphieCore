@@ -29,16 +29,16 @@ pub(in crate::gateway) fn conversation(
     headers: &HeaderMap,
 ) -> Result<crate::semantic::context::ConversationContext, ApiError> {
     use crate::semantic::context::ConversationContext;
-    // The explicit header wins, then the agents' declared sessions: opencode
-    // `X-Session-Id`, pi `session_id`, Codex `session-id`, then pi's
-    // Chat/Messages `x-session-affinity`. Provider session
-    // headers (`x-opencode-session`) are never read.
+    // The neutral carrier wins, then generic Agent carriers. Native OpenCode
+    // affinity precedes its session identity, which can differ for children/forks.
     let name = [
         "x-morphiecore-conversation-id",
         "x-session-id",
         "session_id",
         "session-id",
         "x-session-affinity",
+        "x-opencode-session",
+        "x-opencode-session-id",
     ]
     .into_iter()
     .find(|name| headers.contains_key(*name));

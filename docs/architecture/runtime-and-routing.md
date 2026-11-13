@@ -75,6 +75,47 @@ Affinity keys and advisory cache policies are defined in [`protocol::cache`](../
 - Prefix-cache indexing supplies advisory request hints, never an implicit conversation or account-routing key.
 - Target cache capabilities are enforced via [`CacheTargetPolicy`](../../src/protocol/cache.rs#L48), omitting unsupported advisory hints under declared loss rules.
 
+#### Upstream session projection
+
+Session grouping is pure candidate-local transport policy, not stored history,
+authorization or replay authority. Ingress accepts the neutral conversation
+header before generic Agent carriers, then native `x-opencode-session` affinity
+before `x-opencode-session-id` identity. The native values can differ for child
+or forked OpenCode sessions. [Carrier precedence](../usage/client-requests.md#conversation-and-cache-affinity)
+owns the complete ingress list and validation.
+
+Generated IDs reuse one SHA-256 encoding: NUL-terminated Provider-specific versioned domain,
+one source-kind byte, the UTF-8 byte length as little-endian `u32`, then the
+unchanged source bytes. The result is 64 lowercase ASCII hex characters.
+Source tags distinguish independent requests (`0`), declared conversations
+(`1`), inferred prefix groups (`2`) and cache keys (`3`). Domain separation
+prevents accidental cross-Provider correlation and source-kind collisions.
+No clock, random seed, mutable map, process salt, credential revision, model
+name or prompt body participates in derivation. The same source and namespace
+therefore survive restart, ordinary credential renewal and model changes.
+Routing and replay retain their independent authenticated scope below.
+Inferred prefix groups themselves remain ephemeral: restarting or expiring the
+prefix index can select a new source group, so equal prompt text alone does not
+promise a stable session across those boundaries.
+
+| Target | Wire carrier | Grouping source and precedence |
+|---|---|---|
+| SIWC Responses | `session-id` header | Hash the final projected `prompt_cache_key` under `MorphieCore.siwc-session.v1`. Its existing explicit-key → declared-conversation → inferred-prefix derivation stays authoritative. Without a key, omit the header; do not invent cross-request affinity |
+| OpenCode Go Chat, Responses and Messages | `x-opencode-session` header | Preserve an explicitly admitted dialect session; otherwise hash declared conversation, inferred prefix group, or independent request in that order under the existing `MorphieCore.go-session.v1` domain. Cache keys remain independent and never become Go body sessions |
+| OpenRouter Chat and Responses | body `session_id` | Preserve an explicitly admitted dialect session; otherwise hash only a declared conversation under `MorphieCore.openrouter-session.v1`. Key-only, inferred-prefix and independent-request traffic stays without a synthesized session |
+
+Explicit dialect sessions retain their existing validation and spelling;
+they are not a public extension to the standard downstream APIs. No arbitrary
+inbound header map is forwarded. New Providers must select a documented carrier,
+source semantics and distinct versioned domain before joining this projection.
+
+OpenRouter also accepts `x-session-id`, but its body carrier avoids redundant
+precedence. Explicit sessions establish upstream stickiness after the first
+successful request; key-only fallback waits for observed cache usage.
+All three policies remain advisory: they do not guarantee a cache hit or pin
+a backend worker. [Session carrier sources](../refs/2026-11-12-generation-binding-contracts.md#session-carriers--2026-11-13)
+separate official contracts from observed SIWC behavior.
+
 Route/cache identity includes configuration namespace, credential provenance and the exact public-model/target/operation identity. Native OpenAI reasoning uses a separate model-independent service-source identity; compaction and other native signatures remain strict. [History and replay](history-and-replay.md#reasoning-replay) owns the scope rules. API-key replacement invalidates old private replay; normal OAuth material renewal preserves provenance.
 
 ### Streaming and delivery

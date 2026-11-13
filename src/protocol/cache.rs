@@ -35,6 +35,27 @@ fn grouping_key(id: &[u8], kind: u8, domain: &[u8]) -> String {
         .collect()
 }
 
+/// Provider-local grouping, independent of credentials, models and process lifetime.
+/// Source tags distinguish declared conversations, independent requests, prefixes and keys.
+#[derive(Clone, Copy)]
+pub(crate) enum SessionNamespace {
+    Siwc,
+    OpenCodeGo,
+    OpenRouter,
+}
+impl SessionNamespace {
+    fn domain(self) -> &'static [u8] {
+        match self {
+            Self::Siwc => b"MorphieCore.siwc-session.v1\0",
+            Self::OpenCodeGo => b"MorphieCore.go-session.v1\0",
+            Self::OpenRouter => b"MorphieCore.openrouter-session.v1\0",
+        }
+    }
+    pub(crate) fn cache_key(self, key: &str) -> String {
+        grouping_key(key.as_bytes(), 3, self.domain())
+    }
+}
+
 /// Candidate-local optimization input, never caller conversation identity.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub(crate) struct InferredAffinity(pub(crate) [u8; 16]);
@@ -89,25 +110,22 @@ impl CacheTargetPolicy {
             }
         }
     }
-    /// Internal target projection. Cache keys never identify a conversation.
-    pub(crate) fn opencode_session(
+    /// Internal target projection. Callers select which grouping sources their carrier admits.
+    pub(crate) fn session_id(
         self,
         conversation: Option<&ConversationContext>,
         session: Option<&CacheSession>,
         inferred: Option<InferredAffinity>,
+        namespace: SessionNamespace,
     ) -> Result<String, CodecError> {
         if !self.session_id {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         match (conversation, session) {
-            (Some(group), None) if !group.is_conversation_scoped() && inferred.is_some() => {
-                Ok(grouping_key(
-                    &inferred.expect("checked").0,
-                    2,
-                    b"MorphieCore.go-session.v1\0",
-                ))
-            }
-            (Some(group), None) => Ok(affinity_key(group, b"MorphieCore.go-session.v1\0")),
+            (Some(group), None) if !group.is_conversation_scoped() && inferred.is_some() => Ok(
+                grouping_key(&inferred.expect("checked").0, 2, namespace.domain()),
+            ),
+            (Some(group), None) => Ok(affinity_key(group, namespace.domain())),
             (None, Some(session)) => Ok(session.header_value()?.into()),
             _ => Err(CodecError::invalid()),
         }

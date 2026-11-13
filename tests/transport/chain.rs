@@ -655,6 +655,84 @@ fn grok_public_binding_uses_the_responses_cache_carrier() {
 }
 
 #[test]
+fn siwc_session_header_follows_the_final_cache_key_without_mutating_source() {
+    use morphiecore::semantic::context::ConversationContext;
+    let secret = SecretMaterial::new("synthetic-oauth-token").unwrap();
+    let source = standard(GenerationApi::Responses);
+    let header = |prepared: &morphiecore::execution::UpstreamRequest| {
+        prepared
+            .safe_headers
+            .iter()
+            .find(|(name, _)| name == "session-id")
+            .map(|(_, value)| value.clone())
+    };
+    let mut previous_model = None;
+    for binding in catalog::SUBSCRIPTION_BINDINGS
+        .iter()
+        .filter(|binding| binding.profile == "openai")
+    {
+        let endpoint = binding.endpoint();
+        let provider = (binding.provider)();
+        let mut request = source
+            .decode_request(
+                json!({"model":binding.model,"input":"first","prompt_cache_key":"shared-☃"})
+                    .to_string()
+                    .as_bytes(),
+            )
+            .unwrap();
+        request.conversation = Some(ConversationContext::conversation("conversation-one").unwrap());
+        let before = request.clone();
+        let first = prepare(&endpoint, &provider, &secret, &request).unwrap();
+        let session = header(&first).expect("SIWC requires the stable cache session header");
+        assert_eq!(session.len(), 64);
+        assert!(session.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        let body: Value = serde_json::from_slice(&first.body).unwrap();
+        assert_eq!(body["prompt_cache_key"], "shared-☃");
+        assert!(body.get("session_id").is_none());
+        assert_eq!(request, before);
+        if let Some(previous) = previous_model {
+            assert_eq!(session, previous);
+        }
+        previous_model = Some(session.clone());
+
+        // An explicit cache key owns SIWC grouping even if conversation metadata changes.
+        request.conversation = Some(ConversationContext::conversation("conversation-two").unwrap());
+        request.delivery.stream = Some(true);
+        assert_eq!(
+            header(&prepare(&endpoint, &provider, &secret, &request).unwrap()),
+            Some(session.clone())
+        );
+        request.context.cache.prompt_cache_key = Some("another-key".into());
+        assert_ne!(
+            header(&prepare(&endpoint, &provider, &secret, &request).unwrap()),
+            Some(session)
+        );
+
+        request.context.cache.prompt_cache_key = None;
+        let inferred = prepare(&endpoint, &provider, &secret, &request).unwrap();
+        let body: Value = serde_json::from_slice(&inferred.body).unwrap();
+        let effective = body["prompt_cache_key"].as_str().unwrap().to_owned();
+        request.conversation = None;
+        request.context.cache.prompt_cache_key = Some(effective);
+        assert_eq!(
+            header(&prepare(&endpoint, &provider, &secret, &request).unwrap()),
+            header(&inferred)
+        );
+        request.context.cache.prompt_cache_key = None;
+        request.conversation =
+            Some(ConversationContext::independent_request("one-request").unwrap());
+        let independent = prepare(&endpoint, &provider, &secret, &request).unwrap();
+        assert_eq!(header(&independent), None);
+        assert!(
+            serde_json::from_slice::<Value>(&independent.body)
+                .unwrap()
+                .get("prompt_cache_key")
+                .is_none()
+        );
+    }
+}
+
+#[test]
 fn opencode_go_projects_neutral_conversations_independently_of_cache_groups() {
     use morphiecore::semantic::context::ConversationContext;
     let topology = catalog::default_topology().unwrap();
@@ -711,6 +789,26 @@ fn opencode_go_projects_neutral_conversations_independently_of_cache_groups() {
             .find(|(name, _)| name == "x-opencode-session")
             .map(|(_, value)| value.as_str());
         assert_eq!(projected, Some(expected));
+        for (id, model) in [
+            ("opencode-go-haiku-messages", "claude-haiku-5-5"),
+            ("opencode-go-muse-responses", "muse-spark-1.3-contributor"),
+        ] {
+            let mut next = request.clone();
+            next.model = model.into();
+            let target = topology.endpoint(&EndpointId::new(id).unwrap()).unwrap();
+            let prepared = prepare(target, &provider, &secret, &next).unwrap();
+            assert!(
+                prepared
+                    .safe_headers
+                    .contains(&("x-opencode-session".into(), expected.into()))
+            );
+            assert!(
+                serde_json::from_slice::<Value>(&prepared.body)
+                    .unwrap()
+                    .get("session_id")
+                    .is_none()
+            );
+        }
         assert_eq!(request, original);
         assert!(!format!("{prepared:?}").contains("synthetic-conversation"));
         let plan = morphiecore::execution::ExecutionPlan::for_request(&topology, &request).unwrap();

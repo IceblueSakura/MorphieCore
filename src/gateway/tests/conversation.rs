@@ -67,33 +67,25 @@ fn public_chat_ignores_provider_session_body_without_affinity() {
 }
 
 #[test]
-fn neutral_context_reads_agent_session_headers_but_never_provider_sessions() {
+fn neutral_context_reads_agent_affinity_before_native_opencode_session_identity() {
     use axum::http::{HeaderMap, HeaderValue};
     let mut headers = HeaderMap::new();
     headers.insert(
-        "x-opencode-session",
-        HeaderValue::from_static("ignored-provider-session"),
+        "x-client-request-id",
+        HeaderValue::from_static("not-a-conversation"),
     );
     let one = admission::conversation(&headers).unwrap();
     let two = admission::conversation(&headers).unwrap();
     assert!(!one.is_conversation_scoped());
     assert_ne!(one.id(), two.id());
     assert_eq!(one.id().len(), 32);
-    // Declared agent sessions: pi, opencode, Codex.
-    headers.insert(
-        "x-client-request-id",
-        HeaderValue::from_static("not-a-conversation"),
-    );
-    assert!(
-        !admission::conversation(&headers)
-            .unwrap()
-            .is_conversation_scoped()
-    );
     for name in [
         "session_id",
         "x-session-id",
         "session-id",
         "x-session-affinity",
+        "x-opencode-session",
+        "x-opencode-session-id",
     ] {
         headers.insert(name, HeaderValue::from_static("pi-session"));
         let group = admission::conversation(&headers).unwrap();
@@ -101,6 +93,26 @@ fn neutral_context_reads_agent_session_headers_but_never_provider_sessions() {
         assert_eq!(group.id(), "pi-session");
         headers.remove(name);
     }
+    headers.insert(
+        "x-opencode-session-id",
+        HeaderValue::from_static("child-session"),
+    );
+    headers.insert(
+        "x-opencode-session",
+        HeaderValue::from_static("parent-affinity"),
+    );
+    assert_eq!(
+        admission::conversation(&headers).unwrap().id(),
+        "parent-affinity"
+    );
+    headers.append("x-opencode-session", HeaderValue::from_static("duplicate"));
+    assert_eq!(admission::conversation(&headers).unwrap_err().status, 400);
+    headers.remove("x-opencode-session");
+    assert_eq!(
+        admission::conversation(&headers).unwrap().id(),
+        "child-session"
+    );
+    headers.remove("x-opencode-session-id");
     headers.insert(
         "x-session-affinity",
         HeaderValue::from_static("pi-messages-session"),

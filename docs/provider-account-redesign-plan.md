@@ -328,7 +328,7 @@ Cache lifetime here means gateway-owned affinity state. It does not change an up
 
 The [executor](../src/gateway/routing/executors.rs) owns conversation affinity under the following contracts. Preferences are advisory and independent of task outcome and credential/replay identity.
 
-- **Key:** Agent identity, public model and conversation carrier. Carriers come from [ingress admission](../src/gateway/ingress/admission.rs): `X-MorphieCore-Conversation-Id`, then OpenCode `X-Session-Id`, pi `session_id`, Codex `session-id` and pi `x-session-affinity`. Do not derive sessions from content, prefixes or first messages, and do not let one caller's label select another caller's binding.
+- **Key:** Agent identity, public model and a declared [conversation carrier](usage/client-requests.md#conversation-and-cache-affinity). Do not derive routing sessions from content, prefixes or first messages, and do not let one caller's label select another caller's binding. Provider-local cache session projection remains separate from this authenticated routing key.
 - **Identity:** a binding names the effective target: credential provenance, account endpoint and model/protocol scope. Normal OAuth token rotation preserves it; replacement API keys or changed targets cannot inherit it.
 - **Commit:** only after successful completion. That is a valid terminal with a completed outcome, or an outcome that is incomplete only because of the output limit; tool-call turns count. Failed, cancelled, errored or published-then-failed attempts never commit.
 - **Concurrent completion:** preferences are best effort; the last eligible successful completion wins. A late success may recreate an expired/evicted entry. There are no observation slots, version checks or ownership leases.

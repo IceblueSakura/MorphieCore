@@ -93,6 +93,8 @@ pub struct WireRules {
     pub empty_continuation_call_id: bool,
     /// Bounded, source-bound router and billing facts, never task semantics.
     pub routing_extras: bool,
+    /// OpenRouter body sessions may be derived from declared conversations, not cache hints.
+    pub openrouter_session: bool,
     /// Admit the plaintext `reasoning` input alias independently of output spelling.
     pub accept_reasoning_alias: bool,
     /// Emit the Provider's `reasoning` spelling instead of `reasoning_content`.
