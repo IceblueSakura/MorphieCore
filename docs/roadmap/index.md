@@ -28,10 +28,12 @@ This page owns current scope, planned execution sequence, stage priorities, and 
 
 ## Current status
 
-The Generation review baseline has converged under the [partial-delivery exit](#partial-delivery-exit). Configuration/diagnostic cleanup, maintenance simplification, and lifecycle convergence are delivered under [Observability](../architecture/runtime-and-routing.md#observability), while remaining production observability, reliability, and privacy gates are deferred in the [cleanup plan](../convergence-cleanup-plan.md). Accepted contracts live in [Architecture](../architecture/index.md); overall acceptance status is summarized in [Development](../development.md#overall-acceptance-status). Residual limitations and prerequisites share the [unscheduled issue register](unscheduled-issues.md#unscheduled-issues), without a separate review repair queue. No pre-Stage-4 gate remains: R09 real-account failover and Agent session storage do not gate Stage 4. No deployment or new API activation is implied.
+The Generation review baseline has converged under the [partial-delivery exit](#partial-delivery-exit). Configuration/diagnostic cleanup, maintenance simplification, and lifecycle convergence are delivered under [Observability](../architecture/runtime-and-routing.md#observability), while remaining production observability, reliability, and privacy gates are deferred in the [cleanup plan](../convergence-cleanup-plan.md). Accepted contracts live in [Architecture](../architecture/index.md); overall acceptance status is summarized in [Development](../development.md#overall-acceptance-status). Residual limitations and prerequisites share the [issue register](unscheduled-issues.md#unscheduled-issues), without a separate review repair queue. Current work prioritizes Provider/model catalog review and model-list expansion. The selected OpenRouter Luna Responses SSE intake issue must close before Stage 4 resumes. R09 real-account failover and Agent session storage remain outside that entry gate. No deployment or new API activation is implied.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
+| Current focus | Review the compiled Provider/model catalog and expand selected Generation model bindings | Exact upstream IDs and source-backed target contracts; offline baseline and affected qualification |
+| Before Stage 4 | Resolve [OpenRouter Luna Responses SSE intake](unscheduled-issues.md#content-and-client-qualification) | First failing event/error localized, independent regression and corrected native-to-IR-to-downstream stream acceptance |
 | Conditional tool follow-ups | [S3-T5–S3-T7](unscheduled-issues.md#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default handoff prerequisites |
 | API expansion | Select and implement Stage-4 operation contracts | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Opt-in [per-Agent JSONL session storage](../architecture/history-and-replay.md#agent-session-files); unscheduled and not a Stage-4 prerequisite | Select isolation and lifetime bounds before implementation |
@@ -39,7 +41,7 @@ The Generation review baseline has converged under the [partial-delivery exit](#
 
 ## Planned order
 
-The Generation review baseline is delivered under the [partial-delivery contract](#partial-delivery-exit). Stage 4 has no remaining entry gate; [unscheduled issues](unscheduled-issues.md#unscheduled-issues), including R09, do not become implicit prerequisites. Stage-4 families retain equal priority and advance as contracts are selected. Conditional tool packages keep their own policy gates; Stage 5 remains unscheduled.
+The Generation review baseline is delivered under the [partial-delivery contract](#partial-delivery-exit). First review the Provider/model catalog and expand selected model bindings. Before resuming Stage 4, close the explicitly selected [OpenRouter Luna Responses SSE intake issue](unscheduled-issues.md#content-and-client-qualification). Other [unscheduled issues](unscheduled-issues.md#unscheduled-issues), including R09, do not become implicit prerequisites. Once this entry gate closes, Stage-4 families retain equal priority and advance as contracts are selected. Conditional tool packages keep their own policy gates; Stage 5 remains unscheduled.
 
 | Stage | Goal | Exit evidence |
 |---|---|---|
