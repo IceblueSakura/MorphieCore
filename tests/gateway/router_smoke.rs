@@ -379,7 +379,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
             );
             assert_eq!(
                 observed.0.lock().unwrap().last().unwrap()["prompt_cache_key"],
-                "2b9fca8fab555e6f158d416aad2a034e943010b3721ca44a5fb1c3e77d9668af"
+                "5231d15e1d9d831aecd9d4c911e3f828"
             );
             let body = response.bytes().await.unwrap();
             assert!(!String::from_utf8_lossy(&body).contains("private-model"));
@@ -462,7 +462,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
                 assert_eq!(followup.status(), 200);
                 assert_eq!(
                     observed.0.lock().unwrap().last().unwrap()["prompt_cache_key"],
-                    "2b9fca8fab555e6f158d416aad2a034e943010b3721ca44a5fb1c3e77d9668af"
+                    "5231d15e1d9d831aecd9d4c911e3f828"
                 );
                 let finished = responses_delivery(&followup.bytes().await.unwrap(), stream);
                 assert_eq!(finished.semantic.outcome(), Outcome::Completed);

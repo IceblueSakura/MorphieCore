@@ -684,8 +684,8 @@ fn siwc_session_header_follows_the_final_cache_key_without_mutating_source() {
         let before = request.clone();
         let first = prepare(&endpoint, &provider, &secret, &request).unwrap();
         let session = header(&first).expect("SIWC requires the stable cache session header");
-        assert_eq!(session.len(), 64);
-        assert!(session.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        // Canonical XXH3-128 vector independently computed with xxhsum -H128.
+        assert_eq!(session, "af202421e916341fb030b8c9d8960ae1");
         let body: Value = serde_json::from_slice(&first.body).unwrap();
         assert_eq!(body["prompt_cache_key"], "shared-☃");
         assert!(body.get("session_id").is_none());
@@ -746,22 +746,22 @@ fn opencode_go_projects_neutral_conversations_independently_of_cache_groups() {
         (
             ConversationContext::conversation("conversation-one").unwrap(),
             None,
-            "427d18da2021fadacd82a4b187acd8b4459e929ad27d1f77025fff66310a176e",
+            "153286db0ab392650e2f661aa689c9fd",
         ),
         (
             ConversationContext::conversation("conversation-one").unwrap(),
             Some("shared-workspace"),
-            "427d18da2021fadacd82a4b187acd8b4459e929ad27d1f77025fff66310a176e",
+            "153286db0ab392650e2f661aa689c9fd",
         ),
         (
             ConversationContext::conversation("conversation-two").unwrap(),
             Some("shared-workspace"),
-            "7577d45153ce9042751834fb6f264cc0fb919b44f4408bb37a6defc6d3256d9f",
+            "fcb32676674f4ecca2ddeb9eff8c0d11",
         ),
         (
             ConversationContext::independent_request("conversation-one").unwrap(),
             None,
-            "c5f1b4da1c5a286699d732449eb48d2f00c63c61f36cf2bd236e27de3d71ec25",
+            "e23057785e022471a99de0c9051856d3",
         ),
     ] {
         let mut body = json!({"model":"hy4-preview","messages":[{"role":"user","content":"keep"}],"max_completion_tokens":37});

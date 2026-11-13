@@ -71,7 +71,7 @@ An explicit conversation/session carrier is the routing unit, scoped by authenti
 ### Conversation and cache affinity
 
 Affinity keys and advisory cache policies are defined in [`protocol::cache`](../../src/protocol/cache.rs):
-- `X-MorphieCore-Conversation-Id` establishes route affinity across multi-turn exchanges via hashed SHA-256 grouping keys.
+- `X-MorphieCore-Conversation-Id` supplies declared conversation identity for multi-turn route affinity and upstream cache/session projection.
 - Prefix-cache indexing supplies advisory request hints, never an implicit conversation or account-routing key.
 - Target cache capabilities are enforced via [`CacheTargetPolicy`](../../src/protocol/cache.rs#L48), omitting unsupported advisory hints under declared loss rules.
 
@@ -84,12 +84,17 @@ before `x-opencode-session-id` identity. The native values can differ for child
 or forked OpenCode sessions. [Carrier precedence](../usage/client-requests.md#conversation-and-cache-affinity)
 owns the complete ingress list and validation.
 
-Generated IDs reuse one SHA-256 encoding: NUL-terminated Provider-specific versioned domain,
-one source-kind byte, the UTF-8 byte length as little-endian `u32`, then the
-unchanged source bytes. The result is 64 lowercase ASCII hex characters.
+Generated IDs use XXH3-128 with the default zero seed: NUL-terminated
+Provider-specific versioned domain, one source-kind byte, the source byte length
+as little-endian `u32`, then the unchanged source bytes (UTF-8 for text sources).
+The unsigned 128-bit result is formatted as 32 lowercase
+ASCII hex characters, most-significant digit first and zero-padded.
+Version-2 domains identify this encoding; generated prompt-cache keys use
+`MorphieCore.prompt-cache.v2`. These IDs are grouping hints, not authentication
+or integrity checks.
 Source tags distinguish independent requests (`0`), declared conversations
-(`1`), inferred prefix groups (`2`) and cache keys (`3`). Domain separation
-prevents accidental cross-Provider correlation and source-kind collisions.
+(`1`), inferred prefix groups (`2`) and cache keys (`3`). Domain and source-kind
+framing separate namespaces without ambiguous concatenation.
 No clock, random seed, mutable map, process salt, credential revision, model
 name or prompt body participates in derivation. The same source and namespace
 therefore survive restart, ordinary credential renewal and model changes.
@@ -100,9 +105,9 @@ promise a stable session across those boundaries.
 
 | Target | Wire carrier | Grouping source and precedence |
 |---|---|---|
-| SIWC Responses | `session-id` header | Hash the final projected `prompt_cache_key` under `MorphieCore.siwc-session.v1`. Its existing explicit-key → declared-conversation → inferred-prefix derivation stays authoritative. Without a key, omit the header; do not invent cross-request affinity |
-| OpenCode Go Chat, Responses and Messages | `x-opencode-session` header | Preserve an explicitly admitted dialect session; otherwise hash declared conversation, inferred prefix group, or independent request in that order under the existing `MorphieCore.go-session.v1` domain. Cache keys remain independent and never become Go body sessions |
-| OpenRouter Chat and Responses | body `session_id` | Preserve an explicitly admitted dialect session; otherwise hash only a declared conversation under `MorphieCore.openrouter-session.v1`. Key-only, inferred-prefix and independent-request traffic stays without a synthesized session |
+| SIWC Responses | `session-id` header | Hash the final projected `prompt_cache_key` under `MorphieCore.siwc-session.v2`. Its existing explicit-key → declared-conversation → inferred-prefix derivation stays authoritative. Without a key, omit the header; do not invent cross-request affinity |
+| OpenCode Go Chat, Responses and Messages | `x-opencode-session` header | Preserve an explicitly admitted dialect session; otherwise hash declared conversation, inferred prefix group, or independent request in that order under `MorphieCore.go-session.v2`. Cache keys remain independent and never become Go body sessions |
+| OpenRouter Chat and Responses | body `session_id` | Preserve an explicitly admitted dialect session; otherwise hash only a declared conversation under `MorphieCore.openrouter-session.v2`. Key-only, inferred-prefix and independent-request traffic stays without a synthesized session |
 
 Explicit dialect sessions retain their existing validation and spelling;
 they are not a public extension to the standard downstream APIs. No arbitrary

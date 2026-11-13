@@ -4,7 +4,7 @@
 //! - **No Shared State**: This module does not manage cache storage, session data, or
 //!   routing execution.
 //! - **Private Identifiers**: Cache keys and caller conversation identities are hashed
-//!   via SHA-256 (`affinity_key`) and kept private; raw identifiers never cross upstream
+//!   via XXH3-128 (`affinity_key`) and kept private; raw identifiers never cross upstream
 //!   boundaries unless supported by an explicit target carrier.
 use super::openai::CodecError;
 use crate::{
@@ -14,7 +14,7 @@ use crate::{
         value::Text,
     },
 };
-use sha2::{Digest, Sha256};
+use xxhash_rust::xxh3::Xxh3;
 
 fn affinity_key(context: &ConversationContext, domain: &[u8]) -> String {
     grouping_key(
@@ -24,15 +24,12 @@ fn affinity_key(context: &ConversationContext, domain: &[u8]) -> String {
     )
 }
 fn grouping_key(id: &[u8], kind: u8, domain: &[u8]) -> String {
-    let mut hash = Sha256::new();
+    let mut hash = Xxh3::new();
     hash.update(domain);
-    hash.update([kind]);
-    hash.update((id.len() as u32).to_le_bytes());
+    hash.update(&[kind]);
+    hash.update(&(id.len() as u32).to_le_bytes());
     hash.update(id);
-    hash.finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    format!("{:032x}", hash.digest128())
 }
 
 /// Provider-local grouping, independent of credentials, models and process lifetime.
@@ -46,9 +43,9 @@ pub(crate) enum SessionNamespace {
 impl SessionNamespace {
     fn domain(self) -> &'static [u8] {
         match self {
-            Self::Siwc => b"MorphieCore.siwc-session.v1\0",
-            Self::OpenCodeGo => b"MorphieCore.go-session.v1\0",
-            Self::OpenRouter => b"MorphieCore.openrouter-session.v1\0",
+            Self::Siwc => b"MorphieCore.siwc-session.v2\0",
+            Self::OpenCodeGo => b"MorphieCore.go-session.v2\0",
+            Self::OpenRouter => b"MorphieCore.openrouter-session.v2\0",
         }
     }
     pub(crate) fn cache_key(self, key: &str) -> String {
@@ -101,9 +98,9 @@ impl CacheTargetPolicy {
     ) {
         if self.key && context.cache.prompt_cache_key.is_none() {
             let key = if let Some(group) = conversation.filter(|c| c.is_conversation_scoped()) {
-                Some(affinity_key(group, b"MorphieCore.prompt-cache.v1\0"))
+                Some(affinity_key(group, b"MorphieCore.prompt-cache.v2\0"))
             } else {
-                inferred.map(|group| grouping_key(&group.0, 2, b"MorphieCore.prompt-cache.v1\0"))
+                inferred.map(|group| grouping_key(&group.0, 2, b"MorphieCore.prompt-cache.v2\0"))
             };
             if let Some(key) = key {
                 context.cache.prompt_cache_key = Some(key);

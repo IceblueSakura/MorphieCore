@@ -42,6 +42,7 @@ tracing-subscriber = { version = "=0.3.23", default-features = false, features =
 opentelemetry = { version = "=0.33.1", default-features = false, features = ["logs"] }
 opentelemetry_sdk = { version = "=0.33.1", default-features = false, features = ["logs", "internal-logs"] }
 opentelemetry-otlp = { version = "=0.33.1", default-features = false, features = ["logs", "http-json", "reqwest-blocking-client"] }
+xxhash-rust = { version = "=0.8.19", default-features = false, features = ["xxh3"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-permissions = "=0.2.4"

@@ -666,7 +666,7 @@ mod native_catalog {
                 prepared
                     .safe_headers
                     .iter()
-                    .any(|(n, v)| n == "x-opencode-session" && v.len() == 64)
+                    .any(|(n, v)| n == "x-opencode-session" && v.len() == 32)
             );
             let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
             assert_eq!(

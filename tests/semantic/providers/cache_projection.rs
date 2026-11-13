@@ -244,7 +244,8 @@ fn openrouter_sessions_follow_declared_conversations_not_cache_keys() {
             .encode_request(&source, "upstream", &Contract::full())
             .unwrap();
         let session = wire["session_id"].as_str().unwrap().to_owned();
-        assert_eq!(session.len(), 64);
+        // Canonical XXH3-128 vector independently computed with xxhsum -H128.
+        assert_eq!(session, "54dc908306d7e0a625f57b4c43386664");
         assert_ne!(session, "conversation-one");
         assert_eq!(wire["prompt_cache_key"], "shared-cache");
         assert_eq!(source, before);
