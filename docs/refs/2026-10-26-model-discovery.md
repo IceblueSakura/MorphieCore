@@ -29,12 +29,14 @@ subtracting output, and input plus output never creates a new context fact.
 | `gpt-6-luna` / OpenRouter | 1,050,000 | Unknown | [Endpoint inventory](https://openrouter.ai/api/v1/models/openai/gpt-6-luna/endpoints); all listed endpoints agree on context, not input |
 | `gpt-audio-mini` / OpenRouter | 128,000 | Unknown | [Endpoint inventory](https://openrouter.ai/api/v1/models/openai/gpt-audio-mini/endpoints) |
 
-SIWC's selected model records also return `max_context_window:872000`. Use their
-smaller `context_window` as the current planning window, not that configurable
-maximum or the public OpenAI API's 1,050,000. These are service planning defaults,
-not quota, entitlement or measured attention quality. Discovery remains startup-only
-and never performs these network queries; the audit used one bounded model-list
-request per credential-backed service and retained only safe capacity fields.
+SIWC's selected model records also return `max_context_window:872000`. These
+directory values remain source observations. The operator selected a fixed
+1,050,000-token planning window for Sol, Astra and Luna on SIWC, matching the public
+OpenAI API and superseding the earlier use of SIWC's smaller `context_window`
+defaults. This is catalog planning policy, not measured SIWC capacity or an
+independent SIWC input/output declaration. Discovery remains startup-only and never
+performs these network queries; the audit used one bounded model-list request per
+credential-backed service and retained only safe capacity fields.
 
 DeepSeek's model-list definition explicitly counts input plus output in the total
 and supplies exact integers, resolving the earlier `1M` ambiguity. The public

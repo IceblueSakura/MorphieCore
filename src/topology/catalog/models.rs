@@ -272,13 +272,11 @@ pub(super) fn model_limits(
     model: &str,
     provider: &str,
 ) -> crate::protocol::model_limits::ModelLimits {
-    // Exact model and service scope. See the dated capacity audit in
-    // docs/refs/2026-10-26-model-discovery.md; never inherit another service's limits.
+    // Service-qualified declarations and explicitly selected planning policy.
+    // See docs/refs/2026-10-26-model-discovery.md.
     let context_window_tokens = match (model, provider) {
-        ("gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna", "openai") => Some(1_050_000),
-        // SIWC's advertised current window, not its larger configurable maximum.
-        ("gpt-6.1-sol", "chatgpt") => Some(500_000),
-        ("gpt-6-astra" | "gpt-6-luna", "chatgpt") => Some(272_000),
+        // Operator-selected SIWC planning window matches the public OpenAI API.
+        ("gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna", "openai" | "chatgpt") => Some(1_050_000),
         ("gpt-6-luna", "openrouter") => Some(1_050_000),
         ("gpt-audio-mini", "openrouter") => Some(128_000),
         ("grok-4.7", "grok") => Some(500_000),
