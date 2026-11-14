@@ -22,6 +22,8 @@ Acceptance notes are temporary development material. Keep the overall result and
 
 ## Overall acceptance status
 
+Upstream and downstream stateful APIs are [experimental and disabled](architecture/history-and-replay.md#stateful-history) until explicit user activation. Model adaptation and issue repairs exclude stored/managed continuation and resource-operation acceptance; stateless tool/history, cancellation, replay isolation and terminal honesty remain required.
+
 The Generation baseline has met the selected [partial-delivery exit](roadmap/index.md#partial-delivery-exit). The standard-only contract and simplified coordination pass offline regression, connected SDK checks and isolated current pi/OpenCode workflows. Representative real Provider evidence remains applicable only to unchanged contracts; standard-only real workflows and OAuth primary-path qualification stay in the [issue register](roadmap/unscheduled-issues.md#unscheduled-issues).
 
 | Area | Overall status |
@@ -96,6 +98,8 @@ The baseline includes Rust tests, strict all-target linting, formatting, product
 All baseline inputs and authorities are synthetic. Credential/auth isolation, trusted origins, strict JSON, resource bounds, cancellation/release, replay isolation and honest terminal reporting remain required assertions.
 
 ### SDK loopback gate
+
+Select stateless consumers only while the stateful freeze applies. Ignored tests named `experimental_*` retain dormant stateful scenarios and are not part of the current SDK gate.
 
 Use the existing SDK integration target and locked Python/TypeScript consumers serially against test-owned loopback authorities. Check actual decoded results, incremental callbacks, complete returned history and independent next-upstream expectations. Keep API-key and subscription startup construction at the production loader boundary, with synthetic credentials and explicit target contracts.
 

@@ -45,11 +45,13 @@ impl Gateway {
             .route(
                 "/v1/responses/{response_id}",
                 get(crate::gateway::ingress::responses::retrieve)
-                    .delete(crate::gateway::ingress::responses::delete),
+                    .delete(crate::gateway::ingress::responses::delete)
+                    .route_layer(middleware::from_fn(reject_stateful)),
             )
             .route(
                 "/v1/responses/{response_id}/input_items",
-                get(crate::gateway::ingress::responses::input_items),
+                get(crate::gateway::ingress::responses::input_items)
+                    .route_layer(middleware::from_fn(reject_stateful)),
             )
             .route("/v1/messages", post(messages))
             .route(
@@ -132,6 +134,10 @@ fn ingress_error(path: &str, error: ApiError) -> Response {
     } else {
         error.into_response()
     }
+}
+/// Keep experimental resource handlers unreachable after ingress authentication.
+async fn reject_stateful(_: Request, _: Next) -> Response {
+    ApiError::stateful_disabled().into_response()
 }
 pub(in crate::gateway) async fn authenticate(
     State(state): State<Arc<Runtime>>,

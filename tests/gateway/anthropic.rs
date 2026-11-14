@@ -425,7 +425,7 @@ async fn native_fixture() -> NativeFixture {
 }
 
 #[tokio::test]
-async fn incomplete_native_tool_prefixes_survive_json_sse_and_stored_retrieval() {
+async fn incomplete_native_tool_prefixes_survive_stateless_json_and_sse() {
     let fixture = native_fixture().await;
     let prefix = " \n{\"key\":\"unfinished\\u0";
     for responses in [false, true] {
@@ -438,7 +438,7 @@ async fn incomplete_native_tool_prefixes_survive_json_sse_and_stored_retrieval()
                 (
                     "/v1/responses",
                     json!({"model":MESSAGES_BINDINGS[0].model,
-                    "max_output_tokens":64,"store":true,"input":"partial-tool","tools":[tool]}),
+                    "max_output_tokens":64,"store":false,"input":"partial-tool","tools":[tool]}),
                 )
             } else {
                 (
@@ -528,11 +528,7 @@ async fn incomplete_native_tool_prefixes_survive_json_sse_and_stored_retrieval()
                     .send()
                     .await
                     .unwrap();
-                assert_eq!(saved.status(), 200);
-                let saved: Value = saved.json().await.unwrap();
-                for field in ["output", "status", "incomplete_details"] {
-                    assert_eq!(saved[field], delivered[field]);
-                }
+                assert_eq!(saved.status(), 400);
             } else {
                 assert_eq!(delivered["choices"][0]["finish_reason"], "length");
                 let call = &delivered["choices"][0]["message"]["tool_calls"][0];

@@ -90,7 +90,147 @@ fn completed_stream() -> String {
 }
 
 #[tokio::test]
-async fn unpolled_snapshot_operations_do_not_hold_inference_capacity() {
+async fn stateful_requests_reject_without_dispatch_or_history_access() {
+    use crate::protocol::openai::{Dialect, GenerationApi, GenerationCodec};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let calls = Arc::new(AtomicUsize::new(0));
+    let observed = calls.clone();
+    let upstream = Router::new().route(
+        "/responses",
+        post(move |Json(body): Json<Value>| {
+            assert_eq!(body["store"], false);
+            assert!(body.get("previous_response_id").is_none());
+            observed.fetch_add(1, Ordering::SeqCst);
+            async { ([("content-type", "text/event-stream")], completed_stream()) }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let gate = gateway(&format!("http://{}", listener.local_addr().unwrap()));
+    let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+    let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+    let mut snapshot = created();
+    snapshot["id"] = json!("resp_seeded");
+    snapshot["status"] = json!("completed");
+    let body = bytes::Bytes::from(snapshot.to_string());
+    gate.state
+        .history
+        .stage(
+            crate::gateway::generation::history::Snapshot {
+                id: "resp_seeded".into(),
+                input: codec
+                    .decode_client_request(br#"{"model":"fixture-model","input":"seed"}"#)
+                    .unwrap()
+                    .task,
+                response: codec.decode_response(&body).unwrap(),
+                weight: body.len(),
+                body,
+            },
+            tokio::time::Instant::now(),
+        )
+        .unwrap()
+        .publish(tokio::time::Instant::now());
+    for stream in [false, true] {
+        for controls in [
+            json!({"store":true}),
+            json!({"previous_response_id":"resp_missing"}),
+            json!({"store":false,"previous_response_id":"resp_missing"}),
+            json!({"store":false,"previous_response_id":"resp_seeded"}),
+        ] {
+            let mut body = json!({"model":"fixture-model","input":"next","stream":stream});
+            body.as_object_mut()
+                .unwrap()
+                .extend(controls.as_object().unwrap().clone());
+            let response = send(&gate, "POST", "/v1/responses", body).await;
+            assert_eq!(response.status(), 400);
+            let error: Value =
+                serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap())
+                    .unwrap();
+            assert_eq!(error["error"]["code"], "stateful_api_disabled");
+        }
+    }
+    for id in ["resp_missing", "resp_seeded"] {
+        for (method, path) in [
+            ("GET", format!("/v1/responses/{id}")),
+            ("HEAD", format!("/v1/responses/{id}")),
+            ("DELETE", format!("/v1/responses/{id}")),
+            ("GET", format!("/v1/responses/{id}/input_items?limit=1")),
+            ("HEAD", format!("/v1/responses/{id}/input_items")),
+        ] {
+            let unauthorized = gate
+                .router()
+                .oneshot(
+                    Request::builder()
+                        .method(method)
+                        .uri(&path)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(unauthorized.status(), 401);
+            let rejected = send(&gate, method, &path, Value::Null).await;
+            assert_eq!(rejected.status(), 400);
+            if method != "HEAD" {
+                let error: Value =
+                    serde_json::from_slice(&to_bytes(rejected.into_body(), 4096).await.unwrap())
+                        .unwrap();
+                assert_eq!(error["error"]["code"], "stateful_api_disabled");
+            }
+        }
+    }
+    assert!(
+        gate.state
+            .history
+            .get("resp_seeded", tokio::time::Instant::now())
+            .is_ok()
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    for stream in [false, true] {
+        for controls in [
+            json!({}),
+            json!({"store":false}),
+            json!({"store":null,"previous_response_id":null}),
+        ] {
+            let mut body = json!({"model":"fixture-model","input":"next","stream":stream});
+            body.as_object_mut()
+                .unwrap()
+                .extend(controls.as_object().unwrap().clone());
+            let response = send(&gate, "POST", "/v1/responses", body).await;
+            assert_eq!(response.status(), 200);
+            let bytes = to_bytes(response.into_body(), 1 << 20).await.unwrap();
+            let response: Value = if stream {
+                std::str::from_utf8(&bytes)
+                    .unwrap()
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("data: "))
+                    .map(|data| serde_json::from_str::<Value>(data).unwrap())
+                    .find(|event| event["type"] == "response.completed")
+                    .unwrap()["response"]
+                    .clone()
+            } else {
+                serde_json::from_slice(&bytes).unwrap()
+            };
+            assert_eq!(response["store"], false);
+            assert!(response["previous_response_id"].is_null());
+            assert!(
+                gate.state
+                    .history
+                    .get(
+                        response["id"].as_str().unwrap(),
+                        tokio::time::Instant::now()
+                    )
+                    .is_err()
+            );
+        }
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 6);
+    gate.shutdown();
+    server.abort();
+}
+
+#[tokio::test]
+#[ignore = "experimental stateful API; awaiting explicit activation"]
+async fn experimental_unpolled_snapshot_operations_do_not_hold_inference_capacity() {
     let upstream = Router::new().route(
         "/responses",
         post(|| async { ([("content-type", "text/event-stream")], completed_stream()) }),
@@ -203,7 +343,9 @@ async fn total_deadline_includes_upload_and_route_tightening_without_dispatch() 
 }
 
 #[tokio::test]
-async fn stored_json_and_sse_support_tool_continuation_retrieval_and_independent_branches() {
+#[ignore = "experimental stateful API; awaiting explicit activation"]
+async fn experimental_stored_json_and_sse_support_tool_continuation_retrieval_and_independent_branches()
+ {
     let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
     let observed = calls.clone();
     let upstream = Router::new().route("/responses", post(move |Json(body): Json<Value>| {
@@ -417,9 +559,7 @@ async fn stored_json_and_sse_support_tool_continuation_retrieval_and_independent
 }
 
 #[tokio::test]
-async fn abandoned_stored_stream_is_not_retrievable_and_auth_precedes_lookup() {
-    // This case drops before final staging; the unpolled JSON case below covers
-    // a reservation already transferred into the outgoing body.
+async fn abandoned_stateless_stream_releases_capacity_and_auth_precedes_disabled_resources() {
     let upstream = Router::new().route(
         "/responses",
         post(|| async {
@@ -448,7 +588,7 @@ async fn abandoned_stored_stream_is_not_retrievable_and_auth_precedes_lookup() {
         "POST",
         "/v1/responses",
         json!({
-            "model":"fixture-model","input":"first","store":true,"stream":true
+            "model":"fixture-model","input":"first","store":false,"stream":true
         }),
     )
     .await;
@@ -477,7 +617,7 @@ async fn abandoned_stored_stream_is_not_retrievable_and_auth_precedes_lookup() {
         send(&gate, "GET", &format!("/v1/responses/{id}"), Value::Null)
             .await
             .status(),
-        404
+        400
     );
     assert_eq!(
         send(
@@ -490,7 +630,7 @@ async fn abandoned_stored_stream_is_not_retrievable_and_auth_precedes_lookup() {
         )
         .await
         .status(),
-        404
+        400
     );
     for method in ["GET", "DELETE"] {
         let response = gate
@@ -511,7 +651,7 @@ async fn abandoned_stored_stream_is_not_retrievable_and_auth_precedes_lookup() {
 }
 
 #[tokio::test]
-async fn timed_out_unpolled_body_releases_staged_history_without_consumer_cleanup() {
+async fn timed_out_unpolled_body_releases_capacity_without_consumer_cleanup() {
     let upstream = Router::new().route(
         "/responses",
         post(|| async { ([("content-type", "text/event-stream")], completed_stream()) }),
@@ -527,10 +667,10 @@ async fn timed_out_unpolled_body_releases_staged_history_without_consumer_cleanu
         },
     );
     let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
-    let request = json!({"model":"fixture-model","input":"first","store":true});
+    let request = json!({"model":"fixture-model","input":"first","store":false});
     let unpolled = send(&gate, "POST", "/v1/responses", request.clone()).await;
     assert_eq!(unpolled.status(), 200);
-    // Producer completion, not a body poll or TTL, must reclaim the reservation.
+    // Producer completion, not a body poll, must release admission capacity.
     let permit = tokio::time::timeout(
         Duration::from_secs(2),
         gate.state.permits.clone().acquire_owned(),
@@ -544,7 +684,6 @@ async fn timed_out_unpolled_body_releases_staged_history_without_consumer_cleanu
     let mut body = next.into_body().into_data_stream();
     let bytes = body.next().await.unwrap().unwrap();
     // Final handoff wins: abort immediately, before the producer resumes.
-    // Its reservation guard must not revoke an already published snapshot.
     drop(body);
     let next: Value = serde_json::from_slice(&bytes).unwrap();
     let id = next["id"].as_str().unwrap();
@@ -552,7 +691,7 @@ async fn timed_out_unpolled_body_releases_staged_history_without_consumer_cleanu
         gate.state
             .history
             .get(id, tokio::time::Instant::now())
-            .is_ok()
+            .is_err()
     );
     let permit = tokio::time::timeout(
         Duration::from_secs(2),
@@ -566,15 +705,15 @@ async fn timed_out_unpolled_body_releases_staged_history_without_consumer_cleanu
         send(&gate, "GET", &format!("/v1/responses/{id}"), Value::Null)
             .await
             .status(),
-        200
+        400
     );
     assert!(to_bytes(unpolled.into_body(), 1 << 20).await.is_err());
-    // Cleanup of the old failed body cannot revoke the newly published response.
+    // Neither completed nor timed-out delivery activates experimental storage.
     assert_eq!(
         send(&gate, "GET", &format!("/v1/responses/{id}"), Value::Null)
             .await
             .status(),
-        200
+        400
     );
     gate.shutdown();
     server.abort();

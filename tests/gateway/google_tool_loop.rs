@@ -97,9 +97,7 @@ async fn exercise_rejected(api: fixture::Api, messages: bool) {
         );
     }
 }
-async fn exercise(api: fixture::Api) {
-    exercise_rejected(api, true).await;
-    exercise_rejected(api, false).await;
+async fn exercise_stored(api: fixture::Api) {
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(std::time::Duration::from_secs(5))
@@ -182,12 +180,21 @@ async fn exercise(api: fixture::Api) {
 
 #[tokio::test]
 async fn ordinary_stop_tool_error_correction_and_final_history() {
-    exercise(fixture::Api::GenerateContent).await;
+    exercise_rejected(fixture::Api::GenerateContent, true).await;
+    exercise_rejected(fixture::Api::GenerateContent, false).await;
 }
 
 #[tokio::test]
 async fn interactions_tool_correction_and_signed_final_history() {
-    exercise(fixture::Api::Interactions).await;
+    exercise_rejected(fixture::Api::Interactions, true).await;
+    exercise_rejected(fixture::Api::Interactions, false).await;
+}
+
+#[tokio::test]
+#[ignore = "experimental stateful API; awaiting explicit activation"]
+async fn experimental_google_stored_tool_correction_and_signed_history() {
+    exercise_stored(fixture::Api::GenerateContent).await;
+    exercise_stored(fixture::Api::Interactions).await;
 }
 
 #[tokio::test]
@@ -231,7 +238,7 @@ async fn stateless_responses_do_not_publish_success_or_store_signed_calls() {
                             .send()
                             .await
                             .unwrap();
-                        assert_eq!(stored.status(), 404);
+                        assert_eq!(stored.status(), 400);
                     }
                 }
             } else {

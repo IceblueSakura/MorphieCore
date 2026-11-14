@@ -543,7 +543,6 @@ async fn observe_intake(
     let stored = matches!(
         control,
         Control::Stored
-            | Control::SummaryHistory
             | Control::OpaqueHistory { stored: true }
             | Control::Incomplete { stored: true }
             | Control::ReportedFacts { stored: true, .. }
@@ -757,8 +756,7 @@ async fn observe_intake(
     (outcomes, views, reports)
 }
 
-#[tokio::test]
-async fn grouped_responses_history_agrees_between_managed_and_stateless_continuation() {
+async fn grouped_responses_history(managed: bool) {
     let model = "qwen3.8-flash";
     let output = json!([
         {"type":"function_call","id":"fc_a","call_id":"a","name":"lookup","arguments":"{\"key\":\"A\"}","status":"completed"},
@@ -839,8 +837,7 @@ async fn grouped_responses_history_agrees_between_managed_and_stateless_continua
             }]}}}),
         )
         .unwrap();
-        let mut request =
-            json!({"model":model,"input":"go","max_output_tokens":64,"stream":stream,"store":true});
+        let mut request = json!({"model":model,"input":"go","max_output_tokens":64,"stream":stream,"store":managed});
         request["tools"] = json!([{"type":"function","name":"lookup","description":"Look up a key.",
             "parameters":{"type":"object","properties":{"key":{"type":"string"}}},"strict":false}]);
         if stream {
@@ -858,15 +855,17 @@ async fn grouped_responses_history_agrees_between_managed_and_stateless_continua
             results[0],results[1]
         ]);
         request["store"] = json!(false);
-        request["previous_response_id"] = first["id"].clone();
-        request["input"] = results.clone();
-        let (status, bytes, failed) = send(&boot, Api::Responses, request.clone(), &[]).await;
-        assert_eq!(status, 200);
-        assert!(!failed);
-        assert_eq!(
-            wire::delivered(Api::Responses, &bytes, stream)["status"],
-            "completed"
-        );
+        if managed {
+            request["previous_response_id"] = first["id"].clone();
+            request["input"] = results.clone();
+            let (status, bytes, failed) = send(&boot, Api::Responses, request.clone(), &[]).await;
+            assert_eq!(status, 200);
+            assert!(!failed);
+            assert_eq!(
+                wire::delivered(Api::Responses, &bytes, stream)["status"],
+                "completed"
+            );
+        }
         request
             .as_object_mut()
             .unwrap()
@@ -880,18 +879,29 @@ async fn grouped_responses_history_agrees_between_managed_and_stateless_continua
             "completed"
         );
         let captured = calls.lock().unwrap();
-        assert_eq!(captured.len(), 3);
-        assert_eq!(
-            captured[1]["input"], expected,
-            "managed grouped call-ID history"
-        );
-        assert_eq!(
-            captured[2], captured[1],
-            "stateless and managed upstream requests"
-        );
+        assert_eq!(captured.len(), if managed { 3 } else { 2 });
+        assert_eq!(captured[1]["input"], expected, "grouped call-ID history");
+        if managed {
+            assert_eq!(
+                captured[2], captured[1],
+                "stateless and managed upstream requests"
+            );
+        }
         drop(captured);
         boot.gateway.shutdown();
     }
+}
+
+#[tokio::test]
+async fn grouped_stateless_responses_history_preserves_call_id_association() {
+    grouped_responses_history(false).await;
+}
+
+#[tokio::test]
+#[ignore = "experimental stateful API; awaiting explicit activation"]
+async fn experimental_grouped_responses_history_agrees_between_managed_and_stateless_continuation()
+{
+    grouped_responses_history(true).await;
 }
 
 #[tokio::test]
@@ -903,7 +913,7 @@ async fn native_reports_project_without_changing_content_or_terminal_outcome() {
     for client in [Api::Chat, Api::Responses, Api::Messages] {
         for refusal in [false, true] {
             for stream in [false, true] {
-                for stored in [false, true] {
+                for stored in [false] {
                     if stored && client != Api::Responses {
                         continue;
                     }
@@ -1138,7 +1148,7 @@ async fn native_reasoning_history_contracts_are_distinct() {
             &grok,
             Api::Responses,
             Profile::Text,
-            Control::OpaqueHistory { stored: true }
+            Control::OpaqueHistory { stored: false }
         )
         .await,
         ACCEPT
@@ -1169,7 +1179,8 @@ async fn agent_default_production_lanes() {
 }
 
 #[tokio::test]
-async fn stored_production_responses_agree_with_delivered_history() {
+#[ignore = "experimental stateful API; awaiting explicit activation"]
+async fn experimental_stored_production_responses_agree_with_delivered_history() {
     for binding in BINDINGS {
         for profile in [Profile::Text, Profile::Tools, Profile::Reasoning] {
             for stream in [false, true] {
@@ -1244,7 +1255,7 @@ async fn incomplete_responses_reasoning_keeps_its_delivery_and_replay_status() {
         .iter()
         .find(|b| b.1 == "openrouter-responses")
         .unwrap();
-    for stored in [false, true] {
+    for stored in [false] {
         for stream in [false, true] {
             let actual = lane(
                 binding,

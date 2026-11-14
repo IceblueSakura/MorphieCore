@@ -38,7 +38,7 @@ Both forms work at ingress. Repeated headers or both forms together are rejected
 
 When an admitted request includes `metadata`, Responses delivery can echo it if the upstream response omits that field. An upstream explicit null or object wins; maps are not merged. This is a request association, not proof of Provider storage or effective configuration. Send it again when needed on a later turn; stored history does not inherit it. See [delivery provenance and precedence](../architecture/adaptation-and-dialects.md#downstream-schema-completion).
 
-Stateless Responses requires explicit `store:false`, no nonnull `previous_response_id`, and complete returned standard history. Google ordinary text/call signatures without a standard carrier reject; see the [field-level reasons](../architecture/history-and-replay.md#stateless-api-boundaries). No replay profile or client-specific extension is offered.
+Responses requires complete returned standard history and no nonnull `previous_response_id`. Omitted/null/false `store` is stateless; explicit `store:false` is recommended. Google ordinary text/call signatures without a standard carrier reject; see the [field-level reasons](../architecture/history-and-replay.md#stateless-api-boundaries). No replay profile or client-specific extension is offered.
 
 ### Chat Completions
 
@@ -92,7 +92,7 @@ Current installed pi and OpenCode Messages defaults need no version/beta header 
 
 ### Shared request rules
 
-Use `"stream": true` for SSE. Send the full history each turn, or use [stored Responses](#stored-responses). Chat Completions and Messages remain full-history APIs.
+Use `"stream": true` for SSE. Send the full history each turn; [stored Responses](#stored-responses) remains experimental and disabled. Chat Completions and Messages remain full-history APIs.
 
 Instruction content is plain text only: request-wide instructions, Messages `system`, instruction text in mid-conversation Messages system messages, and Chat/Responses system or developer messages cannot contain images, audio, video or files. Media-bearing instructions reject at decoding rather than being dropped or moved to a user message. The same restriction applies to reported instruction echoes from an upstream.
 
@@ -290,49 +290,19 @@ See [Media](../architecture/adaptation-and-dialects.md#media), [IR resource budg
 
 ## Stored Responses
 
-Storage defaults to true, matching OpenAI Responses. Omitted or null `store` retains a Responses exchange in gateway memory; set `store: false` to opt out. Upstream requests always carry complete history and disable Provider storage where supported.
+Stateful upstream/downstream APIs are experimental and disabled until explicit user activation. They are excluded from current model-adaptation and repair acceptance; see the [stateful boundary](../architecture/history-and-replay.md#stateful-history).
 
-1. Create a response with `store` omitted or set to `true` and consume the full JSON body or SSE stream. A gateway-owned response ID becomes readable only after validated upstream EOF and final body handoff.
-2. Send that ID as `previous_response_id` with only the new input. The gateway prepends the stored request input and response output. Send current instructions, tools and controls explicitly: top-level settings are not inherited, while instruction items in history remain.
-3. The successor is also stored by default. Set `store: false` if it need not be retrievable or usable as another predecessor; it may still read an existing predecessor.
+- Send complete `input` history, including returned standard owners and tool results. Omitted/null/false `store` is stateless; explicit `store:false` is recommended.
+- `store:true` and every nonnull `previous_response_id` return HTTP 400 with `stateful_api_disabled` before history access or upstream dispatch, even when combined with `store:false`.
+- Authenticated retrieval, deletion and input listing below return the same 400 disabled error. Missing authentication returns 401 first; no stored ID or history budget enables these operations.
 
-```json
-{"model":"configured-public-model","input":"Remember the label cedar.","store":true,"max_output_tokens":64}
-```
-
-Use the returned `id` in the next request:
-
-```json
-{"model":"configured-public-model","previous_response_id":"<returned-id>","input":"What was the label?","store":true,"max_output_tokens":64}
-```
-
-For tool continuation, send only the new `function_call_output` or other admitted result. The stored call and reasoning remain in history. Existing carrier and replay checks still apply; a response reference does not bypass model admission or grant cross-Provider replay.
-
-Signed Google ordinary text/calls require explicit managed Responses continuation. Their hidden signatures stay in typed stored history; use `previous_response_id`. Copying creation/retrieval/input-list JSON cannot export those hidden attachments. `store:false` can read a predecessor, but a newly returned ordinary signature rejects because no lawful stateless carrier exists. Native reasoning and compaction keep their separate standard replay rules.
-
-The existing Google bindings accept the [qualified strict function subset](../architecture/adaptation-and-dialects.md#google-strict-function-arguments).
-
-Repeat the tool declaration and controls on each managed request.
-
-For example, create with `store:true`, `tool_choice:"required"` and a strict function whose parameters are `{"type":"object","properties":{"label":{"type":"string","enum":["cedar"]}},"required":["label"],"additionalProperties":false}`.
-
-Continue with the returned `id`, a `function_call_output` for every delivered call, and `tool_choice:"none"` when no further calls are wanted.
-
-Do not add `parallel_tool_calls:false` or an OpenAI named forced choice: those request a single-call guarantee Google cannot carry.
-
-Unsupported strict constraints still reject; this is not unrestricted JSON Schema support.
-
-| Operation | Behavior |
+| Disabled operation | Behavior |
 |---|---|
-| `GET /v1/responses/{response_id}` | Retrieve the final JSON snapshot, including responses created with SSE |
-| `DELETE /v1/responses/{response_id}` | Return `{"id":"…","object":"response.deleted","deleted":true}` |
-| `GET /v1/responses/{response_id}/input_items` | List the complete resolved input, excluding this response's output; `limit` is 1–100 (default 20), `order` is `asc` or `desc` (default `desc`), and `after` is a returned item ID |
+| `GET /v1/responses/{response_id}` | Reject without retrieving a snapshot |
+| `DELETE /v1/responses/{response_id}` | Reject without deleting a snapshot |
+| `GET /v1/responses/{response_id}/input_items` | Reject without resolving or listing history |
 
-All operations require a configured Agent key and retain shared access among admitted Agents. Unknown, expired, deleted and unstored IDs return `404` with `response_not_found`. Concurrent requests may branch from one predecessor; they do not mutate it. Deleting an ancestor leaves already stored descendants usable.
-
-Snapshots use a fixed TTL from final delivery, not a sliding TTL. Defaults are 30 minutes, 1,024 entries and a 256 MiB accounted payload/owner budget; transient request and body limits still apply. See [Limits](../../src/gateway/startup/limits.rs) for embedded configuration and bounds. Capacity exhaustion rejects storage with `history_capacity_exceeded` before a successful terminal; an already started SSE body aborts. Unexpired snapshots are not evicted to make room.
-
-History is process-local and is lost at shutdown or restart. A declared conversation header still controls routing/cache affinity independently; response IDs do not select credentials. There is no disk persistence, Conversations API, background generation or event log. Retrieval is JSON only: `stream=true` and `starting_after` are rejected. Retrieval and input listing accept only `include[]=reasoning.encrypted_content` as an optional include; other query fields are rejected.
+Google ordinary text/call signatures without a lawful standard carrier still reject. Experimental storage cannot rescue them; do not delete signatures, invent a replay field or promote them to reasoning. Native reasoning carriers and advisory conversation/cache affinity retain their separate contracts.
 
 ## Conversation and cache affinity
 

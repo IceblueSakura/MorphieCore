@@ -19,7 +19,7 @@ impl Options {
     pub fn read(value: &Value) -> Result<Self, CodecError> {
         let storage = read_storage(object(value)?)?.unwrap_or_default();
         Ok(Self {
-            store: storage.store != Presence::Value(false),
+            store: storage.store == Presence::Value(true),
             previous: storage.previous_response_id.value().cloned(),
         })
     }
@@ -269,7 +269,7 @@ mod tests {
             br#"{"model":"synthetic","previous_response_id":"resp_parent","instructions":"new","input":[{"type":"function_call_output","call_id":"c","output":"found"}]}"#,
             Some((&old.task, &output)),
         ).unwrap();
-        assert!(options.store);
+        assert!(!options.store);
         assert_eq!(options.previous.as_deref(), Some("resp_parent"));
         assert_eq!(request.task.semantic.items().len(), 3);
         assert!(
@@ -293,8 +293,9 @@ mod tests {
             br#"{"model":"synthetic","input":[{"type":"function_call_output","call_id":"other","output":"bad"}]}"#,
             Some((&old.task, &output))).is_err());
         assert!(Options::read(&json!({"store":"true"})).is_err());
-        assert!(Options::read(&json!({})).unwrap().store);
-        assert!(Options::read(&json!({"store":null})).unwrap().store);
+        assert!(!Options::read(&json!({})).unwrap().store);
+        assert!(!Options::read(&json!({"store":null})).unwrap().store);
+        assert!(Options::read(&json!({"store":true})).unwrap().store);
         assert!(!Options::read(&json!({"store":false})).unwrap().store);
     }
 

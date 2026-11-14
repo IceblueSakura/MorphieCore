@@ -312,8 +312,8 @@ impl<'a> Entry<'a> {
         let mut history = if protocol == ClientProtocol::Responses {
             vec![Case::new(
                 "generation.delivered_projection",
-                "completed_stored_response_within_ttl",
-                Treatment::Faithful,
+                "experimental_stored_response",
+                Treatment::Rejected,
             )]
         } else {
             vec![]

@@ -54,7 +54,7 @@ General multimodal input, native client intake, custom tools, unified error pars
 ### Deferred Generation semantics
 - Turn-scoped system messages (`clear_at`).
 - Generated audio/video inside Chat (beyond basic static audio).
-- Chat completion persistence (`store: true`); local managed Responses history is already supported.
+- Upstream/downstream persistence and reference continuation, including Chat/Responses `store:true` and managed Responses resources: experimental and disabled until explicit activation, outside current adaptation/repair acceptance.
 - Tokenizer-unbound `logit_bias`.
 - Multi-candidate (`n > 1`) execution.
 

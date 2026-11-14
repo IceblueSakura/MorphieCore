@@ -115,11 +115,11 @@ The configuration uses **version 1**. Policy fields belong to the following obje
 | `resources` | `concurrency: 16` | 1–256; body collection occupies a permit |
 | `resources` | `request_bytes: 33554432`, `response_bytes: 67108864` | Each 1–67108864 bytes; intersect with endpoint/task limits. A budget too small to publish discovery rejects startup |
 | `resources` | `body_timeout_ms: 60000` | 1–60000 ms; additional upload ceiling within the total request budget; whichever deadline expires first ends collection |
-| `resources` | `history_entries: 1024`, `history_bytes: 268435456`, `history_ttl_ms: 1800000` | Entries 1–4096, bytes 1–1073741824, TTL 1–86400000 ms. TTL controls expiration; exhausted entry/byte budgets reject additional storage instead of evicting retained responses. No history-disable setting |
+| `resources` | `history_entries: 1024`, `history_bytes: 268435456`, `history_ttl_ms: 1800000` | Dormant experimental storage bounds: entries 1–4096, bytes 1–1073741824, TTL 1–86400000 ms. These settings do not activate stateful APIs |
 
 These are deployment budgets, not new protocol capabilities. Transcription retains its independent multipart upload ceiling; image/audio/event and internal queue ceilings remain code-owned. Compiled Generation attempts retain a one-hour ceiling and standalone task operations retain their own ceilings (currently 120 seconds). OAuth HTTP operations retain a 30-second ceiling and a 10-second connection timeout. Raising an outer deadline does not enlarge these inner ceilings.
 
-Responses storage reserves capacity before final publication. A full history budget can therefore fail a stored response after upstream generation, rather than silently dropping history or claiming a successful stored result. Size these budgets for the intended stored-response workload.
+Responses storage remains [experimental and disabled](../architecture/history-and-replay.md#stateful-history). Its existing bounds apply only to dormant test machinery; no deployment setting enables storage or reference continuation.
 
 Inspect available bindings without configuration or credentials, then validate or explain an explicit setup without starting a listener, renewal, diagnostics:
 
@@ -159,7 +159,7 @@ Records reject unknown fields; supplied fields must have their declared types, n
 
 Use the Agent's `key` in the SDK. Authentication determines `agent_id`; request headers, metadata and business content cannot choose it. Names and descriptions are private maintenance metadata, not authentication or public discovery fields. The runtime retains key digests, not plaintext keys; ordinary inference diagnostics record only the authenticated ID.
 
-All configured Agents share the current model and stored-response access policy, including deletion; this is not a per-Agent ACL or quota system. Keep `agent_id` unchanged when renaming an Agent or replacing its key. Remove a record to revoke access, then restart: running gateways retain their loaded keys and in-flight requests are not forcibly cancelled. There is no persistent identity registry or deletion tombstone; operators must not reuse a retired ID for a different Agent. OAuth, remote registration and credential-management APIs remain deferred.
+All configured Agents share the current model access policy; stored-response operations remain disabled. This is not a per-Agent ACL or quota system. Keep `agent_id` unchanged when renaming an Agent or replacing its key. Remove a record to revoke access, then restart: running gateways retain their loaded keys and in-flight requests are not forcibly cancelled. There is no persistent identity registry or deletion tombstone; operators must not reuse a retired ID for a different Agent. OAuth, remote registration and credential-management APIs remain deferred.
 
 ### Failure diagnostics
 

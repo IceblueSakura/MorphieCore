@@ -3,7 +3,7 @@
   "info": {
     "title": "MorphieCore HTTP API",
     "version": "0.1.0",
-    "description": "HTTP API summary for the local gateway, not full vendor API conformance. Generation uses a typed IR, stateless upstream history and bounded pre-publication failover. Downstream required fields prefer reported values, then justified inference and text-only estimates; usage may be approximate, not billing truth. Responses enables gateway-managed TTL history by default; store:false opts out. Known fields are strict; unknown generation fields are ignored, not forwarded. Standalone tasks require explicit activation: embeddings (text or scoped token IDs with float/Base64 delivery), inline image generation, audio transcription and speech synthesis; remaining media tasks stay frozen. Codecs define exact admission; docs/usage/index.md explains setup."
+    "description": "HTTP API summary for the local gateway, not full vendor API conformance. Generation uses a typed IR, stateless upstream history and bounded pre-publication failover. Downstream required fields prefer reported values, then justified inference and text-only estimates; usage may be approximate, not billing truth. Upstream and downstream stateful APIs are experimental and disabled until explicit user activation. Responses defaults to stateless; store:true, nonnull previous_response_id and stored-resource operations reject. Known fields are strict; unknown generation fields are ignored, not forwarded. Standalone tasks require explicit activation: embeddings (text or scoped token IDs with float/Base64 delivery), inline image generation, audio transcription and speech synthesis; remaining media tasks stay frozen. Codecs define exact admission; docs/usage/index.md explains setup."
   },
   "servers": [{"url": "http://127.0.0.1:8080"}],
   "security": [{"bearerAuth": []}, {"apiKeyAuth": []}],
@@ -418,8 +418,8 @@
         "parameters": [
           {"$ref": "#/components/parameters/ConversationId"}
         ],
-        "summary": "Generate with full history or gateway-managed Responses",
-        "description": "Standard Responses with full-history stateless input (explicit store:false and no nonnull previous_response_id) or explicit gateway-managed continuation. Ordinary Google text/call signatures have no standard stateless carrier and reject; no private replay profile is offered.",
+        "summary": "Generate with full stateless history",
+        "description": "Standard Responses with complete input history. Omitted/null/false store is stateless; store:true or nonnull previous_response_id returns 400 stateful_api_disabled before history access or upstream dispatch. Ordinary Google text/call signatures without a standard carrier reject; experimental managed storage is not available.",
         "requestBody": {
           "required": true,
           "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ResponsesRequest"}}}
@@ -445,49 +445,22 @@
       "parameters": [{"$ref": "#/components/parameters/ResponseId"}],
       "get": {
         "operationId": "retrieveResponse",
-        "summary": "Retrieve a fully delivered local snapshot as JSON",
-        "description": "No upstream call. Unknown, expired, deleted and unstored IDs share response_not_found. Retrieval does not extend TTL. No stream resumption; unknown query fields are rejected.",
-        "parameters": [
-          {"in": "query", "name": "stream", "schema": {"const": false}},
-          {"in": "query", "name": "include[]", "schema": {"type": "string", "const": "reasoning.encrypted_content"}}
-        ],
+        "summary": "Experimental stored-response retrieval is disabled",
+        "description": "Authentication runs first. Authenticated requests return 400 stateful_api_disabled without history access or upstream dispatch.",
         "responses": {
-          "200": {
-            "description": "Final stored snapshot, also for responses created with SSE.",
-            "headers": {
-              "Cache-Control": {"schema": {"type": "string", "const": "no-store"}},
-              "X-Content-Type-Options": {"schema": {"type": "string", "const": "nosniff"}}
-            },
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StoredResponse"}}}
-          },
           "400": {"$ref": "#/components/responses/Error"},
           "401": {"$ref": "#/components/responses/Error"},
-          "404": {"$ref": "#/components/responses/Error"},
-          "405": {"$ref": "#/components/responses/Error"},
-          "429": {"$ref": "#/components/responses/Error"},
-          "502": {"$ref": "#/components/responses/Error"},
-          "503": {"$ref": "#/components/responses/Error"}
+          "405": {"$ref": "#/components/responses/Error"}
         }
       },
       "delete": {
         "operationId": "deleteResponse",
-        "summary": "Delete one local snapshot without invalidating stored descendants",
+        "summary": "Experimental stored-response deletion is disabled",
+        "description": "Authentication runs first. Authenticated requests return 400 stateful_api_disabled without history mutation or upstream dispatch.",
         "responses": {
-          "200": {
-            "description": "Deletion acknowledgement. No upstream call.",
-            "headers": {
-              "Cache-Control": {"schema": {"type": "string", "const": "no-store"}},
-              "X-Content-Type-Options": {"schema": {"type": "string", "const": "nosniff"}}
-            },
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ResponseDeleted"}}}
-          },
           "400": {"$ref": "#/components/responses/Error"},
           "401": {"$ref": "#/components/responses/Error"},
-          "404": {"$ref": "#/components/responses/Error"},
-          "405": {"$ref": "#/components/responses/Error"},
-          "429": {"$ref": "#/components/responses/Error"},
-          "502": {"$ref": "#/components/responses/Error"},
-          "503": {"$ref": "#/components/responses/Error"}
+          "405": {"$ref": "#/components/responses/Error"}
         }
       }
     },
@@ -495,30 +468,12 @@
       "parameters": [{"$ref": "#/components/parameters/ResponseId"}],
       "get": {
         "operationId": "listResponseInputItems",
-        "summary": "List resolved input, including predecessor history but excluding current output",
-        "description": "Cursor pagination over one immutable snapshot. Unknown cursors and duplicate or unsupported query fields are rejected.",
-        "parameters": [
-          {"in": "query", "name": "limit", "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}},
-          {"in": "query", "name": "order", "schema": {"type": "string", "enum": ["asc", "desc"], "default": "desc"}},
-          {"in": "query", "name": "after", "schema": {"type": "string", "minLength": 1, "maxLength": 256}},
-          {"in": "query", "name": "include[]", "schema": {"type": "string", "const": "reasoning.encrypted_content"}}
-        ],
+        "summary": "Experimental stored input listing is disabled",
+        "description": "Authentication runs first. Authenticated requests return 400 stateful_api_disabled without history access or upstream dispatch.",
         "responses": {
-          "200": {
-            "description": "Bounded page of input items with stable cursor IDs.",
-            "headers": {
-              "Cache-Control": {"schema": {"type": "string", "const": "no-store"}},
-              "X-Content-Type-Options": {"schema": {"type": "string", "const": "nosniff"}}
-            },
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ResponseInputItems"}}}
-          },
           "400": {"$ref": "#/components/responses/Error"},
           "401": {"$ref": "#/components/responses/Error"},
-          "404": {"$ref": "#/components/responses/Error"},
-          "405": {"$ref": "#/components/responses/Error"},
-          "429": {"$ref": "#/components/responses/Error"},
-          "502": {"$ref": "#/components/responses/Error"},
-          "503": {"$ref": "#/components/responses/Error"}
+          "405": {"$ref": "#/components/responses/Error"}
         }
       }
     }
@@ -3157,8 +3112,8 @@
           "model": {"$ref": "#/components/schemas/PublicModelLabel"},
           "safety_identifier": {"type": ["string", "null"], "maxLength": 128, "description": "Independent opaque safety attribution. On single-carrier cross-protocol targets it takes priority over user; explicit null blocks fallback. Target bounds still apply; no normalization or credential/conversation-derived value."},
           "user": {"type": ["string", "null"], "maxLength": 256, "deprecated": true, "description": "Legacy attribution and cache-bucketing field, independent of safety_identifier and prompt_cache_key. Native OpenAI paths preserve it. Cross-protocol attribution fallback does not preserve legacy cache bucketing; its loss is recorded separately."},
-          "store": {"type": ["boolean", "null"], "default": true, "description": "Omitted, null or true retains this response in gateway TTL memory. Explicit false opts out. Upstream storage stays disabled."},
-          "previous_response_id": {"type": ["string", "null"], "minLength": 1, "maxLength": 256, "pattern": "^[\\u0021-\\u007e]+$", "description": "Gateway-owned predecessor. Only history is inherited; current instructions, tools and controls replace top-level settings."},
+          "store": {"enum": [false, null], "default": false, "description": "Stateless only. Omitted/null/false never stores history; true is experimental and returns 400 stateful_api_disabled."},
+          "previous_response_id": {"type": "null", "description": "Omit or set null. Reference continuation is experimental and disabled; nonnull values reject before history access."},
           "background": {"enum": [false, null], "description": "Background execution is not supported."},
           "conversation": {"type": "null", "description": "Provider-held conversations and Conversations API are not supported."},
           "prompt_cache_key": {"type": ["string", "null"], "maxLength": 256, "description": "Cache-grouping intent, separate from conversation identity. Null is not filled from conversation context; cache reports remain upstream facts."},
@@ -3183,9 +3138,10 @@
           "max_output_tokens": {"type": ["integer", "null"], "minimum": 1, "description": "Client-owned output cap. Selected targets may reject explicit caps; local limits alone do not bound upstream charges."}
         },
         "additionalProperties": true,
-        "description": "Full-history or gateway-managed synchronous profile. Storage defaults to true in bounded TTL memory with no durability; explicit store:false opts out. Only final body handoff publishes a stored reference; cancellation and late errors do not create a readable snapshot. Capacity exhaustion returns history_capacity_exceeded before publication or aborts an already started stream. Selected media and replay still require public/target admission. No arbitrary upstream selection or private attachment. Codecs define exact admission."
+        "description": "Full-history synchronous stateless profile. Stateful APIs are experimental and disabled until explicit user activation. No automatic storage or predecessor resolution. Selected media/replay still require public/target admission; no private attachments or arbitrary upstream selection. Codecs define exact admission."
       },
       "StoredResponse": {
+        "description": "Experimental internal shape; stateful endpoints are disabled and do not publish this result.",
         "type": "object",
         "required": ["id", "object", "model", "created_at", "status", "output", "store", "previous_response_id"],
         "properties": {
@@ -3201,6 +3157,7 @@
         "additionalProperties": true
       },
       "ResponseDeleted": {
+        "description": "Experimental internal shape; stateful endpoints are disabled and do not publish this result.",
         "type": "object", "required": ["id", "object", "deleted"], "additionalProperties": false,
         "properties": {
           "id": {"type": "string", "minLength": 1},
@@ -3209,6 +3166,7 @@
         }
       },
       "ResponseInputItems": {
+        "description": "Experimental internal shape; stateful endpoints are disabled and do not publish this result.",
         "type": "object", "required": ["object", "data", "first_id", "last_id", "has_more"], "additionalProperties": false,
         "properties": {
           "object": {"const": "list"},

@@ -126,7 +126,7 @@ Existing generateContent and Interactions targets admit a qualified closed-objec
 - **Native no-call equivalence:** explicit `tool_choice:none` uses `NONE` / `none`, which prohibits every call and satisfies argument/cardinality guarantees vacuously. Shared admission and direct writers retain complete declarations/schemas, skip conditional-strict fallback and accept serial intent without requesting validated decoding. This does not relax auto/required selection or bypass known-field, bounds, trust, history or other declaration-carrier checks.
 - Parameter omission keeps the native parameterless declaration. No schema deletion, argument repair, inferred prompting or local retry supplies a missing guarantee. Serial intent still rejects when calls are enabled; one declared function can produce multiple calls.
 
-Ordinary Google text/call signatures use explicit managed Responses continuation. Standard stateless Responses and Chat/Messages reject attachments without a lawful carrier; the [field-level boundary](history-and-replay.md#stateless-api-boundaries) records their owners, missing fields and rejection timing. No public replay extension, signature deletion or surrogate reasoning owner is available.
+Ordinary Google text/call signatures without a lawful stateless carrier reject on Responses and Chat/Messages. Managed continuation is experimental and disabled under the [stateful freeze](history-and-replay.md#stateful-history); the [field-level boundary](history-and-replay.md#stateless-api-boundaries) records owners and rejection timing. No public replay extension, signature deletion or surrogate reasoning owner is available.
 
 #### Protocol tree ownership
 
@@ -527,7 +527,7 @@ Association stays with IR validation; no reordering pass or duplicate associatio
 
 Independent grouped/adjacent input and output expectations preserve IDs, arguments and results, while invalid links still fail semantic validation.
 
-A phase-free production-construction control compares actual managed `previous_response_id` continuation with stateless history in JSON/SSE, including the complete ordered upstream request.
+A phase-free production-construction comparison of managed and stateless histories remains experimental and excluded from current acceptance. Active JSON/SSE checks preserve complete ordered stateless upstream history.
 
 String-only result implementation, phase, history-carrier and replay restrictions remain separate.
 

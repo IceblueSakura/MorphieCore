@@ -141,8 +141,7 @@ pub(in crate::gateway) async fn collect(body: Body, limit: usize) -> Result<Vec<
     }
     Ok(bytes)
 }
-/// Ordinary codec admission without managed history. Production Responses
-/// ingress uses `prepare_responses` to resolve history first.
+/// Ordinary codec admission without managed history.
 pub(in crate::gateway) fn prepare(
     state: &Runtime,
     protocol: ClientProtocol,
@@ -153,7 +152,7 @@ pub(in crate::gateway) fn prepare(
         entry.client.decode_client_request(bytes)
     })
 }
-/// Resolve gateway history before ordinary task admission or any upstream I/O.
+/// Admit stateless Responses; experimental storage requires explicit activation.
 pub(in crate::gateway) fn prepare_responses(
     state: &Runtime,
     bytes: &[u8],
@@ -169,6 +168,9 @@ pub(in crate::gateway) fn prepare_responses(
     use crate::{gateway::generation::history::Pending, protocol::openai::responses::managed};
     let value = crate::protocol::json::decode(bytes).map_err(invalid_request(report))?;
     let options = managed::Options::read(&value).map_err(invalid_request(report))?;
+    if options.store || options.previous.is_some() {
+        return Err(ApiError::stateful_disabled());
+    }
     let previous = options
         .previous
         .as_ref()

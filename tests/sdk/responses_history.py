@@ -1,10 +1,8 @@
-"""Pinned Responses SDK: phases, opaque replay, retrieval and stored/stateless history."""
+"""Pinned Responses SDK: stateless phases, opaque replay and full-history continuation."""
 import json
 import sys
 import openai
 from openai.types.responses import Response
-from openai.types.responses.response_item import ResponseItem
-from pydantic import TypeAdapter
 
 KEY = "synthetic-tool-history-client-0001"
 RESULT = '{"error":"synthetic lookup unavailable","label":"cedar-71"}'
@@ -63,54 +61,44 @@ def run(base):
     with openai.OpenAI(base_url=base, api_key=KEY, max_retries=0, timeout=5.0,
                       _strict_response_validation=True) as client:
         for stream in (False, True):
-            for stored in (False, True):
-                params = dict(model="gpt-6-luna",
-                              input=[{"role": "user", "content": "batch"},
-                                     {"type": "additional_tools", "id": "batch-initial",
-                                      "role": "developer", "tools": [
-                                          {"type": "function", **function},
-                                          {"type": "function", "name": "inspect", "strict": False,
-                                           "parameters": {"type": "object", "properties": {}}}]}],
-                              store=stored,
-                              reasoning={"effort": "low", "summary": "auto"},
-                              include=["reasoning.encrypted_content"], max_output_tokens=256)
-                for turn in range(1, 4):
-                    requests += 1
-                    result = responses_completion(client, params, stream)
-                    check(result["usage"]["total_tokens"] == 18)
-                    check(result["usage"]["output_tokens_details"]["reasoning_tokens"] == 2)
-                    output = result["output"]
-                    if turn == 1:
-                        batch, = [i for i in output if i["type"] == "additional_tools"]
-                        check(batch["id"] == "batch-returned" and batch["role"] == "developer"
-                              and batch["tools"][0]["name"] == "followup")
-                        reason, = [i for i in output if i["type"] == "reasoning"]
-                        check(reason["summary"][0]["text"] == "Plan 🧪" and reason.get("encrypted_content"))
-                        check(any(i.get("phase") == "commentary" for i in output))
-                        call, second = [i for i in output if i["type"] == "function_call"]
-                        check(call["call_id"] == "call-lookup" and call["name"] == "lookup"
-                              and call["arguments"] == '{ "key": "A" }')
-                        check(second["call_id"] == "call-second" and second["id"] != second["call_id"]
-                              and second["name"] == "lookup" and second["arguments"] == '{"key":"B"}')
-                        new = [{"type": "function_call_output", "call_id": second["call_id"], "output": "second-result"},
-                               {"type": "function_call_output", "call_id": call["call_id"], "output": RESULT}]
-                    else:
-                        check(any(i.get("phase") == "final_answer" and
-                                  i["content"][0]["text"] == "cedar-71" for i in output))
-                        new = [{"role": "user", "content": "next"}]
-                    if stored:
-                        params.update(previous_response_id=result["id"], input=new)
-                        retrieved = client.responses.retrieve(result["id"])
-                        retained = retrieved.model_dump(exclude_unset=True)
-                        check({k: v for k, v in retained.items() if k != "morphiecore"}
-                              == {k: v for k, v in result.items() if k != "morphiecore"})
-                        for item in client.responses.input_items.list(result["id"]):
-                            TypeAdapter(ResponseItem).validate_python(item.model_dump(by_alias=True, exclude_unset=True))
-                    else:
-                        params["input"].extend([*output, *new])
+            params = dict(model="gpt-6-luna",
+                          input=[{"role": "user", "content": "batch"},
+                                 {"type": "additional_tools", "id": "batch-initial",
+                                  "role": "developer", "tools": [
+                                      {"type": "function", **function},
+                                      {"type": "function", "name": "inspect", "strict": False,
+                                       "parameters": {"type": "object", "properties": {}}}]}],
+                          store=False,
+                          reasoning={"effort": "low", "summary": "auto"},
+                          include=["reasoning.encrypted_content"], max_output_tokens=256)
+            for turn in range(1, 4):
+                requests += 1
+                result = responses_completion(client, params, stream)
+                check(result["usage"]["total_tokens"] == 18)
+                check(result["usage"]["output_tokens_details"]["reasoning_tokens"] == 2)
+                output = result["output"]
+                if turn == 1:
+                    batch, = [i for i in output if i["type"] == "additional_tools"]
+                    check(batch["id"] == "batch-returned" and batch["role"] == "developer"
+                          and batch["tools"][0]["name"] == "followup")
+                    reason, = [i for i in output if i["type"] == "reasoning"]
+                    check(reason["summary"][0]["text"] == "Plan 🧪" and reason.get("encrypted_content"))
+                    check(any(i.get("phase") == "commentary" for i in output))
+                    call, second = [i for i in output if i["type"] == "function_call"]
+                    check(call["call_id"] == "call-lookup" and call["name"] == "lookup"
+                          and call["arguments"] == '{ "key": "A" }')
+                    check(second["call_id"] == "call-second" and second["id"] != second["call_id"]
+                          and second["name"] == "lookup" and second["arguments"] == '{"key":"B"}')
+                    new = [{"type": "function_call_output", "call_id": second["call_id"], "output": "second-result"},
+                           {"type": "function_call_output", "call_id": call["call_id"], "output": RESULT}]
+                else:
+                    check(any(i.get("phase") == "final_answer" and
+                              i["content"][0]["text"] == "cedar-71" for i in output))
+                    new = [{"role": "user", "content": "next"}]
+                params["input"].extend([*output, *new])
         for stream in (False, True):
             params = dict(model="gpt-6-luna", tools=[{"type": "function", **function}],
-                          input=[{"role": "user", "content": "incomplete"}], store=True,
+                          input=[{"role": "user", "content": "incomplete"}], store=False,
                           reasoning={"effort": "low", "summary": "auto"},
                           include=["reasoning.encrypted_content"], max_output_tokens=256)
             result = responses_completion(client, params, stream, status="incomplete")
@@ -118,10 +106,7 @@ def run(base):
             check(result["incomplete_details"]["reason"] == "max_output_tokens")
             reason, = [i for i in result["output"] if i["type"] == "reasoning"]
             check(reason["status"] == "incomplete" and reason["encrypted_content"].startswith("mc1."))
-            retained = client.responses.retrieve(result["id"]).model_dump(exclude_unset=True)
-            check({k: v for k, v in retained.items() if k != "morphiecore"}
-                  == {k: v for k, v in result.items() if k != "morphiecore"})
-            params.update(previous_response_id=result["id"], input=[
+            params["input"].extend([*result["output"],
                 {"type": "function_call_output", "call_id": "call-second", "output": "second-result"},
                 {"type": "function_call_output", "call_id": "call-lookup", "output": RESULT},
             ])
@@ -130,7 +115,7 @@ def run(base):
             check(any(i.get("phase") == "final_answer" and i["content"][0]["text"] == "cedar-71"
                       for i in resumed["output"]))
     print(json.dumps({"requests": requests, "protocols": 1, "deliveries": 2,
-                      "three_turn_history": True, "stored_stateless": True}))
+                      "three_turn_history": True, "stateless_history": True}))
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ use crate::google_tool_fixture as fixture;
 use morphiecore::protocol::openai::GenerationApi;
 use std::time::Duration;
 
-async fn exercise(api: fixture::Api, api_name: &str) {
+async fn exercise(api: fixture::Api, api_name: &str, stateful: bool) {
     for (profile, name, count) in [
         (GenerationApi::Chat, "chat-json", 1),
         (GenerationApi::Chat, "chat-sse", 1),
@@ -11,6 +11,9 @@ async fn exercise(api: fixture::Api, api_name: &str) {
         (GenerationApi::Chat, "messages-json", 1),
         (GenerationApi::Chat, "messages-sse", 1),
     ] {
+        if (name == "responses") != stateful {
+            continue;
+        }
         let messages = name.starts_with("messages-");
         let fixture = if messages {
             fixture::start_messages(api).await
@@ -57,11 +60,18 @@ async fn exercise(api: fixture::Api, api_name: &str) {
 #[tokio::test]
 #[ignore = "requires pinned SDKs; synthetic generateContent JSON/SSE tool correction"]
 async fn google_tool_correction_and_signed_final_history() {
-    exercise(fixture::Api::GenerateContent, "generate_content").await;
+    exercise(fixture::Api::GenerateContent, "generate_content", false).await;
 }
 
 #[tokio::test]
 #[ignore = "requires pinned SDKs; synthetic Interactions JSON/SSE tool correction"]
 async fn interactions_tool_correction_and_signed_final_history() {
-    exercise(fixture::Api::Interactions, "interactions").await;
+    exercise(fixture::Api::Interactions, "interactions", false).await;
+}
+
+#[tokio::test]
+#[ignore = "experimental stateful API; awaiting explicit activation"]
+async fn experimental_google_stored_history() {
+    exercise(fixture::Api::GenerateContent, "generate_content", true).await;
+    exercise(fixture::Api::Interactions, "interactions", true).await;
 }

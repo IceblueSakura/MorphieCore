@@ -23,7 +23,7 @@ MorphieCore is a local gateway that hides LLM Provider differences behind a sing
 - **Generation:** JSON/SSE streaming, function tools, reasoning/replay carriers, and selected media inputs. Supported features depend on model and endpoint capabilities.
 - **Routing:** Bounded, cache-affine failover without load balancing. Replay is forbidden once a response is published downstream.
 - **Credentials:** Managed via local application store (`0700` directory, `0600` files). Background maintenance automatically renews OAuth accounts before expiration. The CLI listener is loopback-only (`127.0.0.1`).
-- **Responses history:** Gateway-owned in-memory TTL storage; does not rely on Provider-held conversation state.
+- **Responses history:** Full-history stateless requests only. Stateful APIs are experimental and disabled until explicit activation; see the [stateful boundary](docs/architecture/history-and-replay.md#stateful-history).
 - **Task independence:** Standalone tasks (such as [Embeddings](docs/architecture/index.md#independent-embedding-path)) operate independently of Generation; see [stage-4 scope](docs/roadmap/index.md#stage-4-scope).
 
 ## Quick start

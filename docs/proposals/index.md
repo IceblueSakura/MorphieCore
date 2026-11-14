@@ -215,7 +215,7 @@ Prefer those local additions over a new generic report store. Existing `TopLogpr
 | [Replay](../../src/semantic/task/generation/history/replay.rs) | Semantic validation names protocol-specific replay formats and carries origin compatibility data | Review carrier/provenance ownership when sharing compaction machinery; retain semantic purpose, owner linkage and all isolation checks |
 | [Attempt preparation](../../src/execution/attempt.rs) | Independent tasks reuse prepared-request/error types located beside Generation-specific intake | Move necessary neutral execution values to an appropriate shared owner, without a framework rewrite |
 
-These are boundary issues, not evidence that Generation already implements a scheduler. Actual Responses storage is outside the task IR; the shared context currently rejects active unsupported stateful execution. [Gateway history](../architecture/history-and-replay.md#stateful-history) is process-local conversation storage, not durable execution storage.
+These are boundary issues, not evidence that Generation already implements a scheduler. Actual Responses storage is outside the task IR; the shared context currently rejects active unsupported stateful execution. [Gateway history](../architecture/history-and-replay.md#stateful-history) remains experimental and disabled; its dormant process-local store is not durable execution storage.
 
 Do not remove opaque replay provenance to simplify types. Any reorganization must preserve carrier compatibility, completeness and deployment isolation. A protocol-specific representation is not a new semantic task.
 

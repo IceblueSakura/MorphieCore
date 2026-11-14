@@ -23,9 +23,9 @@ See [Client Requests](client-requests.md) for generation protocols and [OpenAPI]
 | `GET /v1/morphiecore/models/{model}` | Retrieve the same enhanced text model descriptor |
 | `GET /v1/morphiecore/capabilities` | Inspect partial gateway contracts for activated Generation and Embedding clients |
 | `POST /v1/responses` | Responses, JSON or SSE |
-| `GET /v1/responses/{response_id}` | Retrieve a stored response |
-| `DELETE /v1/responses/{response_id}` | Delete a stored response |
-| `GET /v1/responses/{response_id}/input_items` | Cursor-paginated resolved input |
+| `GET /v1/responses/{response_id}` | Experimental and disabled: authenticated requests return 400 |
+| `DELETE /v1/responses/{response_id}` | Experimental and disabled: authenticated requests return 400 |
+| `GET /v1/responses/{response_id}/input_items` | Experimental and disabled: authenticated requests return 400 |
 | `POST /v1/chat/completions` | Chat Completions, JSON or SSE |
 | `POST /v1/messages` | Messages, JSON or SSE, using the model's configured candidates |
 
@@ -205,7 +205,7 @@ Natural or sequence-matched completion differs from ambiguous stop, and these ca
 
 Chat lists `chat.coarsen-completion-cause.v1` and Responses `responses.omit-completion-cause.v1` where a cause has no exact carrier.
 
-Responses history preserves a successfully delivered stored projection within its TTL, not facts omitted before delivery or a promise of compatible replay to every target.
+Responses capabilities mark experimental stored projections as rejected. Returned native phase/history carriage remains stateless and does not activate storage.
 
 Phase cases describe exact native Responses assistant labels. Chat and Messages preserve visible content/order but omit phase under `generation.omit-delivery-message-phase.v1`; returned phase is not supported there. These cases do not promise phase-aware UI, client retention, or successful conversion of other content/terminals. Request-side phase transfer and cache-retention policies remain unassessed by this partial route-wide view.
 
@@ -219,7 +219,7 @@ These cases still require valid outcome/progress/call shape, representable usage
 
 Google ordinary-text/call signatures have no standard Chat/Messages/stateless Responses carrier and reject instead of creating a reasoning/thinking manifest.
 
-Use managed Responses continuation for those signatures; native Messages thinking/redacted-thinking signatures are unaffected.
+Experimental managed continuation is disabled and supplies no alternative for those signatures; native Messages thinking/redacted-thinking signatures are unaffected.
 
 Generation JSON/SSE and successful Embedding responses carry `X-MorphieCore-Adaptation: possible` and `Link: </v1/morphiecore/capabilities>; rel="describedby"`.
 
@@ -245,7 +245,8 @@ When Standard Chat planning is blocked by required thinking history, HTTP 400 us
 |---|---|
 | 400 | Invalid or unrepresentable request, context overflow |
 | 401 | Missing, wrong or ambiguous ingress credential |
-| 404 / 405 | Unknown model, route or stored response / unsupported method |
+| 404 / 405 | Unknown model or route / unsupported method |
+| 400 / `stateful_api_disabled` | Responses storage, reference continuation or stored-resource operation is experimental and disabled |
 | 408 / 413 / 415 | Body timeout / body too large / unsupported media type |
 | 429 | Gateway busy, history capacity exhausted, upstream rate limit or exhausted quota |
 | 502 / 504 | Upstream or projection failure / upstream timeout |

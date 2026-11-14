@@ -8,8 +8,6 @@ import openai
 
 from chat_tool_history import chat_completion
 from responses_history import KEY, RESULT, check
-from openai.types.responses.response_item import ResponseItem
-from pydantic import TypeAdapter
 
 
 def check_input_items(items, turn, calls, answer, empty=None):
@@ -48,117 +46,99 @@ def run(base, model):
         for protocol in ("chat", "responses", "messages"):
             count = 0
             for stream in (False, True):
-                for stored in ((False, True) if protocol == "responses" else (False,)):
-                    previous_calls, previous_answer, previous_empty = [], None, None
-                    initial = [{"role": "user", "content": f"ordinary-{protocol}"}]
+                initial = [{"role": "user", "content": f"ordinary-{protocol}"}]
+                if protocol == "chat":
+                    params = dict(model=model, messages=initial, max_completion_tokens=256,
+                                  tools=[{"type": "function", "function": function}])
+                elif protocol == "responses":
+                    params = dict(model=model, input=initial, max_output_tokens=256,
+                                  tools=[{"type": "function", **function}], store=False)
+                else:
+                    params = dict(model=model, messages=initial, max_tokens=256,
+                                  tools=[{"name": "lookup", "input_schema": function["parameters"]}])
+                for turn in range(1, 4):
+                    count += 1
                     if protocol == "chat":
-                        params = dict(model=model, messages=initial, max_completion_tokens=256,
-                                      tools=[{"type": "function", "function": function}])
+                        result = chat_completion(client, params, stream)
+                        choice = result["choices"][0]
+                        check(choice["finish_reason"] == ("tool_calls" if turn == 1 else "stop"))
+                        output = [choice["message"]]
+                        calls = [{"call_id": call["id"], **call["function"]}
+                                 for call in output[0].get("tool_calls", [])]
                     elif protocol == "responses":
-                        params = dict(model=model, input=initial, max_output_tokens=256,
-                                      tools=[{"type": "function", **function}], store=stored)
+                        if stream:
+                            with client.responses.stream(**params) as events:
+                                result = events.get_final_response().model_dump(exclude_unset=True)
+                        else:
+                            result = client.responses.create(**params).model_dump(exclude_unset=True)
+                        check(result["status"] == "completed")
+                        output = result["output"]
+                        for item in output:
+                            if item["type"] == "function_call":
+                                check(item.get("parsed_arguments") is None)
+                                item.pop("parsed_arguments", None)
+                            elif item["type"] == "message":
+                                for part in item["content"]:
+                                    check(part.get("parsed") is None)
+                                    part.pop("parsed", None)
+                        calls = [i for i in output if i["type"] == "function_call"]
                     else:
-                        params = dict(model=model, messages=initial, max_tokens=256,
-                                      tools=[{"name": "lookup", "input_schema": function["parameters"]}])
-                    for turn in range(1, 4):
-                        count += 1
-                        if protocol == "chat":
-                            result = chat_completion(client, params, stream)
-                            choice = result["choices"][0]
-                            check(choice["finish_reason"] == ("tool_calls" if turn == 1 else "stop"))
-                            output = [choice["message"]]
-                            calls = [{"call_id": call["id"], **call["function"]}
-                                     for call in output[0].get("tool_calls", [])]
-                        elif protocol == "responses":
-                            if stream:
-                                with client.responses.stream(**params) as events:
-                                    result = events.get_final_response().model_dump(exclude_unset=True)
-                            else:
-                                result = client.responses.create(**params).model_dump(exclude_unset=True)
-                            check(result["status"] == "completed")
-                            output = result["output"]
-                            for item in output:
-                                if item["type"] == "function_call":
-                                    check(item.get("parsed_arguments") is None)
-                                    item.pop("parsed_arguments", None)
-                                elif item["type"] == "message":
-                                    for part in item["content"]:
-                                        check(part.get("parsed") is None)
-                                        part.pop("parsed", None)
-                            calls = [i for i in output if i["type"] == "function_call"]
-                            if stored:
-                                retained = client.responses.retrieve(result["id"]).model_dump(exclude_unset=True)
-                                check({k: v for k, v in retained.items() if k != "morphiecore"}
-                                      == {k: v for k, v in result.items() if k != "morphiecore"})
-                                items = [item.model_dump(exclude_unset=True)
-                                         for item in client.responses.input_items.list(result["id"], order="asc")]
-                                for item in items:
-                                    TypeAdapter(ResponseItem).validate_python(item)
-                                check_input_items(items, turn, previous_calls, previous_answer, previous_empty)
+                        if stream:
+                            with messages.messages.stream(**params) as events:
+                                result = events.get_final_message().model_dump(exclude_none=True)
                         else:
-                            if stream:
-                                with messages.messages.stream(**params) as events:
-                                    result = events.get_final_message().model_dump(exclude_none=True)
-                            else:
-                                result = messages.messages.create(**params).model_dump(exclude_none=True)
-                            check(result["stop_reason"] == ("tool_use" if turn == 1 else "end_turn"))
-                            output = [{"role": "assistant", "content": result["content"]}]
-                            calls = [{"call_id": i["id"], "name": i["name"], "arguments": json.dumps(i["input"])}
-                                     for i in result["content"] if i["type"] == "tool_use"]
-                        if protocol == "messages":
-                            check([i["type"] for i in result["content"]]
-                                  == (["tool_use", "tool_use"] if turn == 1 else ["text"]))
-                        elif protocol == "responses":
-                            expected = (["message"] if model == "qwen3.8-flash" else []) + ["function_call"] * 2
-                            check([i["type"] for i in output] == (expected if turn == 1 else ["message"]))
-                        else:
-                            check(len(result["choices"]) == 1)
-                            if turn == 1:
-                                check(output[0].get("content") in (None, ""))
+                            result = messages.messages.create(**params).model_dump(exclude_none=True)
+                        check(result["stop_reason"] == ("tool_use" if turn == 1 else "end_turn"))
+                        output = [{"role": "assistant", "content": result["content"]}]
+                        calls = [{"call_id": i["id"], "name": i["name"], "arguments": json.dumps(i["input"])}
+                                 for i in result["content"] if i["type"] == "tool_use"]
+                    if protocol == "messages":
+                        check([i["type"] for i in result["content"]]
+                              == (["tool_use", "tool_use"] if turn == 1 else ["text"]))
+                    elif protocol == "responses":
+                        expected = (["message"] if model == "qwen3.8-flash" else []) + ["function_call"] * 2
+                        check([i["type"] for i in output] == (expected if turn == 1 else ["message"]))
+                    else:
+                        check(len(result["choices"]) == 1)
                         if turn == 1:
-                            check([(c["call_id"], c["name"], json.loads(c["arguments"])) for c in calls] == [
-                                ("call-lookup", "lookup", {"key": "A"}), ("call-second", "lookup", {"key": "B"})])
-                            if protocol != "messages" and model != "claude-haiku-5-5":
-                                check([c["arguments"] for c in calls] == ['{ "key": "A" }', '{"key":"B"}'])
-                            if protocol == "responses":
-                                empty = [i for i in output if i["type"] == "message" and i["content"] == []]
-                                check(len(empty) == int(model == "qwen3.8-flash"))
-                                previous_empty = empty[0] if empty else None
-                                identities = [c["id"] for c in calls]
-                                check(len(set(identities)) == 2 and all(identities)
-                                      and not set(identities) & {"call-lookup", "call-second"})
-                                if model == "gpt-6-luna":
-                                    check(identities == ["call-item", "second-item"])
-                                previous_calls = calls
-                            results = [("call-second", "second-result"), ("call-lookup", RESULT)]
-                            if protocol == "chat":
-                                new = [{"role": "tool", "tool_call_id": identity, "content": value}
-                                       for identity, value in results]
-                            elif protocol == "responses":
-                                new = [{"type": "function_call_output", "call_id": identity, "output": value}
-                                       for identity, value in results]
-                            else:
-                                new = [{"role": "user", "content": [
-                                    {"type": "tool_result", "tool_use_id": identity, "content": value}
-                                    for identity, value in results]}]
+                            check(output[0].get("content") in (None, ""))
+                    if turn == 1:
+                        check([(c["call_id"], c["name"], json.loads(c["arguments"])) for c in calls] == [
+                            ("call-lookup", "lookup", {"key": "A"}), ("call-second", "lookup", {"key": "B"})])
+                        if protocol != "messages" and model != "claude-haiku-5-5":
+                            check([c["arguments"] for c in calls] == ['{ "key": "A" }', '{"key":"B"}'])
+                        if protocol == "responses":
+                            empty = [i for i in output if i["type"] == "message" and i["content"] == []]
+                            check(len(empty) == int(model == "qwen3.8-flash"))
+                            identities = [c["id"] for c in calls]
+                            check(len(set(identities)) == 2 and all(identities)
+                                  and not set(identities) & {"call-lookup", "call-second"})
+                            if model == "gpt-6-luna":
+                                check(identities == ["call-item", "second-item"])
+                        results = [("call-second", "second-result"), ("call-lookup", RESULT)]
+                        if protocol == "chat":
+                            new = [{"role": "tool", "tool_call_id": identity, "content": value}
+                                   for identity, value in results]
+                        elif protocol == "responses":
+                            new = [{"type": "function_call_output", "call_id": identity, "output": value}
+                                   for identity, value in results]
                         else:
-                            check(not calls)
-                            content = output[0]["content"]
-                            answer = content if isinstance(content, str) else "".join(p["text"] for p in content)
-                            check(answer == "cedar-71")
-                            if protocol == "responses":
-                                previous_answer = output[0]
-                            new = [{"role": "user", "content": "next"}]
-                        if protocol == "responses" and stored:
-                            params.update(previous_response_id=result["id"], input=new)
-                        else:
-                            params["input" if protocol == "responses" else "messages"].extend([*output, *new])
+                            new = [{"role": "user", "content": [
+                                {"type": "tool_result", "tool_use_id": identity, "content": value}
+                                for identity, value in results]}]
+                    else:
+                        check(not calls)
+                        content = output[0]["content"]
+                        answer = content if isinstance(content, str) else "".join(p["text"] for p in content)
+                        check(answer == "cedar-71")
+                        new = [{"role": "user", "content": "next"}]
+                    params["input" if protocol == "responses" else "messages"].extend([*output, *new])
             counts[protocol] = count
-    check([request.method for request in transmissions].count("POST") == 24)
-    check([request.method for request in transmissions].count("GET") == 12)
-    check(len(transmissions) == 36)
+    check([request.method for request in transmissions].count("POST") == 18)
+    check([request.method for request in transmissions].count("GET") == 0)
+    check(len(transmissions) == 18)
     print(json.dumps({"requests": counts, "http_requests": len(transmissions),
-                      "three_turn_history": True, "stored_stateless": True}))
+                      "three_turn_history": True, "stateless_history": True}))
 
 
 if __name__ == "__main__":

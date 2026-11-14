@@ -228,7 +228,7 @@ async fn activated_protocols_are_deduplicated_and_images_share_the_directory() {
         responses["history"],
         json!([{
             "feature":"generation.delivered_projection",
-            "domain":"completed_stored_response_within_ttl","treatment":"faithful"
+            "domain":"experimental_stored_response","treatment":"rejected"
         },{
             "feature":"generation.message.phase",
             "domain":"returned_native_assistant_phase","treatment":"faithful"

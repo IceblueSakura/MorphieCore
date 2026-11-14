@@ -121,7 +121,7 @@ async fn stateless_standard_history_survives_a_fresh_gateway_without_stored_resp
                 .await
                 .unwrap()
                 .status(),
-            404
+            400
         );
         assert!(
             first["output"][0]["encrypted_content"]
@@ -166,7 +166,8 @@ async fn stateless_standard_history_survives_a_fresh_gateway_without_stored_resp
 }
 
 #[tokio::test]
-async fn stored_history_capacity_delete_and_restart_release_without_hidden_dispatch() {
+#[ignore = "experimental stateful API; awaiting explicit activation"]
+async fn experimental_stored_history_capacity_delete_and_restart_release_without_hidden_dispatch() {
     use std::{
         sync::{
             Arc,
@@ -321,8 +322,7 @@ async fn stored_history_capacity_delete_and_restart_release_without_hidden_dispa
         .unwrap();
 }
 
-#[tokio::test]
-async fn stored_and_stateless_tool_history_agree_in_json_and_sse() {
+async fn tool_history(include_stored: bool) {
     let fixture = fixture::start(GenerationApi::Responses, false).await;
     let client = reqwest::Client::builder()
         .no_proxy()
@@ -331,7 +331,11 @@ async fn stored_and_stateless_tool_history_agree_in_json_and_sse() {
         .unwrap();
     for stream in [false, true] {
         let mut effective = Vec::new();
-        for stored in [false, true] {
+        for &stored in if include_stored {
+            &[false, true][..]
+        } else {
+            &[false][..]
+        } {
             let mut body = json!({"model":"gpt-6-luna","input":[{"role":"user","content":"lookup"}],"store":stored,
                 "max_output_tokens":256,"reasoning":{"effort":"low","summary":"auto"},
                 "include":["reasoning.encrypted_content"],"tools":[{"type":"function","name":"lookup",
@@ -440,11 +444,27 @@ async fn stored_and_stateless_tool_history_agree_in_json_and_sse() {
                 );
             }
         }
-        assert_eq!(
-            effective[0], effective[1],
-            "stored and stateless effective histories differ"
-        );
+        if include_stored {
+            assert_eq!(
+                effective[0], effective[1],
+                "stored and stateless effective histories differ"
+            );
+        }
     }
-    assert_eq!(fixture.seen.lock().unwrap().len(), 12);
+    assert_eq!(
+        fixture.seen.lock().unwrap().len(),
+        if include_stored { 12 } else { 6 }
+    );
     fixture.gateway.flush_diagnostics().await;
+}
+
+#[tokio::test]
+async fn stateless_tool_history_in_json_and_sse() {
+    tool_history(false).await;
+}
+
+#[tokio::test]
+#[ignore = "experimental stateful API; awaiting explicit activation"]
+async fn experimental_stored_and_stateless_tool_history_agree_in_json_and_sse() {
+    tool_history(true).await;
 }

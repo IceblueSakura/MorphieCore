@@ -1,4 +1,4 @@
-//! Published tool calls prevent replay; transport EOF owns success and stored publication.
+//! Published tool calls prevent replay; transport EOF owns stateless success.
 use crate::openai_tool_loop as fixture;
 use morphiecore::protocol::openai::GenerationApi;
 use serde_json::{Value, json};
@@ -23,7 +23,7 @@ async fn tool_publication_withholds_success_until_eof_and_never_replays() {
                 "tools":[{"type":"function","function":function}]})
             } else {
                 json!({"model":"gpt-6-luna","input":mode,"max_output_tokens":256,
-                    "reasoning":{"effort":"low"},"stream":true,"store":true,
+                    "reasoning":{"effort":"low"},"stream":true,"store":false,
                     "tools":[{"type":"function","name":"lookup","description":"Synthetic lookup","strict":false,
                         "parameters":{"type":"object","properties":{"key":{"type":"string"}},"required":["key"]}}]})
             };
@@ -97,7 +97,7 @@ async fn tool_publication_withholds_success_until_eof_and_never_replays() {
                             .await
                             .unwrap()
                             .status(),
-                        404
+                        400
                     );
                 }
                 fixture.control.release.notify_one();
@@ -136,7 +136,7 @@ async fn tool_publication_withholds_success_until_eof_and_never_replays() {
                         .await
                         .unwrap()
                         .status(),
-                    if mode == "hold" { 200 } else { 404 }
+                    400
                 );
             }
         }

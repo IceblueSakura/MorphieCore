@@ -6,7 +6,7 @@ use std::time::Duration;
 async fn history_case(profile: GenerationApi, recovery_stream: Option<bool>) {
     let (script, requests) = match profile {
         GenerationApi::Chat => ("tests/sdk/chat_tool_history.py", 6),
-        GenerationApi::Responses => ("tests/sdk/responses_history.py", 16),
+        GenerationApi::Responses => ("tests/sdk/responses_history.py", 10),
     };
     let requests = if recovery_stream.is_some() {
         4
@@ -41,7 +41,7 @@ async fn history_case(profile: GenerationApi, recovery_stream: Option<bool>) {
     );
     assert_eq!(report["three_turn_history"], true);
     if profile == GenerationApi::Responses {
-        assert_eq!(report["stored_stateless"], true);
+        assert_eq!(report["stateless_history"], true);
     } else {
         assert_eq!(report["http_requests"], requests);
     }
@@ -59,8 +59,8 @@ async fn chat_tool_result_and_final_history() {
 }
 
 #[tokio::test]
-#[ignore = "requires pinned OpenAI SDK; synthetic Responses JSON/SSE stored/stateless history"]
-async fn responses_stored_and_stateless_history() {
+#[ignore = "requires pinned OpenAI SDK; synthetic Responses JSON/SSE stateless history"]
+async fn responses_stateless_history() {
     history_case(GenerationApi::Responses, None).await;
 }
 
@@ -89,12 +89,12 @@ async fn ordinary_tools_across_all_client_and_target_protocols() {
         let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(
             report["requests"],
-            serde_json::json!({"chat":6,"responses":12,"messages":6})
+            serde_json::json!({"chat":6,"responses":6,"messages":6})
         );
         assert_eq!(report["three_turn_history"], true);
-        assert_eq!(report["stored_stateless"], true);
-        assert_eq!(report["http_requests"], 36);
-        assert_eq!(fixture.seen.lock().unwrap().len(), 24);
+        assert_eq!(report["stateless_history"], true);
+        assert_eq!(report["http_requests"], 18);
+        assert_eq!(fixture.seen.lock().unwrap().len(), 18);
         fixture.gateway.flush_diagnostics().await;
     }
 }

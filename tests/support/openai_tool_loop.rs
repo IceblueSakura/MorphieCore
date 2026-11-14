@@ -88,7 +88,7 @@ async fn answer(
 ) -> Response {
     if let Some(target) = ordinary {
         let mut seen = seen.lock().unwrap();
-        assert!(seen.len() < 24, "extra ordinary upstream request");
+        assert!(seen.len() < 18, "extra ordinary upstream request");
         let turn = ordinary::assert_request(target, &headers, &body);
         assert_eq!(
             turn,
@@ -108,7 +108,7 @@ async fn answer(
             source,
             match seen.len() {
                 0..6 => "ordinary-chat",
-                6..18 => "ordinary-responses",
+                6..12 => "ordinary-responses",
                 _ => "ordinary-messages",
             }
         );

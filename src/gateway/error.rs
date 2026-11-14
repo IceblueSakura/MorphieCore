@@ -10,6 +10,7 @@ use serde_json::json;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ErrorKind {
     InvalidRequest,
+    StatefulApiDisabled,
     ReasoningHistoryRequired,
     Upstream,
     Timeout,
@@ -38,6 +39,7 @@ impl ErrorKind {
     pub const fn diagnostic_code(self) -> &'static str {
         match self {
             Self::InvalidRequest => "gateway.invalid_request",
+            Self::StatefulApiDisabled => "gateway.stateful_api_disabled",
             Self::ReasoningHistoryRequired => "gateway.reasoning_history_required",
             Self::Upstream => "gateway.upstream",
             Self::Timeout => "gateway.timeout",
@@ -66,6 +68,7 @@ impl ErrorKind {
     pub const fn code(self) -> &'static str {
         match self {
             Self::InvalidRequest => "invalid_request",
+            Self::StatefulApiDisabled => "stateful_api_disabled",
             Self::ReasoningHistoryRequired => "reasoning_history_required",
             Self::Upstream => "upstream_error",
             Self::Timeout => "upstream_timeout",
@@ -122,6 +125,9 @@ impl ApiError {
     }
     pub const fn invalid() -> Self {
         Self::new(StatusCode::BAD_REQUEST, ErrorKind::InvalidRequest)
+    }
+    pub const fn stateful_disabled() -> Self {
+        Self::new(StatusCode::BAD_REQUEST, ErrorKind::StatefulApiDisabled)
     }
     pub const fn upstream() -> Self {
         Self::new(StatusCode::BAD_GATEWAY, ErrorKind::Upstream)
@@ -308,6 +314,10 @@ impl ApiError {
             ErrorKind::ModelDeletionForbidden => (
                 "invalid_request_error",
                 "Model deletion is not permitted.".into(),
+            ),
+            ErrorKind::StatefulApiDisabled => (
+                "invalid_request_error",
+                "Stateful APIs are experimental and disabled. Submit complete history with store:false and no previous_response_id.".into(),
             ),
             _ if self.status.is_client_error() => (
                 "invalid_request_error",

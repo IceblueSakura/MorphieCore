@@ -78,7 +78,7 @@ Consumer responsibilities remain bounded:
 | Delivery | Keep output visibility/carriage separate from history requirements and source observations; protect replay independently |
 | Discovery | Publish assessed coarse/common facts without claiming uniform retention scope or full-loop certification |
 
-Every candidate starts with immutable admitted input; an omission for one candidate cannot remove an owner needed by a later candidate. Managed Responses continuation preserves admitted input and delivered history, while equivalent stateless history is checked through client carriage and replay opening. Neither path adds a new completeness ledger or upstream conversation persistence.
+Every candidate starts with immutable admitted input; an omission for one candidate cannot remove an owner needed by a later candidate. Stateless history is checked through client carriage and replay opening. Experimental managed continuation remains disabled under the [stateful freeze](#stateful-history); no completeness ledger or upstream conversation persistence is added.
 
 ### Cross-protocol and cross-Provider history
 
@@ -116,7 +116,7 @@ Provider-specific `reasoning_content`, `reasoning_details` and `preserve_thinkin
 
 ### Stateless API boundaries
 
-Chat and Messages callers submit complete message history. Stateless Responses callers submit complete `input`, explicitly set `store:false`, and omit nonnull `previous_response_id`. A false storage flag alone does not prevent reading a predecessor. The caller retains standard returned owners, call IDs, arguments, results and native reasoning carriers unchanged. No gateway conversation memory is needed for this path.
+Chat and Messages callers submit complete message history. Responses callers submit complete `input`; omitted, null or false `store` is stateless, and every nonnull `previous_response_id` rejects. Explicit `store:false` is recommended for standard clients. The caller retains standard returned owners, call IDs, arguments, results and native reasoning carriers unchanged. No gateway conversation memory is used for this path.
 
 Responses `reasoning.encrypted_content`, Messages `thinking.signature` and `redacted_thinking.data` retain their native opaque purpose through the tagged envelope. Replay still requires compatible target and credential provenance; a process restart with the same binding preserves that identity. Advisory route affinity is not a replay store and does not promise target retention across restart.
 
@@ -129,7 +129,7 @@ The following ordinary attachments lack a lawful standard stateless carrier:
 | Interactions `step.start.step.signature` or terminal `interaction.steps[].signature` on `type:"function_call"` | The existing scoped decoder represents call-owned continuation | The same call-carrier gap requires rejection if observed. Official ordinary-call field authority and real issuance remain qualified separately; do not infer them from thought signatures |
 | Google thought/reasoning signatures | A genuine reasoning owner, distinct from the ordinary attachments above | Use the existing standard reasoning projection where representable; do not reject the whole Provider family or manufacture a reasoning owner for ordinary attachments |
 
-Removing an ordinary signature would lose continuation state; moving it into reasoning, content, call IDs or diagnostics changes its meaning. No private replay extension supplies a substitute. Managed Responses may retain these attachments internally only under its explicit stateful contract.
+Removing an ordinary signature would lose continuation state; moving it into reasoning, content, call IDs or diagnostics changes its meaning. No private replay extension supplies a substitute. Experimental managed storage does not provide an active escape hatch while the [stateful freeze](#stateful-history) applies.
 
 Reject before dispatch when the selected request/target contract establishes an impossible guarantee. If an actual response first reveals the attachment, JSON fails before successful delivery; an already-published SSE response ends with the standard error mechanism or abort, never a successful terminal or another attempt. The payload-free internal cause is `codec.unsupported.replay`; the public error uses the protocol's upstream-error envelope (OpenAI `upstream_error`, Messages `api_error`). Do not expose signature bytes in errors.
 
@@ -139,12 +139,14 @@ Compacted conversation summaries are preserved as distinct `Compaction` items wi
 
 ### Stateful history
 
-Gateway-managed continuation via `previous_response_id` on OpenAI Responses is managed by [`protocol::openai::responses::managed`](../../src/protocol/openai/responses/managed.rs):
-- Stores delivered response projections, typed hidden replay attachments and request contexts in process-local TTL memory (default 30 minutes).
-- Synchronous retrieval, deletion, and cursor-paginated input listing.
-- Upstream requests remain fully stateless (`store: false`).
+Upstream and downstream stateful APIs are experimental test features, disabled until the user explicitly enables them. Model adaptation and issue repairs exclude their functional acceptance. No configuration setting or codec capability activates them.
 
-Google part/call thought signatures use this retained owner when the selected client protocol has no equivalent carrier. An explicit `store:true` and continuation through `previous_response_id` preserve them without exposing fabricated wire fields. Reconstructing stateless input from that signature-less wire view cannot restore those attachments and is not supported. Stateless requests never silently enable storage.
+- **Admission:** Responses `store:true` and every nonnull `previous_response_id` return HTTP 400 with `stateful_api_disabled` before history access or upstream dispatch. Omitted/null/false `store` and a null/omitted predecessor are stateless. Other recognized active stateful controls retain their existing rejection.
+- **Resources:** authenticated Responses retrieval, deletion and input listing return the same disabled error without consulting or mutating snapshots; missing authentication still returns 401 first.
+- **Upstream execution:** send complete history, with Responses and Interactions storage explicitly false and no Provider-held continuation reference. Advisory cache/session grouping remains independent of conversation storage.
+- **Tests:** preserve isolated codec, replay, snapshot-lifetime and cancellation invariants. Stateful acceptance scenarios are explicitly ignored as experimental; current SDK/client and real-Provider gates select stateless workflows only.
+
+The dormant [`managed`](../../src/protocol/openai/responses/managed.rs) codec and process-local TTL store retain typed composition and hidden-signature machinery for experimental work. Their existence grants neither public activation nor current acceptance. Google ordinary text/call signatures without a lawful stateless carrier continue to reject; storage cannot silently rescue them.
 
 ### Agent session files
 
