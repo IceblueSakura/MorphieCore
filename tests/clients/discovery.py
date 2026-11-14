@@ -104,8 +104,18 @@ def main():
             override = policy["modelOverrides"].get(model, {})
             window = min(window, override.get("contextWindow", window))
             output = limits["max_output_tokens"] or override.get("maxTokens", policy["maxTokens"])
+            image_domains = generation["input"]["image"]
+            image = all(any(
+                domain["placement"] == placement and domain["source"] == "inline"
+                and domain["detail"] == "auto"
+                and domain["state"] in ("faithful", "approved_adaptation")
+                and {"image/png", "image/jpeg", "image/webp", "image/gif"}
+                    <= set(domain.get("mime_types", []))
+                for domain in image_domains
+            ) for placement in ("user", "tool_result"))
             expected[model] = {"contextWindow": window,
-                               "maxTokens": min(output, override.get("maxTokens", output), window)}
+                               "maxTokens": min(output, override.get("maxTokens", output), window),
+                               "input": ["text", "image"] if image else ["text"]}
         private_json(root / "expected.json", expected)
         private_json(root / "policy.json", {"morphiecore": policy})
         env["PI_EXTENSIONS_CONFIG"] = str(root / "policy.json")
@@ -125,7 +135,7 @@ def main():
     with Pi(binary, env, root, "deepseek-v4.1-flash-1017", provider="morphiecore",
             extensions=[extension]) as client:
         available, _ = client.command("get_available_models")
-        actual = {model["id"]: {key: model[key] for key in ["contextWindow", "maxTokens"]}
+        actual = {model["id"]: {key: model[key] for key in ["contextWindow", "maxTokens", "input"]}
                   for model in available["models"]
                   if model["provider"] == "morphiecore"}
         check(actual == expected, "offline_native_store_restore")

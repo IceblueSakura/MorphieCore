@@ -278,13 +278,9 @@ Image sources stay inert: the gateway does not fetch URLs, decode pixels, resize
 
 Formats, encoded sizes and counts are target constraints, not a promise that every IR image fits every upstream.
 
-Preserve explicit per-use `detail` through an exact carrier; omission requires proven target-default equivalence, and other approximations require an evidence-backed selected rule.
+The example's `detail:"auto"` selects the chosen model's default image processing. An exact carrier is preserved; native Google, Messages and other supported image targets without that field use their native default under `generation.image-auto-as-native-default.v1` (L2, no loss receipt). Image bytes/URLs, placement and order are preserved; this does not promise identical preprocessing or token costs across models.
 
-Without one, an unrepresentable detail rejects rather than disappearing.
-
-The example's explicit `auto` is not equivalent to absence and is not universally portable to native targets.
-
-Targets without an exact `auto` carrier reject it before dispatch, including native Google and Messages. Omitted detail remains admissible where the image itself is supported. Existing selected non-auto omissions use `generation.omit-image-detail.v1`; they do not establish automatic-detail equivalence.
+Explicit presence stays in source IR. Omitted detail remains omitted; only the candidate wire projection normalizes an uncarried auto field. Specific `low`/`high`/`original` controls remain separate: preserve their exact carriers or apply existing selected non-auto dispositions, including `generation.omit-image-detail.v1`. Auto does not authorize weakening those controls or image safety checks.
 
 Any approved projection changes only the candidate copy, not the source request.
 

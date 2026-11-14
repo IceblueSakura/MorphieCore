@@ -37,11 +37,12 @@ const resources = new DefaultResourceLoader({
 });
 await resources.reload();
 const rows = [];
-for (const [id, { contextWindow, maxTokens }] of Object.entries(expected)) {
+for (const [id, { contextWindow, maxTokens, input }] of Object.entries(expected)) {
   const model = runtime.getModel("morphiecore", id);
   assert(model, `discovered model ${id}`);
   assert.equal(model.contextWindow, contextWindow, `registry context ${id}`);
   assert.equal(model.maxTokens, maxTokens, `registry output ${id}`);
+  assert.deepEqual(model.input, input, `registry image carriage ${id}`);
   if (id.toLowerCase().includes("minicpm")) {
     assert.equal(model.reasoning, true, `thinking available ${id}`);
     assert.equal(model.thinkingLevelMap.off, "none", `thinking off ${id}`);
@@ -61,16 +62,19 @@ for (const [id, { contextWindow, maxTokens }] of Object.entries(expected)) {
   try {
     assert.equal(session.model.contextWindow, contextWindow, `selected context ${id}`);
     assert.equal(session.model.maxTokens, maxTokens, `selected output ${id}`);
+    assert.deepEqual(session.model.input, input, `selected image carriage ${id}`);
     assert.equal(session.getContextUsage().contextWindow, contextWindow, `session context accounting ${id}`);
     rows.push({ id, contextWindow, maxTokens });
   } finally { session.dispose(); }
 }
 const stored = JSON.parse(readFileSync(join(agentDir, "models-store.json"), "utf8"));
-for (const [id, { contextWindow, maxTokens }] of Object.entries(expected)) {
+for (const [id, { contextWindow, maxTokens, input }] of Object.entries(expected)) {
   assert.equal(stored.morphiecore.models.find(model => model.id === id)?.contextWindow,
     contextWindow, `native persistent context ${id}`);
   assert.equal(stored.morphiecore.models.find(model => model.id === id)?.maxTokens,
     maxTokens, `native persistent output ${id}`);
+  assert.deepEqual(stored.morphiecore.models.find(model => model.id === id)?.input,
+    input, `native persistent image carriage ${id}`);
 }
 await runtime.settleCredentialWrites();
 console.log(JSON.stringify({ discovered: rows }));

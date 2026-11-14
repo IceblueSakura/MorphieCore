@@ -12,6 +12,7 @@ Current media decisions belong to [Architecture](../architecture/adaptation-and-
 - [Provider file APIs](#provider-file-apis)
 - [Generated media](#generated-media)
 - [Client behavior](#client-behavior)
+- [Image auto default semantics (2026-11-14)](#image-auto-default-semantics-2026-11-14)
 - [Representation and authorization boundaries](#representation-and-authorization-boundaries)
 
 ## Sources
@@ -98,6 +99,14 @@ Historical source snapshot from this note's original review, not current install
 |---|---|
 | pi | Images only, always inline base64. Messages: `image` in user and `tool_result`. Responses: `input_image` with `detail: "auto"` in user and `function_call_output`. Chat: `image_url` in user; tool-result images become a following user message (client-side). Gemini 3: `functionResponse.parts` without `displayName` |
 | opencode | Image, audio, video and PDF when the model declares the modality. Chat: `image_url` and inline PDF `file`; other media fail in the client. Responses: non-image media become `input_file` with an `audio/*` or `video/*` data URL; video in tool results becomes `input_video`. Messages: `image` and `document` |
+
+## Image auto default semantics (2026-11-14)
+
+The rechecked [OpenAI vision guide](https://developers.openai.com/api/docs/guides/images-vision#choose-an-image-detail-level) defines `auto` as the selected model's default sizing behavior and says omitted detail defaults to auto in both Responses and Chat. Model families may have different defaults; auto does not promise a fixed resolution, preprocessing algorithm or token budget.
+
+[Gemini image understanding](https://ai.google.dev/gemini-api/docs/image-understanding#media-resolution) describes native resolution controls and token allocation. [Claude vision](https://platform.claude.com/docs/en/build-with-claude/vision#resolution-and-token-cost) describes automatic model-specific image processing.
+
+The selected mapping delegates auto to the chosen target's native default, not an emulation of another model's preprocessing. The [media contract](../architecture/adaptation-and-dialects.md#media) owns the named L2 rule; specific detail values, image contents and safety constraints remain separate.
 
 ## Representation and authorization boundaries
 

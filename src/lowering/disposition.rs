@@ -546,6 +546,12 @@ pub(crate) const FILTER_ALLOWED_INVENTORY: Rule = Rule::new(
     Change::Approximate,
 );
 
+/// Auto selects the target model's own default, not a fixed processing level.
+pub(crate) const IMAGE_AUTO_DEFAULT: Rule = Rule::new(
+    "generation.image-auto-as-native-default.v1",
+    Field::Representation,
+    Change::Normalize,
+);
 pub(crate) const OMIT_IMAGE_DETAIL: Rule = Rule::new(
     "generation.omit-image-detail.v1",
     Field::Representation,

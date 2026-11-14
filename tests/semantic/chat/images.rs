@@ -10,11 +10,10 @@ fn wire(parts: Value) -> Value {
 }
 
 #[test]
-fn explicit_auto_requires_a_carrier_on_each_candidate_and_placement() {
+fn auto_uses_native_default_without_losing_images_or_mutating_source() {
     use morphiecore::{
-        protocol::{ConversionCause, conversion::generation::RepresentationError},
-        semantic::{context::ConversationContext, task::generation::Feature},
-        topology::catalog,
+        semantic::context::ConversationContext,
+        topology::{GenerationProtocol, catalog},
     };
     for tool in [false, true] {
         let decode = |detailed| {
@@ -53,14 +52,45 @@ fn explicit_auto_requires_a_carrier_on_each_candidate_and_placement() {
             native.push(catalog::GOOGLE_BINDINGS[0].endpoint());
         }
         for endpoint in native {
-            // Prove the same input reaches this target without the explicit guarantee.
-            endpoint.encode_request(&decode(false)).unwrap();
-            assert_eq!(
-                endpoint.encode_request(&request).unwrap_err().cause,
-                ConversionCause::Representation(RepresentationError::Admission(
-                    Feature::ImageDetail
-                ))
-            );
+            let (projected, rules) = endpoint.encode_request_with_rules(&request).unwrap();
+            assert_eq!(projected, endpoint.encode_request(&decode(false)).unwrap());
+            assert!(rules.is_empty(), "model-default selection is lossless");
+            match endpoint.protocol {
+                GenerationProtocol::AnthropicMessages => {
+                    let image = if tool {
+                        &projected["messages"][2]["content"][0]["content"][0]
+                    } else {
+                        &projected["messages"][0]["content"][0]
+                    };
+                    assert_eq!(image["type"], "image");
+                    assert_eq!(
+                        image["source"],
+                        json!({
+                            "type":"base64","media_type":"image/png","data":"AQID"
+                        })
+                    );
+                }
+                GenerationProtocol::GoogleGenerateContent => {
+                    assert_eq!(
+                        projected["contents"][0]["parts"][0]["inlineData"],
+                        json!({"mimeType":"image/png","data":"AQID"})
+                    );
+                }
+                GenerationProtocol::GoogleInteractions => {
+                    let image = if tool {
+                        &projected["input"][2]["result"][0]
+                    } else {
+                        &projected["input"][0]["content"][0]
+                    };
+                    assert_eq!(
+                        image,
+                        &json!({
+                            "type":"image","data":"AQID","mime_type":"image/png"
+                        })
+                    );
+                }
+                _ => unreachable!(),
+            }
             assert_eq!(request, before);
         }
         let (carried, rules) = adapter(GenerationApi::Responses)
@@ -77,7 +107,7 @@ fn explicit_auto_requires_a_carrier_on_each_candidate_and_placement() {
 }
 
 #[test]
-fn lowering_rejects_disabled_images_and_undeclared_detail_without_mutating_ir() {
+fn image_admission_keeps_bounds_and_named_non_auto_omissions() {
     let request = adapter(GenerationApi::Responses)
         .decode_request(
             &serde_json::to_vec(&wire(json!([
@@ -120,11 +150,15 @@ fn lowering_rejects_disabled_images_and_undeclared_detail_without_mutating_ir() 
                     {"type":"input_image","image_url":"data:image/png;base64,AQID","detail":"auto"}]}]})
                 .to_string().as_bytes(),
         ).unwrap();
-    assert!(
-        xiaomi
-            .encode_request_with_rules(&tool, "synthetic", &TargetContract::full())
-            .is_err()
+    let (projected, rules) = xiaomi
+        .encode_request_with_rules(&tool, "synthetic", &TargetContract::full())
+        .unwrap();
+    assert_eq!(
+        projected["input"][1]["output"][0]["image_url"],
+        "data:image/png;base64,AQID"
     );
+    assert!(projected["input"][1]["output"][0].get("detail").is_none());
+    assert!(rules.is_empty());
     let original = wire(
         json!([{"type":"input_image","image_url":"https://example.test/x","detail":"original"}]),
     );

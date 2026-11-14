@@ -325,7 +325,7 @@ Applications selected on 2026-10-30 are implemented, including request strictnes
 | Messages `stop_sequences` on a non-Messages target with an ambiguous natural/stop-sequence cause | `end_turn` under a named approximation (L3) |
 | Unknown finish or incomplete reasons | Evidence-backed per-dialect maps; Responses carries an unspecified reason as `incomplete_details:{}`; otherwise L5 on Chat and Messages, so no outcome is misreported as a token limit |
 | Responses client-history annotations | L2 compatibility without a loss receipt; see [semantic-equivalence compatibility](#semantic-equivalence-compatibility) |
-| Per-use image detail | Preserve an exact carrier. Unsupported explicit `auto` is L5 without a target-qualified default equivalence; selected non-auto omissions retain `generation.omit-image-detail.v1` (L4), never a blanket absent/default equivalence |
+| Per-use image detail | Preserve an exact carrier. `generation.image-auto-as-native-default.v1` maps explicit `auto` to the selected model's native default (L2, no loss receipt); selected non-auto omissions retain `generation.omit-image-detail.v1` (L4) |
 | Messages `thinking.block_binding` | Public adaptive-thinking intake normalizes `null`/`{}` under L2; `drop_block` takes `messages.omit-block-binding.v1` (L3) without relaxing gateway replay checks; `"error"` is L5. Trusted native target carriers remain independent |
 | Legacy Messages sampling | Exact `temperature`/`top_p` in `[0,1]` and mathematically integral `top_k` in `[0,18446744073709551615]` take `messages.omit-removed-sampling.v1` (L4) at public intake; equivalent decimal/exponent spellings are accepted without rounding; malformed known values reject |
 | Messages version and beta headers | See the [version policy](index.md#protocols) |
@@ -730,7 +730,7 @@ Media resources (images, audio, video, files) are handled as inert payloads (bas
 - Instructions are strictly text-only; media in system/developer roles is rejected at intake.
 - File references: Client-provided Provider file IDs are rejected. Only direct inline data or HTTPS URLs are admitted.
 - Image transformations: `oversized_image: "error"` sets `RejectOversized`; default allows upstream downsizing.
-- Image detail: explicit `auto` needs an exact carrier; omitted detail remains independent. Selected unsupported non-auto values take `generation.omit-image-detail.v1`. Candidate-local rejection or omission never mutates the admitted source. Discovery publishes auto domains only when every candidate can carry them; omitted-only native support does not establish Responses-based Pi image support.
+- Image detail: `auto` selects the target model's default processing, not a fixed resolution or token count. Preserve a native carrier when present; otherwise select the native default under `generation.image-auto-as-native-default.v1` (L2). Source IR retains explicit presence while only candidate copies normalize it. Selected unsupported non-auto values retain `generation.omit-image-detail.v1`. Discovery treats exact or L2 auto projection as faithful while retaining independent image, placement, format and bound checks.
 
 ### Adaptation evidence
 

@@ -796,12 +796,13 @@ fn image_domains_preserve_placement_detail_and_candidate_intersection() {
     let value = descriptor(entry.clone());
     let images = value["input"]["image"].as_array().unwrap();
     assert!(!images.is_empty());
-    assert!(
-        images
-            .iter()
-            .any(|d| d["detail"] == "omitted" && d["state"] == "faithful")
-    );
-    assert!(images.iter().all(|d| d["detail"] != "auto"));
+    for placement in ["user", "tool_result"] {
+        for detail in ["omitted", "auto"] {
+            assert!(images.iter().any(|d| d["placement"] == placement
+                && d["detail"] == detail
+                && d["state"] == "faithful"));
+        }
+    }
 
     // A Chat alternative removes tool-result image support, not ordinary user images.
     entry.candidates = vec![
