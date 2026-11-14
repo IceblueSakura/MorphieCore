@@ -41,8 +41,8 @@ def main():
         "minicpm5-2b": ["modelbest-minicpm5-2b-chat"],
         "MiniCPM-V-4.7-1B": ["modelbest-minicpm-v-4.7-1b-chat"],
         "MiniCPM-V-4.7-35B-A3B": ["modelbest-minicpm-v-4.7-35b-a3b-chat"],
-        "gemini-3.8-flash": ["google-gemini-3.8-flash-generate-content"],
-        "gemini-4-hydrogen": ["google-gemini-4-hydrogen-generate-content"],
+        "gemini-3.8-flash": ["google-gemini-3.8-flash-interactions"],
+        "gemini-4-hydrogen": ["google-gemini-4-hydrogen-interactions"],
         "qwen4-max-preview": ["tokenplan-qwen4-responses"],
         "kimi-k3.1-pro": ["dashscope-kimi-chat"],
         # A known native capacity must not fill an unknown subscription candidate.
