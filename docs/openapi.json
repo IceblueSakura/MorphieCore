@@ -3,7 +3,7 @@
   "info": {
     "title": "MorphieCore HTTP API",
     "version": "0.1.0",
-    "description": "HTTP API summary for the local gateway, not full vendor API conformance. Generation uses a typed IR, stateless upstream history and bounded pre-publication failover. Downstream required fields prefer reported values, then justified inference and text-only estimates; usage may be approximate, not billing truth. Responses enables gateway-managed TTL history by default; store:false opts out. Known fields are strict; unknown generation fields are ignored, not forwarded. Standalone tasks require explicit activation. Embeddings accepts text with float/Base64 delivery; other media remain frozen. Codecs define exact admission; docs/usage/index.md explains setup."
+    "description": "HTTP API summary for the local gateway, not full vendor API conformance. Generation uses a typed IR, stateless upstream history and bounded pre-publication failover. Downstream required fields prefer reported values, then justified inference and text-only estimates; usage may be approximate, not billing truth. Responses enables gateway-managed TTL history by default; store:false opts out. Known fields are strict; unknown generation fields are ignored, not forwarded. Standalone tasks require explicit activation: embeddings (text or scoped token IDs with float/Base64 delivery), inline image generation, audio transcription and speech synthesis; remaining media tasks stay frozen. Codecs define exact admission; docs/usage/index.md explains setup."
   },
   "servers": [{"url": "http://127.0.0.1:8080"}],
   "security": [{"bearerAuth": []}, {"apiKeyAuth": []}],
@@ -15,7 +15,7 @@
         "description": "Authenticated, startup-immutable Generation Text discovery. No upstream I/O, time fields, version/revision maintenance or pagination. HEAD omits the body. Other task discovery is unchanged.",
         "responses": {
           "200": {
-            "description": "Complete response within min(response_bytes, 256 KiB); oversize views fail startup, never truncate.",
+            "description": "Complete response within min(response_bytes, 1 MiB); oversize views fail startup, never truncate.",
             "headers": {
               "Cache-Control": {
                 "schema": {
@@ -60,7 +60,7 @@
         "description": "Authenticated, startup-immutable Generation Text discovery. No upstream I/O, time fields, version/revision maintenance or pagination. HEAD omits the body. Other task discovery is unchanged.",
         "responses": {
           "200": {
-            "description": "Complete response within min(response_bytes, 256 KiB); oversize views fail startup, never truncate.",
+            "description": "Complete response within min(response_bytes, 1 MiB); oversize views fail startup, never truncate.",
             "headers": {
               "Cache-Control": {
                 "schema": {
@@ -158,6 +158,7 @@
           "401": {"$ref": "#/components/responses/Error"},
           "403": {"$ref": "#/components/responses/Error"},
           "404": {"$ref": "#/components/responses/Error"},
+          "405": {"$ref": "#/components/responses/Error"},
           "503": {"$ref": "#/components/responses/Error"}
         }
       }
@@ -195,7 +196,7 @@
           {"$ref": "#/components/parameters/ConversationId"},
           {"name": "anthropic-version", "in": "header", "required": true,
            "schema": {"type": "string", "enum": ["2023-06-01", "2026-10-21"]},
-           "description": "Exactly one supported version over the current body grammar. Missing, duplicate, combined and unsupported values reject before body collection. anthropic-beta headers are ignored; body semantics and trusted upstream headers are selected independently."}
+           "description": "Exactly one supported version over the current body grammar. Missing, duplicate, combined and unsupported values, as well as anthropic-user-profile-id and anthropic-workspace-id headers, reject with 400 before body collection. anthropic-beta headers are ignored; body semantics and trusted upstream headers are selected independently."}
         ],
         "summary": "Generate with Anthropic Messages",
         "description": "Uses the public model's configured candidate array, shared by all Generation client protocols; candidates need not use a native Messages upstream. Handler, authentication and method errors use Anthropic envelopes.",
@@ -225,7 +226,7 @@
     "/v1/embeddings": {
       "post": {
         "operationId": "createEmbedding",
-        "summary": "Embed an ordered text batch through an explicitly activated fixed target",
+        "summary": "Embed an ordered text or token-ID batch through an explicitly activated fixed target",
         "requestBody": {
           "required": true,
           "content": {"application/json": {"schema": {"$ref": "#/components/schemas/EmbeddingRequest"}}}
@@ -235,6 +236,7 @@
             "description": "Complete float or Base64 vectors and reported usage after validated EOF. Fixed activated target, no fallback. Invalid indices, effective dimensions or incomplete batches fail.",
             "headers": {
               "Cache-Control": {"schema": {"type": "string", "const": "no-store"}},
+              "X-Content-Type-Options": {"schema": {"type": "string", "const": "nosniff"}},
               "X-MorphieCore-Adaptation": {"$ref": "#/components/headers/PossibleAdaptation"},
               "Link": {"$ref": "#/components/headers/CapabilityLink"}
             },
@@ -272,6 +274,20 @@
         "responses": {
           "200": {
             "description": "Complete inline images after validated EOF. The count must match the request; short or invalid collections fail. Explicit activation and a single-source, non-fallback pool are required.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -335,7 +351,10 @@
         "responses": {
           "200": {
             "description": "Complete text and reported duration usage after validated EOF. Native ancillary reports stay in the IR and are omitted by a named JSON projection.",
-            "headers": {"Cache-Control": {"schema": {"type": "string", "const": "no-store"}}},
+            "headers": {
+              "Cache-Control": {"schema": {"type": "string", "const": "no-store"}},
+              "X-Content-Type-Options": {"schema": {"type": "string", "const": "nosniff"}}
+            },
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TranscriptionResponse"}}}
           },
           "400": {"$ref": "#/components/responses/Error"},
@@ -435,12 +454,16 @@
         "responses": {
           "200": {
             "description": "Final stored snapshot, also for responses created with SSE.",
-            "headers": {"Cache-Control": {"schema": {"const": "no-store"}}},
+            "headers": {
+              "Cache-Control": {"schema": {"type": "string", "const": "no-store"}},
+              "X-Content-Type-Options": {"schema": {"type": "string", "const": "nosniff"}}
+            },
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StoredResponse"}}}
           },
           "400": {"$ref": "#/components/responses/Error"},
           "401": {"$ref": "#/components/responses/Error"},
           "404": {"$ref": "#/components/responses/Error"},
+          "405": {"$ref": "#/components/responses/Error"},
           "429": {"$ref": "#/components/responses/Error"},
           "502": {"$ref": "#/components/responses/Error"},
           "503": {"$ref": "#/components/responses/Error"}
@@ -452,12 +475,16 @@
         "responses": {
           "200": {
             "description": "Deletion acknowledgement. No upstream call.",
-            "headers": {"Cache-Control": {"schema": {"const": "no-store"}}},
+            "headers": {
+              "Cache-Control": {"schema": {"type": "string", "const": "no-store"}},
+              "X-Content-Type-Options": {"schema": {"type": "string", "const": "nosniff"}}
+            },
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ResponseDeleted"}}}
           },
           "400": {"$ref": "#/components/responses/Error"},
           "401": {"$ref": "#/components/responses/Error"},
           "404": {"$ref": "#/components/responses/Error"},
+          "405": {"$ref": "#/components/responses/Error"},
           "429": {"$ref": "#/components/responses/Error"},
           "502": {"$ref": "#/components/responses/Error"},
           "503": {"$ref": "#/components/responses/Error"}
@@ -479,12 +506,16 @@
         "responses": {
           "200": {
             "description": "Bounded page of input items with stable cursor IDs.",
-            "headers": {"Cache-Control": {"schema": {"const": "no-store"}}},
+            "headers": {
+              "Cache-Control": {"schema": {"type": "string", "const": "no-store"}},
+              "X-Content-Type-Options": {"schema": {"type": "string", "const": "nosniff"}}
+            },
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ResponseInputItems"}}}
           },
           "400": {"$ref": "#/components/responses/Error"},
           "401": {"$ref": "#/components/responses/Error"},
           "404": {"$ref": "#/components/responses/Error"},
+          "405": {"$ref": "#/components/responses/Error"},
           "429": {"$ref": "#/components/responses/Error"},
           "502": {"$ref": "#/components/responses/Error"},
           "503": {"$ref": "#/components/responses/Error"}
@@ -2593,10 +2624,10 @@
               {"type": "string", "minLength": 1, "maxLength": 262144},
               {"type": "array", "minItems": 1, "maxItems": 128,
                 "items": {"type": "string", "minLength": 1, "maxLength": 262144}},
-              {"type": "array", "minItems": 1, "maxItems": 8192,
+              {"type": "array", "minItems": 1, "maxItems": 60000,
                 "items": {"type": "integer", "minimum": 0, "maximum": 100255}},
               {"type": "array", "minItems": 1, "maxItems": 128,
-                "items": {"type": "array", "minItems": 1, "maxItems": 8192,
+                "items": {"type": "array", "minItems": 1, "maxItems": 60000,
                   "items": {"type": "integer", "minimum": 0, "maximum": 100255}}}
             ]
           },
@@ -3031,7 +3062,7 @@
           "stream": {"type": ["boolean", "null"], "default": false}
         },
         "additionalProperties": true,
-        "description": "Current Messages body grammar under both supported version headers. Legacy temperature/top_p/top_k are validated then omitted; null defaults carry no loss. The client codec carries text, thinking, redacted_thinking, tool_use and tool_result blocks, tools, reasoning controls and top-level output_config (effort and a json_schema format). Instruction content is text-only; system messages can additionally carry ordered tool_addition/tool_removal blocks where candidate dispositions admit them. System message output_config.effort admits named levels with NewInputTurn timing: updates after new user input affect its reply; otherwise they wait for new user input, excluding tool-result-only turns. Omitted system content is empty. Null local configuration/effort, local format/task_budget and empty messages without a control reject. Native system boundaries and historical effort markers survive append; non-equivalent targets resolve source timing before scope/level conversion, with named historical/prefix loss and protected-thinking guards. Adaptive thinking accepts null/empty block_binding exactly, omits drop_block with named approximation while preserving gateway replay checks, and rejects error. Media-bearing instructions and non-null clear_at reject. The reviewed Go/Haiku profile opens owner-local cache, caller-selected top-level automatic cache_control (ephemeral with 5m/default or 1h ttl), ordered object input_examples in root/by-value tool definitions, per-use document context, strict tools, ordered instructions and tool changes according to each candidate's dispositions; explicit guarantees without carriers and example-dependent tool-history collapse still reject. Tool eager_input_streaming null/omission selects the target default, not false; tool cache_control null/omission supplies no marker. Context retains absent/null/empty/text without prompt concatenation. Examples are structurally bounded, not locally schema-instance validated. Native strict tools and JSON output share subset/resource checks: unsupported constraints, references, regex and case-sensitive string enum/const reject rather than being simplified. The reviewed numeric-schema structured/required/named profile is not arbitrary-schema or parallel-call acceptance. Cache marker bounds and TTL conflicts remain strict; write/read reports do not prove retention or invoices. Exact beta carriers and named target projections remain separate from public admission. Known values stay strict; stop_sequences have a codec carrier but default binding admission remains narrower. Active container, mcp_servers, context_management and compaction are rejected; other unknown fields are ignored by name. Return thinking signatures and redacted thinking data unchanged. Codec support does not certify Provider-effective behavior."
+        "description": "Current Messages body grammar under both supported version headers. Legacy temperature/top_p/top_k are validated then omitted; null defaults carry no loss. The client codec carries text, thinking, redacted_thinking, tool_use and tool_result blocks, tools, reasoning controls and top-level output_config (effort and a json_schema format). Instruction content is text-only; system messages can additionally carry ordered tool_addition/tool_removal blocks where candidate dispositions admit them. System message output_config.effort admits named levels with NewInputTurn timing: updates after new user input affect its reply; otherwise they wait for new user input, excluding tool-result-only turns. Omitted system content is empty. Null local configuration/effort, local format/task_budget and empty messages without a control reject. Native system boundaries and historical effort markers survive append; non-equivalent targets resolve source timing before scope/level conversion, with named historical/prefix loss and protected-thinking guards. Adaptive thinking accepts null/empty block_binding exactly, omits drop_block with named approximation while preserving gateway replay checks, and rejects error. Media-bearing instructions and non-null clear_at reject. The reviewed Go/Haiku profile opens owner-local cache, caller-selected top-level automatic cache_control (ephemeral with 5m/default or 1h ttl), ordered object input_examples in root/by-value tool definitions, per-use document context, strict tools, ordered instructions and tool changes according to each candidate's dispositions; explicit guarantees without carriers and example-dependent tool-history collapse still reject. Tool eager_input_streaming null/omission selects the target default, not false; tool cache_control null/omission supplies no marker. Context retains absent/null/empty/text without prompt concatenation. Examples are structurally bounded, not locally schema-instance validated. Native strict tools and JSON output share subset/resource checks: unsupported constraints, references, regex and case-sensitive string enum/const reject rather than being simplified. The reviewed numeric-schema structured/required/named profile is not arbitrary-schema or parallel-call acceptance. Cache marker bounds and TTL conflicts remain strict; write/read reports do not prove retention or invoices. Exact beta carriers and named target projections remain separate from public admission. Known values stay strict; stop_sequences have a codec carrier but default binding admission remains narrower. Non-null container, context_management, compaction, inference_geo, speed, fallbacks, fallback_credit_token, diagnostics, message clear_at, non-empty mcp_servers (empty [] is admitted as absent), and present output_config.task_budget are rejected; other unknown fields are ignored by name. Return thinking signatures and redacted thinking data unchanged. Codec support does not certify Provider-effective behavior."
       },
       "MessagesError": {
         "type": "object", "required": ["type", "error"], "additionalProperties": false,
@@ -3200,13 +3231,15 @@
         "description": "Anthropic-shaped JSON or SSE under the public model label. Tool calls and reasoning use client block carriers. Completion waits for validated EOF; late failures never become a successful message_stop.",
         "headers": {
           "Cache-Control": {"schema": {"type": "string", "const": "no-store"}},
+          "X-Content-Type-Options": {"schema": {"type": "string", "const": "nosniff"}},
+          "X-Accel-Buffering": {"description": "Sent on text/event-stream responses to disable proxy buffering.", "schema": {"type": "string", "const": "no"}},
           "X-MorphieCore-Adaptation": {"$ref": "#/components/headers/PossibleAdaptation"},
           "Link": {"$ref": "#/components/headers/CapabilityLink"}
         },
         "content": {"application/json": {"schema": {"type": "object"}}, "text/event-stream": {"schema": {"type": "string"}}}
       },
       "MessagesError": {
-        "description": "Sanitized Messages error, including authentication and router errors. Exhausted quota maps to 402; upstream overload maps to 529. All legal remaining targets cooling/probing returns 503 upstream_unavailable.",
+        "description": "Sanitized Messages error, including /v1/messages authentication and router errors (401 includes WWW-Authenticate: Bearer). Exhausted quota maps to 402; upstream overload maps to 529. All legal remaining targets cooling returns 429 rate_limit_error for rate/quota-only blocks and 503 upstream_unavailable otherwise.",
         "headers": {"Retry-After": {"description": "Optional bounded upstream or local recovery delay in seconds; not a guarantee of recovery.", "schema": {"type": "integer", "minimum": 0, "maximum": 86400}}},
         "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MessagesError"}}}
       },
@@ -3214,13 +3247,15 @@
         "description": "JSON or incremental SSE under the public model label. Codecs define typed output and named losses. HTTP 200 is not semantic success: classified errors may use failure frames, and late failures may abort the body. No fabricated successful terminal.",
         "headers": {
           "Cache-Control": {"schema": {"type": "string", "const": "no-store"}},
+          "X-Content-Type-Options": {"schema": {"type": "string", "const": "nosniff"}},
+          "X-Accel-Buffering": {"description": "Sent on text/event-stream responses to disable proxy buffering.", "schema": {"type": "string", "const": "no"}},
           "X-MorphieCore-Adaptation": {"$ref": "#/components/headers/PossibleAdaptation"},
           "Link": {"$ref": "#/components/headers/CapabilityLink"}
         },
         "content": {"application/json": {"schema": {"type": "object", "not": {"required": ["_openbridge"]}}}, "text/event-stream": {"schema": {"type": "string"}}}
       },
       "Error": {
-        "description": "Sanitized OpenAI error. Ingress authentication uses this envelope on every route; 401 includes WWW-Authenticate: Bearer. All legal remaining targets cooling/probing returns 503 upstream_unavailable. No upstream bodies, origins or credentials are echoed.",
+        "description": "Sanitized OpenAI error. Ingress authentication uses this envelope on all routes except /v1/messages (which uses MessagesError); 401 includes WWW-Authenticate: Bearer. All legal remaining targets cooling returns 429 rate_limit_exceeded for rate/quota-only blocks and 503 upstream_unavailable otherwise. No upstream bodies, origins or credentials are echoed.",
         "headers": {"Retry-After": {"description": "Optional bounded upstream or local recovery delay in seconds; not a guarantee of recovery.", "schema": {"type": "integer", "minimum": 0, "maximum": 86400}}},
         "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
       }
