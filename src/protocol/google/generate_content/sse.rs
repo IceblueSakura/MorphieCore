@@ -42,6 +42,7 @@ pub struct GenerationSseDecoder {
     state: StreamState,
     fidelity: FidelityRecords,
     metadata: Option<ResponseMetadata>,
+    model_reported: bool,
     open: Option<Open>,
     members: Vec<ItemId>,
     calls: Vec<String>,
@@ -116,6 +117,7 @@ impl GenerationSseDecoder {
             state: StreamState::new(),
             fidelity: FidelityRecords::default(),
             metadata: None,
+            model_reported: false,
             open: None,
             members: vec![],
             calls: vec![],
@@ -214,28 +216,33 @@ impl GenerationSseDecoder {
                     .id
                     .as_deref()
                     .is_some_and(|previous| id != previous)
-            }) || model.is_some_and(|model| model != metadata.model)
+            }) || model.is_some_and(|model| self.model_reported && model != metadata.model)
             {
                 return Err(invalid(ShapeReason::Identity));
             }
             if metadata.id.is_none() {
                 metadata.id = id.map(str::to_owned);
-                metadata.validate()?;
             }
+            if let Some(model) = model {
+                metadata.model = model.into();
+                self.model_reported = true;
+            }
+            metadata.validate()?;
         } else {
             let metadata = ResponseMetadata {
                 source_failure: None,
                 delivery: None,
                 storage: None,
                 id: id.map(str::to_owned),
-                model: model
-                    .ok_or_else(|| invalid(ShapeReason::InvalidValue))?
-                    .into(),
+                // Partial frames may omit the model. Keep the bound request
+                // label until a source observation establishes its own identity.
+                model: model.unwrap_or(self.target.model()).into(),
                 created: None,
                 context: Default::default(),
                 instruction_fidelity: Default::default(),
             };
             metadata.validate()?;
+            self.model_reported = model.is_some();
             self.metadata = Some(metadata);
             self.emit(StreamEvent::Started, out)?;
         }

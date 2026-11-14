@@ -73,6 +73,38 @@ fn signature(item: &Item) -> Value {
 }
 
 #[test]
+fn optional_model_metadata_binds_only_when_reported() {
+    let base = vec![
+        json!({"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]}}]}),
+        json!({"candidates":[{"finishReason":"STOP"}]}),
+    ];
+    for reported in [None, Some("gemini-observed-version")] {
+        let mut frames = base.clone();
+        if let Some(model) = reported {
+            frames[1]["modelVersion"] = json!(model);
+        }
+        let decoded = decode(&wire(&frames)).unwrap();
+        assert_eq!(
+            decoded.metadata.model,
+            reported.unwrap_or("gemini-synthetic")
+        );
+        assert_eq!(decoded.semantic.outcome(), Outcome::Completed);
+    }
+    for model in [json!(null), json!(7), json!("")] {
+        let mut frames = base.clone();
+        frames[1]["modelVersion"] = model;
+        assert!(decode(&wire(&frames)).is_err());
+    }
+    let mut drift = base;
+    drift[0]["modelVersion"] = json!("first-version");
+    drift[1]["modelVersion"] = json!("other-version");
+    assert!(matches!(
+        decode(&wire(&drift)).unwrap_err(),
+        WireFailure::Codec(Failure::Invalid(Shape::Identity))
+    ));
+}
+
+#[test]
 fn audit_explicit_signed_part_boundaries_survive_intake_and_replay() {
     let observed = decode(&wire(&[
         json!({"responseId":"parts","modelVersion":"gemini-synthetic",

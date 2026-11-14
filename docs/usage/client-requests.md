@@ -284,6 +284,8 @@ Without one, an unrepresentable detail rejects rather than disappearing.
 
 The example's explicit `auto` is not equivalent to absence and is not universally portable to native targets.
 
+Targets without an exact `auto` carrier reject it before dispatch, including native Google and Messages. Omitted detail remains admissible where the image itself is supported. Existing selected non-auto omissions use `generation.omit-image-detail.v1`; they do not establish automatic-detail equivalence.
+
 Any approved projection changes only the candidate copy, not the source request.
 
 See [Media](../architecture/adaptation-and-dialects.md#media), [IR resource budgets](../../src/semantic/task/generation/resources/mod.rs) and [Messages media limits](../../src/protocol/anthropic/messages/media.rs).

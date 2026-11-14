@@ -965,6 +965,110 @@ fn step_stream_preserves_usage_call_arguments_and_thought_signature() {
 }
 
 #[test]
+fn partial_lifecycle_model_metadata_binds_only_when_reported() {
+    let base = vec![
+        json!({"event_type":"interaction.created","interaction":{"id":"i","status":"in_progress"}}),
+        json!({"event_type":"interaction.completed","interaction":{"id":"i","status":"completed"}}),
+    ];
+    for reported in [None, Some("gemini-observed-version")] {
+        let mut frames = base.clone();
+        if let Some(model) = reported {
+            frames[1]["interaction"]["model"] = json!(model);
+        }
+        let decoded = decode_interaction(&frames, true).unwrap();
+        assert_eq!(
+            decoded.metadata.model,
+            reported.unwrap_or("gemini-synthetic")
+        );
+        assert_eq!(decoded.semantic.outcome(), Outcome::Completed);
+    }
+    for model in [json!(null), json!(7), json!("")] {
+        let mut frames = base.clone();
+        frames[1]["interaction"]["model"] = model;
+        assert!(decode_interaction(&frames, true).is_err());
+    }
+    let mut drift = base;
+    drift[0]["interaction"]["model"] = json!("first-version");
+    drift[1]["interaction"]["model"] = json!("other-version");
+    assert!(matches!(
+        decode_interaction(&drift, true).unwrap_err(),
+        WireFailure::Codec(Failure::Invalid(Shape::MetadataModelChanged))
+    ));
+}
+
+#[test]
+fn delta_metadata_usage_replaces_checkpoints_and_validates_known_counters() {
+    let counts = |input| {
+        json!({"total_input_tokens":input,"total_output_tokens":1,
+        "total_thought_tokens":0,"total_tool_use_tokens":0,"total_tokens":input+1})
+    };
+    let base = vec![
+        json!({"event_type":"interaction.created","interaction":{"id":"i","status":"in_progress","model":"gemini-synthetic"}}),
+        json!({"event_type":"step.start","index":0,"step":{"type":"model_output"}}),
+        json!({"event_type":"step.delta","index":0,"delta":{"type":"text","text":"ok"},"metadata":{"total_usage":counts(100)}}),
+        json!({"event_type":"step.stop","index":0}),
+        json!({"event_type":"interaction.completed","interaction":{"id":"i","status":"completed"}}),
+    ];
+    let decoded = decode_interaction(&base, true).unwrap();
+    let final_report = decoded.semantic.usage_reports().operation().unwrap();
+    assert_eq!(final_report.counts.input_tokens, Some(100));
+    assert_eq!(final_report.counts.total_tokens, Some(101));
+    assert_eq!(final_report.stage, UsageStage::Final);
+    let mut newer = base.clone();
+    newer.insert(
+        1,
+        json!({"event_type":"interaction.status_update","interaction_id":"i",
+        "status":"in_progress","usage":counts(50)}),
+    );
+    let decoded = decode_interaction(&newer, true).unwrap();
+    assert_eq!(
+        decoded
+            .semantic
+            .usage_reports()
+            .operation()
+            .unwrap()
+            .counts
+            .total_tokens,
+        Some(101)
+    );
+    newer.last_mut().unwrap()["interaction"]["usage"] = counts(120);
+    let decoded = decode_interaction(&newer, true).unwrap();
+    assert_eq!(
+        decoded
+            .semantic
+            .usage_reports()
+            .operation()
+            .unwrap()
+            .counts
+            .total_tokens,
+        Some(121)
+    );
+    for counter in [json!(-1), json!("100")] {
+        let mut malformed = base.clone();
+        malformed[2]["metadata"]["total_usage"]["total_input_tokens"] = counter;
+        assert!(matches!(
+            decode_interaction(&malformed, true).unwrap_err(),
+            WireFailure::Codec(Failure::Invalid(Shape::Usage))
+        ));
+    }
+    for metadata in [json!(null), json!({}), json!({"total_usage":null})] {
+        let mut absent = base.clone();
+        absent[2]["metadata"] = metadata;
+        assert!(
+            decode_interaction(&absent, true)
+                .unwrap()
+                .semantic
+                .usage_reports()
+                .operation()
+                .is_none()
+        );
+    }
+    let mut malformed = base;
+    malformed[2]["metadata"] = json!(7);
+    assert!(decode_interaction(&malformed, true).is_err());
+}
+
+#[test]
 fn scoped_usage_keeps_uncalibrated_tool_counts_and_replaces_operation_snapshots() {
     let usage = |total| {
         json!({"total_input_tokens":total,"total_output_tokens":0,

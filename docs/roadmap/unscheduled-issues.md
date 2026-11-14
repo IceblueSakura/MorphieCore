@@ -74,7 +74,7 @@ The [source and feasibility recheck](../refs/2026-10-27-client-ir-boundaries.md#
 | Chat upstream final usage | Duplicate nonnull final reports remain unqualified at the emitter | A concrete upstream profile and independently observed report sequence |
 | Nonempty Messages tool opener plus nonempty fragments | Retain rejection, including a complete-fragment negative regression; complete opener plus zero-byte deltas remains supported | Authoritative replacement/merge semantics exist |
 | Bounded token-budget adjustment | Model-maximum clamp selected; broader formulas deferred; native effort and existing validation preserved | An authorized target plus failing request, limit provenance, useful reserve, finite maximum and infeasible behavior qualify a target-local rule |
-| `user:null`, Chat refusal requiredness, Responses image-detail default | Preserve current intake; image `detail:"auto"` already takes L2 | Service contract clarifies the discrepancy or a selected strict consumer exposes a concrete failure |
+| `user:null`, Chat refusal requiredness | Preserve current intake | Service contract clarifies the discrepancy or a selected strict consumer exposes a concrete failure |
 | Legacy function carriers | Retained rejection | A real client needs a constrained association/default/conflict/history contract |
 | Broader settings echo and richer output grouping | Case-specific ladder application | A concrete failure has an exact mapping or a bounded approximation; preserve report authority and content-coordinate ownership |
 | Messages custom-input wrapping | Conditional Stage-3 follow-up S3-T6; not a core exit prerequisite | Declaration, arguments, return/history mapping and client execution expectations are selected together |

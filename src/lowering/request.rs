@@ -1712,11 +1712,15 @@ fn project_semantic_with_table<'a>(
         });
     }
     for (_, item) in &mut items {
-        fn detail(use_: &mut ResourceUse, target: Target<'_>, evidence: &mut EvidenceDelta) {
+        fn detail(
+            use_: &mut ResourceUse,
+            target: Target<'_>,
+            evidence: &mut EvidenceDelta,
+        ) -> Result<(), crate::protocol::conversion::generation::RepresentationError> {
             let ResourceDescription::Image { detail, .. } = &mut use_.description else {
-                return;
+                return Ok(());
             };
-            let Some(value) = *detail else { return };
+            let Some(value) = *detail else { return Ok(()) };
             let carried = match target {
                 Target::OpenAi(api, c) => {
                     c.images.details.contains(&value)
@@ -1728,20 +1732,26 @@ fn project_semantic_with_table<'a>(
                 _ => false,
             };
             if !carried {
-                *detail = None;
-                if value != ImageDetail::Auto {
-                    evidence.push(
-                        super::disposition::OMIT_IMAGE_DETAIL
-                            .effect(ConversionBoundary::RequestProject),
+                if value == ImageDetail::Auto {
+                    return Err(
+                        crate::protocol::conversion::generation::RepresentationError::Admission(
+                            Feature::ImageDetail,
+                        ),
                     );
                 }
+                *detail = None;
+                evidence.push(
+                    super::disposition::OMIT_IMAGE_DETAIL
+                        .effect(ConversionBoundary::RequestProject),
+                );
             }
+            Ok(())
         }
         match item {
             Item::Message(message) => {
                 for part in &mut message.parts {
                     if let ContentPart::Resource(use_) = &mut part.content {
-                        detail(use_, target, &mut evidence);
+                        detail(use_, target, &mut evidence)?;
                     }
                 }
             }
@@ -1749,7 +1759,7 @@ fn project_semantic_with_table<'a>(
                 if let ToolOutput::Parts(parts) = &mut result.output {
                     for part in parts {
                         if let InputPart::Resource(use_) = &mut part.content {
-                            detail(use_, target, &mut evidence);
+                            detail(use_, target, &mut evidence)?;
                         }
                     }
                 }

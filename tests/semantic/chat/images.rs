@@ -10,6 +10,73 @@ fn wire(parts: Value) -> Value {
 }
 
 #[test]
+fn explicit_auto_requires_a_carrier_on_each_candidate_and_placement() {
+    use morphiecore::{
+        protocol::{ConversionCause, conversion::generation::RepresentationError},
+        semantic::{context::ConversationContext, task::generation::Feature},
+        topology::catalog,
+    };
+    for tool in [false, true] {
+        let decode = |detailed| {
+            let mut image = json!({"type":"input_image","image_url":"data:image/png;base64,AQID"});
+            if detailed {
+                image["detail"] = json!("auto");
+            }
+            let input = if tool {
+                json!([
+                    {"role":"user","content":"Read."},
+                    {"type":"function_call","call_id":"c","name":"read","arguments":"{}"},
+                    {"type":"function_call_output","call_id":"c","output":[image]}
+                ])
+            } else {
+                json!([{"role":"user","content":[image]}])
+            };
+            let mut request = adapter(GenerationApi::Responses)
+                .decode_client_request(
+                    json!({"model":"synthetic","max_output_tokens":1024,
+                    "input":input,"tools":[{"type":"function","name":"read","strict":false,
+                    "parameters":{"type":"object"}}]})
+                    .to_string()
+                    .as_bytes(),
+                )
+                .unwrap();
+            request.conversation = Some(ConversationContext::conversation("synthetic").unwrap());
+            request
+        };
+        let request = decode(true);
+        let before = request.clone();
+        let mut native = vec![
+            catalog::MESSAGES_BINDINGS[0].endpoint(),
+            catalog::GOOGLE_BINDINGS[0].interactions_endpoint(),
+        ];
+        if !tool {
+            native.push(catalog::GOOGLE_BINDINGS[0].endpoint());
+        }
+        for endpoint in native {
+            // Prove the same input reaches this target without the explicit guarantee.
+            endpoint.encode_request(&decode(false)).unwrap();
+            assert_eq!(
+                endpoint.encode_request(&request).unwrap_err().cause,
+                ConversionCause::Representation(RepresentationError::Admission(
+                    Feature::ImageDetail
+                ))
+            );
+            assert_eq!(request, before);
+        }
+        let (carried, rules) = adapter(GenerationApi::Responses)
+            .encode_request_with_rules(&request, "synthetic", &TargetContract::full())
+            .unwrap();
+        let image = if tool {
+            &carried["input"][2]["output"][0]
+        } else {
+            &carried["input"][0]["content"][0]
+        };
+        assert_eq!(image["detail"], "auto");
+        assert!(rules.is_empty());
+    }
+}
+
+#[test]
 fn lowering_rejects_disabled_images_and_undeclared_detail_without_mutating_ir() {
     let request = adapter(GenerationApi::Responses)
         .decode_request(
@@ -53,10 +120,11 @@ fn lowering_rejects_disabled_images_and_undeclared_detail_without_mutating_ir() 
                     {"type":"input_image","image_url":"data:image/png;base64,AQID","detail":"auto"}]}]})
                 .to_string().as_bytes(),
         ).unwrap();
-    let (omitted, _) = xiaomi
-        .encode_request_with_rules(&tool, "synthetic", &TargetContract::full())
-        .unwrap();
-    assert!(omitted["input"][1]["output"][0].get("detail").is_none());
+    assert!(
+        xiaomi
+            .encode_request_with_rules(&tool, "synthetic", &TargetContract::full())
+            .is_err()
+    );
     let original = wire(
         json!([{"type":"input_image","image_url":"https://example.test/x","detail":"original"}]),
     );

@@ -6,6 +6,7 @@ Checked **2026-10-27** using public GitHub release metadata and isolated release
 
 - [Source selection and licenses](#source-selection-and-licenses)
 - [Tool-contract release recheck (2026-11-04)](#tool-contract-release-recheck-2026-11-04)
+- [Google stream metadata and accounting (2026-11-14)](#google-stream-metadata-and-accounting-2026-11-14)
 - [Google function-argument carriers (2026-11-09)](#google-function-argument-carriers-2026-11-09)
 - [How to read an SDK](#how-to-read-an-sdk)
 - [OpenAI](#openai)
@@ -50,6 +51,12 @@ Current Anthropic named/any choice types still document exactly one call only wi
 These shapes agree with the corresponding earlier regression references; they do not resolve collision precedence, output-role replay or strict-schema grammar accounting.
 
 The [tool-contract qualification](2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04) owns those consequential distinctions and source-access limits.
+
+## Google stream metadata and accounting (2026-11-14)
+
+The same pinned Google Python revision also defines partial [Interactions lifecycle resources](https://github.com/googleapis/python-genai/blob/92f72b3a236a5bc56e8e3327ab9563f77dd119c3/google/genai/_gaos/types/interactions/interactionsseeventinteraction.py): opening `model` may be absent. `GenerateContentResponse.model_version` is optional in `google/genai/types.py`. Missing metadata must not become an asserted source-model observation; reported identity changes remain independently checked.
+
+The pinned [StepDelta](https://github.com/googleapis/python-genai/blob/92f72b3a236a5bc56e8e3327ab9563f77dd119c3/google/genai/_gaos/types/interactions/stepdelta.py) carries optional [metadata.total_usage](https://github.com/googleapis/python-genai/blob/92f72b3a236a5bc56e8e3327ab9563f77dd119c3/google/genai/_gaos/types/interactions/stepdeltametadata.py). This is cumulative operation accounting, not text content or a new stateful capability; it uses the existing usage validation and checkpoint replacement contract.
 
 ## Google function-argument carriers (2026-11-09)
 

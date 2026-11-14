@@ -39,6 +39,7 @@ pub struct GenerationSseDecoder {
     scope: LocalScope,
     target: ReplayTarget,
     metadata: Option<ResponseMetadata>,
+    model_reported: bool,
     state: StreamState,
     fidelity: FidelityRecords,
     open: Option<Open>,
@@ -130,6 +131,7 @@ impl GenerationSseDecoder {
             scope,
             target,
             metadata: None,
+            model_reported: false,
             state: StreamState::new(),
             fidelity: Default::default(),
             open: None,
@@ -302,6 +304,7 @@ impl GenerationSseDecoder {
             if string(i, "object")?.is_some_and(|v| v != "interaction") {
                 return Err(invalid(ShapeReason::Object));
             }
+            let model = string(i, "model")?;
             let mut metadata = ResponseMetadata {
                 source_failure: None,
                 delivery: None,
@@ -315,7 +318,9 @@ impl GenerationSseDecoder {
                 } else {
                     None
                 },
-                model: required(i, "model")?.into(),
+                // Lifecycle payloads are partial; this bound label is not a
+                // source observation and may be replaced by the first report.
+                model: model.unwrap_or(self.target.model()).into(),
                 created: None,
                 context: Default::default(),
                 instruction_fidelity: Default::default(),
@@ -330,6 +335,7 @@ impl GenerationSseDecoder {
                 terminal: None,
             };
             metadata.validate()?;
+            self.model_reported = model.is_some();
             self.metadata = Some(metadata);
             self.emit(StreamEvent::Started, out)?;
             if let Some(value) = i.get("usage").filter(|v| !v.is_null()) {
@@ -394,7 +400,22 @@ impl GenerationSseDecoder {
                     }
                     Ok(())
                 } else {
-                    self.delta(object(field(o, "delta")?, "delta")?, out)
+                    self.delta(object(field(o, "delta")?, "delta")?, out)?;
+                    if let Some(metadata) = o.get("metadata").filter(|v| !v.is_null())
+                        && let Some(value) = object(metadata, "metadata")?
+                            .get("total_usage")
+                            .filter(|v| !v.is_null())
+                    {
+                        self.emit(
+                            StreamEvent::UsageReport(usage(
+                                value,
+                                UsageScope::Operation,
+                                UsageStage::Checkpoint,
+                            )?),
+                            out,
+                        )?;
+                    }
+                    Ok(())
                 }
             }
             "interaction.completed" => {
@@ -718,10 +739,14 @@ impl GenerationSseDecoder {
         let service_class = super::super::service::read(i, "service_tier")?;
         self.check_identity(i, "id")?;
         super::snapshots::reconcile(i.get("steps"), &self.steps, &self.state)?;
-        if let Some(model) = string(i, "model")?
-            && self.metadata.as_ref().is_none_or(|m| m.model != model)
-        {
-            return Err(invalid(ShapeReason::MetadataModelChanged));
+        if let Some(model) = string(i, "model")? {
+            let metadata = self.metadata.as_mut().expect("Interactions metadata");
+            if self.model_reported && metadata.model != model {
+                return Err(invalid(ShapeReason::MetadataModelChanged));
+            }
+            metadata.model = model.into();
+            metadata.validate()?;
+            self.model_reported = true;
         }
         let (terminal, progress, incomplete) = match status(i)? {
             "completed" if self.calls.is_empty() => (
