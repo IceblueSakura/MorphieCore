@@ -41,7 +41,15 @@ GitHub's latest non-draft, non-prerelease metadata and resolved release tags ide
 | Anthropic Python | [2.4.0](https://github.com/anthropics/anthropic-sdk-python/releases/tag/v2.4.0) | [`5752c13`](https://github.com/anthropics/anthropic-sdk-python/tree/5752c132041af71055584632caab5ca2325cae5e/src/anthropic/types) |
 | Anthropic TypeScript | [1.4.0](https://github.com/anthropics/anthropic-sdk-typescript/releases/tag/sdk-v1.4.0) | [`ea8d7de`](https://github.com/anthropics/anthropic-sdk-typescript/blob/ea8d7de0e47614ae71044fbf7bf12041318ba37e/src/resources/messages/messages.ts) |
 
-Both current OpenAI SDKs retain developer-only input `additional_tools`, optional-nullable input item ID, required output item ID and eight output roles. Input function-result status remains optional-nullable; function-call input and result-output status do not acquire that nullability. Current Anthropic named/any choice types still document exactly one call only with `disable_parallel_tool_use:true`. These shapes agree with the corresponding earlier regression references; they do not resolve collision precedence, output-role replay or strict-schema grammar accounting. The [tool-contract qualification](2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04) owns those consequential distinctions and source-access limits.
+Both current OpenAI SDKs retain developer-only input `additional_tools`, optional-nullable input item ID, required output item ID and eight output roles.
+
+Input function-result status remains optional-nullable; function-call input and result-output status do not acquire that nullability.
+
+Current Anthropic named/any choice types still document exactly one call only with `disable_parallel_tool_use:true`.
+
+These shapes agree with the corresponding earlier regression references; they do not resolve collision precedence, output-role replay or strict-schema grammar accounting.
+
+The [tool-contract qualification](2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04) owns those consequential distinctions and source-access limits.
 
 ## Google function-argument carriers (2026-11-09)
 
@@ -63,9 +71,27 @@ Inspected file fingerprints (BLAKE3; local package paths, not new vendored asset
 | Python `google/genai/types.py` | `d98838fa852ba67f4f5c9da47978fa29dc7362da08fa7a64356e9a7fe9ac8816` |
 | Python `google/genai/_gaos/types/interactions/function.py` | `9eaabd74c6b0469d708fafb5440ad0fb08b1e05a94181fd354a84468a40f0ed7` |
 
-The function-input declaration is not a promise of every text-output keyword. Native discriminators independently exercise basic closed-object/string/numeric-enum constraints and show length failures under generateContent ANY/VALIDATED and Interactions any. ANY also produces two calls from one declaration. Further nested-schema controls isolate ignored boolean enums and rejection of integer enum `9007199254740993`; fractional enum `1.25` and ordinary nested objects/arrays succeed separately. Root `$ref` object schemas also succeed natively. The 2026-11-09 concentrated recheck separately exercises required nullable `anyOf` values and matched root-reference/inline schemas under native required modes on both APIs. The subsequent no-call/reference repair checks root and nested references through real managed continuation, and independently confirms native none on both APIs.
+The function-input declaration is not a promise of every text-output keyword.
 
-The Google SDK's function parameter carrier requires an object-described schema; text-output reference sibling/cycle documentation is not authority for function-input enforcement. The selected implementation therefore inspects only root `$defs` and single-token local references to the already-qualified subset, preserving the document and rejecting cycles, unqualified sibling/resource semantics and over-deep paths. Existing `SchemaDocument` bounds plus `serde_json::Value::pointer` suffice; no URI fetcher, schema converter or general resolver dependency is introduced. [Architecture](../architecture/adaptation-and-dialects.md#google-strict-function-arguments) owns the exact scope, [Development](../development.md#overall-acceptance-status) the overall acceptance status, and [Roadmap](../roadmap/unscheduled-issues.md#unscheduled-issues) the remaining limitations.
+Native discriminators independently exercise basic closed-object/string/numeric-enum constraints and show length failures under generateContent ANY/VALIDATED and Interactions any.
+
+ANY also produces two calls from one declaration.
+
+Further nested-schema controls isolate ignored boolean enums and rejection of integer enum `9007199254740993`; fractional enum `1.25` and ordinary nested objects/arrays succeed separately.
+
+Root `$ref` object schemas also succeed natively.
+
+The 2026-11-09 concentrated recheck separately exercises required nullable `anyOf` values and matched root-reference/inline schemas under native required modes on both APIs.
+
+The subsequent no-call/reference repair checks root and nested references through real managed continuation, and independently confirms native none on both APIs.
+
+The Google SDK's function parameter carrier requires an object-described schema; text-output reference sibling/cycle documentation is not authority for function-input enforcement.
+
+The selected implementation therefore inspects only root `$defs` and single-token local references to the already-qualified subset, preserving the document and rejecting cycles, unqualified sibling/resource semantics and over-deep paths.
+
+Existing `SchemaDocument` bounds plus `serde_json::Value::pointer` suffice; no URI fetcher, schema converter or general resolver dependency is introduced.
+
+[Architecture](../architecture/adaptation-and-dialects.md#google-strict-function-arguments) owns the exact scope, [Development](../development.md#overall-acceptance-status) the overall acceptance status, and [Roadmap](../roadmap/unscheduled-issues.md#unscheduled-issues) the remaining limitations.
 
 ## How to read an SDK
 

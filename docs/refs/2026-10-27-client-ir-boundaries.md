@@ -2,13 +2,37 @@
 
 Dated protocol-source evidence from 2026-10-27 through 2026-11-13. [Architecture](../architecture/index.md) owns accepted contracts, [References](../references.md) owns regression pins, and the [issue register](../roadmap/unscheduled-issues.md) owns unresolved qualifications. Synthetic observations, installed-client behavior and real service observations below retain their separate scopes; none is a complete support matrix.
 
+## Contents
+
+- [Scope and evidence](#scope-and-evidence)
+- [Remaining source disagreements](#remaining-source-disagreements)
+- [Protocol expressiveness check](#protocol-expressiveness-check)
+  - [Independent item lifecycle versus overall stopping](#independent-item-lifecycle-versus-overall-stopping)
+  - [Custom tools: source disagreement versus a real carrier gap](#custom-tools-source-disagreement-versus-a-real-carrier-gap)
+  - [Metadata and configuration reports are direction-specific](#metadata-and-configuration-reports-are-direction-specific)
+  - [Reasoning and argument representations](#reasoning-and-argument-representations)
+- [Diagnostic extension source policies (2026-10-27)](#diagnostic-extension-source-policies-2026-10-27)
+- [Follow-up source and feasibility review (2026-10-28)](#follow-up-source-and-feasibility-review-2026-10-28)
+- [Binding-history source review (2026-10-28)](#binding-history-source-review-2026-10-28)
+  - [Hosted MiniCPM control recheck (2026-11-13)](#hosted-minicpm-control-recheck-2026-11-13)
+- [Pre-stage-4 contract qualification (2026-10-29)](#pre-stage-4-contract-qualification-2026-10-29)
+- [Semantic-equivalence review (2026-10-28)](#semantic-equivalence-review-2026-10-28)
+- [Chat JSON intake evidence (2026-10-30)](#chat-json-intake-evidence-2026-10-30)
+- [Generation null-contract review (2026-11-02)](#generation-null-contract-review-2026-11-02)
+- [Nine-direction tool assessment (2026-11-04)](#nine-direction-tool-assessment-2026-11-04)
+  - [Discriminating counterexamples](#discriminating-counterexamples)
+- [Tool-contract qualification (2026-11-04)](#tool-contract-qualification-2026-11-04)
+  - [Primary sources](#primary-sources)
+- [Ordered effort contract qualification (2026-11-05)](#ordered-effort-contract-qualification-2026-11-05)
+  - [Temporal and presence disposition](#temporal-and-presence-disposition)
+
 ## Scope and evidence
 
 Covered standard Chat Completions, Responses and Messages: public request/history intake, envelope and execution-context admission, semantic ownership, downstream JSON/SSE rendering, final snapshots and returned history. Pure closed request decoding is not the public Client decoder. Provider dialects, upstream model effectiveness, deployment, credential lifecycle and unrelated APIs were not audited. Representable IR, codec support, public-model admission and an activated service operation are different claims.
 
 The source baseline remains [sources.lock.json](../../tests/upstream/sources.lock.json): OpenAI Python **3.37.0** (`e8a0fd28bbdc1699c97ff0f602b1af3dd378382d`), Node **7.43.0** (`d02d4de77ea7a6f82325c02e6f44deb34ee3992c`), Anthropic Python **2.1.0** (`9313f13a5a643ceed10fafba6785eab8e04b6e6e`) and TypeScript **1.1.0** (`5badc765f17d373405f300ee8e69e7f490b1f172`). Installed SDK source files were inspected alongside these pins. Mutable official reference pages were rechecked on the review date; discrepancies are listed separately rather than silently replacing the baseline.
 
-Primary source entry points:
+The [official SDK source guide](2026-10-27-official-sdk-sources.md) indexes primary request/output unions, serializers and accumulators; the sections below cite the specific contracts behind each distinction.
 
 ## Remaining source disagreements
 
@@ -21,11 +45,23 @@ Primary source entry points:
 
 ## Protocol expressiveness check
 
-Checked on **2026-10-27** against **`c8d0c96`**, current official references and pinned SDK contracts. Additional source inspection used OpenAI Python [v3.39.0](https://github.com/openai/openai-python/releases/tag/v3.39.0), revision `f97798bc86e41f4a5d18644113ef94cf58722778`, and Node [v7.45.0](https://github.com/openai/openai-node/releases/tag/v7.45.0), revision `af8336b8c13bd5402868cf2ca0d9c64530c3848f`. These October 26 release candidates for our baseline were inspected, not installed or promoted to regression pins. This is analysis, not approval for additional omissions, wrapping or inferred state.
+Checked on **2026-10-27** against **`c8d0c96`**, current official references and pinned SDK contracts.
+
+Additional source inspection used OpenAI Python [v3.39.0](https://github.com/openai/openai-python/releases/tag/v3.39.0), revision `f97798bc86e41f4a5d18644113ef94cf58722778`, and Node [v7.45.0](https://github.com/openai/openai-node/releases/tag/v7.45.0), revision `af8336b8c13bd5402868cf2ca0d9c64530c3848f`.
+
+These October 26 release candidates for our baseline were inspected, not installed or promoted to regression pins.
+
+This is analysis, not approval for additional omissions, wrapping or inferred state.
 
 ### Independent item lifecycle versus overall stopping
 
-Responses has separate output-item status and response status carriers. Its [output-message type](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response_output_message.py) and [response type](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response.py) do not require every item's status to equal the enclosing response's status. The [streaming reference](https://developers.openai.com/api/reference/resources/responses/streaming-events) separately defines item-done, response-incomplete and response-failed events. Schema expressiveness is not proof that a particular live model emits every combination.
+Responses has separate output-item status and response status carriers.
+
+Its [output-message type](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response_output_message.py) and [response type](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response.py) do not require every item's status to equal the enclosing response's status.
+
+The [streaming reference](https://developers.openai.com/api/reference/resources/responses/streaming-events) separately defines item-done, response-incomplete and response-failed events.
+
+Schema expressiveness is not proof that a particular live model emits every combination.
 
 Minimal relevant fields:
 
@@ -68,15 +104,41 @@ Sources: current [Chat create](https://developers.openai.com/api/reference/resou
 
 Responses metadata can map exactly to full Chat JSON when valid, but aggregating chunks cannot create a standard Chat SSE metadata slot. Only the already selected null omission is authorized; `{}` and nonempty maps retain their current rejection. Likewise, arbitrary OpenAI metadata must not be relabeled as Messages `user_id`.
 
-The reverse direction has a different design question. A gateway-owned Response can echo admitted request metadata/configuration in its separate delivery context, but those values are not observations returned by the Chat upstream. Establish field meaning, precedence and original-versus-prepared request authority; never overwrite an explicit upstream value or claim unreported model-effective settings. At the review baseline, [completion](../../src/execution/delivery/completion.rs) selected only tools/tool-choice/parallelism, and [envelope writing](../../src/protocol/openai/responses/envelope.rs) preserved reports before filling those missing echoes. The selected [schema-completion contract](../architecture/adaptation-and-dialects.md#downstream-schema-completion) adds metadata alone; broader settings echo requires its own field authority.
+The reverse direction has a different design question.
+
+A gateway-owned Response can echo admitted request metadata/configuration in its separate delivery context, but those values are not observations returned by the Chat upstream.
+
+Establish field meaning, precedence and original-versus-prepared request authority; never overwrite an explicit upstream value or claim unreported model-effective settings.
+
+At the review baseline, [completion](../../src/execution/delivery/completion.rs) selected only tools/tool-choice/parallelism, and [envelope writing](../../src/protocol/openai/responses/envelope.rs) preserved reports before filling those missing echoes.
+
+The selected [schema-completion contract](../architecture/adaptation-and-dialects.md#downstream-schema-completion) adds metadata alone; broader settings echo requires its own field authority.
 
 ### Reasoning and argument representations
 
-OpenAI [reasoning summaries and encrypted continuity](https://developers.openai.com/api/docs/guides/reasoning) and Anthropic [thinking/encryption](https://platform.claude.com/docs/en/build-with-claude/thinking) have distinct native owners. Standard Chat has no corresponding reasoning-content/replay carrier; Provider-specific replay extensions do not establish standard support. Summary text is not interchangeable with an opaque replay value, and no standard contract makes OpenAI encrypted content usable as a Messages signature. Keeping characters while changing hidden reasoning into an answer changes visibility, not just formatting.
+OpenAI [reasoning summaries and encrypted continuity](https://developers.openai.com/api/docs/guides/reasoning) and Anthropic [thinking/encryption](https://platform.claude.com/docs/en/build-with-claude/thinking) have distinct native owners.
 
-Function argument fragments may be streamed as strings in all three systems, but their complete-value contracts differ: Chat/Responses preserve generated strings, including invalid JSON, whereas complete Messages input is an object. A valid object string has a value-preserving mapping, subject to existing lexical-normalization/replay rules; an array, invalid JSON or arbitrary custom string does not. A truncated object prefix can retain incomplete streaming meaning under the selected Messages max-token path, but cannot become a complete JSON response/history object. Buffering establishes whether a value is complete; it cannot manufacture validity.
+Standard Chat has no corresponding reasoning-content/replay carrier; Provider-specific replay extensions do not establish standard support.
 
-**New source clarification:** the current Anthropic [Thinking page](https://platform.claude.com/docs/en/build-with-claude/thinking) explicitly states that thinking deltas are “followed by a single `signature_delta` event just before the block's `content_block_stop`,” for summarized and omitted display. The reviewed native reducer's concatenation of multiple signature events and its synthetic split fixture were not justified by that documented shape. SDK assignment behavior does not authorize duplicate events either. This established a source-validation/fixture correction, distinct from incompatible cross-protocol replay formats.
+Summary text is not interchangeable with an opaque replay value, and no standard contract makes OpenAI encrypted content usable as a Messages signature.
+
+Keeping characters while changing hidden reasoning into an answer changes visibility, not just formatting.
+
+Function argument fragments may be streamed as strings in all three systems, but their complete-value contracts differ: Chat/Responses preserve generated strings, including invalid JSON, whereas complete Messages input is an object.
+
+A valid object string has a value-preserving mapping, subject to existing lexical-normalization/replay rules; an array, invalid JSON or arbitrary custom string does not.
+
+A truncated object prefix can retain incomplete streaming meaning under the selected Messages max-token path, but cannot become a complete JSON response/history object.
+
+Buffering establishes whether a value is complete; it cannot manufacture validity.
+
+**New source clarification:** the current Anthropic [Thinking page](https://platform.claude.com/docs/en/build-with-claude/thinking) explicitly states that thinking deltas are “followed by a single `signature_delta` event just before the block's `content_block_stop`,” for summarized and omitted display.
+
+The reviewed native reducer's concatenation of multiple signature events and its synthetic split fixture were not justified by that documented shape.
+
+SDK assignment behavior does not authorize duplicate events either.
+
+This established a source-validation/fixture correction, distinct from incompatible cross-protocol replay formats.
 
 ## Diagnostic extension source policies (2026-10-27)
 
@@ -89,7 +151,13 @@ These policies inform the bounded [adaptation notice](../architecture/adaptation
 
 Inspected OpenAI Python 3.39.0 / Node 7.45.0 and Anthropic Python 2.3.0 / TypeScript 1.3.0 independently of regression pins. The review supplied these durable distinctions:
 
-- The [Python accumulator](https://github.com/anthropics/anthropic-sdk-python/blob/202db72c87d7c6eaa72129c67ce67fd343a3a20c/src/anthropic/lib/streaming/_messages.py) addresses content by event index. The [TypeScript accumulator and callbacks](https://github.com/anthropics/anthropic-sdk-typescript/blob/cb5fba419808e3844fa6407e59577ab7ba346b79/src/lib/MessageStream.ts) differ: the stored snapshot uses indices, but `signature`, `thinking`, `text`, `inputJson` and `contentBlock` callbacks inspect `content.at(-1)`. Starting tool block 1 before block 0's signature/stop can therefore suppress its signature callback and attribute its stop to block 1. This is source-derived consumer risk; final snapshots alone miss callback misattribution.
+- The [Python accumulator](https://github.com/anthropics/anthropic-sdk-python/blob/202db72c87d7c6eaa72129c67ce67fd343a3a20c/src/anthropic/lib/streaming/_messages.py) addresses content by event index.
+
+  The [TypeScript accumulator and callbacks](https://github.com/anthropics/anthropic-sdk-typescript/blob/cb5fba419808e3844fa6407e59577ab7ba346b79/src/lib/MessageStream.ts) differ: the stored snapshot uses indices, but `signature`, `thinking`, `text`, `inputJson` and `contentBlock` callbacks inspect `content.at(-1)`.
+
+  Starting tool block 1 before block 0's signature/stop can therefore suppress its signature callback and attribute its stop to block 1.
+
+  This is source-derived consumer risk; final snapshots alone miss callback misattribution.
 - Both Anthropic accumulators use a separate fragment buffer. That choice does not establish a service merge contract for a nonempty tool opener followed by nonempty JSON fragments.
 - The [manual-thinking type](https://github.com/anthropics/anthropic-sdk-python/blob/202db72c87d7c6eaa72129c67ce67fd343a3a20c/src/anthropic/types/thinking_config_enabled_param.py) requires at least 1024 thinking tokens and a budget strictly below `max_tokens`. A syntactically valid one-token answer reserve does not establish usefulness; no general budget-increase formula follows.
 - Legacy `role:function` results name a function, not a modern call ID. Two outstanding calls with the same name expose an association ambiguity; no automatic legacy adapter is implied.
@@ -126,7 +194,15 @@ Bounded native wire characterization establishes these current service shapes:
 | `MiniCPM5-1B`, `MiniCPM5-2B` | Enabled | Nested `enable_thinking` Boolean | `reasoning_content` |
 | `MiniCPM-V-4.7-1B`, `MiniCPM-V-4.7-35B-A3B` | Disabled | Same Boolean | `reasoning` |
 
-All four accept explicit on/off and the same-name `reasoning_effort:"medium"` alongside enabled thinking. Boolean activation is independently characterized; qualitative level calibration remains upstream-owned. The two output aliases have one semantic owner. Native tool-call/result continuations preserve the returned readable field, while whether history is consumed, ignored or required remains unassessed. The [MiniCPM5 deployment guide](https://github.com/OpenBMB/MiniCPM/blob/f4293a1a7bde05d1acce99488235792615fc241b/docs/deployment/sglang.md) and model templates are self-hosted references, not authority for hosted history requirements.
+All four accept explicit on/off and the same-name `reasoning_effort:"medium"` alongside enabled thinking.
+
+Boolean activation is independently characterized; qualitative level calibration remains upstream-owned.
+
+The two output aliases have one semantic owner.
+
+Native tool-call/result continuations preserve the returned readable field, while whether history is consumed, ignored or required remains unassessed.
+
+The [MiniCPM5 deployment guide](https://github.com/OpenBMB/MiniCPM/blob/f4293a1a7bde05d1acce99488235792615fc241b/docs/deployment/sglang.md) and model templates are self-hosted references, not authority for hosted history requirements.
 
 ## Pre-stage-4 contract qualification (2026-10-29)
 
@@ -158,9 +234,22 @@ Reviewed existing Generation Text request, response, stream and history named-lo
 
 ## Chat JSON intake evidence (2026-10-30)
 
-The Chat limitation is independently defined by the pinned OpenAI Python **3.37.0** [full response](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/chat_completion.py), [message](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/chat_completion_message.py) and [chunk](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/chat_completion_chunk.py) schemas, rechecked against the installed locked SDK. Metadata and URL annotations have full-response carriers but no standard chunk carriers. Service tier and system fingerprint do have chunk carriers; the corrected synthetic wire retains service tier instead of manufacturing another gap. Chat custom-tool SSE remains its separately retained carrier restriction.
+The Chat limitation is independently defined by the pinned OpenAI Python **3.37.0** [full response](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/chat_completion.py), [message](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/chat_completion_message.py) and
+[chunk](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/chat_completion_chunk.py) schemas, rechecked against the installed locked SDK.
 
-Responses lifecycle events contain complete [Response objects](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response_completed_event.py); the pinned Vercel JSON/event pair independently carries settings, metadata, storage and usage. Messages start events contain a [Message](https://github.com/anthropics/anthropic-sdk-python/blob/9313f13a5a643ceed10fafba6785eab8e04b6e6e/src/anthropic/types/raw_message_start_event.py), with terminal reports carried by deltas. No analogous JSON-only blocker was found in this bounded corpus. Current [intake policy](../architecture/index.md#protocols) retains Chat's JSON exception while other qualified native targets use SSE.
+Metadata and URL annotations have full-response carriers but no standard chunk carriers.
+
+Service tier and system fingerprint do have chunk carriers; the corrected synthetic wire retains service tier instead of manufacturing another gap.
+
+Chat custom-tool SSE remains its separately retained carrier restriction.
+
+Responses lifecycle events contain complete [Response objects](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response_completed_event.py); the pinned Vercel JSON/event pair independently carries settings, metadata, storage and usage.
+
+Messages start events contain a [Message](https://github.com/anthropics/anthropic-sdk-python/blob/9313f13a5a643ceed10fafba6785eab8e04b6e6e/src/anthropic/types/raw_message_start_event.py), with terminal reports carried by deltas.
+
+No analogous JSON-only blocker was found in this bounded corpus.
+
+Current [intake policy](../architecture/index.md#protocols) retains Chat's JSON exception while other qualified native targets use SSE.
 
 ## Generation null-contract review (2026-11-02)
 
@@ -168,7 +257,8 @@ Scope: Generation settings and shared context owners remaining after the stream-
 
 Primary evidence:
 
-- OpenAI [Responses create parameters](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response_create_params.py), [response model](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response.py), [reasoning parameters](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/shared_params/reasoning.py) and [reported reasoning](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/shared/reasoning.py).
+- OpenAI [Responses create parameters](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response_create_params.py), [response model](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response.py),
+  [reasoning parameters](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/shared_params/reasoning.py) and [reported reasoning](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/shared/reasoning.py).
 - OpenAI [Chat parameters](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/completion_create_params.py) and [reported text configuration](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response_text_config.py).
 - Anthropic [adaptive thinking](https://github.com/anthropics/anthropic-sdk-python/blob/9313f13a5a643ceed10fafba6785eab8e04b6e6e/src/anthropic/types/thinking_config_adaptive_param.py) and [enabled thinking](https://github.com/anthropics/anthropic-sdk-python/blob/9313f13a5a643ceed10fafba6785eab8e04b6e6e/src/anthropic/types/thinking_config_enabled_param.py) explicitly allow nullable display and document a model-dependent default.
 
@@ -184,7 +274,15 @@ Primary evidence:
 | Report metadata | Retain tri-state authority. A request containing `{"tenant":"A"}` followed by an upstream `metadata:null` must publish null, not echo the request map; an explicit empty map also suppresses fallback |
 | Reported reasoning object / effective context and mode | Retain explicit-null observations independently of missing reports. Only missing effective settings may take the selected phase-local resolution; request reasoning/context null defaults, while request mode null rejects |
 
-Reported nullability alone is not a request-side clear operation. In particular, `reasoning.summary:null` does not request `display:"omitted"`. Scalar normalization does not erase an observed settings snapshot or let one lifecycle phase fill another. With a sibling reported setting present, `reasoning:null` and an omitted reasoning object remain different observations; likewise an opening effective `context:null` or `mode:null` cannot silently become a known terminal value. Existing report-mode acceptance follows the pinned Python response contract without claiming identical nullability in every SDK.
+Reported nullability alone is not a request-side clear operation.
+
+In particular, `reasoning.summary:null` does not request `display:"omitted"`.
+
+Scalar normalization does not erase an observed settings snapshot or let one lifecycle phase fill another.
+
+With a sibling reported setting present, `reasoning:null` and an omitted reasoning object remain different observations; likewise an opening effective `context:null` or `mode:null` cannot silently become a known terminal value.
+
+Existing report-mode acceptance follows the pinned Python response contract without claiming identical nullability in every SDK.
 
 
 ## Nine-direction tool assessment (2026-11-04)
@@ -224,9 +322,25 @@ The ordinary OpenAI page extractor returned 404 and the Claude extractor returne
 
 Current Python and TypeScript OpenAI unions agree on the input/output additions role asymmetry. They provide no lawful rule to relabel a returned assistant/tool addition as developer input. Input result `status:null` has an independent normalization basis; call status and output terminal requirements stay strict. Namespace-qualified choice spelling and Chat custom SSE remain separate unresolved boundaries.
 
-The stable Python [input batch](https://github.com/openai/openai-python/blob/9b3458a2ef563493111a0a4265d4e9e7e14fe840/src/openai/types/responses/response_input_item_param.py) requires `type`, developer `role` and a `ToolParam` list, with optional-nullable `id`. The [output batch](https://github.com/openai/openai-python/blob/9b3458a2ef563493111a0a4265d4e9e7e14fe840/src/openai/types/responses/response_output_item.py) requires a non-null ID and admits unknown/user/assistant/system/critic/discriminator/developer/tool roles. Neither type imposes a nonempty list or an item status. The stable [Node event declarations](https://github.com/openai/openai-node/blob/42563fe08083ed7af6feba046063e3100fa7ef50/src/resources/responses/responses.ts) require an output item at both added and done, but do not assert that the added definitions already equal the final list. This supports a bounded final snapshot rather than invented argument deltas or opener/final equality. Empty-list service acceptance remains upstream validation.
+The stable Python [input batch](https://github.com/openai/openai-python/blob/9b3458a2ef563493111a0a4265d4e9e7e14fe840/src/openai/types/responses/response_input_item_param.py) requires `type`, developer `role` and a `ToolParam` list, with optional-nullable `id`.
 
-The pinned Google [v1beta declarations](https://github.com/googleapis/googleapis/blob/1e9cfa78c60620af3c66aba343d99a75a9f79057/google/ai/generativelanguage/v1beta/content.proto) distinguish typed Schema from JSON Schema and restrict nonblocking behavior to BidiGenerateContent. The pinned Interactions [ordinary call type](https://github.com/googleapis/python-genai/blob/92f72b3a236a5bc56e8e3327ab9563f77dd119c3/google/genai/_gaos/types/interactions/functioncallstep.py) has no signature member. Ordinary-call signatures require version-specific authority, not analogy with thought signatures. The pinned Interactions OpenAPI URL returned 404 during the 2026-11-04 review; rendered v1 docs and the SDK were available, but artifact hash equality was not reverified.
+The [output batch](https://github.com/openai/openai-python/blob/9b3458a2ef563493111a0a4265d4e9e7e14fe840/src/openai/types/responses/response_output_item.py) requires a non-null ID and admits unknown/user/assistant/system/critic/discriminator/developer/tool roles.
+
+Neither type imposes a nonempty list or an item status.
+
+The stable [Node event declarations](https://github.com/openai/openai-node/blob/42563fe08083ed7af6feba046063e3100fa7ef50/src/resources/responses/responses.ts) require an output item at both added and done, but do not assert that the added definitions already equal the final list.
+
+This supports a bounded final snapshot rather than invented argument deltas or opener/final equality.
+
+Empty-list service acceptance remains upstream validation.
+
+The pinned Google [v1beta declarations](https://github.com/googleapis/googleapis/blob/1e9cfa78c60620af3c66aba343d99a75a9f79057/google/ai/generativelanguage/v1beta/content.proto) distinguish typed Schema from JSON Schema and restrict nonblocking behavior to BidiGenerateContent.
+
+The pinned Interactions [ordinary call type](https://github.com/googleapis/python-genai/blob/92f72b3a236a5bc56e8e3327ab9563f77dd119c3/google/genai/_gaos/types/interactions/functioncallstep.py) has no signature member.
+
+Ordinary-call signatures require version-specific authority, not analogy with thought signatures.
+
+The pinned Interactions OpenAPI URL returned 404 during the 2026-11-04 review; rendered v1 docs and the SDK were available, but artifact hash equality was not reverified.
 
 ## Ordered effort contract qualification (2026-11-05)
 
@@ -244,7 +358,15 @@ Current stable sources were inspected separately from regression pins:
 
 The official [Messages effort guide](https://platform.claude.com/docs/en/build-with-claude/effort#change-effort-mid-conversation-beta) distinguishes activation from scope: a marker immediately after a user turn with new input sets that turn's reply; elsewhere it waits for the next user turn with new input. Tool-result-only turns do not activate it. Once active, it persists until another change. Root effort remains the initial setting.
 
-The official [Responses reasoning guide](https://developers.openai.com/api/docs/guides/reasoning#change-reasoning-mid-conversation) selects the next response and subsequent responses until replaced, while leaving root effort unchanged. It requires original update positions on manual replay; reported response effort still describes the request-level setting. Its example places the update before the next user message. Pinned [Codex effort recording](https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/core/src/session/reasoning_effort.rs#L28-L90) and [sampling loop](https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/core/src/session/turn.rs#L460-L575) support recording an override inside the sampling loop after accepted input, without requiring a fresh user turn. The exact tool-continuation placement below is inferred from these contracts and implementation, not observed against the service.
+The official [Responses reasoning guide](https://developers.openai.com/api/docs/guides/reasoning#change-reasoning-mid-conversation) selects the next response and subsequent responses until replaced, while leaving root effort unchanged.
+
+It requires original update positions on manual replay; reported response effort still describes the request-level setting.
+
+Its example places the update before the next user message.
+
+Pinned [Codex effort recording](https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/core/src/session/reasoning_effort.rs#L28-L90) and [sampling loop](https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/core/src/session/turn.rs#L460-L575) support recording an override inside the sampling loop after accepted input, without requiring a fresh user turn.
+
+The exact tool-continuation placement below is inferred from these contracts and implementation, not observed against the service.
 
 | Ordered history prefix | Messages active / pending | Responses effective effort for next response |
 |---|---|---|

@@ -10,6 +10,11 @@ See [Proposals Framework](index.md) for shared boundaries and [Roadmap](../roadm
   - [SDK surfaces and discovery](#sdk-surfaces-and-discovery)
   - [Decision ownership and wire families](#decision-ownership-and-wire-families)
   - [Decision semantics and compatibility](#decision-semantics-and-compatibility)
+    - [Decision request and evidence union](#decision-request-and-evidence-union)
+    - [Decision questions and evaluation requirements](#decision-questions-and-evaluation-requirements)
+    - [Decision source results and accounting](#decision-source-results-and-accounting)
+    - [Named Decision projections](#named-decision-projections)
+    - [Decision reuse and review examples](#decision-reuse-and-review-examples)
   - [Decision execution and review choices](#decision-execution-and-review-choices)
 
 ## Decisions
@@ -97,7 +102,23 @@ enum DecisionPrompt {
 
 `DecisionValue` is a bounded, duplicate-rejecting data tree with exact JSON numbers and preserved object/array order. Scalar null/bool/number nodes are necessary inside structured values; each native codec still restricts its root type. A business array is one state, never a batch. `RichText` is ordered literal text and explicit media occurrences; retain the distinction between an image inside a string and a media-valued node unless a source contract establishes equivalent normalization. Plain strings remain plain strings, including empty ones.
 
-Only the source codec recognizes TypeSafe placeholders or Perplexity media markers; OpenAI `input_json` keys such as `role` or `image_url` remain data. Resolve recognized media into resource uses once. Do not retain a second editable placeholder map. Literal text and resource identity generate collision-free target placeholders, but cannot reconstruct a caller's original spelling by themselves. Keep bounded, immutable `MediaSpelling` records outside the task, bound to each source owner/occurrence and resource identity. They restore original references in TypeSafe rubric echoes after target validation; generated target aliases never escape into client `legend`. Edits invalidate the affected spelling, and no record restores deleted content or supplies hidden semantics. Reject ambiguous overlapping substitutions until native matching is pinned. Count both unique resource bytes and expanded uses, so repeated references cannot bypass budgets.
+Only the source codec recognizes TypeSafe placeholders or Perplexity media markers; OpenAI `input_json` keys such as `role` or `image_url` remain data.
+
+Resolve recognized media into resource uses once.
+
+Do not retain a second editable placeholder map.
+
+Literal text and resource identity generate collision-free target placeholders, but cannot reconstruct a caller's original spelling by themselves.
+
+Keep bounded, immutable `MediaSpelling` records outside the task, bound to each source owner/occurrence and resource identity.
+
+They restore original references in TypeSafe rubric echoes after target validation; generated target aliases never escape into client `legend`.
+
+Edits invalidate the affected spelling, and no record restores deleted content or supplies hidden semantics.
+
+Reject ambiguous overlapping substitutions until native matching is pinned.
+
+Count both unique resource bytes and expanded uses, so repeated references cannot bypass budgets.
 
 `DecisionResources` declares image/audio/video content once. A source is inline bytes plus validated format, or an inert HTTP(S) URL where the native carrier permits it; no File ID, credential locator or fetching authority is implied. `MediaUse` is a typed image/audio/video reference. Image detail (`Auto`, `Low`, `High`, `Original`, with meaningful presence) belongs to the image use, not to shared bytes. Media decode/orientation, resizing, video sampling and soundtrack behavior are not invented generic controls.
 
@@ -174,9 +195,29 @@ Choice values are unique under typed equality: `true` and `"true"` remain distin
 
 Box uses its instructions, including explicit media occurrences, to identify what and where to locate. Do not invent a machine-readable image selector from natural language. Its current native frame is the instruction-selected image; multiple candidate images do not establish which resource owns the coordinates. Box asks for one normalized rectangle, not an existence flag, list of objects or score question.
 
-Evaluation requirements express requested/implicit source semantics, not observed runtime scheduling. `Isolated` exposes only the shared evidence and current question. `SharedWithinNativeGroups` additionally exposes other questions' content within the service's native evaluation group, not their answers; it does not guarantee one group for the entire request. `Unspecified` imposes neither guarantee and cannot replace a known grouped source contract. A TypeSafe profile requires isolation; Perplexity v1.2 documents group-shared visibility. Moving between those semantics requires an explicit approximation or rejection in either direction.
+Evaluation requirements express requested/implicit source semantics, not observed runtime scheduling.
 
-Actual group membership, overflow grouping and billing remain target/report facts. Exact grouped projection requires an attested compatible grouping contract, not just the shared visibility tag; unknown or changed partitions need a separate approximation. This preserves known question-context semantics without inventing caller-selected groups, a scheduler or per-question execution. The overflow requirement independently distinguishes rejection from permission for documented native text-state truncation only; neither permits dropping questions, media or arbitrary history. Source defaults resolve under the pinned source contract, not the selected upstream. A byte estimate cannot establish effective context limits, group membership or actual truncation.
+`Isolated` exposes only the shared evidence and current question.
+
+`SharedWithinNativeGroups` additionally exposes other questions' content within the service's native evaluation group, not their answers; it does not guarantee one group for the entire request.
+
+`Unspecified` imposes neither guarantee and cannot replace a known grouped source contract.
+
+A TypeSafe profile requires isolation; Perplexity v1.2 documents group-shared visibility.
+
+Moving between those semantics requires an explicit approximation or rejection in either direction.
+
+Actual group membership, overflow grouping and billing remain target/report facts.
+
+Exact grouped projection requires an attested compatible grouping contract, not just the shared visibility tag; unknown or changed partitions need a separate approximation.
+
+This preserves known question-context semantics without inventing caller-selected groups, a scheduler or per-question execution.
+
+The overflow requirement independently distinguishes rejection from permission for documented native text-state truncation only; neither permits dropping questions, media or arbitrary history.
+
+Source defaults resolve under the pinned source contract, not the selected upstream.
+
+A byte estimate cannot establish effective context limits, group membership or actual truncation.
 
 #### Decision source results and accounting
 
@@ -215,7 +256,15 @@ struct ConfidenceReport {
 }
 ```
 
-`Probability` stores the exact reported JSON number with a finite `[0,1]` invariant. Distributions have one value per requested option/level in request order. `selected` and `expected_index` retain the reported selection/statistic rather than being recomputed at decode; they are distinct observations constrained by the distribution, not alternative editable rubrics. Validate argmax/ties, expected score and approximate sum with explicit source-rounding tolerances; never clamp or renormalize invalid native results. Codec-required fields remain required even if another delivery path could derive them.
+`Probability` stores the exact reported JSON number with a finite `[0,1]` invariant.
+
+Distributions have one value per requested option/level in request order.
+
+`selected` and `expected_index` retain the reported selection/statistic rather than being recomputed at decode; they are distinct observations constrained by the distribution, not alternative editable rubrics.
+
+Validate argmax/ties, expected score and approximate sum with explicit source-rounding tolerances; never clamp or renormalize invalid native results.
+
+Codec-required fields remain required even if another delivery path could derive them.
 
 The result is bound to its prepared request. Native names, values and legend/label echoes must match the **projected target** expectation before mapping back to source identities. Do not add a second effective set of choices/levels to the result. Both probability and answer association cover every question exactly once. Refusal is per-question; omitted answers, malformed probabilities and transport failure are not refusal. Historical refusal text in evidence remains distinct from the current fieldless refusal answer.
 
@@ -292,7 +341,13 @@ Proposed simple usage completion follows Generation's **source facts → justifi
 - Required missing cache/reasoning details may use zero only as explicit estimates, or as derivations where the profile establishes no such activity. Apply aggregate/detail constraints to estimated fields without overwriting reports; incompatible facts reject rather than being repaired.
 - Media requires a separately selected positive, model-specific estimation rule or complete native accounting. Binary/base64 bytes are not text tokens; do not estimate media as zero. Estimates never prove token-limit compliance, prevent truncation, set hard quotas or claim billing truth.
 
-Unselected safety/retention loss, group-shared→isolated context loss, remote media fetching, image resizing/orientation changes, audio transcription as a substitute, video-frame extraction, Box→score emulation and guessed Box confidence/frame/existence reject. These would require separate policies or operations, not convenient default projections. A future peer-question rendering could preserve visible clauses for an isolated target, but it must define the source group and acknowledge changed evaluation semantics rather than treating isolation as universally safe. No approval of probability/coordinate estimation follows from allowing simple accounting estimates.
+Unselected safety/retention loss, group-shared→isolated context loss, remote media fetching, image resizing/orientation changes, audio transcription as a substitute, video-frame extraction, Box→score emulation and guessed Box confidence/frame/existence reject.
+
+These would require separate policies or operations, not convenient default projections.
+
+A future peer-question rendering could preserve visible clauses for an isolated target, but it must define the source group and acknowledge changed evaluation semantics rather than treating isolation as universally safe.
+
+No approval of probability/coordinate estimation follows from allowing simple accounting estimates.
 
 #### Decision reuse and review examples
 

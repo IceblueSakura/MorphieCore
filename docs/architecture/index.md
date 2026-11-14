@@ -34,12 +34,24 @@ This page defines accepted principles, domain contracts, system boundaries, and 
     - [Decision API direction](#decision-api-direction)
     - [Token counting policy](#token-counting-policy)
     - [Independent Embedding path](#independent-embedding-path)
+      - [Embedding encoding compatibility](#embedding-encoding-compatibility)
+      - [Google Embedding compatibility](#google-embedding-compatibility)
 
 ## System boundaries
 
 MorphieCore provides stable protocol APIs to internal Agent runtimes. Runtimes choose submitted history, reasoning migration and execution strategy; pi is a reference for multi-Provider integration, not an Agent behavior specification for the gateway.
 
-The gateway converts fields and carriers under the accepted conversion ladder. When a target limitation instead requires changing execution strategy, reject before dispatch when the limitation is known and return a standard error with a stable reason and safe corrective guidance. Do not automatically disable thinking, replace a requested tool/output strategy, invent missing history or retry with semantically repaired input. The runtime decides whether to issue a different request. Existing field approximations and selected carrier omissions remain; configured candidate selection may still choose a target that can serve the submitted intent. Bounded transport retries retain their separate contract and cannot rewrite that intent.
+The gateway converts fields and carriers under the accepted conversion ladder.
+
+When a target limitation instead requires changing execution strategy, reject before dispatch when the limitation is known and return a standard error with a stable reason and safe corrective guidance.
+
+Do not automatically disable thinking, replace a requested tool/output strategy, invent missing history or retry with semantically repaired input.
+
+The runtime decides whether to issue a different request.
+
+Existing field approximations and selected carrier omissions remain; configured candidate selection may still choose a target that can serve the submitted intent.
+
+Bounded transport retries retain their separate contract and cannot rewrite that intent.
 
 ### Protocols
 
@@ -126,7 +138,15 @@ Semantic IR represents the union of official protocol concepts (OpenAI, Anthropi
 - **Role-scoped content:** Media belongs to user inputs and tool results; assistant media requires dedicated output owners. Citations and token probabilities belong to assistant output; refusals belong to assistant messages.
 - **Explicit links:** Tool calls and results link strictly via call IDs, never by positional inference or function name.
 - **Exact JSON:** Tool arguments and JSON schemas preserve numeric precision and key order. Duplicate keys and unbounded nesting reject.
-- **Meaningful presence:** IR fields use `Option<T>` for optional/default values; intake normalizes documented null defaults (L2) and encoders emit the target grammar (required-nullable fields as `null`, optional fields omitted). Empty strings, zero counts, explicit false and observed empty containers remain values. A tri-state remains only for meaningful reported absence or an explicit clear. Reject-only IR placeholders are removed; malformed known wire values reject at intake. The [field review](../refs/2026-10-27-client-ir-boundaries.md#generation-null-contract-review-2026-11-02) records the scoped source evidence.
+- **Meaningful presence:** IR fields use `Option<T>` for optional/default values; intake normalizes documented null defaults (L2) and encoders emit the target grammar (required-nullable fields as `null`, optional fields omitted).
+
+  Empty strings, zero counts, explicit false and observed empty containers remain values.
+
+  A tri-state remains only for meaningful reported absence or an explicit clear.
+
+  Reject-only IR placeholders are removed; malformed known wire values reject at intake.
+
+  The [field review](../refs/2026-10-27-client-ir-boundaries.md#generation-null-contract-review-2026-11-02) records the scoped source evidence.
 - **Reasoning separation:** Human-readable thought text, summaries, and opaque replay signatures are distinct typed owners.
 - **Honest accounting & terminals:** Missing usage counters are left unknown rather than zeroed. Truncation, failure, and cancellation are never mapped to success.
 - **Runtime isolation:** Credentials, retry counters, and target URLs remain strictly outside semantic IR.
@@ -183,11 +203,27 @@ After native/equivalent carriage, the bounded tool-set projection combination is
 | Retained-history/current-set projection | Prefer target-native historical declarations plus exact current-call restriction when enforceable; acknowledge lost withdrawal intervals or replacement semantics. Otherwise use the selected active-set projection only when the source set is determinate |
 | Allowed-set inventory filtering | Where no allowed-subset carrier exists, filter root and inline declarations together, preserving allowed identities and optional/required invocation; lose filtered-definition visibility and potentially prefix-cache reuse |
 
-Project candidate copies only. Never expose never-activated/withdrawn tools, infer structural withdrawal from prose, guess an unknown collision winner or fabricate an old schema. Strictness, selection, call count, seriality and dispatch remain independent guarantees; this tool-set combination selects no downgrade. Bailian function strictness has its separately selected [service policy](adaptation-and-dialects.md#shared-aliyun-billing-dialect). Namespace aliases, custom-text wrappers, examples, result-media relocation, prompt annotations and non-developer returned-addition replay are not selected by this combination.
+Project candidate copies only.
+
+Never expose never-activated/withdrawn tools, infer structural withdrawal from prose, guess an unknown collision winner or fabricate an old schema.
+
+Strictness, selection, call count, seriality and dispatch remain independent guarantees; this tool-set combination selects no downgrade.
+
+Bailian function strictness has its separately selected [service policy](adaptation-and-dialects.md#shared-aliyun-billing-dialect).
+
+Namespace aliases, custom-text wrappers, examples, result-media relocation, prompt annotations and non-developer returned-addition replay are not selected by this combination.
 
 Existing generateContent and Interactions targets use the same effective active-set projection when ordered declarations have no native carrier. Historical call/result content and identities survive; old declaration visibility, insertion timing and prefix/cache stability take the existing `generation.collapse-tool-set.v1` loss. This adds no Google API, hosted execution, strict guarantee or serial carrier.
 
-Repair the shared tool contract rather than adding a decoder-only exception. Initial definitions, namespace leaves and ordered additions must receive consistent validation, selection resolution, feature accounting, bounds and target checks. Reuse existing semantic tools, request/delivery projection, fidelity and codecs; no gateway tool registry, executor or nine pair-specific adapters. [Unselected conversion designs](../proposals/index.md#three-protocol-tool-conversion-design) owns proposed mappings; [dated evidence](../refs/2026-10-27-client-ir-boundaries.md#nine-direction-tool-assessment-2026-11-04) owns findings; [Roadmap](../roadmap/unscheduled-issues.md#conditional-stage-3-follow-ups) owns execution gates. Client-history annotations use the separate [L2 contract](adaptation-and-dialects.md#semantic-equivalence-compatibility); discovery and hosted execution remain outside this work.
+Repair the shared tool contract rather than adding a decoder-only exception.
+
+Initial definitions, namespace leaves and ordered additions must receive consistent validation, selection resolution, feature accounting, bounds and target checks.
+
+Reuse existing semantic tools, request/delivery projection, fidelity and codecs; no gateway tool registry, executor or nine pair-specific adapters.
+
+[Unselected conversion designs](../proposals/index.md#three-protocol-tool-conversion-design) owns proposed mappings; [dated evidence](../refs/2026-10-27-client-ir-boundaries.md#nine-direction-tool-assessment-2026-11-04) owns findings; [Roadmap](../roadmap/unscheduled-issues.md#conditional-stage-3-follow-ups) owns execution gates.
+
+Client-history annotations use the separate [L2 contract](adaptation-and-dialects.md#semantic-equivalence-compatibility); discovery and hosted execution remain outside this work.
 
 Current shared validation separates intrinsic choice shape/count/uniqueness in settings from request-level membership in ordered availability. Deferred definitions stay withheld until surfaced; removal retains the identity for later re-addition. Current available identities have their own finite bound, independent of retained historical versions. Historical calls keep their original identity/arguments and are not validated against today's schema. Messages serial intent is emitted even for inline-only definitions, and candidate collapse updates history and settings atomically before validation.
 
@@ -199,13 +235,35 @@ DeepSeek uses one `deepseek` Provider and credential namespace. Its default Chat
 
 An account's complete API root receives only the operation-relative `/chat/completions` or `/responses` suffix. No beta-segment inference, duplicate removal or alternate-path retry applies.
 
-One shared owner projects ordered tool declarations onto each target's selected carrier: Chat targets take the effective active set, Responses targets keep developer batches and convert pure by-value additions, and Messages targets with native changes lift a leading batch prefix, convert legal-position additions to ordered blocks, or fall back to the active set when no legal system placement exists. Allowed-set inventory filtering applies the flat restriction and required invocation on Messages targets. Bailian Responses also uses this selected loss when forced selection names one function but the inventory contains several: collapse root/inline definitions to the effective set, filter to the selected original function, and preserve the required-subset carrier and independent serial control. Bare multi-function `required`, explicit strictness and unsupported thinking profiles keep their own admission boundaries. Batch redeclarations without a documented winner block every projected fallback while native forwarding keeps them; converted items take fresh identities so surviving item ids keep their kind; historical call/result content and raw arguments are never rewritten. Responses source envelopes are validated and projected away before tool-item identity replacement, so converted batches cannot leave stale container members. Source-contiguity, participant attribution and replay checks remain enforced.
+One shared owner projects ordered tool declarations onto each target's selected carrier: Chat targets take the effective active set, Responses targets keep developer batches and convert pure by-value additions, and Messages targets with native changes lift a leading batch prefix, convert legal-position additions to ordered blocks, or fall back to the active set when no legal system placement exists.
+
+Allowed-set inventory filtering applies the flat restriction and required invocation on Messages targets.
+
+Bailian Responses also uses this selected loss when forced selection names one function but the inventory contains several: collapse root/inline definitions to the effective set, filter to the selected original function, and preserve the required-subset carrier and independent serial control.
+
+Bare multi-function `required`, explicit strictness and unsupported thinking profiles keep their own admission boundaries.
+
+Batch redeclarations without a documented winner block every projected fallback while native forwarding keeps them; converted items take fresh identities so surviving item ids keep their kind; historical call/result content and raw arguments are never rewritten.
+
+Responses source envelopes are validated and projected away before tool-item identity replacement, so converted batches cannot leave stale container members.
+
+Source-contiguity, participant attribution and replay checks remain enforced.
 
 Retained projections must fit root declaration capacity (namespace containers and leaves included) and the final item count. A known carrier-capacity failure selects the existing active-set collapse only when the source set is determinate; malformed source values, unknown references and ambiguous winners remain errors. Final semantic and target validation still apply. Native Responses batch-only forwarding needs no effective inventory; other walks index identities while preserving declaration order, rather than scanning all historical definitions per member.
 
 `Item::ToolBatch` owns one ordered definition list and a typed role observation; `FidelityRecords` retains its one wire ID. Empty batches and function/custom/namespace members keep their positions. This is distinct from Messages' singleton replacement/reference/removal operation and selects no same-name schema winner. One borrowed declaration view and one mutable function visitor cover roots, namespace leaves, singleton additions and batches for validation, feature/strictness checks and candidate-only omissions.
 
-Responses input accepts only developer batches. Native output preserves every declared role without creating an instruction; manual and managed replay reject non-developer batches. Added snapshots may be empty; the bounded `ToolBatchSnapshot` event installs the final definitions before observed item completion. Batches have no partial wire status, so an incomplete overall response cannot finalize an unclosed batch. JSON, SSE and retained snapshots use this same owner and custom-tool capability checks apply to both opening and final definitions. [Source qualification](../refs/2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04) and [SDK procedure](../development.md#sdk-loopback-gate) describe the independent reference and connected check.
+Responses input accepts only developer batches.
+
+Native output preserves every declared role without creating an instruction; manual and managed replay reject non-developer batches.
+
+Added snapshots may be empty; the bounded `ToolBatchSnapshot` event installs the final definitions before observed item completion.
+
+Batches have no partial wire status, so an incomplete overall response cannot finalize an unclosed batch.
+
+JSON, SSE and retained snapshots use this same owner and custom-tool capability checks apply to both opening and final definitions.
+
+[Source qualification](../refs/2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04) and [SDK procedure](../development.md#sdk-loopback-gate) describe the independent reference and connected check.
 
 #### Citation point anchors
 

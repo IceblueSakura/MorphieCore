@@ -97,11 +97,33 @@ An edit of photograph A is not generation with a longer prompt; source identity/
 
 Direct sources distinguish bounded image content from inert URL/data-URL references. Reuse only suitable neutral values, not Generation resource tables or replay owners. Multipart filenames are untrusted transport metadata, never local paths or target selectors. Preserve part order and MIME declarations without treating them as verified pixel/format facts.
 
-Recommend immutable owned/shared bytes for the first direct-input slice, with deliberately small fixed aggregate memory limits; defer spooling. Pure multipart encoding consumes those bounded bytes and produces a bounded body; budget the intake, encoded body and output copies, not only source payload size. Content ownership lasts through preparation/upload and releases on completion, error or cancellation. This fits the current byte-owned execution request without promising full upstream file-size coverage. If larger inputs later justify spooling, first select request-local content identities, an external content owner and a pure multipart part plan; handles, I/O and cleanup never enter IR. Merely adding a spool limit would not establish that ownership seam.
+Recommend immutable owned/shared bytes for the first direct-input slice, with deliberately small fixed aggregate memory limits; defer spooling.
+
+Pure multipart encoding consumes those bounded bytes and produces a bounded body; budget the intake, encoded body and output copies, not only source payload size.
+
+Content ownership lasts through preparation/upload and releases on completion, error or cancellation.
+
+This fits the current byte-owned execution request without promising full upstream file-size coverage.
+
+If larger inputs later justify spooling, first select request-local content identities, an external content owner and a pure multipart part plan; handles, I/O and cleanup never enter IR.
+
+Merely adding a spool limit would not establish that ownership seam.
 
 For OpenAI, encode ordered multipart `image`/`image[]` or the selected JSON `images` reference form without changing meaning. JSON entries choose exactly one source form. File-ID forms remain rejected until authorized Files resolution exists. Remote URLs may be passed only to targets with an admitted native reference carrier; do not add gateway URL downloading, redirects or credential forwarding to make multipart-only targets work.
 
-OpenAI applies a mask to the first image. Decode that into explicit source-zero association and reject other associations on encoding; never reorder images to conceal a mismatch. The mask is editing guidance, not a promise of pixel-exact preservation. Recommend retaining the accepted [inert-media boundary](../architecture/adaptation-and-dialects.md#media): validate source shape, declared type and encoded/decoded byte bounds locally; leave actual format, alpha and matching pixel dimensions to the native upstream validator for both inline and URL forms. A target without the required validation contract rejects. MIME declarations are not validation evidence. A future bounded metadata inspector would require an explicit standalone-Edit policy exception, resource limits and a declared-versus-observed fact owner; this proposal does not introduce image decoding or change Generation media handling.
+OpenAI applies a mask to the first image.
+
+Decode that into explicit source-zero association and reject other associations on encoding; never reorder images to conceal a mismatch.
+
+The mask is editing guidance, not a promise of pixel-exact preservation.
+
+Recommend retaining the accepted [inert-media boundary](../architecture/adaptation-and-dialects.md#media): validate source shape, declared type and encoded/decoded byte bounds locally; leave actual format, alpha and matching pixel dimensions to the native upstream validator for both inline and URL forms.
+
+A target without the required validation contract rejects.
+
+MIME declarations are not validation evidence.
+
+A future bounded metadata inspector would require an explicit standalone-Edit policy exception, resource limits and a declared-versus-observed fact owner; this proposal does not introduce image decoding or change Generation media handling.
 
 The mask sources conflict: the pinned SDK specifies PNG below 4 MB and matching dimensions; the current guide describes matching format/size below 50 MB with alpha. Recommend an initial conservative masked profile with PNG-declared source and mask, mask below 4,000,000 bytes, and native validation of PNG/alpha/matching dimensions, clearly documented as a local subset rather than local pixel verification. Choose finite per-image, aggregate and materialized-body limits separately before implementation. “Up to 16 images below 50 MB each” is not permission to buffer 800 MB per request.
 
@@ -135,7 +157,15 @@ Maintain three distinct facts: requested controls, stream-reported settings (whi
 | Source reports serving model/native billing without standard carriers | Preserve the source; select explicit dialect carriage or a named allowed report omission. The existing accounting projection does not authorize model/time loss |
 | Artifact reports disagree across outputs | Do not collapse them into a misleading top-level report; reject incompatible standard delivery or use a selected richer carrier |
 
-Recommend keeping strict OpenAI Images as the standard dialect and designing an **explicit MorphieCore Images dialect** for optional native reports and ratio/tier controls if Grok activation remains desired. Its selection mechanism, field layout, defaults and SDK implications require human review. Alternatives are a separately selected native surface or leaving Grok disconnected. Do not silently relax the standard schema for one model, add fields to OpenAPI before implementation, or claim that a lenient SDK parser establishes conformance. Image transcoding is a separate capability, not a default repair.
+Recommend keeping strict OpenAI Images as the standard dialect and designing an **explicit MorphieCore Images dialect** for optional native reports and ratio/tier controls if Grok activation remains desired.
+
+Its selection mechanism, field layout, defaults and SDK implications require human review.
+
+Alternatives are a separately selected native surface or leaving Grok disconnected.
+
+Do not silently relax the standard schema for one model, add fields to OpenAPI before implementation, or claim that a lenient SDK parser establishes conformance.
+
+Image transcoding is a separate capability, not a default repair.
 
 ### Static Generate review proposal
 
@@ -179,7 +209,15 @@ Accept zero/fewer previews and a final image arriving early. Preserve reported p
 
 Stream incrementally without retaining every preview; charge cumulative encoded/decoded bytes, per-event bytes, event count, final-artifact bytes, idle/total time and concurrency independently. The current 8-MiB aggregate final-image budget is not a new 8-MiB allowance for each preview. Select finite stream/upload limits before implementing those paths.
 
-Success requires an operation-correct completed event, the requested final count and validated EOF. Preview publication forbids replay; on later failure abort/fail the existing delivery rather than replay or emit a successful terminal. Hold successful completion behind EOF, release upstreams on disconnect/deadline, and retain reported final usage once rather than summing preview observations. SSE `created_at` cannot automatically produce a static `created`; reject unsupported static↔stream conversions until a source-backed mapping is selected. Buffered static images split into chunks do not establish upstream progressive delivery.
+Success requires an operation-correct completed event, the requested final count and validated EOF.
+
+Preview publication forbids replay; on later failure abort/fail the existing delivery rather than replay or emit a successful terminal.
+
+Hold successful completion behind EOF, release upstreams on disconnect/deadline, and retain reported final usage once rather than summing preview observations.
+
+SSE `created_at` cannot automatically produce a static `created`; reject unsupported static↔stream conversions until a source-backed mapping is selected.
+
+Buffered static images split into chunks do not establish upstream progressive delivery.
 
 ### Image design review
 
@@ -190,11 +228,29 @@ Success requires an operation-correct completed event, the requested final count
 | Mask profile and validation | Conservative PNG-declared source/mask and byte subset, retaining native pixel/alpha validation. Local metadata inspection instead needs an explicit inert-media policy exception | Masked Edit admission, not unmasked direct-input design |
 | Stream association and reports | Initially one final output; task-local preview/final lifecycle and separate settings/event-time owners. Select omission/null behavior without inventing a preview default | Streaming, not static Generate/Edit |
 
-Independent directional oracles must cover Generate and Edit, multipart and JSON, source/mask ordering, defaults and target-specific restrictions, optional/native result reports and intended negative cases. Streaming needs independent preview/final fixtures, omitted/null/zero preview controls, fewer previews, Auto reports, errors/truncation/post-terminal data, cumulative bounds and cancellation without replay. SDK multipart/static and native SSE consumption are separate integration gates; a genuine incremental transport check is required in addition to an SDK accumulator. Real calls wait for a selected target and bounded acceptance plan. Files, hosted image tools, deferred jobs, video, cross-Provider failover and automatic media sweeps remain excluded.
+Independent directional oracles must cover Generate and Edit, multipart and JSON, source/mask ordering, defaults and target-specific restrictions, optional/native result reports and intended negative cases.
+
+Streaming needs independent preview/final fixtures, omitted/null/zero preview controls, fewer previews, Auto reports, errors/truncation/post-terminal data, cumulative bounds and cancellation without replay.
+
+SDK multipart/static and native SSE consumption are separate integration gates; a genuine incremental transport check is required in addition to an SDK accumulator.
+
+Real calls wait for a selected target and bounded acceptance plan.
+
+Files, hosted image tools, deferred jobs, video, cross-Provider failover and automatic media sweeps remain excluded.
 
 ## Video API and implementation
 
-Video has equal stage-4 priority but still needs [operation selection](../roadmap/index.md#grok-imagine-adaptation) before implementation. For its design, use Grok's native asynchronous API as the primary design reference; the earlier synchronous-wait choice is superseded. Public wire schemas, typed owners, job authorization and persistence remain unselected. Do not label a Grok job or synchronous wrapper as OpenAI Videos compatibility. For each operation, pin current official contracts before selecting input/output, generation or editing behavior. Separate conversational video content from standalone production operations; the wire endpoint name does not determine the task owner.
+Video has equal stage-4 priority but still needs [operation selection](../roadmap/index.md#grok-imagine-adaptation) before implementation.
+
+For its design, use Grok's native asynchronous API as the primary design reference; the earlier synchronous-wait choice is superseded.
+
+Public wire schemas, typed owners, job authorization and persistence remain unselected.
+
+Do not label a Grok job or synchronous wrapper as OpenAI Videos compatibility.
+
+For each operation, pin current official contracts before selecting input/output, generation or editing behavior.
+
+Separate conversational video content from standalone production operations; the wire endpoint name does not determine the task owner.
 
 For each selected operation, specify supported input references, required media controls, output artifacts and reported accounting. If the native API is asynchronous, select submission identity, status, cancellation, artifact access and uncertain-submission handling explicitly. Do not reuse a completed text response as evidence of video completion or turn a returned artifact URL into unrestricted server-side fetching.
 

@@ -6,8 +6,13 @@ This document separates protocol authority, reproducible regression pins, implem
 
 - [Source guides](#source-guides)
 - [Pinned sources](#pinned-sources)
+  - [Regression release selection](#regression-release-selection)
+  - [Telemetry dependency selection](#telemetry-dependency-selection)
+  - [Recorded protocol artifacts](#recorded-protocol-artifacts)
 - [Test source repositories](#test-source-repositories)
 - [Research notes](#research-notes)
+  - [Generation and client boundaries](#generation-and-client-boundaries)
+  - [Independent operations and future design inputs](#independent-operations-and-future-design-inputs)
 - [Protocol docs](#protocol-docs)
   - [OpenAI](#openai)
   - [Anthropic](#anthropic)

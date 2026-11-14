@@ -10,7 +10,12 @@ Checked **2026-10-27** against isolated public release checkouts. These projects
 - [Magpie: cache affinity and failure ownership](#magpie-cache-affinity-and-failure-ownership)
 - [LiteLLM: directional bridges and counterexamples](#litellm-directional-bridges-and-counterexamples)
 - [CLIProxyAPI: bootstrap retries, late results and refresh](#cliproxyapi-bootstrap-retries-late-results-and-refresh)
+- [Routing source observations, 2026-10-30](#routing-source-observations-2026-10-30)
 - [Outcome and recovery recheck, 2026-11-02](#outcome-and-recovery-recheck-2026-11-02)
+  - [Magpie](#magpie)
+  - [LiteLLM](#litellm)
+  - [new-api](#new-api)
+  - [Design implications](#design-implications)
 - [Applying these references](#applying-these-references)
 
 ## Source selection and reuse
@@ -134,7 +139,13 @@ Bounded direct-source review informing the [account redesign's outcome decision]
 Revision [`eba7187`](https://github.com/yetone/magpie/tree/eba7187368a8b05740326c90152db7b833cf0cc3):
 
 - [`sniff.go`](https://github.com/yetone/magpie/blob/eba7187368a8b05740326c90152db7b833cf0cc3/internal/gateway/sniff.go) records stream termination separately from failure. `response.failed` ends the stream and records an error; a terminal event alone does not establish success.
-- [`gateway.go`](https://github.com/yetone/magpie/blob/eba7187368a8b05740326c90152db7b833cf0cc3/internal/gateway/gateway.go#L2818-L2853) checks both status and attempt error before `servedCandidate`/`answered`. Its earlier cancellation branch stops fallback when the request is cancelled before a terminal marker. [`routing.go`](https://github.com/yetone/magpie/blob/eba7187368a8b05740326c90152db7b833cf0cc3/internal/gateway/routing.go#L54-L91) clears health separately from [`affinity.go`](https://github.com/yetone/magpie/blob/eba7187368a8b05740326c90152db7b833cf0cc3/internal/gateway/affinity.go#L515-L558), which can remove the current binding after an unanswered attempt. This differs from MorphieCore's failure-preserves-binding decision.
+- [`gateway.go`](https://github.com/yetone/magpie/blob/eba7187368a8b05740326c90152db7b833cf0cc3/internal/gateway/gateway.go#L2818-L2853) checks both status and attempt error before `servedCandidate`/`answered`.
+
+  Its earlier cancellation branch stops fallback when the request is cancelled before a terminal marker.
+
+  [`routing.go`](https://github.com/yetone/magpie/blob/eba7187368a8b05740326c90152db7b833cf0cc3/internal/gateway/routing.go#L54-L91) clears health separately from [`affinity.go`](https://github.com/yetone/magpie/blob/eba7187368a8b05740326c90152db7b833cf0cc3/internal/gateway/affinity.go#L515-L558), which can remove the current binding after an unanswered attempt.
+
+  This differs from MorphieCore's failure-preserves-binding decision.
 - [`fallback.go`](https://github.com/yetone/magpie/blob/eba7187368a8b05740326c90152db7b833cf0cc3/internal/gateway/fallback.go) distinguishes held content from already-passing content. It can publish HTTP headers/keepalives before giving up retry rights. All-resting selection can retain one resting probe; usage-cap exclusion, quota exhaustion and ordinary retry exhaustion have different exits, not one universal retry header policy.
 
 The earlier shorthand “complete error-free reply” must be read with these protocol-specific limits: the inspected passthrough path accepts normal Chat EOF without requiring `[DONE]`, while Responses/Anthropic/Gemini require their terminal evidence. Cross-protocol translation and account-specific execution paths were not exhaustively traced. Borrow the separation of terminal, error, health and affinity observations, not its definition of successful completion or binding removal policy.
@@ -145,7 +156,12 @@ Revision [`dbcacc7`](https://github.com/BerriAI/litellm/tree/dbcacc7ab7880d51153
 
 - [`streaming_handler.py`](https://github.com/BerriAI/litellm/blob/dbcacc7ab7880d5115376cd6c22d22898c50d08f/litellm/litellm_core_utils/streaming_handler.py#L2354-L2470) finalizes asynchronous streaming success at iterator exhaustion and separately dispatches stream failures. After a finish reason, `ReadError`/`RemoteProtocolError` can take the completion path. Do not import this exception into MorphieCore's validated-EOF requirement.
 - [`router.py`](https://github.com/BerriAI/litellm/blob/dbcacc7ab7880d5115376cd6c22d22898c50d08f/litellm/router.py#L3841-L3990) pre-reads a first chunk for early failure handling. Mid-stream fallback continuation is off by default but can explicitly reuse delivered text as prefill for a new deployment. That option remains outside MorphieCore's publication boundary.
-- [`utils.py`](https://github.com/BerriAI/litellm/blob/dbcacc7ab7880d5115376cd6c22d22898c50d08f/litellm/utils.py#L2203-L2288), [`litellm_logging.py`](https://github.com/BerriAI/litellm/blob/dbcacc7ab7880d5115376cd6c22d22898c50d08f/litellm/litellm_core_utils/litellm_logging.py#L2563-L2592) and [`cooldown_handlers.py`](https://github.com/BerriAI/litellm/blob/dbcacc7ab7880d5115376cd6c22d22898c50d08f/litellm/router_utils/cooldown_handlers.py#L464-L570) distinguish call callbacks, per-attempt failure reporting and cooldown decisions. Background callback dispatch is not proof of completed downstream delivery. Retry exhaustion raises the latest error for the outer fallback path; no-available-deployment can carry cooldown information.
+- [`utils.py`](https://github.com/BerriAI/litellm/blob/dbcacc7ab7880d5115376cd6c22d22898c50d08f/litellm/utils.py#L2203-L2288), [`litellm_logging.py`](https://github.com/BerriAI/litellm/blob/dbcacc7ab7880d5115376cd6c22d22898c50d08f/litellm/litellm_core_utils/litellm_logging.py#L2563-L2592) and [`cooldown_handlers.py`](https://github.com/BerriAI/litellm/blob/dbcacc7ab7880d5115376cd6c22d22898c50d08f/litellm/router_utils/cooldown_handlers.py#L464-L570)
+  distinguish call callbacks, per-attempt failure reporting and cooldown decisions.
+
+  Background callback dispatch is not proof of completed downstream delivery.
+
+  Retry exhaustion raises the latest error for the outer fallback path; no-available-deployment can carry cooldown information.
 
 The bounded review did not trace Proxy HTTP error mapping or all native Responses/Anthropic paths. It establishes no final downstream `x-should-retry` contract. Borrow attempt-scoped observations and explicit stream cleanup, not nested retry/fallback budgets, failure-rate cooling or post-publication continuation.
 

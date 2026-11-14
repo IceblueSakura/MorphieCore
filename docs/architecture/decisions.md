@@ -7,15 +7,12 @@ See [Architecture Overview](index.md) for system boundaries and core IR semantic
 
 ## Contents
 
-  - [Scope and activation decisions](#scope-and-activation-decisions)
-  - [Semantic ownership decisions](#semantic-ownership-decisions)
-  - [Projection and reasoning decisions](#projection-and-reasoning-decisions)
-  - [History and cache decisions](#history-and-cache-decisions)
-  - [Routing and security decisions](#routing-and-security-decisions)
-  - [Delivery and evidence decisions](#delivery-and-evidence-decisions)
-
-
-Authoritative log of accepted architectural decisions and their systemic consequences:
+- [Scope and activation decisions](#scope-and-activation-decisions)
+- [Semantic ownership decisions](#semantic-ownership-decisions)
+- [Projection and reasoning decisions](#projection-and-reasoning-decisions)
+- [History and cache decisions](#history-and-cache-decisions)
+- [Routing and security decisions](#routing-and-security-decisions)
+- [Delivery and evidence decisions](#delivery-and-evidence-decisions)
 
 ### Scope and activation decisions
 

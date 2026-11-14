@@ -41,7 +41,15 @@ See [Roadmap Main](index.md) for active execution priorities and [Unscheduled is
 
 ### Google API pause
 
-Further general Google API expansion remains paused. Maintenance of qualified existing paths needs a concrete selected defect; residual strict/replay boundaries follow the [unscheduled issue register](unscheduled-issues.md#unscheduled-issues). Standard-only downstream APIs retain explicit ordinary-signature rejection; no private replay-profile or OpenCode adaptation is scheduled. Preserve the existing [terminal-report exceptions](../architecture/adaptation-and-dialects.md#service-policies-and-reports) and [native text Embedding path](../architecture/index.md#independent-embedding-path). General multimodal input, native client intake, custom tools, unified error parsing and broader probability reports remain excluded.
+Further general Google API expansion remains paused.
+
+Maintenance of qualified existing paths needs a concrete selected defect; residual strict/replay boundaries follow the [unscheduled issue register](unscheduled-issues.md#unscheduled-issues).
+
+Standard-only downstream APIs retain explicit ordinary-signature rejection; no private replay-profile or OpenCode adaptation is scheduled.
+
+Preserve the existing [terminal-report exceptions](../architecture/adaptation-and-dialects.md#service-policies-and-reports) and [native text Embedding path](../architecture/index.md#independent-embedding-path).
+
+General multimodal input, native client intake, custom tools, unified error parsing and broader probability reports remain excluded.
 
 ### Deferred Generation semantics
 - Turn-scoped system messages (`clear_at`).

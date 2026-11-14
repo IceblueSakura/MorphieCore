@@ -14,7 +14,12 @@ Researched **2026-10-25** against official API references, SDK implementations, 
 
 ## Instruction authority research: current, legacy and Provider dialects
 
-Separates wire role spelling, instruction author authority, temporal placement, and target model capabilities. Primary entry points: pinned OpenAI [system](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/chat_completion_system_message_param.py) and [developer](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/chat_completion_developer_message_param.py) parameters; Anthropic [mid-conversation system guide](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages); [Bailian operation references](2026-10-19-bailian-compatible-requests.md#primary-sources). The Provider comparisons retain their October 25 observation date; recheck the target operation before extending a binding.
+Separates wire role spelling, instruction author authority, temporal placement, and target model capabilities.
+
+Primary entry points: pinned OpenAI [system](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/chat_completion_system_message_param.py) and [developer](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/chat_completion_developer_message_param.py) parameters; Anthropic
+[mid-conversation system guide](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages); [Bailian operation references](2026-10-19-bailian-compatible-requests.md#primary-sources).
+
+The Provider comparisons retain their October 25 observation date; recheck the target operation before extending a binding.
 
 ### OpenAI: API system is not automatically Model Spec system authority
 

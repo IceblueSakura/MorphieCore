@@ -12,6 +12,12 @@ See [Architecture Overview](index.md) for system boundaries and core IR semantic
     - [Standard request boundary](#standard-request-boundary)
     - [Google strict function arguments](#google-strict-function-arguments)
     - [Protocol tree ownership](#protocol-tree-ownership)
+      - [OpenAI Terra](#openai-terra)
+      - [Native DeepSeek Chat](#native-deepseek-chat)
+      - [OpenCode Go controls](#opencode-go-controls)
+      - [Hosted MiniCPM Chat](#hosted-minicpm-chat)
+      - [Shared Aliyun billing dialect](#shared-aliyun-billing-dialect)
+      - [Subscription Responses](#subscription-responses)
     - [Field handling](#field-handling)
     - [Client Responses history shorthand](#client-responses-history-shorthand)
     - [Candidate-local projection](#candidate-local-projection)
@@ -35,7 +41,13 @@ See [Architecture Overview](index.md) for system boundaries and core IR semantic
     - [Messages terminal projection](#messages-terminal-projection)
   - [Reasoning controls](#reasoning-controls)
     - [Reasoning activation and effort scope](#reasoning-activation-and-effort-scope)
+      - [Ordered effort projection](#ordered-effort-projection)
+      - [Google response-effort projection](#google-response-effort-projection)
     - [Reasoning level calibration](#reasoning-level-calibration)
+      - [Thinking-budget quantization](#thinking-budget-quantization)
+      - [Bounded token-budget adaptation](#bounded-token-budget-adaptation)
+      - [Binding-level mapping](#binding-level-mapping)
+      - [Implementation owners](#implementation-owners)
   - [Media](#media)
   - [Adaptation evidence](#adaptation-evidence)
     - [Domain evidence interface](#domain-evidence-interface)
@@ -81,8 +93,34 @@ Strict-tool admission follows the effective binding/API disposition in shared re
 
 Existing generateContent and Interactions targets admit a qualified closed-object function-argument subset through their native request-wide validation modes. The [local SDK evidence](../refs/2026-10-27-official-sdk-sources.md#google-function-argument-carriers-2026-11-09) is separate from text-response schema support.
 
-- Preserve supplied schemas exactly. The selected vocabulary is `type`, `properties`, `required`, `additionalProperties:false`, array `items`, string/numeric `enum`, `title` and `description`; nested objects must also be closed. Required nullable fields may use exactly two `anyOf` branches: one supported schema and one exact `{"type":"null"}`, in either order, with only optional title/description siblings. This admits current Agent strict optional-field serialization without arbitrary composition or schema rewriting. Boolean types are supported, boolean enums are not. Integer enum literals stay within the safe binary64 integer range; fractional enum literals must survive binary64 serialization without precision change. Length, pattern, general composition and other unqualified constraints retain explicit-strict rejection when calls are enabled. Non-strict schemas remain unchanged for upstream validation, without a literal root-type injection. Explicit scalar roots still reject.
-- **Bounded strict references:** a root `$defs` object and `#/$defs/<name>` references may describe this same subset, including root aliases and nested/nullable references. Decode one JSON Pointer token with standard `~0`/`~1` escapes using `serde_json::Value::pointer`; never fetch, inline or normalize schemas. Check every definition, including unused ones; the resolved root must be a concrete object. Reference nodes allow only `$ref`, plus `$defs` at the document root. Missing/remote/percent-encoded references, extra pointer segments, nested definition repositories, resource scopes, other reference siblings and cycles remain outside this qualified subset. Memoized subtree heights bound every logical schema/reference path to 64 edges without exponential DAG expansion; existing document byte/node/depth bounds remain.
+- Preserve supplied schemas exactly.
+
+  The selected vocabulary is `type`, `properties`, `required`, `additionalProperties:false`, array `items`, string/numeric `enum`, `title` and `description`; nested objects must also be closed.
+
+  Required nullable fields may use exactly two `anyOf` branches: one supported schema and one exact `{"type":"null"}`, in either order, with only optional title/description siblings.
+
+  This admits current Agent strict optional-field serialization without arbitrary composition or schema rewriting.
+
+  Boolean types are supported, boolean enums are not.
+
+  Integer enum literals stay within the safe binary64 integer range; fractional enum literals must survive binary64 serialization without precision change.
+
+  Length, pattern, general composition and other unqualified constraints retain explicit-strict rejection when calls are enabled.
+
+  Non-strict schemas remain unchanged for upstream validation, without a literal root-type injection.
+
+  Explicit scalar roots still reject.
+- **Bounded strict references:** a root `$defs` object and `#/$defs/<name>` references may describe this same subset, including root aliases and nested/nullable references.
+
+  Decode one JSON Pointer token with standard `~0`/`~1` escapes using `serde_json::Value::pointer`; never fetch, inline or normalize schemas.
+
+  Check every definition, including unused ones; the resolved root must be a concrete object.
+
+  Reference nodes allow only `$ref`, plus `$defs` at the document root.
+
+  Missing/remote/percent-encoded references, extra pointer segments, nested definition repositories, resource scopes, other reference siblings and cycles remain outside this qualified subset.
+
+  Memoized subtree heights bound every logical schema/reference path to 64 edges without exponential DAG expansion; existing document byte/node/depth bounds remain.
 - Strict automatic selection uses `VALIDATED` / `validated`; required selection uses `ANY` / `any`; none stays none. Allowed names remain exact. generateContent optional allowed subsets use `VALIDATED`, including non-strict requests, without claiming a new strict guarantee.
 - When calls are enabled, the mode covers the whole effective inventory. With any strict tool, every declaration's supplied schema must fit the subset. Mixed strict/non-strict declarations are accepted only within that inventory; non-strictness does not promise invalid arguments. Conditional source defaults resolve on candidate copies through the same schema and inventory check, otherwise taking the existing named conditional-default fallback. Explicit true never takes that fallback.
 - **Native no-call equivalence:** explicit `tool_choice:none` uses `NONE` / `none`, which prohibits every call and satisfies argument/cardinality guarantees vacuously. Shared admission and direct writers retain complete declarations/schemas, skip conditional-strict fallback and accept serial intent without requesting validated decoding. This does not relax auto/required selection or bypass known-field, bounds, trust, history or other declaration-carrier checks.
@@ -148,7 +186,17 @@ DashScope and Aliyun TokenPlan share the `Bailian` wire dialect for Chat and Res
 
 **Function strictness selected 2026-11-09:** these are two plans of the same upstream service, so `aliyun-dashscope-cn` and `aliyun-tokenplan-cn` share one default policy on Chat and Responses. Preserve strictness only for an independently verified exact model/API pair; otherwise relax explicit true and conditional defaults under `bailian.relax-function-strictness.v1` (L3). The current verified set is empty: existing Qwen capability flags and isolated DeepSeek successes do not establish enforced function schemas. New models default to relaxation.
 
-The source IR retains the client's original strictness. For unverified pairs, candidate-local projection changes root and inline function strictness to non-strict, without materializing or rewriting parameter schemas. Root Bailian declarations omit `strict`; retained standard Responses batches spell their non-strict default as `strict:false`. Explicit false remains non-strict without a guarantee-loss receipt. Discovery reports the relaxed target's approximated capability rather than native strict enforcement. The same owner applies to endpoint encoding and direct lowering, even under a permissive caller-supplied contract.
+The source IR retains the client's original strictness.
+
+For unverified pairs, candidate-local projection changes root and inline function strictness to non-strict, without materializing or rewriting parameter schemas.
+
+Root Bailian declarations omit `strict`; retained standard Responses batches spell their non-strict default as `strict:false`.
+
+Explicit false remains non-strict without a guarantee-loss receipt.
+
+Discovery reports the relaxed target's approximated capability rather than native strict enforcement.
+
+The same owner applies to endpoint encoding and direct lowering, even under a permissive caller-supplied contract.
 
 This explicitly accepts best-effort arguments and downstream validation/correction costs; it revises the former GLM Chat/Bailian Responses rejection and Qwen Chat blanket capability treatment. It does not relax structured-text output strictness, tool identity, required selection, call count, seriality or thinking intent, and adds no argument repair, prompt rewriting or automatic retry. Other Providers keep their own strict contracts.
 
@@ -211,19 +259,53 @@ Accepted on 2026-10-30; it replaces the earlier exact-first fallback and the fai
 
 **Execution strategy.** The ladder adapts fields and carriers, not the runtime's strategy. Apply the [gateway/runtime boundary](index.md#system-boundaries): a known restriction requiring automatic thinking disablement or another strategy replacement rejects with an actionable standard error. A runtime-selected replacement request is evaluated independently.
 
-**Low-loss priority, reaffirmed 2026-11-07.** Field spelling or shape differences, incomplete capability assessment and missing optional controls are not independent rejection reasons. Prefer semantic matching, then a useful approximation, then omission with existing loss evidence. Apply these choices at the responsible projection/dialect boundary; ordinary L2–L4 rules need no new per-rule approval. Content or explicit-guarantee downgrades still need their concrete disposition selected. Unresolved cases may remain limited while independently useful workflows ship under the [partial-delivery exit](../roadmap/index.md#partial-delivery-exit).
+**Low-loss priority, reaffirmed 2026-11-07.** Field spelling or shape differences, incomplete capability assessment and missing optional controls are not independent rejection reasons.
+
+Prefer semantic matching, then a useful approximation, then omission with existing loss evidence.
+
+Apply these choices at the responsible projection/dialect boundary; ordinary L2–L4 rules need no new per-rule approval.
+
+Content or explicit-guarantee downgrades still need their concrete disposition selected.
+
+Unresolved cases may remain limited while independently useful workflows ship under the [partial-delivery exit](../roadmap/index.md#partial-delivery-exit).
 
 **Timing.** Request-side levels are resolved per candidate during planning, on candidate-local copies, so request-determined impossibility fails before dispatch (P4). After dispatch the upstream has already generated output; report and metadata facts bottom out at L4, and only content or outcome that would be misrepresented may fail delivery.
 
 **Invariants outside the ladder:** credentials, auth, origin and trusted target selection; replay signature, origin and format trust; resource and time bounds; malformed known values and strict JSON; terminal honesty and validated EOF; call identity; no executable claim for incomplete tool input; explicit history-read intent; already-published accounting; candidate-local projection over immutable source IR; the routing freeze. No level invents content, forges signatures or fabricates success.
 
-**Ownership.** The request side has one owner: one feature vocabulary, with each target declaring a disposition per feature (native, equivalent, approximate, omit, delegate or reject), and one pure projection applying it per candidate during planning. This vocabulary replaces the separate requirement, feature-set, feature-enum, target-contract and published-rejection representations; encoders consume only projected copies, and source-level admission keeps only grammar checks and L5. The delivery side has one owner in [`ClientAdapter`](../../src/adapter/downstream.rs): a (fact, client protocol) table drives one projection over the IR event stream; JSON and retained views reduce the projected events to a snapshot and render it, so JSON/SSE agreement holds by construction and encoders only render. Discovery and `/capabilities` read the same tables.
+**Ownership.** The request side has one owner: one feature vocabulary, with each target declaring a disposition per feature (native, equivalent, approximate, omit, delegate or reject), and one pure projection applying it per candidate during planning.
+
+This vocabulary replaces the separate requirement, feature-set, feature-enum, target-contract and published-rejection representations; encoders consume only projected copies, and source-level admission keeps only grammar checks and L5.
+
+The delivery side has one owner in [`ClientAdapter`](../../src/adapter/downstream.rs): a (fact, client protocol) table drives one projection over the IR event stream; JSON and retained views reduce the projected events to a snapshot and render it, so JSON/SSE agreement holds by construction and encoders only render.
+
+Discovery and `/capabilities` read the same tables.
 
 Safety-assessment omission and its evidence belong to that projection, not a second encoder wrapper. Rendering and replay sealing do not introduce separate adaptation-result channels.
 
-The request implementation lives in [`lowering/request.rs`](../../src/lowering/request.rs) and [`lowering/disposition.rs`](../../src/lowering/disposition.rs). Source trust validation and visible-history transfer precede candidate feature admission; the final check sees projected semantic fields and envelope controls. Presentation, summary granularity and encrypted-include decisions use candidate rows, refreshed after allocation conversion where native thinking availability matters; hidden-display guarantees without a carrier reject through those rows. Parallel permission preserves the binding's disposition, independently of the explicit serial guarantee. Native grammar and replay-identity assertions remain codec responsibilities. Ordered Messages effort/tool rewrites consume the same table rather than a second carrier-policy object. Request-envelope session affinity remains outside semantic IR, with its target disposition resolved by this owner. The [single delivery projection](#delivery-projection-ownership) and [shared discovery compilation](#generation-text-model-discovery) consume these owners.
+The request implementation lives in [`lowering/request.rs`](../../src/lowering/request.rs) and [`lowering/disposition.rs`](../../src/lowering/disposition.rs).
 
-**Evidence.** Receipts record only L3 approximations, L4 omissions and schema-completion estimates; L2 normalizations, derivations, defaults and request inferences produce none. Target encoders carry whole evidence deltas so coverage and truncation counts survive merging; Messages retains its directional preference for detailed receipts over matching field summaries. Rule IDs live in the disposition tables rather than a separate projection-rule enum and scattered string literals. Remaining field-specific follow-ups are listed in the [roadmap](../roadmap/unscheduled-issues.md#protocol-boundaries).
+Source trust validation and visible-history transfer precede candidate feature admission; the final check sees projected semantic fields and envelope controls.
+
+Presentation, summary granularity and encrypted-include decisions use candidate rows, refreshed after allocation conversion where native thinking availability matters; hidden-display guarantees without a carrier reject through those rows.
+
+Parallel permission preserves the binding's disposition, independently of the explicit serial guarantee.
+
+Native grammar and replay-identity assertions remain codec responsibilities.
+
+Ordered Messages effort/tool rewrites consume the same table rather than a second carrier-policy object.
+
+Request-envelope session affinity remains outside semantic IR, with its target disposition resolved by this owner.
+
+The [single delivery projection](#delivery-projection-ownership) and [shared discovery compilation](#generation-text-model-discovery) consume these owners.
+
+**Evidence.** Receipts record only L3 approximations, L4 omissions and schema-completion estimates; L2 normalizations, derivations, defaults and request inferences produce none.
+
+Target encoders carry whole evidence deltas so coverage and truncation counts survive merging; Messages retains its directional preference for detailed receipts over matching field summaries.
+
+Rule IDs live in the disposition tables rather than a separate projection-rule enum and scattered string literals.
+
+Remaining field-specific follow-ups are listed in the [roadmap](../roadmap/unscheduled-issues.md#protocol-boundaries).
 
 Applications selected on 2026-10-30 are implemented, including request strictness, effort, ceilings, Messages intake/omission, delivery projection, history transfer and shared discovery.
 
@@ -287,17 +369,43 @@ Gateway request/response byte limits, deadlines, model bounds and honest termina
 
 #### Semantic-equivalence compatibility
 
-This is ladder level L2 of the [conversion ladder](#conversion-ladder). The selected null-metadata, empty-logprobs and [reviewed equivalent forms](../refs/2026-10-27-client-ir-boundaries.md#semantic-equivalence-review-2026-10-28) are implemented. Further L2 applications are found through the [scoped follow-ups](../roadmap/unscheduled-issues.md#protocol-boundaries) rather than a separate field-by-field review. Protocol-defined equivalent empty values, empty collections, defaults and structural placeholders belong to lossless mapping. Accept, normalize, omit or supply them as the target grammar requires, without a separate named-omission path or loss receipt.
+This is ladder level L2 of the [conversion ladder](#conversion-ladder).
+
+The selected null-metadata, empty-logprobs and [reviewed equivalent forms](../refs/2026-10-27-client-ir-boundaries.md#semantic-equivalence-review-2026-10-28) are implemented.
+
+Further L2 applications are found through the [scoped follow-ups](../roadmap/unscheduled-issues.md#protocol-boundaries) rather than a separate field-by-field review.
+
+Protocol-defined equivalent empty values, empty collections, defaults and structural placeholders belong to lossless mapping.
+
+Accept, normalize, omit or supply them as the target grammar requires, without a separate named-omission path or loss receipt.
 
 Equivalence depends on the field, direction and lifecycle contract, not emptiness alone. It must preserve content, control intent, explicit constraints, identity, report facts and subsequent behavior. Preserve source observations; apply target representation changes in the existing codec/projection owners. Do not introduce recursive empty-field stripping or globally equate absent, null, empty, false and zero. Unknown fields and malformed known values retain their existing admission rules.
 
-Selected applications are reported `metadata:null` on Chat SSE and Messages delivery, and `logprobs:[]` on Messages delivery and history admission. These carry no metadata entries or token-probability observations to lose. Same-protocol carriers still preserve source presence where representable, and target-required fields remain required. Null metadata does not echo request metadata or become Messages `metadata.user_id`; empty/nonempty metadata maps and other unsupported execution hints retain their current dispositions. Nonempty logprobs still reject where no carrier exists, and an explicit request for probabilities is checked independently of an empty output report.
+Selected applications are reported `metadata:null` on Chat SSE and Messages delivery, and `logprobs:[]` on Messages delivery and history admission.
+
+These carry no metadata entries or token-probability observations to lose.
+
+Same-protocol carriers still preserve source presence where representable, and target-required fields remain required.
+
+Null metadata does not echo request metadata or become Messages `metadata.user_id`; empty/nonempty metadata maps and other unsupported execution hints retain their current dispositions.
+
+Nonempty logprobs still reject where no carrier exists, and an explicit request for probabilities is checked independently of an empty output report.
 
 An empty update that clears state, an empty restriction set, an identity-bearing block or a terminal report is not equivalent to omission merely because its payload is empty. Stream accumulation must not erase earlier reports or suppress completion. Tests belong at the responsible boundaries: equivalent forms agree across JSON/SSE/history; meaningful nonempty values, source observations and state transitions remain protected.
 
 This decision removes `chat.omit-null-stream-metadata.v1` and `messages.omit-null-response-metadata.v1` and their receipts. Actual removal of meaningful information continues to require a selected named loss or rejection.
 
-Further selected applications: null-only system fingerprints on Responses/Messages and terminal explanations on Messages carry no report value; explicit `logprobs:false` needs no Messages probability carrier. Document citations default off: an omitted/false `citations.enabled` normalizes to an uncited document without a loss receipt; enabled citations remain unselected and malformed known flags reject. Empty cache options normalize without a dedicated rule. On trusted always-parallel targets, explicit parallel permission is exact; explicit serial intent still rejects. The obsolete `cache.omit-inactive-options.v1` and `deepseek.omit-parallel-tool-permission.v1` rules are removed. Meaningful fingerprints/explanations, active cache controls and requests for probabilities retain their loss/rejection contracts.
+Further selected applications: null-only system fingerprints on Responses/Messages and terminal explanations on Messages carry no report value; explicit `logprobs:false` needs no Messages probability carrier.
+
+Document citations default off: an omitted/false `citations.enabled` normalizes to an uncited document without a loss receipt; enabled citations remain unselected and malformed known flags reject.
+
+Empty cache options normalize without a dedicated rule.
+
+On trusted always-parallel targets, explicit parallel permission is exact; explicit serial intent still rejects.
+
+The obsolete `cache.omit-inactive-options.v1` and `deepseek.omit-parallel-tool-permission.v1` rules are removed.
+
+Meaningful fingerprints/explanations, active cache controls and requests for probabilities retain their loss/rejection contracts.
 
 Chat request `logit_bias:null` is its documented default, equivalent to omission with no active token bias or loss receipt. Non-null values retain rejection; tokenizer-bound active bias remains unselected. This field-specific rule does not equate arbitrary empty objects with null.
 
@@ -317,17 +425,71 @@ Apply [semantic-equivalence compatibility](#semantic-equivalence-compatibility) 
 
 Accepted applications:
 
-- **Omitted Responses strictness (P5):** the [Responses reference](https://developers.openai.com/api/reference/resources/responses/methods/create) and [function-calling guide](https://developers.openai.com/api/docs/guides/function-calling#strict-mode) define attempted strict normalization with non-strict fallback; Chat omission is non-strict. Implemented on OpenAI Chat/Bailian and Messages paths: an already-closed schema with an equivalent strict carrier stays strict; every other omitted-strict definition resolves non-strict under `openai.omit-conditional-tool-strictness.v1` (L3). No compatibility or normalization-feasibility classifier remains. An omitted parameter list is parameterless; required schema carriers use a closed empty object (L2), without changing source absence. Standard Responses retains its native omission. Explicit true never takes the omitted-default loss. The IR default names this conditional rule, not a promise to normalize supplied schemas.
+- **Omitted Responses strictness (P5):** the [Responses reference](https://developers.openai.com/api/reference/resources/responses/methods/create) and [function-calling guide](https://developers.openai.com/api/docs/guides/function-calling#strict-mode) define attempted strict normalization with non-strict fallback; Chat omission is non-strict.
+
+  Implemented on OpenAI Chat/Bailian and Messages paths: an already-closed schema with an equivalent strict carrier stays strict; every other omitted-strict definition resolves non-strict under `openai.omit-conditional-tool-strictness.v1` (L3).
+
+  No compatibility or normalization-feasibility classifier remains.
+
+  An omitted parameter list is parameterless; required schema carriers use a closed empty object (L2), without changing source absence.
+
+  Standard Responses retains its native omission.
+
+  Explicit true never takes the omitted-default loss.
+
+  The IR default names this conditional rule, not a promise to normalize supplied schemas.
 - **Reasoning presentation and continuity requests (P2):** `summary:"auto"` selects the most detailed available summarizer; resolving to the fixed native summarizer or no available summary is exact. Explicit `concise`/`detailed` take a named omission without a selectable carrier. Encrypted-reasoning `include` is exact when the target emits no reasoning items and takes a named continuity omission when reasoning has no opaque carrier.
-- **Carrier-less reports (P2):** served service classes and refusal categories without an OpenAI carrier are omitted on delivery copies, extending [explanatory terminal reports](#explanatory-terminal-reports). Anthropic standard capacity and OpenAI default processing remain distinct classes; no approximate tier is reported. Empty probability reports instead follow [semantic-equivalence compatibility](#semantic-equivalence-compatibility). Messages delivery applies the same omission to served OpenAI processing classes and echoed execution hints (`metadata`, `background`, `prompt_cache_key`, `store`).
+- **Carrier-less reports (P2):** served service classes and refusal categories without an OpenAI carrier are omitted on delivery copies, extending [explanatory terminal reports](#explanatory-terminal-reports).
+
+  Anthropic standard capacity and OpenAI default processing remain distinct classes; no approximate tier is reported.
+
+  Empty probability reports instead follow [semantic-equivalence compatibility](#semantic-equivalence-compatibility).
+
+  Messages delivery applies the same omission to served OpenAI processing classes and echoed execution hints (`metadata`, `background`, `prompt_cache_key`, `store`).
 - **Messages terminal derivation (P1):** see [Messages terminal projection](#messages-terminal-projection).
 - **Messages baseline:** under the [version policy](index.md#protocols), `2023-06-01` is admitted over the current body grammar and beta headers are ignored, while beta body semantics follow body rules. Agents still learn unsupported features through [discovery](#generation-text-model-discovery).
 
-Presentation and continuity requests project on candidate copies before final validation across target families. Native Responses retains its carriers; Messages and Google can approximate explicit summary granularity through their native summarizers. Auto resolves to the native default without a loss receipt; unavailable explicit granularity uses `generation.omit-reasoning-summary.v1`. Encrypted include uses `generation.omit-encrypted-reasoning-include.v1` without an opaque carrier, except that admitted explicit thinking-off has no new reasoning to encrypt and needs no loss receipt. These rules do not change activation, effort, budgets, context, read-history intent, history owners or source observations. Null/omitted visibility guards remain.
+Presentation and continuity requests project on candidate copies before final validation across target families.
 
-The conditional-default consumers share one resolver for root definitions, namespace leaves where carried, and inline-added definitions. Projection mutates private settings/items only; supplied schemas and source observations are unchanged. Unknown schema keywords, including inside closed objects and referenced definitions, take the same named non-strict fallback rather than local normalization-feasibility classification. The existing subset walker checks closure and the known vocabulary together; it does not rewrite schemas. Property names and annotation values are not schema keywords. Explicit strict requests retain upstream delegation for unknown keywords, independently of conditional-default inference. Native Responses keeps omitted parameters and strictness; Chat's existing omitted non-strict default also keeps optional spelling. Bailian final writers omit the unsupported strict flag under their native non-strict default. The request disposition owner selects these rules before final encoding.
+Native Responses retains its carriers; Messages and Google can approximate explicit summary granularity through their native summarizers.
 
-The Messages consumer resolves conditional defaults once, after selected tool-change carrier projection, using the binding's strict opt-in and native exact subset. String enum/const casing and unsupported reference carriers cannot provide an equivalent strict guarantee. Root and inline strict tools share one native grammar budget with JSON output. If tentative conditional strictness exceeds that budget, every conditional definition becomes non-strict; explicit strict definitions and the output schema remain unchanged, and final validation rejects if those alone overflow. Projection and final wire validation reuse the same subset/budget checker. Parameterless definitions receive the required empty-object input schema without a loss receipt; equivalent empty schemas may still use an available strict carrier.
+Auto resolves to the native default without a loss receipt; unavailable explicit granularity uses `generation.omit-reasoning-summary.v1`.
+
+Encrypted include uses `generation.omit-encrypted-reasoning-include.v1` without an opaque carrier, except that admitted explicit thinking-off has no new reasoning to encrypt and needs no loss receipt.
+
+These rules do not change activation, effort, budgets, context, read-history intent, history owners or source observations.
+
+Null/omitted visibility guards remain.
+
+The conditional-default consumers share one resolver for root definitions, namespace leaves where carried, and inline-added definitions.
+
+Projection mutates private settings/items only; supplied schemas and source observations are unchanged.
+
+Unknown schema keywords, including inside closed objects and referenced definitions, take the same named non-strict fallback rather than local normalization-feasibility classification.
+
+The existing subset walker checks closure and the known vocabulary together; it does not rewrite schemas.
+
+Property names and annotation values are not schema keywords.
+
+Explicit strict requests retain upstream delegation for unknown keywords, independently of conditional-default inference.
+
+Native Responses keeps omitted parameters and strictness; Chat's existing omitted non-strict default also keeps optional spelling.
+
+Bailian final writers omit the unsupported strict flag under their native non-strict default.
+
+The request disposition owner selects these rules before final encoding.
+
+The Messages consumer resolves conditional defaults once, after selected tool-change carrier projection, using the binding's strict opt-in and native exact subset.
+
+String enum/const casing and unsupported reference carriers cannot provide an equivalent strict guarantee.
+
+Root and inline strict tools share one native grammar budget with JSON output.
+
+If tentative conditional strictness exceeds that budget, every conditional definition becomes non-strict; explicit strict definitions and the output schema remain unchanged, and final validation rejects if those alone overflow.
+
+Projection and final wire validation reuse the same subset/budget checker.
+
+Parameterless definitions receive the required empty-object input schema without a loss receipt; equivalent empty schemas may still use an available strict carrier.
 
 Responses retrieval retains the argument string selected by the shared event projection. SSE, JSON and retained snapshots consume those same selected bytes, including incomplete prefixes without JSON parsing. Native structured observations and protected replay dependencies remain unchanged; representation conversion alone needs no loss receipt.
 
@@ -359,7 +521,15 @@ Client acceptance must distinguish error-result events from actual execution. Cu
 
 Call IDs own result association, not vector adjacency. Preserve grouped calls followed by their corresponding results without reordering, flattening or dropping fields. Existing identity, causal-order, duplicate, bounds and replay checks remain. Exact association needs no new loss.
 
-The Bailian Responses consumer removes its predecessor-position check at the shared native intake/target/writer boundary. Association stays with IR validation; no reordering pass or duplicate association owner is introduced. Independent grouped/adjacent input and output expectations preserve IDs, arguments and results, while invalid links still fail semantic validation. A phase-free production-construction control compares actual managed `previous_response_id` continuation with stateless history in JSON/SSE, including the complete ordered upstream request. String-only result implementation, phase, history-carrier and replay restrictions remain separate.
+The Bailian Responses consumer removes its predecessor-position check at the shared native intake/target/writer boundary.
+
+Association stays with IR validation; no reordering pass or duplicate association owner is introduced.
+
+Independent grouped/adjacent input and output expectations preserve IDs, arguments and results, while invalid links still fail semantic validation.
+
+A phase-free production-construction control compares actual managed `previous_response_id` continuation with stateless history in JSON/SSE, including the complete ordered upstream request.
+
+String-only result implementation, phase, history-carrier and replay restrictions remain separate.
 
 [Native qualification](../refs/2026-10-27-client-ir-boundaries.md#pre-stage-4-contract-qualification-2026-10-29) covers direct Qwen Flash/Max, TokenPlan Qwen Flash, native MiMo and OpenRouter GPT grouped histories. This is not a Qwen-only semantic rule. It does not attest every model, result ordering, arbitrary interleaving, media-array carrier or billing endpoint; stricter target restrictions require endpoint evidence rather than literal-position inference from one guide. Phase remains a separate semantic/carrier question.
 
@@ -436,17 +606,81 @@ Model-effective constraints independently declare whether disabled activation is
 
 ##### Ordered effort projection
 
-Root settings are initial controls. `ConfigurationUpdate.boundary` independently carries `FollowingResponse` or `NewInputTurn`; effort scope describes the affected work, never activation timing. Responses updates select subsequent responses. Messages updates immediately after a new-input user turn select its reply; elsewhere they remain pending until new user input. Tool-result-only turns do not activate them; mixed results and new input do. Active values persist until replaced. `GenerationRequest::resolved_configuration` derives active/pending controls in one bounded, pure scan without storing a second mutable setting. Active and pending values are derived `ConfigurationState` snapshots, not merged update patches. Both use one ordered transition rule, so off clears prior reasoning effort and later enable cannot resurrect it; immediate updates also apply to the pending state.
+Root settings are initial controls.
 
-Equivalent native carriers retain historical and repeated markers. Non-equivalent or carrier-less candidates resolve source timing before target scope/level/budget conversion and refresh current-control admission. `generation.collapse-configuration.v1` records the loss of historical/pending controls; `generation.configuration-prefix-change.v1` records their removed message boundaries and cache-prefix change. Source history stays unchanged across candidates and failures. The same bounded projection extends to the existing Google targets; their scope/level mapping follows source-effective activation, never the last marker. A reasoning-scoped named effort replaces an earlier off selection; explicit off clears inapplicable reasoning allocation, while response-scoped effort remains independent. History transfer compares source and candidate states at every configuration marker, not merely the final effective value. If deleting an assistant owner changes an activation interval, even a native-capable target takes the selected collapse using original source controls. No synthetic assistant boundary or untrusted replay is retained as a placeholder.
+`ConfigurationUpdate.boundary` independently carries `FollowingResponse` or `NewInputTurn`; effort scope describes the affected work, never activation timing.
 
-The existing message-envelope owner now includes `System`. Public and native Messages intake share known-field/role validation and empty-string normalization, retaining original system membership rather than raw payloads. Native grouping validates order/contiguity before its fast path and preserves system-container boundaries under append. Public unknown fields are still filtered. Removing or changing an earlier effort marker blocks a candidate that retains later signed/redacted thinking; changes strictly after protected blocks can proceed. Changing root effort alone does not invalidate thinking. `drop_block` does not excuse a gateway prefix rewrite. Direct Messages encoding retains strict issuer admission and shares transfer-before-projection with routed encoding; rendering performs no later history deletion.
+Responses updates select subsequent responses.
 
-Named local effort is admitted only on system messages; omitted system content is empty. Content-bearing empty configuration has no fields to apply; empty content without a control rejects. Message-local null configuration/effort and Responses null update effort remain unresolved and reject without inventing reset semantics. Directly adjacent Responses updates reject; Messages repeated markers remain lawful. No new format, task budget, `clear_at`, thinking mode or weaker content/explicit guarantee is selected. [Source qualification](../refs/2026-10-27-client-ir-boundaries.md#ordered-effort-contract-qualification-2026-11-05) owns evidence; [Roadmap](../roadmap/unscheduled-issues.md#unscheduled-issues) owns remaining acceptance.
+Messages updates immediately after a new-input user turn select its reply; elsewhere they remain pending until new user input.
+
+Tool-result-only turns do not activate them; mixed results and new input do.
+
+Active values persist until replaced.
+
+`GenerationRequest::resolved_configuration` derives active/pending controls in one bounded, pure scan without storing a second mutable setting.
+
+Active and pending values are derived `ConfigurationState` snapshots, not merged update patches.
+
+Both use one ordered transition rule, so off clears prior reasoning effort and later enable cannot resurrect it; immediate updates also apply to the pending state.
+
+Equivalent native carriers retain historical and repeated markers.
+
+Non-equivalent or carrier-less candidates resolve source timing before target scope/level/budget conversion and refresh current-control admission.
+
+`generation.collapse-configuration.v1` records the loss of historical/pending controls; `generation.configuration-prefix-change.v1` records their removed message boundaries and cache-prefix change.
+
+Source history stays unchanged across candidates and failures.
+
+The same bounded projection extends to the existing Google targets; their scope/level mapping follows source-effective activation, never the last marker.
+
+A reasoning-scoped named effort replaces an earlier off selection; explicit off clears inapplicable reasoning allocation, while response-scoped effort remains independent.
+
+History transfer compares source and candidate states at every configuration marker, not merely the final effective value.
+
+If deleting an assistant owner changes an activation interval, even a native-capable target takes the selected collapse using original source controls.
+
+No synthetic assistant boundary or untrusted replay is retained as a placeholder.
+
+The existing message-envelope owner now includes `System`.
+
+Public and native Messages intake share known-field/role validation and empty-string normalization, retaining original system membership rather than raw payloads.
+
+Native grouping validates order/contiguity before its fast path and preserves system-container boundaries under append.
+
+Public unknown fields are still filtered.
+
+Removing or changing an earlier effort marker blocks a candidate that retains later signed/redacted thinking; changes strictly after protected blocks can proceed.
+
+Changing root effort alone does not invalidate thinking.
+
+`drop_block` does not excuse a gateway prefix rewrite.
+
+Direct Messages encoding retains strict issuer admission and shares transfer-before-projection with routed encoding; rendering performs no later history deletion.
+
+Named local effort is admitted only on system messages; omitted system content is empty.
+
+Content-bearing empty configuration has no fields to apply; empty content without a control rejects.
+
+Message-local null configuration/effort and Responses null update effort remain unresolved and reject without inventing reset semantics.
+
+Directly adjacent Responses updates reject; Messages repeated markers remain lawful.
+
+No new format, task budget, `clear_at`, thinking mode or weaker content/explicit guarantee is selected.
+
+[Source qualification](../refs/2026-10-27-client-ir-boundaries.md#ordered-effort-contract-qualification-2026-11-05) owns evidence; [Roadmap](../roadmap/unscheduled-issues.md#unscheduled-issues) owns remaining acceptance.
 
 ##### Google response-effort projection
 
-The model-qualified `google.<model>.response-effort-to-thinking.v1` rules map response-scoped effort to Gemini thinking effort via [`ReasoningConversion::Scope`](../../src/protocol/reasoning.rs). Gemini 3.8 Flash, Gemini 4 Argon and Carbon map low/medium/high; Hydrogen also carries xhigh as native `XHIGH` on GenerateContent and `xhigh` on Interactions. Gemini 4 planning records its unified context window rather than relabeling it as independent input capacity. Sampling is ignored by these selected models; the existing named omission rules preserve that distinction. The selected 3.8-only terminal projections remain unchanged.
+The model-qualified `google.<model>.response-effort-to-thinking.v1` rules map response-scoped effort to Gemini thinking effort via [`ReasoningConversion::Scope`](../../src/protocol/reasoning.rs).
+
+Gemini 3.8 Flash, Gemini 4 Argon and Carbon map low/medium/high; Hydrogen also carries xhigh as native `XHIGH` on GenerateContent and `xhigh` on Interactions.
+
+Gemini 4 planning records its unified context window rather than relabeling it as independent input capacity.
+
+Sampling is ignored by these selected models; the existing named omission rules preserve that distinction.
+
+The selected 3.8-only terminal projections remain unchanged.
 
 #### Reasoning level calibration
 
@@ -463,7 +697,17 @@ When targets require discrete qualitative levels, numeric token budgets are quan
 
 Functionality may take precedence over conservative gateway-derived token defaults or presets through bounded, target-qualified adaptation. Prefer exact native controls; distinguish original client intent, derived allocation and actual model limits.
 
-This direction does not select a general adjustment formula or change thinking-budget validation. The [output-ceiling adaptation](#output-ceiling-adaptation) separately selects equivalent spelling, model-maximum clamp, narrower-scope approximation and carrier-less omission with loss evidence. Other allocation changes must name the changed intent, target, finite bound, useful answer reserve and evidence; numeric thinking intent is not silently overridden. Source protocol validity, model maxima, memory/wire limits, timeouts and terminal honesty remain enforced. Unknown capacity is not unlimited capacity. The [budget proposal](../proposals/index.md#independent-output-ceilings-unselected) owns unresolved alternatives.
+This direction does not select a general adjustment formula or change thinking-budget validation.
+
+The [output-ceiling adaptation](#output-ceiling-adaptation) separately selects equivalent spelling, model-maximum clamp, narrower-scope approximation and carrier-less omission with loss evidence.
+
+Other allocation changes must name the changed intent, target, finite bound, useful answer reserve and evidence; numeric thinking intent is not silently overridden.
+
+Source protocol validity, model maxima, memory/wire limits, timeouts and terminal honesty remain enforced.
+
+Unknown capacity is not unlimited capacity.
+
+The [budget proposal](../proposals/index.md#independent-output-ceilings-unselected) owns unresolved alternatives.
 
 ##### Binding-level mapping
 
@@ -521,11 +765,39 @@ Transformations return `Result<Conversion<T>, ConversionFailure>`. Execution pro
 - **Descriptors:** Supported protocols, delivery modes (JSON/SSE), token limits (context window, max output), and evaluated feature states (`faithful`, `approved_adaptation`, `unavailable`, `not_assessed`).
 - **Pi Integration:** Context windows and image capabilities project directly to Pi client configurations.
 
-Context/input seeds require exact service-qualified evidence, including official service directories, or an explicitly selected planning policy. The selected SIWC GPT policy fixes Sol, Astra and Luna at 1,050,000 total tokens, matching the public OpenAI API; independent input/output declarations retain their service scope. Every active candidate must declare a comparable value before discovery publishes a route-common minimum; otherwise that field stays unknown. Origin/path/upstream-model replacements clear inherited context/input facts. [Capacity sources](../refs/2026-10-26-model-discovery.md#capacity-sources) record the policy separately from observed service values and unresolved abbreviations.
+Context/input seeds require exact service-qualified evidence, including official service directories, or an explicitly selected planning policy.
 
-**Native effort discovery:** effort `values` contains only route-common qualitative names preserved by the actual request projector on every candidate/delivery mode. Scope-only substitutions may retain a native name; renamed/quantized levels and effort-to-budget presets do not become extra native choices. Other effective accepted source names are published separately as `compatibility_values`. Existing standard-client request conversion remains available, without a client-identification branch or weaker admission. Discovery reuses the execution projection and its typed evidence rather than maintaining a second per-model level catalog.
+The selected SIWC GPT policy fixes Sol, Astra and Luna at 1,050,000 total tokens, matching the public OpenAI API; independent input/output declarations retain their service scope.
 
-The pi provider maps only native choices into its complete `thinkingLevelMap`; explicit null entries hide unsupported Pi levels, including aliases. Pi owns thinking preferences and clamping. Advertised total context and output maxima take priority over global client fallbacks; explicit per-model caps remain operator policy. **Input-only planning:** when total context is unknown, pi may use the independently declared input maximum as its planning window, without publishing it as a total-context fact or adding output capacity. If total context is known, preserve it even when a separate input limit is smaller; pi has no independent input-token-limit field. Fresh catalog metadata reconciles the active model, including stale scoped selections, only at idle boundaries through public Pi APIs. Offline/failed refresh retains the last qualified catalog; a prior catalog requires successful refresh before newly discovered facts can be known.
+Every active candidate must declare a comparable value before discovery publishes a route-common minimum; otherwise that field stays unknown.
+
+Origin/path/upstream-model replacements clear inherited context/input facts.
+
+[Capacity sources](../refs/2026-10-26-model-discovery.md#capacity-sources) record the policy separately from observed service values and unresolved abbreviations.
+
+**Native effort discovery:** effort `values` contains only route-common qualitative names preserved by the actual request projector on every candidate/delivery mode.
+
+Scope-only substitutions may retain a native name; renamed/quantized levels and effort-to-budget presets do not become extra native choices.
+
+Other effective accepted source names are published separately as `compatibility_values`.
+
+Existing standard-client request conversion remains available, without a client-identification branch or weaker admission.
+
+Discovery reuses the execution projection and its typed evidence rather than maintaining a second per-model level catalog.
+
+The pi provider maps only native choices into its complete `thinkingLevelMap`; explicit null entries hide unsupported Pi levels, including aliases.
+
+Pi owns thinking preferences and clamping.
+
+Advertised total context and output maxima take priority over global client fallbacks; explicit per-model caps remain operator policy.
+
+**Input-only planning:** when total context is unknown, pi may use the independently declared input maximum as its planning window, without publishing it as a total-context fact or adding output capacity.
+
+If total context is known, preserve it even when a separate input limit is smaller; pi has no independent input-token-limit field.
+
+Fresh catalog metadata reconciles the active model, including stale scoped selections, only at idle boundaries through public Pi APIs.
+
+Offline/failed refresh retains the last qualified catalog; a prior catalog requires successful refresh before newly discovered facts can be known.
 
 The gateway publishes each model's `preferred_interface` and each interface's `agent_defaults` and `delivery_adaptations`. One startup compilation derives the Generation contracts shared by models and `/capabilities` from the pinned public Agent-default corpus and the [conversion-ladder](#conversion-ladder) disposition tables; `/capabilities` retains other tasks. Default-request qualification checks the serialized ingress body against the configured request ceiling before semantic admission and candidate projection.
 

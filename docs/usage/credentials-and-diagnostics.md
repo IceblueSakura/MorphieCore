@@ -9,6 +9,7 @@ See [Usage Index](index.md) for document map, [Gateway Configuration](gateway-co
 - [Prepare credentials](#prepare-credentials)
   - [Add an API key](#add-an-api-key)
   - [Configure accounts](#configure-accounts)
+  - [Recovery defaults](#recovery-defaults)
   - [OAuth](#oauth)
 - [Manual upstream diagnostics](#manual-upstream-diagnostics)
   - [List upstream models](#list-upstream-models)
@@ -166,7 +167,19 @@ Callbacks listen on `127.0.0.1`. Login checks issuer, client and subject. Gatewa
 
 For an SSH/headless host, run the same browser login and open the printed authorization URL on your computer. If the browser cannot reach the loopback callback, copy its **full URL** from the address bar and paste it into the waiting remote CLI, then press Enter. No SSH port forwarding or special flag is needed.
 
-Paste only the callback URL from this login, including its query. Bare codes, API keys and access tokens are not accepted. The URL must match the prepared callback origin, port and path; the existing listener validates `state`, duplicate fields and issued client identity. PKCE, nonce, identity verification and the login deadline remain unchanged. Input is an ordinary echoed line, bounded to 8192 bytes; the CLI does not manage terminal mode or partially typed input. Closing stdin leaves the browser callback available; Ctrl-C cancels the login. Check the final CLI result, not merely receipt of the URL.
+Paste only the callback URL from this login, including its query.
+
+Bare codes, API keys and access tokens are not accepted.
+
+The URL must match the prepared callback origin, port and path; the existing listener validates `state`, duplicate fields and issued client identity.
+
+PKCE, nonce, identity verification and the login deadline remain unchanged.
+
+Input is an ordinary echoed line, bounded to 8192 bytes; the CLI does not manage terminal mode or partially typed input.
+
+Closing stdin leaves the browser callback available; Ctrl-C cancels the login.
+
+Check the final CLI result, not merely receipt of the URL.
 
 Automatic renewal runs in the background when running `morphiecore` (`Gateway::serve`):
 - Checks configured OAuth accounts independently of routes and enablement on startup and at `oauth.scan_interval_ms` (default 15000).
@@ -179,7 +192,15 @@ All settings belong to `gateway.json`. Zero scan interval keeps the startup chec
 
 Use `status --provider ID` for redacted state and `refresh --provider ID --account NAME` for manual renewal, with the same explicit account/store paths.
 
-When replacement material was received but identity verification failed, `refresh` resumes that verification without repeating the token exchange. Automatic renewal also retries it after a network/5xx or timeout failure, every `oauth.failed_renewal_delay_ms`; after a denial, identity mismatch or invalid response only manual `refresh` retries. Pending material remains unavailable to inference until verification succeeds. Renewal never detaches network work; an already-started atomic store transaction drains before renewal ownership is released. Material already returned by the Provider is still published after a renewal timeout or shutdown.
+When replacement material was received but identity verification failed, `refresh` resumes that verification without repeating the token exchange.
+
+Automatic renewal also retries it after a network/5xx or timeout failure, every `oauth.failed_renewal_delay_ms`; after a denial, identity mismatch or invalid response only manual `refresh` retries.
+
+Pending material remains unavailable to inference until verification succeeds.
+
+Renewal never detaches network work; an already-started atomic store transaction drains before renewal ownership is released.
+
+Material already returned by the Provider is still published after a renewal timeout or shutdown.
 
 ## Manual upstream diagnostics
 

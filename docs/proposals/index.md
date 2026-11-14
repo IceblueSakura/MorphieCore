@@ -40,7 +40,19 @@ The expansion proposals are modularized by operational domain:
 
 This page owns proposed operation, resource and advanced-Generation designs. The requested scope is confirmed; structural recommendations remain proposals unless already established in [Architecture](../architecture/index.md). No new interface, binding, resource service or execution policy is activated by this document.
 
-[Roadmap](../roadmap/index.md#planned-order) owns remaining execution order and the current routing freeze. Stage 3 closed its selected projection/loop scope with `count_tokens` deferred. [Unscheduled qualification issues](../roadmap/unscheduled-issues.md#unscheduled-issues), including R09 account failover, require individual re-entry selection and do not gate Stage 4. Decision, Embedding/audio/image/video and Files/multipart Uploads then advance as their contracts are selected. Server-side compaction, Batch and Realtime join complete citations/discovery/hosted tools in stage 5. **All stage-5 tasks are currently unscheduled:** scope placement is not a start or delivery commitment. Detailed operation designs remain proposals; stage-4/5 work is not an exit condition for earlier stages.
+[Roadmap](../roadmap/index.md#planned-order) owns remaining execution order and the current routing freeze.
+
+Stage 3 closed its selected projection/loop scope with `count_tokens` deferred.
+
+[Unscheduled qualification issues](../roadmap/unscheduled-issues.md#unscheduled-issues), including R09 account failover, require individual re-entry selection and do not gate Stage 4.
+
+Decision, Embedding/audio/image/video and Files/multipart Uploads then advance as their contracts are selected.
+
+Server-side compaction, Batch and Realtime join complete citations/discovery/hosted tools in stage 5.
+
+**All stage-5 tasks are currently unscheduled:** scope placement is not a start or delivery commitment.
+
+Detailed operation designs remain proposals; stage-4/5 work is not an exit condition for earlier stages.
 
 Code and tests describe current behavior, not authority over official contracts. The accepted [standards reset and Generation redesign](../architecture/decisions.md#scope-and-activation-decisions) governs further modality implementation and supersedes conflicting legacy mapping assumptions here. This document records unselected operation/resource designs, not a catalog or conformance claim. Provider and binding availability belongs to [the catalog](../../src/topology/catalog.rs) and [startup](../../src/gateway/startup/bootstrap.rs).
 
@@ -250,7 +262,13 @@ Reuse typed tool definitions/references, strict JSON, disposition tables, candid
 
 Before activating a candidate, select its named content-loss row and full return/replay acceptance under [S3-T5–S3-T7](../roadmap/unscheduled-issues.md#conditional-stage-3-follow-ups). Namespace aliases, plain custom-text wrappers and examples are independent packages, not prerequisites for delivered function conversion. Explicit grammar, media relocation and instruction-history synthesis remain excluded.
 
-Unresolved source facts retain their own boundaries: Responses root/inline collision precedence, namespace-qualified choice spelling, non-developer returned-addition replay, Chat custom SSE and Messages repeated-definition grammar accounting. Preserve a native shape and delegate upstream validation when possible; reject a transformation needing an unknown winner or an unproved explicit guarantee, not native declarations merely lacking an observed result. Never promote tool/assistant declarations to developer authority. [Client-history empty annotations](../architecture/adaptation-and-dialects.md#semantic-equivalence-compatibility) is unrelated to proposed textual tool-history annotations.
+Unresolved source facts retain their own boundaries: Responses root/inline collision precedence, namespace-qualified choice spelling, non-developer returned-addition replay, Chat custom SSE and Messages repeated-definition grammar accounting.
+
+Preserve a native shape and delegate upstream validation when possible; reject a transformation needing an unknown winner or an unproved explicit guarantee, not native declarations merely lacking an observed result.
+
+Never promote tool/assistant declarations to developer authority.
+
+[Client-history empty annotations](../architecture/adaptation-and-dialects.md#semantic-equivalence-compatibility) is unrelated to proposed textual tool-history annotations.
 
 ### Resource and execution safety
 

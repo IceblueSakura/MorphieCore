@@ -11,14 +11,19 @@ See [Architecture Overview](index.md) for system boundaries and core IR semantic
     - [Legal candidates](#legal-candidates)
     - [Request conversion reuse](#request-conversion-reuse)
     - [Advancement](#advancement)
+      - [Bounded same-target retry](#bounded-same-target-retry)
     - [Health and recovery](#health-and-recovery)
+      - [Downstream signals](#downstream-signals)
     - [Routing unit](#routing-unit)
   - [Conversation and cache affinity](#conversation-and-cache-affinity)
+    - [Upstream session projection](#upstream-session-projection)
   - [Streaming and delivery](#streaming-and-delivery)
     - [Semantic stream normalization](#semantic-stream-normalization)
     - [Reverse-proxy delivery](#reverse-proxy-delivery)
     - [Optional delta coalescing](#optional-delta-coalescing)
   - [Credentials and security](#credentials-and-security)
+    - [Trusted account targets](#trusted-account-targets)
+    - [OAuth maintenance](#oauth-maintenance)
   - [Agent identity and cluster diagnostics](#agent-identity-and-cluster-diagnostics)
     - [Identity and authentication](#identity-and-authentication)
     - [Shared history and usage attribution](#shared-history-and-usage-attribution)
@@ -51,7 +56,15 @@ The checked projection owns an immutable wire value, its bounded serialized-size
 
 The request-local retention budget is 1 MiB, charging body/header/digest allocation capacity and evidence including spare vector slots. Overflow leaves candidate admission and ordering unchanged: an attempted cache miss recomputes the existing pure conversion. Remaining records belong to the exchange future and are released on completion or cancellation, not retained in shared gateway state.
 
-Preparation still validates the trusted binding, streaming and final body bounds before attaching credentials and account headers. Codecs validate header carriers during request encoding; materialization stores the projected headers as a plain vector rather than retaining a deferred error state. An affinity hint changes a typed candidate-local request and carries its new checked conversion; a hint that cannot fit leaves the original accepted body intact. The test-only forced-stream override likewise invalidates its body. No path patches encoded JSON or reparses it through generic `Value` deserialization, which could reinterpret ordinary reserved-key schema objects.
+Preparation still validates the trusted binding, streaming and final body bounds before attaching credentials and account headers.
+
+Codecs validate header carriers during request encoding; materialization stores the projected headers as a plain vector rather than retaining a deferred error state.
+
+An affinity hint changes a typed candidate-local request and carries its new checked conversion; a hint that cannot fit leaves the original accepted body intact.
+
+The test-only forced-stream override likewise invalidates its body.
+
+No path patches encoded JSON or reparses it through generic `Value` deserialization, which could reinterpret ordinary reserved-key schema objects.
 
 #### Advancement
 
@@ -77,7 +90,15 @@ One exchange-local failure ledger retains the original HTTP observation, later i
 
 - **Scoping:** Auth/quota constrain an account; transient, rate-limit and permission failures constrain its exact model/operation/origin/path target. Independent constraints retain their own deadlines.
 - **Concurrency:** expired cooldowns admit ordinary concurrent requests. There are no exclusive probes, routing generations or affinity observation leases. Credential lifecycle coordination remains independent.
-- **Recovery:** Validated successful work clears expired constraints and resets exhausted backoff; live cooldowns survive concurrent successes. Reported failures and independently identified transport interruptions retain observation times and material revisions through cleanup or cancellation. Clean HTTP EOF missing a protocol terminal is malformed, not positive transport-interruption evidence. A completed retry discards its first failure's pending penalty; otherwise merged account/target constraints advance each affected scope at most once. Attempt-local output resets while usage and diagnostics remain separately attributable.
+- **Recovery:** Validated successful work clears expired constraints and resets exhausted backoff; live cooldowns survive concurrent successes.
+
+  Reported failures and independently identified transport interruptions retain observation times and material revisions through cleanup or cancellation.
+
+  Clean HTTP EOF missing a protocol terminal is malformed, not positive transport-interruption evidence.
+
+  A completed retry discards its first failure's pending penalty; otherwise merged account/target constraints advance each affected scope at most once.
+
+  Attempt-local output resets while usage and diagnostics remain separately attributable.
 - **Downstream hints:** Upstream reset evidence remains available to health/recovery. Returned `Retry-After` describes only a credible short route-wide block and is suppressed when another usable target is ready; `x-should-retry` is never emitted.
 
 Provider-owned finite classifiers use status, structured codes, declared reset fields and in-band outcomes. Unknown codes retain actual-status fallback; operators do not supply error rules. Configuration defaults and parameter ownership live in [Usage](../usage/credentials-and-diagnostics.md#recovery-defaults).
@@ -115,31 +136,21 @@ Affinity keys and advisory cache policies are defined in [`protocol::cache`](../
 
 #### Upstream session projection
 
-Session grouping is pure candidate-local transport policy, not stored history,
-authorization or replay authority. Ingress accepts the neutral conversation
-header before generic Agent carriers, then native `x-opencode-session` affinity
-before `x-opencode-session-id` identity. The native values can differ for child
-or forked OpenCode sessions. [Carrier precedence](../usage/client-requests.md#conversation-and-cache-affinity)
-owns the complete ingress list and validation.
+Session grouping is pure candidate-local transport policy, not stored history, authorization or replay authority. Ingress accepts the neutral conversation header before generic Agent carriers, then native `x-opencode-session` affinity before `x-opencode-session-id` identity. The native values can differ for child or forked OpenCode sessions. [Carrier precedence](../usage/client-requests.md#conversation-and-cache-affinity) owns the complete ingress list and validation.
 
-Generated IDs use XXH3-128 with the default zero seed: NUL-terminated
-Provider-specific versioned domain, one source-kind byte, the source byte length
-as little-endian `u32`, then the unchanged source bytes (UTF-8 for text sources).
-The unsigned 128-bit result is formatted as 32 lowercase
-ASCII hex characters, most-significant digit first and zero-padded.
-Version-2 domains identify this encoding; generated prompt-cache keys use
-`MorphieCore.prompt-cache.v2`. These IDs are grouping hints, not authentication
-or integrity checks.
-Source tags distinguish independent requests (`0`), declared conversations
-(`1`), inferred prefix groups (`2`) and cache keys (`3`). Domain and source-kind
-framing separate namespaces without ambiguous concatenation.
-No clock, random seed, mutable map, process salt, credential revision, model
-name or prompt body participates in derivation. The same source and namespace
-therefore survive restart, ordinary credential renewal and model changes.
-Routing and replay retain their independent authenticated scope below.
-Inferred prefix groups themselves remain ephemeral: restarting or expiring the
-prefix index can select a new source group, so equal prompt text alone does not
-promise a stable session across those boundaries.
+Generated IDs use XXH3-128 with the default zero seed: NUL-terminated Provider-specific versioned domain, one source-kind byte, the source byte length as little-endian `u32`, then the unchanged source bytes (UTF-8 for text sources).
+
+The unsigned 128-bit result is formatted as 32 lowercase ASCII hex characters, most-significant digit first and zero-padded.
+
+Version-2 domains identify this encoding; generated prompt-cache keys use `MorphieCore.prompt-cache.v2`.
+
+These IDs are grouping hints, not authentication or integrity checks.
+
+Source tags distinguish independent requests (`0`), declared conversations (`1`), inferred prefix groups (`2`) and cache keys (`3`). Domain and source-kind framing separate namespaces without ambiguous concatenation.
+
+No clock, random seed, mutable map, process salt, credential revision, model name or prompt body participates in derivation. The same source and namespace therefore survive restart, ordinary credential renewal and model changes. Routing and replay retain their independent authenticated scope below.
+
+Inferred prefix groups themselves remain ephemeral: restarting or expiring the prefix index can select a new source group, so equal prompt text alone does not promise a stable session across those boundaries.
 
 | Target | Wire carrier | Grouping source and precedence |
 |---|---|---|
@@ -147,17 +158,9 @@ promise a stable session across those boundaries.
 | OpenCode Go Chat, Responses and Messages | `x-opencode-session` header | Preserve an explicitly admitted dialect session; otherwise hash declared conversation, inferred prefix group, or independent request in that order under `MorphieCore.go-session.v2`. Cache keys remain independent and never become Go body sessions |
 | OpenRouter Chat and Responses | body `session_id` | Preserve an explicitly admitted dialect session; otherwise hash only a declared conversation under `MorphieCore.openrouter-session.v2`. Key-only, inferred-prefix and independent-request traffic stays without a synthesized session |
 
-Explicit dialect sessions retain their existing validation and spelling;
-they are not a public extension to the standard downstream APIs. No arbitrary
-inbound header map is forwarded. New Providers must select a documented carrier,
-source semantics and distinct versioned domain before joining this projection.
+Explicit dialect sessions retain their existing validation and spelling; they are not a public extension to the standard downstream APIs. No arbitrary inbound header map is forwarded. New Providers must select a documented carrier, source semantics and distinct versioned domain before joining this projection.
 
-OpenRouter also accepts `x-session-id`, but its body carrier avoids redundant
-precedence. Explicit sessions establish upstream stickiness after the first
-successful request; key-only fallback waits for observed cache usage.
-All three policies remain advisory: they do not guarantee a cache hit or pin
-a backend worker. [Session carrier sources](../refs/2026-11-12-generation-binding-contracts.md#session-carriers--2026-11-13)
-separate official contracts from observed SIWC behavior.
+OpenRouter also accepts `x-session-id`, but its body carrier avoids redundant precedence. Explicit sessions establish upstream stickiness after the first successful request; key-only fallback waits for observed cache usage. All three policies remain advisory: they do not guarantee a cache hit or pin a backend worker. [Session carrier sources](../refs/2026-11-12-generation-binding-contracts.md#session-carriers--2026-11-13) separate official contracts from observed SIWC behavior.
 
 Route/cache identity includes configuration namespace, credential provenance and the exact public-model/target/operation identity. Native OpenAI reasoning uses a separate model-independent service-source identity; compaction and other native signatures remain strict. [History and replay](history-and-replay.md#reasoning-replay) owns the scope rules. API-key replacement invalidates old private replay; normal OAuth material renewal preserves provenance.
 
@@ -178,11 +181,27 @@ Codecs validate and reduce upstream events in source order, emitting legal targe
 - Emits block openers before deltas, and closes blocks before terminal events.
 - Interleaving tool calls and text parts are serialized to conform to target grammar.
 
-Responses opens with exactly one `response.created`, including when its actual status is `queued`. Queued does not establish semantic Started; only an observed `response.in_progress` starts a queued response. Encoding then emits progress without a second created event. The pinned [OpenAI SDK created-event contract](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response_created_event.py) admits a Response with queued status, and its [accumulator](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/lib/streaming/responses/_responses.py#L515-L524) requires created first. Queued EOF, cancellation and errors cannot fabricate progress or successful completion.
+Responses opens with exactly one `response.created`, including when its actual status is `queued`.
+
+Queued does not establish semantic Started; only an observed `response.in_progress` starts a queued response.
+
+Encoding then emits progress without a second created event.
+
+The pinned [OpenAI SDK created-event contract](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response_created_event.py) admits a Response with queued status, and its [accumulator](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/lib/streaming/responses/_responses.py#L515-L524) requires created first.
+
+Queued EOF, cancellation and errors cannot fabricate progress or successful completion.
 
 Messages downstream delivery uses one active wire block in semantic owner/part declaration order, independently of numeric IDs. The head streams incrementally; successors wait for its actual owner finish, including a delayed thinking signature. Thinking emits one signature immediately before block stop; redacted blocks keep their native shape. Reports retain their existing independent timing and authority.
 
-The codec-local [scheduler](../../src/protocol/anthropic/messages/client/sse/schedule.rs) bounds retained payloads and container overhead, releases drained capacity, and rejects known unsupported content before queueing. [Frame construction](../../src/protocol/anthropic/messages/client/sse.rs) checks serialized size and cumulative wire/event budgets during drainage. Cancellation or rejection discards pending content. EOF-authorized incomplete termination may close unfinished text/tool wire blocks without inventing semantic completion; source reduction, argument validation and publication rules remain outside the scheduler. Native Messages intake is unchanged.
+The codec-local [scheduler](../../src/protocol/anthropic/messages/client/sse/schedule.rs) bounds retained payloads and container overhead, releases drained capacity, and rejects known unsupported content before queueing.
+
+[Frame construction](../../src/protocol/anthropic/messages/client/sse.rs) checks serialized size and cumulative wire/event budgets during drainage.
+
+Cancellation or rejection discards pending content.
+
+EOF-authorized incomplete termination may close unfinished text/tool wire blocks without inventing semantic completion; source reduction, argument validation and publication rules remain outside the scheduler.
+
+Native Messages intake is unchanged.
 
 An observed incomplete text-item finish also authorizes closure of that owner's remaining wire blocks after their queued content drains. It preserves the source item status and unfinished part facts, matching existing static rendering and terminal-only closure. A completed item still requires actual part completion; block closure does not authorize a successful operation terminal.
 
@@ -202,7 +221,15 @@ Configured via [`DeltaCoalescing`](../../src/execution/delivery/coalescing.rs) (
 
 - **Store:** Private files and redacted, zeroizing in-memory secret types; loaders reject unsafe paths. Provider documents hold typed OAuth/key maps, rejecting duplicate aliases and malformed known fields across both partitions. Publication moves and returns records without secret-cloning APIs, preserving shared locks, bounds, quarantine and atomic-write ordering. Only the current format is maintained: no historical filename detection or migration; generic invalid-directory rejection and reserved namespace protection remain.
 - **Driver ownership:** Managers share an immutable driver registry. Each driver has one registration-aware login entrance and one renewal entrance; pending renewal still requires its separate identity verification and durable publication steps.
-- **Browser login input:** Every browser login accepts HTTP callback and a full callback URL on stdin together; the first valid result wins at the shared listener. Stdin uses ordinary echoed lines, with no mode switch, hidden-input parser or partial-line coordination. Pasted URLs relay only to the prepared loopback target and share state/field validation, PKCE, issued-client binding, nonce, identity proof and the original deadline. No token import or second exchange is introduced. See [operation](../usage/credentials-and-diagnostics.md#oauth) and [implementation references](../refs/2026-11-02-account-recovery-sources.md#headless-browser-callback-input).
+- **Browser login input:** Every browser login accepts HTTP callback and a full callback URL on stdin together; the first valid result wins at the shared listener.
+
+  Stdin uses ordinary echoed lines, with no mode switch, hidden-input parser or partial-line coordination.
+
+  Pasted URLs relay only to the prepared loopback target and share state/field validation, PKCE, issued-client binding, nonce, identity proof and the original deadline.
+
+  No token import or second exchange is introduced.
+
+  See [operation](../usage/credentials-and-diagnostics.md#oauth) and [implementation references](../refs/2026-11-02-account-recovery-sources.md#headless-browser-callback-input).
 - **Automatic OAuth renewal:** Startup owns the deduplicated maintenance registry, including configured disabled or route-unreferenced accounts. Listener-owned renewal consumes that registry and rotates credentials serially under account locks. [OAuth maintenance](#oauth-maintenance) owns cancellation and replacement-verification checkpoints.
 - **API-key access:** Startup binds a reference; borrowing enforces enabled state, quarantine, record/epoch/generation identity and material digest. No separate strict-binding policy is maintained.
 - **Ingress Auth:** Binds exactly one configured Agent key via Bearer token or `x-api-key`.
@@ -211,7 +238,17 @@ Configured via [`DeltaCoalescing`](../../src/execution/delivery/coalescing.rs) (
 
 Validate target bindings before borrowing secrets. API-key `base_url` overrides are complete HTTPS API roots (literal loopback HTTP is also permitted) without userinfo, query or fragment. Append the catalog's explicit operation suffix after normalizing the joining slash; never guess or remove version prefixes. OAuth accounts reject overrides and send tokens only to their profile's resource origin. Business data selects neither origins, credentials, auth headers nor proxies.
 
-Account enablement controls routing only. OAuth registrations with the same verified subject under one Provider cannot become separate managed aliases, even with different issued clients. Login publication reserves that subject atomically across processes. Disabled, signed-out and reauthorization-required records retain the reservation; explicit removal releases it. Active sessions and pending login reject duplicate login before authority I/O; reauthorization replaces the existing unusable registration. Ordinary renewal preserves provenance, while a changed registration or API key cannot inherit private replay identity.
+Account enablement controls routing only.
+
+OAuth registrations with the same verified subject under one Provider cannot become separate managed aliases, even with different issued clients.
+
+Login publication reserves that subject atomically across processes.
+
+Disabled, signed-out and reauthorization-required records retain the reservation; explicit removal releases it.
+
+Active sessions and pending login reject duplicate login before authority I/O; reauthorization replaces the existing unusable registration.
+
+Ordinary renewal preserves provenance, while a changed registration or API key cannot inherit private replay identity.
 
 #### OAuth maintenance
 

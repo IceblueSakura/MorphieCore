@@ -25,11 +25,25 @@ Upstream opaque tokens and signatures are delivered in tagged [`mc1.`](../../src
 - **Origin ownership:** Request projection, final JSON checks and event checks share one effective strict target origin. An explicit library origin takes precedence over the bound codec scope; native reasoning then uses its separately bound service-source scope when present. A reasoning-only scope cannot authorize an unbound target. Native carrier checks and assessed history requirements stay separate from identity; catalog replay switches do not gate same-source carriage.
 - **Candidate history transfer:** Incompatible reasoning is omitted on candidate copies under target-specific `chat`, `responses`, `messages`, `gemini` and `interactions` `.transfer-visible-history.v1` rules by the [request projection](../../src/protocol/request.rs), preserving visible messages and semantic tool links. Issuer isolation and assessed carrier availability are separate selectors.
 - **Supported replay carriers:** Anthropic thinking signatures and `redacted_thinking`, Responses `encrypted_content`, Google `thoughtSignature`, Interactions `function_call.signature`. Standard Chat has no reasoning replay carrier.
-- **Responses stream authority:** `response.output_item.done` binds completed reasoning replay once, following the official [streaming contract](https://developers.openai.com/api/reference/resources/responses/streaming-events). The terminal response snapshot is independently decoded and verifies output order, owner/type, lifecycle, phase, visible content, tool arguments and other known fields; it never replaces completed stream items. Two nonempty encrypted encodings on the same completed reasoning item need not be byte-equal: the item-done value remains authoritative for JSON, SSE and next-request replay. Replay presence changes, malformed values and differing incomplete-item tokens still reject. Required item closure, terminal publication, origin isolation and EOF checks remain strict.
+- **Responses stream authority:** `response.output_item.done` binds completed reasoning replay once, following the official [streaming contract](https://developers.openai.com/api/reference/resources/responses/streaming-events).
+
+  The terminal response snapshot is independently decoded and verifies output order, owner/type, lifecycle, phase, visible content, tool arguments and other known fields; it never replaces completed stream items.
+
+  Two nonempty encrypted encodings on the same completed reasoning item need not be byte-equal: the item-done value remains authoritative for JSON, SSE and next-request replay.
+
+  Replay presence changes, malformed values and differing incomplete-item tokens still reject.
+
+  Required item closure, terminal publication, origin isolation and EOF checks remain strict.
 
 - **Incomplete reasoning:** Same-issuer `incomplete` reasoning with a finalized replay token forwards exactly to Responses. Client `in_progress` partial tokens remain invalid at replay opening.
 - **Client trust:** Malformed recognized `mc1.` envelopes reject before projection without mutation. Unsealed native values confer no issuer authority and are omitted during target history projection; they are never upgraded to trusted replay.
-- **Visible-history transfer (L3):** When a target lacks a carrier for historical reasoning (including unsealed or foreign reasoning, full-readable text on summary-only targets, foreign citations, and obsolete markers), the uncarriable reasoning owner is omitted under a named loss receipt (`chat.transfer-visible-history.v1`, `responses.transfer-visible-history.v1`, `messages.transfer-visible-history.v1`, `gemini.transfer-visible-history.v1`, `interactions.transfer-visible-history.v1`). Chat history selection shares final validation's part and following-carrier shape checks; a readable or structured carrier flag alone is insufficient. Visible content and semantic tool links are strictly preserved; reasoning is never forged or moved into text. Explicit client `read_history: true` cannot be satisfied by omission and rejects.
+- **Visible-history transfer (L3):** When a target lacks a carrier for historical reasoning (including unsealed or foreign reasoning, full-readable text on summary-only targets, foreign citations, and obsolete markers), the uncarriable reasoning owner is omitted under a named loss receipt (`chat.transfer-visible-history.v1`, `responses.transfer-visible-history.v1`, `messages.transfer-visible-history.v1`, `gemini.transfer-visible-history.v1`, `interactions.transfer-visible-history.v1`).
+
+  Chat history selection shares final validation's part and following-carrier shape checks; a readable or structured carrier flag alone is insufficient.
+
+  Visible content and semantic tool links are strictly preserved; reasoning is never forged or moved into text.
+
+  Explicit client `read_history: true` cannot be satisfied by omission and rejects.
 
 #### Binding reasoning-history contract
 
@@ -42,7 +56,17 @@ A Generation binding declares one reasoning-history contract: `Unsupported`, `Ig
    - A new request with explicit `reasoning_effort:"none"` or no tools adds no such history requirement; ordinary target checks still apply, including targets that cannot disable thinking and explicit context/history-read guarantees.
 3. **Discovery**: Discovery reads candidate declarations, publishing a common fact, `non_uniform` for differing assessed facts, or `not_assessed` if any candidate is unassessed.
 
-Request projection applies the same carrier and trust checks for planning, dispatch re-projection and prefix-cache copies. The executor selects a target; lowering owns its history projection. Neither a declaration nor successful encoding establishes full-loop carriage. Standard Chat's selected delivery omission below is independent of guessing a Provider history fact. DeepSeek's [thinking contract](https://api-docs.deepseek.com/guides/thinking_mode/) requires **all previous turns' reasoning** when a thinking request carries tools; Zhipu's documented requirement concerns the current tool cycle. The shared fact does not collapse those scopes or authorize dropping explicit read-history intent.
+Request projection applies the same carrier and trust checks for planning, dispatch re-projection and prefix-cache copies.
+
+The executor selects a target; lowering owns its history projection.
+
+Neither a declaration nor successful encoding establishes full-loop carriage.
+
+Standard Chat's selected delivery omission below is independent of guessing a Provider history fact.
+
+DeepSeek's [thinking contract](https://api-docs.deepseek.com/guides/thinking_mode/) requires **all previous turns' reasoning** when a thinking request carries tools; Zhipu's documented requirement concerns the current tool cycle.
+
+The shared fact does not collapse those scopes or authorize dropping explicit read-history intent.
 
 Consumer responsibilities remain bounded:
 
@@ -58,7 +82,13 @@ Every candidate starts with immutable admitted input; an omission for one candid
 
 ### Cross-protocol and cross-Provider history
 
-Cross-protocol or cross-Provider requests may discard historical reasoning, including readable text, summaries and incompatible signed/encrypted owners, even when the model name is unchanged. Reasoning portability is not an acceptance requirement for these transfers: a matching field or model label does not establish upstream compatibility. This selected loss avoids forwarding source-specific reasoning that the new target may reject; it does not require a private replay carrier or compatibility layer. [Current pi behavior](../refs/2026-11-08-chat-reasoning-carriers.md#cross-source-thinking-transfer-2026-11-12) supplies the reference policy.
+Cross-protocol or cross-Provider requests may discard historical reasoning, including readable text, summaries and incompatible signed/encrypted owners, even when the model name is unchanged.
+
+Reasoning portability is not an acceptance requirement for these transfers: a matching field or model label does not establish upstream compatibility.
+
+This selected loss avoids forwarding source-specific reasoning that the new target may reject; it does not require a private replay carrier or compatibility layer.
+
+[Current pi behavior](../refs/2026-11-08-chat-reasoning-carriers.md#cross-source-thinking-transfer-2026-11-12) supplies the reference policy.
 
 Apply omission to the candidate-local copy under the existing `*.transfer-visible-history.v1` rules. Preserve ordinary user/assistant text, instructions, tool names, arguments, call/result associations and results. Remove the reasoning owner rather than moving its text into an assistant answer or treating it as a tool result. Compatible same-origin native replay remains eligible for preservation.
 

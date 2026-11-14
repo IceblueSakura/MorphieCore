@@ -19,7 +19,15 @@ See [Roadmap Main](index.md) for current sprint priorities and execution gates; 
 
 ## Unscheduled issues
 
-This is the single register for unresolved Generation/client boundaries and qualification gaps. Only issues explicitly selected in the [roadmap](index.md#planned-order) gate future work; all others remain unscheduled and none reopens the delivered baseline. Reopen only after a concrete unmet contract, target/profile, prerequisite and bounded acceptance plan are selected. Review IDs remain traceability labels, not a second phase queue. [Development](../development.md#overall-acceptance-status) summarizes overall acceptance; [Architecture](../architecture/index.md) owns accepted contracts and service limitations.
+This is the single register for unresolved Generation/client boundaries and qualification gaps.
+
+Only issues explicitly selected in the [roadmap](index.md#planned-order) gate future work; all others remain unscheduled and none reopens the delivered baseline.
+
+Reopen only after a concrete unmet contract, target/profile, prerequisite and bounded acceptance plan are selected.
+
+Review IDs remain traceability labels, not a second phase queue.
+
+[Development](../development.md#overall-acceptance-status) summarizes overall acceptance; [Architecture](../architecture/index.md) owns accepted contracts and service limitations.
 
 Generation uses standard downstream APIs only. Uncarriable ordinary signatures follow the [field-level rejection contract](../architecture/history-and-replay.md#stateless-api-boundaries). R04/R08 and Bailian structured-output variability remain excluded. R09 real-account failover remains unscheduled.
 

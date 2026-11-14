@@ -8,10 +8,10 @@ See [Proposals Framework](index.md) for shared boundaries and [Architecture](../
 
 - [Token counting](#token-counting)
 - [Embeddings](#embeddings)
-    - [Embedding chain and ownership](#embedding-chain-and-ownership)
-    - [Embedding inputs and admission](#embedding-inputs-and-admission)
-    - [Embedding results and encoding](#embedding-results-and-encoding)
-    - [Google Embedding profile](#google-embedding-profile)
+  - [Embedding chain and ownership](#embedding-chain-and-ownership)
+  - [Embedding inputs and admission](#embedding-inputs-and-admission)
+  - [Embedding results and encoding](#embedding-results-and-encoding)
+  - [Google Embedding profile](#google-embedding-profile)
 
 ## Token counting
 

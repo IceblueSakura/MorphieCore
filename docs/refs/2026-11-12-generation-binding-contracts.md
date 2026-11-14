@@ -2,6 +2,15 @@
 
 Primary sources reviewed on **2026-11-12**. These are model/service contracts, separate from live account eligibility and complete Agent-loop qualification. Accepted projections belong in [Protocol adaptation](../architecture/adaptation-and-dialects.md); unresolved qualification belongs in the [issue register](../roadmap/unscheduled-issues.md).
 
+## Contents
+
+- [SIWC tool carriage](#siwc-tool-carriage)
+- [GPT model facts](#gpt-model-facts)
+- [Grok reasoning](#grok-reasoning)
+- [Parameter contract recheck — 2026-11-13](#parameter-contract-recheck--2026-11-13)
+- [Session carriers — 2026-11-13](#session-carriers--2026-11-13)
+- [Replay identity and carrier](#replay-identity-and-carrier)
+
 ## SIWC tool carriage
 
 The official [preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations.md) require HTTP `store:false`, `stream:true` and array input. Function/custom tools use namespaces or `additional_tools` input items. This is a carrier restriction, not an absence of client-executed tools. Hosted-tool availability and unsupported output ceilings remain independent service limitations.
@@ -10,7 +19,13 @@ The existing Responses developer `ToolBatch` represents the latter carrier. Movi
 
 ## GPT model facts
 
-The official [Astra](https://developers.openai.com/api/docs/models/gpt-6-astra.md), [Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol.md) and [Luna](https://developers.openai.com/api/docs/models/gpt-6-luna.md) pages list function calling, structured outputs and image input. The [function-calling guide](https://developers.openai.com/api/docs/guides/function-calling.md#strict-mode) defines strict function schemas through the structured-output carrier. Sol tool calling requires Responses; Luna Chat function calling requires reasoning off. These facts do not grant a proxy or billing-plan endpoint another service's capacity, pricing or guarantees.
+The official [Astra](https://developers.openai.com/api/docs/models/gpt-6-astra.md), [Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol.md) and [Luna](https://developers.openai.com/api/docs/models/gpt-6-luna.md) pages list function calling, structured outputs and image input.
+
+The [function-calling guide](https://developers.openai.com/api/docs/guides/function-calling.md#strict-mode) defines strict function schemas through the structured-output carrier.
+
+Sol tool calling requires Responses; Luna Chat function calling requires reasoning off.
+
+These facts do not grant a proxy or billing-plan endpoint another service's capacity, pricing or guarantees.
 
 Astra/Sol expose positive reasoning levels `low`, `medium`, `high`, `xhigh`, `max`. Luna additionally permits `none`. The [model guide](https://developers.openai.com/api/docs/guides/latest-model) explicitly excludes `none` for Astra/Sol. A generic SDK enum therefore cannot supply every model's activation or native level domain.
 

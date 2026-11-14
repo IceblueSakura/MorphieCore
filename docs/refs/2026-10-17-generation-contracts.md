@@ -2,6 +2,15 @@
 
 Research began **2026-10-17**; the dated observations below retain their original scope. Current contracts live in [Architecture](../architecture/index.md), current implementation evidence in [Development](../development.md#verification-gates), and source navigation in the [official SDK guide](2026-10-27-official-sdk-sources.md). This note retains distinctions not replaced by those documents, rather than a second feature inventory.
 
+## Contents
+
+- [Google foreground contracts, 2026-10-20](#google-foreground-contracts-2026-10-20)
+- [Streamed score scope, 2026-10-20](#streamed-score-scope-2026-10-20)
+- [Google text-report source recheck, 2026-10-21](#google-text-report-source-recheck-2026-10-21)
+- [Accounting source distinctions](#accounting-source-distinctions)
+- [Chat terminal source recheck, 2026-11-01](#chat-terminal-source-recheck-2026-11-01)
+- [Remaining dated cross-protocol evidence](#remaining-dated-cross-protocol-evidence)
+
 ## Google foreground contracts, 2026-10-20
 
 Sources: [Interactions v1 reference](https://ai.google.dev/api/interactions-api-v1), then-inspected SDK [`78f6d34`](https://github.com/googleapis/python-genai/tree/78f6d3412caaaed44f99ce57be2d16d0b8c407cb), [generateContent reference](https://ai.google.dev/api/generate-content) and [function-calling guide](https://ai.google.dev/gemini-api/docs/generate-content/function-calling#multimodal-function-responses).

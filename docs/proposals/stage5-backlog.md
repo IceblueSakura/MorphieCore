@@ -22,13 +22,33 @@ The [stage-5 backlog](../roadmap/index.md#stage-5-backlog) has no implementation
 
 The [model capability directory](../architecture/adaptation-and-dialects.md#generation-text-model-discovery) defines fact ownership, task-specific contracts, independent capacities, modalities and interface projection; [Usage](../usage/api-reference.md#generation-text-model-discovery) owns implemented endpoints and [OpenAPI](../openapi.json) owns machine schemas.
 
-Enhanced `/v1/morphiecore/models` descriptors and Pi integration remain Generation Text-only. Embedding, Decision, independent Images/Audio/Video and Realtime descriptor-union schemas do not activate inference, bindings or client integration. Standard `/v1/models` already lists activated standalone-task labels, and `/v1/morphiecore/capabilities` publishes configured Embedding contracts. These startup-derived declarations are not live upstream probing or effectiveness certification. Further non-Generation descriptor/client integration requires selected operation contracts; no version/revision maintenance or pagination system is selected.
+Enhanced `/v1/morphiecore/models` descriptors and Pi integration remain Generation Text-only.
+
+Embedding, Decision, independent Images/Audio/Video and Realtime descriptor-union schemas do not activate inference, bindings or client integration.
+
+Standard `/v1/models` already lists activated standalone-task labels, and `/v1/morphiecore/capabilities` publishes configured Embedding contracts.
+
+These startup-derived declarations are not live upstream probing or effectiveness certification.
+
+Further non-Generation descriptor/client integration requires selected operation contracts; no version/revision maintenance or pagination system is selected.
 
 ## Centralized agent authorization
 
-The converged [Agent identity and cluster diagnostics baseline](../architecture/runtime-and-routing.md#agent-identity-and-cluster-diagnostics) owns the selected direction: one deployer, no business user/tenant model, credential-independent Agent attribution and sensitive diagnostics under mandatory authentication redaction. [Per-Agent JSONL sessions](../architecture/history-and-replay.md#agent-session-files) with explicit cross-Agent reading/copying are now a current-stage design direction, not an implemented store or selected migration. Do not reinterpret OAuth account identity as Agent identity or rebuild a separate user/ownership hierarchy here.
+The converged [Agent identity and cluster diagnostics baseline](../architecture/runtime-and-routing.md#agent-identity-and-cluster-diagnostics) owns the selected direction: one deployer, no business user/tenant model, credential-independent Agent attribution and sensitive diagnostics under mandatory authentication redaction.
 
-API-key selection uses the versioned private [Agent-key schema](../usage/gateway-configuration.md#agent-api-keys) first; OAuth remains deferred. Unresolved integration choices are the authorization-server product, verified OAuth authorization-instance binding to `agent_id`, managed registry persistence/management, client correlation carriers, token permissions and revocation policy, and diagnostic storage/export/retention. Rauthy remains an evaluation candidate, not a selected dependency; the [dated research](../refs/2026-10-23-downstream-oauth.md) owns versioned evidence and limitations. [Roadmap](../roadmap/index.md#agent-authorization-and-diagnostics-follow-up) owns the remaining dependency order and acceptance gates. This is not a stage-5 API assignment, OAuth implementation approval or change to current loopback ingress.
+[Per-Agent JSONL sessions](../architecture/history-and-replay.md#agent-session-files) with explicit cross-Agent reading/copying are now a current-stage design direction, not an implemented store or selected migration.
+
+Do not reinterpret OAuth account identity as Agent identity or rebuild a separate user/ownership hierarchy here.
+
+API-key selection uses the versioned private [Agent-key schema](../usage/gateway-configuration.md#agent-api-keys) first; OAuth remains deferred.
+
+Unresolved integration choices are the authorization-server product, verified OAuth authorization-instance binding to `agent_id`, managed registry persistence/management, client correlation carriers, token permissions and revocation policy, and diagnostic storage/export/retention.
+
+Rauthy remains an evaluation candidate, not a selected dependency; the [dated research](../refs/2026-10-23-downstream-oauth.md) owns versioned evidence and limitations.
+
+[Roadmap](../roadmap/index.md#agent-authorization-and-diagnostics-follow-up) owns the remaining dependency order and acceptance gates.
+
+This is not a stage-5 API assignment, OAuth implementation approval or change to current loopback ingress.
 
 ## 1C design: Messages citations
 
@@ -119,7 +139,13 @@ When reopened, select the cache-only operation and result contract from pi's str
 
 ## Model-name service-policy carriers
 
-Service-policy carriers may be upstream model names rather than a dedicated field. A trusted, evidence-backed binding declaration must associate an alias with the complete policy it represents; never infer a tier from a suffix or accept a client-supplied upstream selector. A different model version, quantization or context contract is not automatically a tier of the same model. The current [endpoint contract](../../src/topology/endpoint.rs) fixes the upstream model at binding time; choosing predeclared variants during preparation is an integration design question, not a codec-only string rewrite.
+Service-policy carriers may be upstream model names rather than a dedicated field.
+
+A trusted, evidence-backed binding declaration must associate an alias with the complete policy it represents; never infer a tier from a suffix or accept a client-supplied upstream selector.
+
+A different model version, quantization or context contract is not automatically a tier of the same model.
+
+The current [endpoint contract](../../src/topology/endpoint.rs) fixes the upstream model at binding time; choosing predeclared variants during preparation is an integration design question, not a codec-only string rewrite.
 
 When scheduled, add an independent alias-carrier oracle and an incompatible-policy rejection. Preparation must agree with preflight on the effective deployment, and cache/replay identity must follow the selected wire model. A selected alias proves request projection, not delivered service; record a reported tier only from an authoritative report.
 

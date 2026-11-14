@@ -4,6 +4,21 @@ Sources checked on 2026-10-22 for the prioritized Embedding and Images design. O
 
 [API expansion design](../proposals/index.md#operation-contracts) owns proposals; [Architecture](../architecture/index.md#independent-task-boundaries) owns accepted boundaries; [Roadmap](../roadmap/index.md#stage-4-scope) owns priority and gates. This note records evidence, not a second implementation queue.
 
+## Contents
+
+- [Embeddings](#embeddings)
+  - [Official and pinned sources](#official-and-pinned-sources)
+  - [Numeric representation counterexample](#numeric-representation-counterexample)
+  - [Google Embedding selection](#google-embedding-selection)
+  - [Google wire source reconciliation](#google-wire-source-reconciliation)
+  - [Compatibility and existing-target evidence](#compatibility-and-existing-target-evidence)
+  - [Bounded characterization (2026-10-23)](#bounded-characterization-2026-10-23)
+- [Images](#images)
+  - [Official and pinned sources](#official-and-pinned-sources-1)
+  - [OpenAI observations and disagreements](#openai-observations-and-disagreements)
+  - [Grok and current code boundaries](#grok-and-current-code-boundaries)
+  - [Static Generate source recheck (2026-10-23)](#static-generate-source-recheck-2026-10-23)
+
 ## Embeddings
 
 ### Official and pinned sources
@@ -149,7 +164,17 @@ The pinned Edit parameters and current completed-event schema include safety-ide
 
 Grok's guide warns that its JSON Edit contract differs from the OpenAI SDK's multipart call. Its URL/data-URL inputs can be passed to its native carrier without a gateway downloader. No equivalent OpenAI mask/input-fidelity or progressive preview grammar is established by the inspected Grok pages.
 
-Grok's generation guide returns temporary URLs by default and admits explicit Base64. This chooses transport representation, not a guaranteed PNG encoding. Native aspect ratio/resolution tiers are not exact pixels. The guide describes automatic quality as currently low for generation and medium for editing; keep explicit Auto delegated rather than freezing that behavior. Creation time is not required in the inspected native result; model/moderation reports and sparse native accounting need their own carriers. The [earlier note](2026-10-22-grok-imagine.md#images) retains REST/guide discrepancies.
+Grok's generation guide returns temporary URLs by default and admits explicit Base64.
+
+This chooses transport representation, not a guaranteed PNG encoding.
+
+Native aspect ratio/resolution tiers are not exact pixels.
+
+The guide describes automatic quality as currently low for generation and medium for editing; keep explicit Auto delegated rather than freezing that behavior.
+
+Creation time is not required in the inspected native result; model/moderation reports and sparse native accounting need their own carriers.
+
+The [earlier note](2026-10-22-grok-imagine.md#images) retains REST/guide discrepancies.
 
 The [current image task](../../src/semantic/task/image_generation.rs) is static Generate with bounded Base64 artifacts and an 8-MiB aggregate decoded final budget. Edit inputs, masks and stream events do not exist there. Optional creation/model/usage facts do exist; they must not be synthesized at delivery.
 
@@ -161,7 +186,12 @@ The static image topology currently assumes an API key and one operation. Those 
 
 ### Static Generate source recheck (2026-10-23)
 
-Rechecked the official [OpenAI Generate reference](https://developers.openai.com/api/reference/resources/images/methods/generate), [image guide](https://developers.openai.com/api/docs/guides/image-generation.md), pinned Python [Generate parameters](https://github.com/openai/openai-python/blob/547ecb1e4fc233f19030736c29fee4374dfbaca1/src/openai/types/image_generate_params.py) and [ImagesResponse](https://github.com/openai/openai-python/blob/547ecb1e4fc233f19030736c29fee4374dfbaca1/src/openai/types/images_response.py), plus Grok's [generation Markdown](https://docs.x.ai/developers/model-capabilities/images/generation.md) and [Images REST Markdown](https://docs.x.ai/developers/rest-api-reference/inference/images.md). OpenAI SDK code is Apache-2.0; web documentation retains its publishers' notices. This was public-source and local-code inspection only, with no credentials, SDK execution or Provider inference.
+Rechecked the official [OpenAI Generate reference](https://developers.openai.com/api/reference/resources/images/methods/generate), [image guide](https://developers.openai.com/api/docs/guides/image-generation.md), pinned Python [Generate parameters](https://github.com/openai/openai-python/blob/547ecb1e4fc233f19030736c29fee4374dfbaca1/src/openai/types/image_generate_params.py) and
+[ImagesResponse](https://github.com/openai/openai-python/blob/547ecb1e4fc233f19030736c29fee4374dfbaca1/src/openai/types/images_response.py), plus Grok's [generation Markdown](https://docs.x.ai/developers/model-capabilities/images/generation.md) and [Images REST Markdown](https://docs.x.ai/developers/rest-api-reference/inference/images.md).
+
+OpenAI SDK code is Apache-2.0; web documentation retains its publishers' notices.
+
+This was public-source and local-code inspection only, with no credentials, SDK execution or Provider inference.
 
 | Contract fact | Source observation and limit |
 |---|---|

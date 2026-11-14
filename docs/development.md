@@ -111,7 +111,15 @@ The `pi_gateway_context_discovery` gate additionally takes the current MorphieCo
 
 ### Real Provider checks
 
-Follow [authorization](../AGENTS.md#authorization), using the project loader exclusively. Select targets and additional requests as needed to complete the task, without repeated approval or a predeclared request budget. Keep checks direct rather than building bespoke test harnesses, and do not impose fixed token, elapsed-time or request-count budgets unless the user requests them or the check specifically tests those controls (ordinary application and Provider safety limits and cancellation remain intact). Normal OAuth renewal and credential persistence use the project manager. Keep retries visible, inspect failures before repeating calls, and report actual request counts.
+Follow [authorization](../AGENTS.md#authorization), using the project loader exclusively.
+
+Select targets and additional requests as needed to complete the task, without repeated approval or a predeclared request budget.
+
+Keep checks direct rather than building bespoke test harnesses, and do not impose fixed token, elapsed-time or request-count budgets unless the user requests them or the check specifically tests those controls (ordinary application and Provider safety limits and cancellation remain intact).
+
+Normal OAuth renewal and credential persistence use the project manager.
+
+Keep retries visible, inspect failures before repeating calls, and report actual request counts.
 
 Use synthetic task content and model-issued call/result identities with untouched returned history. Check the intended client workflow and honest termination. Report only redacted status, counts and error classifications; keep private captures temporary. Remaining real qualification belongs in the roadmap.
 

@@ -2,6 +2,15 @@
 
 Baseline checked **2026-10-19**, with source corrections on **2026-10-29**, **2026-11-08** and **2026-11-09** below. These are mutable official definitions, not a complete DashScope API implementation. Accepted decisions belong to [Architecture](../architecture/adaptation-and-dialects.md#shared-aliyun-billing-dialect); independent-ceiling proposals belong to [API expansion design](../proposals/index.md#independent-output-ceilings-unselected).
 
+## Contents
+
+- [Primary sources](#primary-sources)
+- [Observed definitions and selected treatment](#observed-definitions-and-selected-treatment)
+- [Evidence boundary](#evidence-boundary)
+- [Responses output-format refresh, 2026-11-08](#responses-output-format-refresh-2026-11-08)
+- [Responses tool-policy refresh, 2026-11-08](#responses-tool-policy-refresh-2026-11-08)
+- [Function-guarantee recheck, 2026-11-09](#function-guarantee-recheck-2026-11-09)
+
 ## Primary sources
 
 - [Chat Completions reference](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions): request/message/function tables, model-specific effort, thinking budgets, sampling, caps and usage.
@@ -38,7 +47,19 @@ The public gateway owns typed activation/allocation/top-k spellings, not an arbi
 
 ## Evidence boundary
 
-**Source refresh, 2026-10-29:** the current Responses result table permits string or array, including text/image parts. The current string-only encoder remains an implementation restriction, not evidence that array output is invalid source syntax. The reference still explicitly requires immediate call/result adjacency, but two bounded direct Qwen grouped-history observations accepted that layout and one independently checked consumption of both results. Phase is undocumented under an ignored-unlisted-fields rule, not documented as an upstream error. The compatibility section also describes an approximately 80% input allowance and automatic truncation; catalog context metadata does not enforce it. [Current qualification](2026-10-27-client-ir-boundaries.md#pre-stage-4-contract-qualification-2026-10-29) owns the source/runtime distinction, limits and open selections. No TokenPlan equivalence, array activation, phase omission, reordering or budget policy follows automatically.
+**Source refresh, 2026-10-29:** the current Responses result table permits string or array, including text/image parts.
+
+The current string-only encoder remains an implementation restriction, not evidence that array output is invalid source syntax.
+
+The reference still explicitly requires immediate call/result adjacency, but two bounded direct Qwen grouped-history observations accepted that layout and one independently checked consumption of both results.
+
+Phase is undocumented under an ignored-unlisted-fields rule, not documented as an upstream error.
+
+The compatibility section also describes an approximately 80% input allowance and automatic truncation; catalog context metadata does not enforce it.
+
+[Current qualification](2026-10-27-client-ir-boundaries.md#pre-stage-4-contract-qualification-2026-10-29) owns the source/runtime distinction, limits and open selections.
+
+No TokenPlan equivalence, array activation, phase omission, reordering or budget policy follows automatically.
 
 The [Bailian dialect](../../src/protocol/openai/dialect/bailian.rs) owns native checks and writers; current binding admission belongs to the catalog and Architecture. Directional offline tests do not establish effective temperature, hard token enforcement, replay validity or live plan acceptance. This source subset does not claim every cache/`x_details` report, hosted/citation/OCR output, standalone modality or native RPC stream. [Development](../development.md#verification-gates) owns verification, not a second field-support inventory.
 
@@ -72,6 +93,12 @@ Re-read the current official service references separately from SDK types; sourc
 
 The Responses singleton restriction permits the already selected [allowed-inventory projection](../architecture/index.md#ordered-tool-availability): collapse determinate ordered declarations and filter to the one selected original function, retaining schema, history, required invocation and seriality. A bare `required` choice over several eligible functions supplies no singleton identity and retains rejection. Thinking-profile enforcement is a separate check.
 
-Native argument discriminators independently show GLM 5.3 Chat `strict:true` returning out-of-enum integer/string values, and Qwen 3.8 Flash Responses doing so with thinking disabled under both strict values and a qualified required-subset carrier. These failures do not qualify a positive strict exception. The subsequent user-selected [shared service policy](../architecture/adaptation-and-dialects.md#shared-aliyun-billing-dialect) accepts named best-effort relaxation rather than schema deletion or a text-output wrapper. [Development](../development.md#overall-acceptance-status) summarizes overall acceptance.
+Native argument discriminators independently show GLM 5.3 Chat `strict:true` returning out-of-enum integer/string values, and Qwen 3.8 Flash Responses doing so with thinking disabled under both strict values and a qualified required-subset carrier.
+
+These failures do not qualify a positive strict exception.
+
+The subsequent user-selected [shared service policy](../architecture/adaptation-and-dialects.md#shared-aliyun-billing-dialect) accepts named best-effort relaxation rather than schema deletion or a text-output wrapper.
+
+[Development](../development.md#overall-acceptance-status) summarizes overall acceptance.
 
 The positive-evidence audit finds no qualified Bailian function-strict pair: Qwen Flash/Max Chat flags and serialization checks do not establish enforcement; the two early combined strict/named DeepSeek samples and non-strict Agent loops do not transfer native DeepSeek beta's guarantee to Bailian. The implementation's verified set therefore starts empty and is independent of generic canonical capabilities. The user's same-upstream/two-plan selection applies this policy to DashScope and TokenPlan together; credentials, origins and billing remain isolated.

@@ -2,6 +2,17 @@
 
 Sources reviewed on 2026-11-13. The compiled catalog owns model availability and binding IDs; these notes retain the service contracts behind the selected additions. [Earlier capacity research](2026-10-26-model-discovery.md) covers unchanged declarations. SDK/source locks remain independent of model registration.
 
+## Contents
+
+- [OpenAI Terra and SIWC](#openai-terra-and-siwc)
+- [OpenCode Go](#opencode-go)
+- [OpenRouter](#openrouter)
+- [Google Gemini 4](#google-gemini-4)
+- [Aliyun plans](#aliyun-plans)
+  - [Kimi K3.1 Pro](#kimi-k31-pro)
+  - [TokenPlan](#tokenplan)
+- [One DeepSeek entry](#one-deepseek-entry)
+
 ## OpenAI Terra and SIWC
 
 The [Terra model reference](https://developers.openai.com/api/docs/models/gpt-6.1-terra), [changelog](https://developers.openai.com/api/docs/changelog) and [GPT migration guide](https://developers.openai.com/api/docs/guides/latest-model) identify `gpt-6.1-terra`, published 2026-10-26, with text/image/file input and function/structured-output support. Tool execution uses Responses. Official API capacities are 1,050,000 context, 922,000 independent input and 128,000 output tokens.
@@ -49,7 +60,21 @@ Thinking is mandatory and default high. Argon/Carbon natively support low/medium
 
 [Hosted model specification](https://help.aliyun.com/zh/model-studio/kimi-k3-1-pro), [Kimi API](https://help.aliyun.com/zh/model-studio/kimi-api), [thinking controls](https://help.aliyun.com/zh/model-studio/deep-thinking) and [developer publication](https://www.kimi.com/en/blog/kimi-k3-1-pro), 2026-10-24.
 
-The DashScope spelling is `kimi-k3.1-pro`. Text/images, tools and structured output are supported; video and general file input are not advertised. Context, independent input and maximum output are each 1,048,576; the reasoning and output limits are not additive capacity. Native effort is low/medium/high/max. Thinking off is supported and numeric thinking budgets are not. Temperature, top-p and presence penalty accept only defaults 1.0, 0.95 and 0.0, including with thinking off: candidate-local lowering omits incompatible values under the existing named field rules; native validation rejects them. Historical reasoning remains in `reasoning_content`. The selected binding remains Chat; other documented protocols do not activate themselves.
+The DashScope spelling is `kimi-k3.1-pro`.
+
+Text/images, tools and structured output are supported; video and general file input are not advertised.
+
+Context, independent input and maximum output are each 1,048,576; the reasoning and output limits are not additive capacity.
+
+Native effort is low/medium/high/max.
+
+Thinking off is supported and numeric thinking budgets are not.
+
+Temperature, top-p and presence penalty accept only defaults 1.0, 0.95 and 0.0, including with thinking off: candidate-local lowering omits incompatible values under the existing named field rules; native validation rejects them.
+
+Historical reasoning remains in `reasoning_content`.
+
+The selected binding remains Chat; other documented protocols do not activate themselves.
 
 ### TokenPlan
 
@@ -66,6 +91,12 @@ Sources: [Chat reference](https://api-docs.deepseek.com/api/create-chat-completi
 
 The guides make `/beta` a prerequisite for strict mode, not a command to force every request into strict mode. Strict remains optional/default false in the Chat reference. Prefix completion also demonstrates beta use without tools. The Responses reference documents the normal origin but does not independently specify `/beta/responses`.
 
-Loader-mediated native qualification confirmed `/beta/chat/completions` and `/beta/responses` accept ordinary requests, unchanged non-strict inventories, strict tool samples, thinking on/off and original tool/reasoning history continuation. This supports one `deepseek` Provider with those two default paths and the existing `deepseek` credential namespace. Public `deepseek-v4.1-flash-1017`, canonical/upstream `deepseek-flash`, source reasoning/history rules and explicit strictness remain unchanged. Account API-root overrides continue appending operation suffixes; no implicit prefix repair or alternate-path retry is introduced.
+Loader-mediated native qualification confirmed `/beta/chat/completions` and `/beta/responses` accept ordinary requests, unchanged non-strict inventories, strict tool samples, thinking on/off and original tool/reasoning history continuation.
+
+This supports one `deepseek` Provider with those two default paths and the existing `deepseek` credential namespace.
+
+Public `deepseek-v4.1-flash-1017`, canonical/upstream `deepseek-flash`, source reasoning/history rules and explicit strictness remain unchanged.
+
+Account API-root overrides continue appending operation suffixes; no implicit prefix repair or alternate-path retry is introduced.
 
 A source discrepancy remains scoped: the strict guide excludes `minLength`, but the beta endpoints accepted a strict schema containing it. Acceptance alone does not establish enforcement. Existing strict-schema validation is retained; no schema rewriting, forced strictness or expanded strict guarantee is inferred from this observation.

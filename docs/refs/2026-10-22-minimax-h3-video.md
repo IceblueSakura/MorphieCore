@@ -2,6 +2,19 @@
 
 Official sources checked on 2026-10-22. These mutable documentation observations establish neither account access nor a successful generation. Video integration requires [operation selection](../roadmap/index.md#grok-imagine-adaptation) under the current stage-4 schedule; this note is evidence for the stage-4 video operation, not a design approval.
 
+## Contents
+
+- [Sources](#sources)
+- [Protocol shape](#protocol-shape)
+  - [Content array](#content-array)
+  - [Task object and status](#task-object-and-status)
+  - [Errors](#errors)
+  - [Callback](#callback)
+  - [Limits and accounting](#limits-and-accounting)
+- [Legacy v1 envelope (Hailuo series)](#legacy-v1-envelope-hailuo-series)
+- [Design inputs, not decisions](#design-inputs-not-decisions)
+- [Evidence still needed](#evidence-still-needed)
+
 ## Sources
 
 - [Video Generation guide](https://platform.minimax.io/docs/guides/video-generation)
@@ -67,7 +80,13 @@ Create/query transport errors use an envelope that resembles OpenAI's:
 {"type":"error","error":{"type":"rate_limit_error","message":"rate limit, please retry later (1002)","http_code":"429"},"request_id":"…"}
 ```
 
-Mapping is by HTTP status and by `error.type` (`bad_request_error` 400, `authorized_error` 401, `insufficient_balance_error` 402, `unprocessable_entity_error` 422, `rate_limit_error` 429, `server_error` 500, plus an `overloaded_error` 529 in the CN reference). Two properties differ from OpenAI: the numeric MiniMax code is embedded at the end of the human-readable `message` (there is no `code` or `param` field), and `http_code` is a string. Task-level failures use a *second* carrier inside the task object: `task.error.error.code` (`"1026"` for sensitive content) plus `task.error.error.message`. Any adapter must parse both carriers and must not infer the numeric code from the envelope.
+Mapping is by HTTP status and by `error.type` (`bad_request_error` 400, `authorized_error` 401, `insufficient_balance_error` 402, `unprocessable_entity_error` 422, `rate_limit_error` 429, `server_error` 500, plus an `overloaded_error` 529 in the CN reference).
+
+Two properties differ from OpenAI: the numeric MiniMax code is embedded at the end of the human-readable `message` (there is no `code` or `param` field), and `http_code` is a string.
+
+Task-level failures use a *second* carrier inside the task object: `task.error.error.code` (`"1026"` for sensitive content) plus `task.error.error.message`.
+
+Any adapter must parse both carriers and must not infer the numeric code from the envelope.
 
 ### Callback
 

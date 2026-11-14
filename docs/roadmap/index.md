@@ -28,7 +28,13 @@ This page owns current scope, planned execution sequence, stage priorities, and 
 
 ## Current status
 
-Current work prioritizes the selected [OpenRouter Luna Responses SSE intake issue](unscheduled-issues.md#content-and-client-qualification) before Stage 4 resumes. Other limitations and prerequisites share the [issue register](unscheduled-issues.md#unscheduled-issues); R09 real-account failover, remaining model-service qualification and Agent session storage retain separate scheduling decisions and remain outside that entry gate. [Development](../development.md#overall-acceptance-status) owns overall acceptance, and the [cleanup plan](../convergence-cleanup-plan.md) owns remaining production observability, reliability and privacy gates. No deployment or new API activation is implied.
+Current work prioritizes the selected [OpenRouter Luna Responses SSE intake issue](unscheduled-issues.md#content-and-client-qualification) before Stage 4 resumes.
+
+Other limitations and prerequisites share the [issue register](unscheduled-issues.md#unscheduled-issues); R09 real-account failover, remaining model-service qualification and Agent session storage retain separate scheduling decisions and remain outside that entry gate.
+
+[Development](../development.md#overall-acceptance-status) owns overall acceptance, and the [cleanup plan](../convergence-cleanup-plan.md) owns remaining production observability, reliability and privacy gates.
+
+No deployment or new API activation is implied.
 
 | Priority | Remaining work | Exit |
 |---|---|---|

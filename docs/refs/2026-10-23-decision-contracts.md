@@ -4,6 +4,20 @@ Checked 2026-10-23. Official documentation, model schemas and SDK source describ
 
 No inference calls, credentials, SDK executions or implementation changes were used for this research. SDK links below point to mutable branches/documentation, not pinned acceptance releases. Search snippets and extracted HTML sometimes lagged directly retrieved Markdown/schema content; conflicts are retained rather than treated as live behavior.
 
+## Contents
+
+- [Source index](#source-index)
+- [Wire families](#wire-families)
+- [OpenAI](#openai)
+- [TypeSafe](#typesafe)
+  - [Images and Box](#images-and-box)
+  - [SDK and discovery boundaries](#sdk-and-discovery-boundaries)
+- [Perplexity](#perplexity)
+- [Cloudflare](#cloudflare)
+- [Confidence is not a universal contract](#confidence-is-not-a-universal-contract)
+- [Capability-union source recheck](#capability-union-source-recheck)
+- [Implementation evidence still needed](#implementation-evidence-still-needed)
+
 ## Source index
 
 | Family | Primary sources inspected | Evidence boundary |
@@ -122,7 +136,15 @@ Rechecked on 2026-10-23 while designing the IR, against the [OpenAI Node resourc
 - The [Perplexity quickstart](https://docs.perplexity.ai/docs/decisions/quickstart.md) explicitly says questions within a native group see the state and every other question. This is peer-question content visibility, not merely correlated answers or a dependency on another answer. Context overflow can change the grouping, so it is not an unconditional all-question visibility guarantee.
 - TypeSafe's [image reference rules](https://docs.typesafe.ai/images.md) specify that repeated criteria in answers, such as a Score `legend`, contain the original reference rather than the image. Normalizing media into resources must retain owner-bound source spellings for those client echoes. Structured object keys stay text, rather than being replaced as asset occurrences.
 
-Existing-code review also constrains reuse. Generation's [content union](../../src/semantic/task/generation/content/item.rs) lacks a standalone JSON evidence part and includes reasoning/replay/compaction owners inappropriate for Decision. Its [structured value](../../src/semantic/task/generation/content/structured.rs), resource traversal and usage reports carry Generation-specific limits and validation. The [Embedding adapter](../../src/adapter/embeddings.rs) and [lowering expectations](../../src/protocol/embedding/projection.rs) offer a smaller source-report/delivery pattern. These observations support neutral leaf reuse and independent Decision owners, not an automatic extraction or refactor.
+Existing-code review also constrains reuse.
+
+Generation's [content union](../../src/semantic/task/generation/content/item.rs) lacks a standalone JSON evidence part and includes reasoning/replay/compaction owners inappropriate for Decision.
+
+Its [structured value](../../src/semantic/task/generation/content/structured.rs), resource traversal and usage reports carry Generation-specific limits and validation.
+
+The [Embedding adapter](../../src/adapter/embeddings.rs) and [lowering expectations](../../src/protocol/embedding/projection.rs) offer a smaller source-report/delivery pattern.
+
+These observations support neutral leaf reuse and independent Decision owners, not an automatic extraction or refactor.
 
 ## Implementation evidence still needed
 

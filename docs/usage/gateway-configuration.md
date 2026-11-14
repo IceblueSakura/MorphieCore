@@ -58,7 +58,17 @@ For a **new** Unix installation, run from the repository root. This refuses to o
 )
 ```
 
-Replace **each** Agent-key placeholder with an independently generated high-entropy key of at least 32 printable non-space ASCII characters; keep values out of source and shell output. Provision every referenced account with `--accounts "$ROOT/accounts.json" --store "$ROOT/credentials"`. The shipped account template declares `primary` for `aliyun-tokenplan-cn`, `opencode-go`, `google` and `openrouter`; each references its Provider-local `example` alias. Remove unused Provider declarations before validation if those accounts will not be provisioned. Task models explicitly select `primary`. Templates are configuration examples, not live acceptance evidence.
+Replace **each** Agent-key placeholder with an independently generated high-entropy key of at least 32 printable non-space ASCII characters; keep values out of source and shell output.
+
+Provision every referenced account with `--accounts "$ROOT/accounts.json" --store "$ROOT/credentials"`.
+
+The shipped account template declares `primary` for `aliyun-tokenplan-cn`, `opencode-go`, `google` and `openrouter`; each references its Provider-local `example` alias.
+
+Remove unused Provider declarations before validation if those accounts will not be provisioned.
+
+Task models explicitly select `primary`.
+
+Templates are configuration examples, not live acceptance evidence.
 
 `proxy: null` leaves the documented environment-proxy fallback in effect; it does not force direct connections. To enable failure diagnostics, replace `null` with the trusted destination object below; private body context remains off unless explicitly selected. Upstream credential stores are managed formats, not hand-edited templates. Provider metadata remains compiled into the program; there is no runtime `providers.json` template.
 
@@ -120,7 +130,17 @@ morphiecore --config "$ROOT/gateway.json" --validate
 morphiecore --config "$ROOT/gateway.json" --explain --json
 ```
 
-Explanation uses the production loader and requires valid local credentials. It reports resolved service defaults, Provider recovery, ordered account selections (including disabled candidates), inherited/configured output defaults, resolved task bindings, endpoint limits and destination-free diagnostics state. It never prints keys, credential aliases, private paths, custom upstream model strings or target URLs. Context/input capacities are planning metadata; output maxima clamp a present ceiling and do not impose a universal token/spending budget. Only Messages defaults fill absent output ceilings. Errors identify the configuration domain and safe field/index location without echoing rejected values; numbered Provider/model maps follow sorted key order.
+Explanation uses the production loader and requires valid local credentials.
+
+It reports resolved service defaults, Provider recovery, ordered account selections (including disabled candidates), inherited/configured output defaults, resolved task bindings, endpoint limits and destination-free diagnostics state.
+
+It never prints keys, credential aliases, private paths, custom upstream model strings or target URLs.
+
+Context/input capacities are planning metadata; output maxima clamp a present ceiling and do not impose a universal token/spending budget.
+
+Only Messages defaults fill absent output ceilings.
+
+Errors identify the configuration domain and safe field/index location without echoing rejected values; numbered Provider/model maps follow sorted key order.
 
 ### Agent API keys
 
@@ -163,7 +183,15 @@ Diagnostics are opt-in. Set `diagnostics` to an explicit trusted OTLP/HTTP Logs 
 
 Omit `diagnostics` or set it to `null` to disable the pipeline. Export disables proxy inheritance and redirects; ambient `OTEL_EXPORTER_OTLP_HEADERS` and `OTEL_EXPORTER_OTLP_LOGS_HEADERS` are rejected rather than used as another authentication path. Use an existing trusted local Collector if backend authentication or persistent queuing is needed. This configuration does not deploy a receiver.
 
-Event names are `gateway.failure`, optional correlated `gateway.failure.response`, and background `gateway.credential.failure`. Query severity WARN/ERROR, then `request_id`, `agent_id`, `operation`, `provider`, `account`, `model`, `upstream_model`, `attempt`, `stage`, `error.type` and `retry.planned` when present. IDs are admission-generated runtime nonces/sequences, never caller identity/session/trace headers. `http.response.status_code` is the observed upstream head; `gateway.error.status_code` is the selected local error presentation. `client.handoff_complete:true` describes acknowledged local delivery of a failed task, not remote receipt or successful inference.
+Event names are `gateway.failure`, optional correlated `gateway.failure.response`, and background `gateway.credential.failure`.
+
+Query severity WARN/ERROR, then `request_id`, `agent_id`, `operation`, `provider`, `account`, `model`, `upstream_model`, `attempt`, `stage`, `error.type` and `retry.planned` when present.
+
+IDs are admission-generated runtime nonces/sequences, never caller identity/session/trace headers.
+
+`http.response.status_code` is the observed upstream head; `gateway.error.status_code` is the selected local error presentation.
+
+`client.handoff_complete:true` describes acknowledged local delivery of a failed task, not remote receipt or successful inference.
 
 Normal successful requests have no archive entry. A failed attempt selected for recovery is WARN, not proof of recovery. Source failures inside HTTP 200 remain failures; ordinary disconnect/shutdown alone does not create an ERROR. Closed categories and source boundaries remain useful without bodies. [Architecture](../architecture/runtime-and-routing.md#observability) owns classification.
 
@@ -194,9 +222,35 @@ Use `morphiecore --catalog` to select a registered public label and its catalog 
 | Candidate | `maximum_output_tokens` | Optional positive `u64` model-output maximum, not a default; cannot exceed a catalog-declared maximum |
 | Candidate | `default_output_tokens` | Messages only: omit to inherit the binding default, set a positive `u64` to replace it, or `null` to clear it and require explicit request caps |
 
-Omitted model-value fields inherit the binding's declaration. Effort/output limits apply during candidate projection, including numeric/qualitative effort conversions and retained per-message updates. Output ceilings above a known maximum clamp to it; unsupported effort levels resolve to the nearest supported level, ties upward, with named loss receipts. These rules do not grant missing protocol carriers or weaken explicit constraints. Context/input capacities are discovery planning metadata only, not local token counting or a new inference check. Replacing the binding's origin, endpoint path or upstream model clears inherited context/input evidence; explicit declarations can supply the new deployment's facts. See [model-effective values](../architecture/adaptation-and-dialects.md#model-effective-values) and [discovery ownership](../architecture/adaptation-and-dialects.md#generation-text-model-discovery).
+Omitted model-value fields inherit the binding's declaration.
 
-The Go/Haiku Messages binding declares a `32000` default; generic Messages targets do not. `default_output_tokens` is independent of `maximum_output_tokens`: it may be raised or lowered, but a resolved default above the effective maximum rejects startup. For example, narrowing the maximum to `8192` requires overriding the inherited `32000` with a value at most `8192`, or clearing it with `null`. Zero, malformed values and this field on a non-Messages candidate (including `null`) reject. Defaults fill absence only; explicit request caps still take the model-maximum clamp above. An uncapped Messages candidate with no effective default rejects locally. Defaults are neither a promise to generate that amount nor a model-limit guarantee. See [missing output ceilings](../architecture/adaptation-and-dialects.md#missing-output-ceilings).
+Effort/output limits apply during candidate projection, including numeric/qualitative effort conversions and retained per-message updates.
+
+Output ceilings above a known maximum clamp to it; unsupported effort levels resolve to the nearest supported level, ties upward, with named loss receipts.
+
+These rules do not grant missing protocol carriers or weaken explicit constraints.
+
+Context/input capacities are discovery planning metadata only, not local token counting or a new inference check.
+
+Replacing the binding's origin, endpoint path or upstream model clears inherited context/input evidence; explicit declarations can supply the new deployment's facts.
+
+See [model-effective values](../architecture/adaptation-and-dialects.md#model-effective-values) and [discovery ownership](../architecture/adaptation-and-dialects.md#generation-text-model-discovery).
+
+The Go/Haiku Messages binding declares a `32000` default; generic Messages targets do not.
+
+`default_output_tokens` is independent of `maximum_output_tokens`: it may be raised or lowered, but a resolved default above the effective maximum rejects startup.
+
+For example, narrowing the maximum to `8192` requires overriding the inherited `32000` with a value at most `8192`, or clearing it with `null`.
+
+Zero, malformed values and this field on a non-Messages candidate (including `null`) reject.
+
+Defaults fill absence only; explicit request caps still take the model-maximum clamp above.
+
+An uncapped Messages candidate with no effective default rejects locally.
+
+Defaults are neither a promise to generate that amount nor a model-limit guarantee.
+
+See [missing output ceilings](../architecture/adaptation-and-dialects.md#missing-output-ceilings).
 
 Account selection happens before dispatch. Generation may retry one explicitly eligible unpublished network/server failure on that exact target, with the same credential material and wire request. Rate/quota/auth/permission/request failures, malformed output, trust/local faults and ambiguous post-dispatch timeouts do not authorize the additional send. A returned failure never causes another account or Provider to be dispatched in that request.
 
@@ -204,7 +258,19 @@ Cooling targets are never tried early. If every otherwise-legal target is coolin
 
 All Generation client protocols use the same configured candidate array. To send Responses clients through Chat, select a Chat binding.
 
-For `claude-haiku-5-5`, `opencode-go-haiku-messages` candidates natively carry Messages owner-local `cache_control` markers, caller-selected 5m/1h automatic policy, ordered function `input_examples` and per-use document `context`. Mixed routes no longer close public cache admission: each candidate preserves supported carriers or applies its selected named projection. Explicit strictness, media and output guarantees still require a carrier. The native profile also has ordered effort, block-binding and tool-change carriers; public intake restrictions remain listed [below](client-requests.md#messages-profile-and-cache-markers). Credentials alone never activate a binding. Trusted deployment overrides retain the selected binding's contract and do not establish support for a different model. [Bounded acceptance](../development.md#overall-acceptance-status) does not prove elapsed cache retention or invoices.
+For `claude-haiku-5-5`, `opencode-go-haiku-messages` candidates natively carry Messages owner-local `cache_control` markers, caller-selected 5m/1h automatic policy, ordered function `input_examples` and per-use document `context`.
+
+Mixed routes no longer close public cache admission: each candidate preserves supported carriers or applies its selected named projection.
+
+Explicit strictness, media and output guarantees still require a carrier.
+
+The native profile also has ordered effort, block-binding and tool-change carriers; public intake restrictions remain listed [below](client-requests.md#messages-profile-and-cache-markers).
+
+Credentials alone never activate a binding.
+
+Trusted deployment overrides retain the selected binding's contract and do not establish support for a different model.
+
+[Bounded acceptance](../development.md#overall-acceptance-status) does not prove elapsed cache retention or invoices.
 
 On an admitted Messages route, request-wide automatic caching uses root `"cache_control":{"type":"ephemeral","ttl":"1h"}` or `"ttl":"5m"`; omitting `ttl` means 5m. Missing root policy retains the binding's marker-free default, not a client disable instruction. Explicit owner markers, four-marker limits and TTL conflicts retain their [existing rules](../architecture/adaptation-and-dialects.md#caller-selected-automatic-cache-admission).
 
@@ -229,9 +295,23 @@ Place this object on the public model, alongside `candidates`. At least one cand
 
 The table is consulted only when exact carriage is unavailable. For example, a supported reasoning-level `medium` request stays qualitative on Google even when `effort_to_budget` and a custom `medium:7000` preset are configured. That unused preset does not invalidate a caller's `6000` output ceiling. Conversely, an actual numeric conversion must still fit the caller ceiling and target limits; the gateway never raises the ceiling to make it fit.
 
-`budget_to_effort` uses the target's declared effort scope: response-wide for Messages, reasoning-only for the other current protocols. `effort_to_budget` accepts reasoning-scoped effort and currently requires a generateContent binding. An existing OpenAI qualitative level calibration cannot be combined with a numeric conversion. Candidate projection preserves explicit effort over a conflicting numeric budget, omitting an uncarriable budget with its named receipt; it quantizes a budget only when explicit effort is absent. Nearest-level projection and model-maximum clamping remain bounded; malformed source controls and explicit guarantees retain validation.
+`budget_to_effort` uses the target's declared effort scope: response-wide for Messages, reasoning-only for the other current protocols.
 
-The existing Gemini 3.8 Flash bindings inherit the selected [response-effort scope approximation](../architecture/adaptation-and-dialects.md#google-response-effort-projection) without a new configuration field. Omitted `thinking_conversion` retains it; an explicit numeric conversion replaces it, never chains the two. Messages delivery uses [request-grounded end-turn derivation and the separately selected Google tool-stop projection](../architecture/adaptation-and-dialects.md#messages-terminal-projection). These adaptations do not promise equivalent Claude effort behavior or complete Google protocol support; further [Google API expansion is paused](../roadmap/backlog-and-frozen.md#google-api-pause).
+`effort_to_budget` accepts reasoning-scoped effort and currently requires a generateContent binding.
+
+An existing OpenAI qualitative level calibration cannot be combined with a numeric conversion.
+
+Candidate projection preserves explicit effort over a conflicting numeric budget, omitting an uncarriable budget with its named receipt; it quantizes a budget only when explicit effort is absent.
+
+Nearest-level projection and model-maximum clamping remain bounded; malformed source controls and explicit guarantees retain validation.
+
+The existing Gemini 3.8 Flash bindings inherit the selected [response-effort scope approximation](../architecture/adaptation-and-dialects.md#google-response-effort-projection) without a new configuration field.
+
+Omitted `thinking_conversion` retains it; an explicit numeric conversion replaces it, never chains the two.
+
+Messages delivery uses [request-grounded end-turn derivation and the separately selected Google tool-stop projection](../architecture/adaptation-and-dialects.md#messages-terminal-projection).
+
+These adaptations do not promise equivalent Claude effort behavior or complete Google protocol support; further [Google API expansion is paused](../roadmap/backlog-and-frozen.md#google-api-pause).
 
 Those reviewed Google bindings omit temperature/top-p/top-k that the model ignores, with field-specific adaptation evidence. Generic codecs and other models do not inherit that policy; request labels cannot select it. Interactions v1 has no carrier for those controls. See the [target-effective sampling contract](../architecture/adaptation-and-dialects.md#selected-request-approximations); this does not change routing or activate structured-result admission.
 
@@ -386,7 +466,17 @@ systemctl --user is-active --quiet morphiecore.service
 REMOTE
 ```
 
-Check the running process's executable, loopback listener and authenticated client behavior before removing an older release. Rollback selects a retained release with the same atomic symlink switch and restarts the service. Never copy over a running executable in place. Initial migration may remove the former source/build directory only after successful activation and confirmation that configuration, credentials and service paths are independent of it. Former Nix builds can also leave project source copies in the store; identify those copies and remove only those paths with `nix-store --delete` after releasing their project-owned GC roots. Do not synchronize the checkout, use a broad `rsync --delete` against application state or run global garbage collection for this cleanup.
+Check the running process's executable, loopback listener and authenticated client behavior before removing an older release.
+
+Rollback selects a retained release with the same atomic symlink switch and restarts the service.
+
+Never copy over a running executable in place.
+
+Initial migration may remove the former source/build directory only after successful activation and confirmation that configuration, credentials and service paths are independent of it.
+
+Former Nix builds can also leave project source copies in the store; identify those copies and remove only those paths with `nix-store --delete` after releasing their project-owned GC roots.
+
+Do not synchronize the checkout, use a broad `rsync --delete` against application state or run global garbage collection for this cleanup.
 
 ## Reverse-proxy deployment
 

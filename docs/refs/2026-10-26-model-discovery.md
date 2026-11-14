@@ -4,6 +4,15 @@
 
 The [model catalog refresh](2026-11-13-model-catalog-expansion.md) owns changed and added model/service declarations, including current Go and Kimi capacities and the unified DeepSeek entry. The retained observations below keep their original scope and source dates.
 
+## Contents
+
+- [Capacity sources](#capacity-sources)
+  - [Service-qualified capacity audit — 2026-11-13](#service-qualified-capacity-audit--2026-11-13)
+  - [Service-qualified output maxima — 2026-11-13](#service-qualified-output-maxima--2026-11-13)
+- [Installed Pi domain](#installed-pi-domain)
+- [Native effort and Pi planning follow-up — 2026-11-10](#native-effort-and-pi-planning-follow-up--2026-11-10)
+- [Other tasks](#other-tasks)
+
 ## Capacity sources
 
 ### Service-qualified capacity audit — 2026-11-13
@@ -83,9 +92,25 @@ Public model admission may be narrower than official model specifications. Disco
 
 ## Native effort and Pi planning follow-up — 2026-11-10
 
-Re-read the official DeepSeek [thinking guide](https://api-docs.deepseek.com/guides/thinking_mode/), [Chat request reference](https://api-docs.deepseek.com/api/create-chat-completion/) and [Responses request reference](https://api-docs.deepseek.com/api/create-response/). They distinguish native `low/high/max` from compatibility inputs: `minimal → low`, `medium → high`, `xhigh → high`; `none` disables thinking. The native `deepseek-flash` Chat/Responses bindings declare this exact mapping. Do not copy Bailian's independently selected mapping to native DeepSeek, or assume an accepted source spelling is a distinct effective level. No new model, API or `ultra` source enum is activated.
+Re-read the official DeepSeek [thinking guide](https://api-docs.deepseek.com/guides/thinking_mode/), [Chat request reference](https://api-docs.deepseek.com/api/create-chat-completion/) and [Responses request reference](https://api-docs.deepseek.com/api/create-response/).
 
-The 2026-11-10 installed Pi source exposes `Model.thinkingLevelMap`, `getSupportedThinkingLevels` and `clampThinkingLevel`. Explicit null entries hide unsupported choices; a low/high/max model clamps a medium preference upward to high. Its public model metadata has `contextWindow` and `maxTokens`, without an independent input-token maximum. The user selected actual total context first, then an input-only maximum as a planning fallback when total context is absent; never add input and output, or publish that fallback as a new total-context fact. Unresolved service abbreviations still need independent numeric evidence.
+They distinguish native `low/high/max` from compatibility inputs: `minimal → low`, `medium → high`, `xhigh → high`; `none` disables thinking.
+
+The native `deepseek-flash` Chat/Responses bindings declare this exact mapping.
+
+Do not copy Bailian's independently selected mapping to native DeepSeek, or assume an accepted source spelling is a distinct effective level.
+
+No new model, API or `ultra` source enum is activated.
+
+The 2026-11-10 installed Pi source exposes `Model.thinkingLevelMap`, `getSupportedThinkingLevels` and `clampThinkingLevel`.
+
+Explicit null entries hide unsupported choices; a low/high/max model clamps a medium preference upward to high.
+
+Its public model metadata has `contextWindow` and `maxTokens`, without an independent input-token maximum.
+
+The user selected actual total context first, then an input-only maximum as a planning fallback when total context is absent; never add input and output, or publish that fallback as a new total-context fact.
+
+Unresolved service abbreviations still need independent numeric evidence.
 
 Successful registry refresh does not itself replace an already active/scoped model object. The adapter reconciles metadata at idle boundaries through public `setModel`/`setThinkingLevel`; the native preference/clamping policy stays in Pi. Offline/failed refresh retains qualified cached metadata rather than guessing new facts.
 
