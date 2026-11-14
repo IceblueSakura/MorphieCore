@@ -179,7 +179,8 @@ pub(super) fn steps(
 }
 
 /// One inert resource as v1 content. v1 has no video content, and `function_result`
-/// carries only text and images. Source: docs/refs/multimodal.md.
+/// carries only text and images.
+/// Media policy: docs/architecture/adaptation-and-dialects.md#media.
 fn media(
     resource: ResourceView<'_>,
     tool: bool,

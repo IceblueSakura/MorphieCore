@@ -266,7 +266,8 @@ pub fn contract(id: &str) -> Dispositions {
             crate::semantic::task::generation::Feature::AudioInput,
             id == "muse-ember",
         )
-        // Sources: MiniCPM-V docs/api.md and the Zhipu Chat reference (docs/refs/multimodal.md).
+        // Sources: MiniCPM-V docs/api.md and the Zhipu Chat reference.
+        // Media policy: docs/architecture/adaptation-and-dialects.md#media.
         .with_native(
             crate::semantic::task::generation::Feature::VideoInput,
             matches!(

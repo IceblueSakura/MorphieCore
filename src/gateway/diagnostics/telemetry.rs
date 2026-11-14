@@ -26,7 +26,7 @@ use tracing_subscriber::{Layer, layer::SubscriberExt};
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DiagnosticsConfig {
-    /// Complete OTLP/HTTP Logs URL, including `/v1/logs`.
+    /// Complete OTLP/HTTP Logs destination URL (typically `/v1/logs`).
     pub endpoint: String,
     /// Explicit opt-in for sanitized business payload snippets on failures.
     #[serde(default)]

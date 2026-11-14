@@ -229,7 +229,7 @@ Responses input accepts only developer batches. Native output preserves every de
 
 #### Cached context references
 
-`GenerationRequest` supports explicit cached input base references (`cached_content`), retaining opaque identifiers and reported expiration timestamps. The gateway does not perform client-side cache creation, fetching, or renewal.
+`GenerationRequest` supports explicit cached input base references (`cached_context`), retaining opaque identifiers and reported expiration timestamps. The gateway does not perform client-side cache creation, fetching, or renewal.
 
 #### Safety policy and reports
 

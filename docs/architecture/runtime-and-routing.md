@@ -73,7 +73,7 @@ An explicit conversation/session carrier is the routing unit, scoped by authenti
 Affinity keys and advisory cache policies are defined in [`protocol::cache`](../../src/protocol/cache.rs):
 - `X-MorphieCore-Conversation-Id` supplies declared conversation identity for multi-turn route affinity and upstream cache/session projection.
 - Prefix-cache indexing supplies advisory request hints, never an implicit conversation or account-routing key.
-- Target cache capabilities are enforced via [`CacheTargetPolicy`](../../src/protocol/cache.rs#L48), omitting unsupported advisory hints under declared loss rules.
+- Target cache capabilities are enforced via [`CacheTargetPolicy`](../../src/protocol/cache.rs), omitting unsupported advisory hints under declared loss rules.
 
 #### Upstream session projection
 
@@ -125,7 +125,7 @@ Route/cache identity includes configuration namespace, credential provenance and
 
 ### Streaming and delivery
 
-Delivery lifecycle and event streaming are coordinated by [`ResponseDelivery`](../../src/execution/delivery.rs#L100) under [`SseLimits`](../../src/protocol/stream.rs#L8):
+Delivery lifecycle and event streaming are coordinated by [`ResponseDelivery`](../../src/execution/delivery.rs) under [`SseLimits`](../../src/protocol/stream.rs):
 - **Pre-publication holding:** Bounded lifecycle-only frames wait for content while the one same-target retry remains possible.
 - **Publication freeze:** Flushing frames irreversibly prohibits another send; subsequent upstream failures abort the stream with terminal error events.
 - **Honest completion:** Streams require validated upstream EOF before downstream release.
@@ -154,7 +154,7 @@ MorphieCore operates behind a loopback-bound reverse proxy:
 
 #### Optional delta coalescing
 
-Configured via [`DeltaCoalescing`](../../src/execution/delivery/coalescing.rs#L17) (default 50 ms / 16 KiB bounds):
+Configured via [`DeltaCoalescing`](../../src/execution/delivery/coalescing.rs) (default 50 ms / 16 KiB bounds):
 - Merges consecutive adjacent `PartKind::Text` fragments into larger downstream frames.
 - Flushes immediately upon non-text events, usage reports, or timer expiration.
 

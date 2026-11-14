@@ -1,7 +1,7 @@
 //! Native `image` and `document` blocks and their mapping to IR resources.
 //! Messages has no audio or video carrier. Provider `file` sources and `content`
 //! documents name credential-owned state or nested blocks, so they are rejected.
-//! Source: docs/refs/multimodal.md.
+//! Media policy: docs/architecture/adaptation-and-dialects.md#media.
 use super::shape::*;
 use crate::protocol::failure::CarrierReason;
 use crate::{

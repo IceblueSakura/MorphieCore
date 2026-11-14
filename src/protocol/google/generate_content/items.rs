@@ -213,7 +213,7 @@ fn item_parts(
 
 /// One inert user resource as `inlineData` or `fileData`.
 /// Tool-result media has no selected occurrence-association carrier.
-/// Source: docs/refs/multimodal.md.
+/// Media policy: docs/architecture/adaptation-and-dialects.md#media.
 fn media(resource: ResourceView<'_>) -> Result<Value, CodecError> {
     if match resource.description {
         ResourceDescription::Image {

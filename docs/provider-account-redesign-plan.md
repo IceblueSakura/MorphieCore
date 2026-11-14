@@ -51,7 +51,7 @@ The shared account-source cutover separates private declarations, secret persist
 | [Executor health and affinity](../src/gateway/routing/executors.rs) | Account/target cooldowns, material-aware auth availability and advisory success-updated affinity; merged observations advance each affected scope once | See [Cache affinity](#cache-affinity) and [Outcome and health resolution](#outcome-and-health-resolution) |
 | [Generation exchange](../src/gateway/generation/exchange.rs) and [intake](../src/gateway/generation/intake.rs) | One selected candidate and immutable prepared request own at most two serial sends; retry readiness, publication and validated completion remain distinct | Preserve the selected recovery budget and original deadlines through consumer acceptance |
 | [Failure classification](../src/provider/errors.rs), [wire facts](../src/protocol/failure.rs) and [transport](../src/transport/http.rs) | Finite Provider-owned meaning replaces global quota substrings; typed sanitized causes separate positive interruption from trust/local/unknown faults and ambiguous timeout | Keep service identity ahead of protocol spelling and retry permission separate from health |
-| [Credential access](../src/credential/access.rs), [API keys](../src/credential/api_key.rs) and [renewal](../src/gateway/renewal.rs) | Pinned identities, usable-publication material receipts, network-free borrowing and configurable listener-owned maintenance with bounded short-grant spacing | Connect receipts to old-auth cooldown release and stale-401 filtering without weakening lifecycle quarantine |
+| [Credential access](../src/credential/access.rs), [API keys](../src/credential/api_key.rs) and [renewal](../src/gateway/renewal.rs) | Pinned identities, usable-publication material receipts, network-free borrowing and configurable listener-owned maintenance with bounded short-grant spacing | Verified material revisions release old-material auth constraints and filter stale 401 observations; lifecycle quarantine remains independent |
 
 Reuse secure storage mechanisms, OAuth drivers, identity verification, atomic publication/recovery, cancellation, trusted target selection and the publication fence where they fit. Existing credential record formats and persisted data are not compatibility requirements. This is a rewrite of account binding and execution policy, not a replacement of the semantic IR, codecs or transport stack.
 
@@ -267,7 +267,7 @@ Retry hints are advisory and do not authorize the gateway to reconstruct or repl
 
 ### Configuration surface
 
-These are conceptual settings, not final field names or a configuration schema. Each parameter has one owner; no per-account/model/request override stack is introduced.
+[Usage](usage/gateway-configuration.md) owns current configuration names and schema. Each parameter has one owner; no per-account/model/request override stack is introduced.
 
 | Owner | Setting | Selected default |
 |---|---|---|
@@ -287,7 +287,7 @@ These are conceptual settings, not final field names or a configuration schema. 
 | Provider | Failure-free interval resetting backoff | 30 min |
 | Route | Request deadline | Service ceiling |
 
-Capacity and ordinary timeouts reuse current values in [executor affinity](../src/gateway/routing/executors.rs), [service limits](../src/gateway/startup/limits.rs), [Generation catalog](../src/topology/catalog.rs) and [HTTP transport](../src/transport/http.rs). The selected renewal delay uses the existing [60 s maintenance interval](../src/gateway/renewal.rs) as a starting point, but applies only where lifecycle evidence permits another refresh attempt; it cannot release quarantined material. The 30 s recovery budget is a selected policy, not a measured latency guarantee. No first-content timeout is added to the initial attempt; a retry with no deliverable output for the whole recovery budget fails even if the model might still be thinking.
+Capacity and ordinary timeouts reuse current values in [executor affinity](../src/gateway/routing/executors.rs), [service limits](../src/gateway/startup/limits.rs), [Generation catalog](../src/topology/catalog.rs) and [HTTP transport](../src/transport/http.rs). The [maintenance loop](../src/gateway/renewal.rs) scans every 15 s by default; failed-renewal delay and minimum successful-renewal spacing independently default to 60 s. Delayed renewal applies only where lifecycle evidence permits another attempt; it cannot release quarantined material. The 30 s recovery budget is a selected policy, not a measured latency guarantee. No first-content timeout is added to the initial attempt; a retry with no deliverable output for the whole recovery budget fails even if the model might still be thinking.
 
 Provider classifiers, failure scopes and the narrow retryable network/server set change with Provider contracts, not operator rules. The one-extra-attempt ceiling replaces the old per-class retry counts and route send limit; there is no auth resend allowance. Terminal OAuth errors still require reauthorization; no timing setting permits reuse of uncertain refresh material.
 
@@ -359,9 +359,9 @@ The maintenance loop must:
 - Persist complete replacement material before secondary identity verification. Grok UserInfo and SIWC verification failures leave it pending and unusable; explicit refresh resumes verification without another token exchange. Automatic scans resume it after a network or timeout failure, using the failed-renewal delay; denial, identity mismatch, protocol and validation failures persist a manual-verification mark and wait for explicit refresh.
 - Preserve account identity across normal rotation, and surface explicit reauthorization or persistence-recovery states.
 - Treat unknown expiry as unknown; do not perform paid inference to test validity.
-- Keep ordinary credential borrowing network-free. Any selected request-triggered 401 recovery calls the same maintenance owner instead of creating a second refresh implementation, and only where the profile's contract makes refresh the right recovery.
+- Keep ordinary credential borrowing network-free. Inference never starts login or refresh; listener-owned maintenance and explicit CLI maintenance publish material for later requests.
 
-Timing and the safe failed-renewal delay are configurable. A request-triggered auth observation may notify the shared lifecycle owner where the profile permits recovery, but auth failure does not qualify for the network/server retry. Global timing does not remove Provider-specific token verification or rotation requirements.
+Timing and the safe failed-renewal delay are configurable. Inference auth failures contribute cooldown evidence, not refresh or network/server retry permission. Global timing does not remove Provider-specific token verification or rotation requirements.
 
 Once replacement OAuth material for the same managed identity is verified and durably published, auth cooldowns tied to older material no longer block new requests. Quota, permission and lifecycle constraints remain independent; no refresh moves affinity. A late old-material 401 cannot penalize replacement material. A changed principal/registration still follows provenance and replay isolation.
 
@@ -372,12 +372,12 @@ This accepted OAuth baseline establishes request-boundary selection, no auth-tri
 | Concern | Selected behavior |
 |---|---|
 | Registration and identity | Keep the issued client, verified subject/workspace, granted permissions and token set together. An alias is an operator label, not proof of identity. Ordinary token rotation preserves affinity; a changed principal or registration must not inherit private replay state |
-| Concurrent renewal | Background maintenance, request-triggered recovery and CLI maintenance share session-level coordination, including across processes using the same store. Re-read the latest state after acquiring ownership; a late 401 for an old access token should not force another refresh if a replacement already exists |
+| Concurrent renewal | Background maintenance and CLI maintenance share session-level coordination, including across processes using the same store. Re-read the latest state after acquiring ownership; a late 401 for an old access token should not force another refresh if a replacement already exists |
 | Temporary versus terminal failure | Temporary service failures do not erase the registration. Confirmed unusable refresh material requires reauthorization; invalid client or missing permission needs configuration/consent repair, not repeated refreshing. Classification belongs to each profile |
 | Uncertain refresh outcome | A timeout after dispatch can mean the server rotated the token but its response was lost. Preserve explicit recovery/quarantine state; do not blindly resend potentially consumed material. Retrying refresh requires evidence that reuse is safe under the profile's contract |
 | Durable replacement | New material must be verified and safely persisted before ordinary borrowing uses it. A crash or storage failure must not silently restore stale tokens or expose unverified replacements |
 | Expiry and scheduling | Unknown expiry stays unknown. Account queueing and failed-renewal delays can exceed the nominal polling interval; frequent scans alone do not guarantee renewal before expiry. Existing code serializes account scans, so this matters as account count grows |
-| Request-time recovery | Use material published by the shared lifecycle owner; an auth failure may request recovery for a later request but never triggers an inference resend now. Cancellation ends the request's participation; an already-started shared refresh remains lifecycle-owned and finishes safely within its own timeout. Cancellation must not restore possibly consumed material |
+| Request-time access | Use verified material published by listener-owned or explicit CLI maintenance. Inference never starts login or refresh. Request cancellation does not restore possibly consumed material or take ownership of shared maintenance |
 | Lifecycle versus routing health | Temporary cooldown, expired access, reauthorization-required and persistence-recovery states are different facts. A routing cooldown expiring cannot make invalid credentials usable |
 | Verified replacement and auth availability | Verified replacement releases only old-material auth cooldowns. Stale 401s do not penalize new material; quota/permission and lifecycle vetoes remain |
 | Account switching | Refreshing one registration is not switching accounts. A new request may select any eligible route candidate without separate opt-ins; refreshing does not restore exhausted subscription quota |

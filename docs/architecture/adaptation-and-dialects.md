@@ -230,9 +230,9 @@ Applications selected on 2026-10-30 are implemented, including request strictnes
 | Area | Level and rule |
 |---|---|
 | Explicit `strict:true` without an equivalent carrier | L5 unless a concrete loss is selected, as in the [Bailian service policy](#shared-aliyun-billing-dialect) (L3). Conditional (omitted) strictness is always resolvable without a compatibility classifier: an already-closed schema on a target with an equivalent strict carrier stays strict, every other case resolves non-strict under the conditional-default loss (L3); a request-wide strict grammar overflow resolves all conditional definitions non-strict, and rejects only when explicit strict tools alone overflow |
-| Google strictness/serial intent with explicit `tool_choice:none` | L2 `google.no-call-tool-guarantees.v1`: native no-call mode satisfies both guarantees, preserving all declarations and schemas without strict-default fallback; enabled calls retain their independent admission gates |
+| Google strictness/serial intent with explicit `tool_choice:none` | L2 compatibility without a loss receipt: native no-call mode satisfies both guarantees, preserving all declarations and schemas without strict-default fallback; enabled calls retain their independent admission gates |
 | Effort | Nearest supported level, ties upward, across Reasoning/Response scopes at the same level (L3); manual budgets on adaptive-only bindings convert to adaptive plus effort. When an explicit effort already exists, preserve it rather than replacing it with a budget-derived level; omit the uncarriable numeric budget under a named loss |
-| ModelBest Chat thinking | L2 `modelbest.chat-template-thinking.v1`: explicit activation uses the nested Boolean; positive reasoning effort also activates thinking and retains the same-name effort field. Absence keeps the hosted default |
+| ModelBest Chat thinking | L2 compatibility without a loss receipt: explicit activation uses the nested Boolean; positive reasoning effort also activates thinking and retains the same-name effort field. Absence keeps the hosted default |
 | DeepSeek Chat whole-inventory selection | L2 `deepseek.full-tool-inventory-choice.v1`: a complete function allowed set uses scalar `auto/required`, preserving every declaration and selection intent; proper subsets and thinking-mode forcing retain rejection |
 | Output ceilings | Preserve equivalent carriers; clamp to a known model maximum or retain a narrower accounting scope with loss (L3); omit when no useful carrier exists (L4). See [output-ceiling adaptation](#output-ceiling-adaptation) |
 | `required_with_tools` history with a Standard Chat client | Thinking-enabled/default tool requests reject at planning; the gateway never disables thinking to satisfy the history requirement. Explicitly disabled thinking and tool-free requests retain ordinary admission |
@@ -242,7 +242,7 @@ Applications selected on 2026-10-30 are implemented, including request strictnes
 | `stop` without a target carrier | L5 for now; gateway-side truncation may later provide L2 |
 | Messages `stop_sequences` on a non-Messages target with an ambiguous natural/stop-sequence cause | `end_turn` under a named approximation (L3) |
 | Unknown finish or incomplete reasons | Evidence-backed per-dialect maps; Responses carries an unspecified reason as `incomplete_details:{}`; otherwise L5 on Chat and Messages, so no outcome is misreported as a token limit |
-| Responses client-history annotations | L2 `responses.client-history-empty-annotations.v1`; see [semantic-equivalence compatibility](#semantic-equivalence-compatibility) |
+| Responses client-history annotations | L2 compatibility without a loss receipt; see [semantic-equivalence compatibility](#semantic-equivalence-compatibility) |
 | Messages `thinking.block_binding` | Public adaptive-thinking intake normalizes `null`/`{}` under L2; `drop_block` takes `messages.omit-block-binding.v1` (L3) without relaxing gateway replay checks; `"error"` is L5. Trusted native target carriers remain independent |
 | Legacy Messages sampling | Exact `temperature`/`top_p` in `[0,1]` and mathematically integral `top_k` in `[0,18446744073709551615]` take `messages.omit-removed-sampling.v1` (L4) at public intake; equivalent decimal/exponent spellings are accepted without rounding; malformed known values reject |
 | Messages version and beta headers | See the [version policy](index.md#protocols) |
@@ -301,11 +301,11 @@ Further selected applications: null-only system fingerprints on Responses/Messag
 
 Chat request `logit_bias:null` is its documented default, equivalent to omission with no active token bias or loss receipt. Non-null values retain rejection; tokenizer-bound active bias remains unselected. This field-specific rule does not equate arbitrary empty objects with null.
 
-The `responses.client-history-empty-annotations.v1` rule interprets an omitted `output_text.annotations` collection as empty at Responses Client-history intake only. Explicit arrays retain their values and validation; null and malformed known values reject. Target encoding emits the official required array. Upstream response/event snapshots and closed request codecs keep their required-array validation. This L2 compatibility produces no loss/insertion receipt and does not infer identity, lifecycle or other missing fields. It accepts the empty-collection scenario; it cannot recover nonempty annotations discarded by a client.
+Responses Client-history intake interprets an omitted `output_text.annotations` collection as empty. Explicit arrays retain their values and validation; null and malformed known values reject. Target encoding emits the official required array. Upstream response/event snapshots and closed request codecs keep their required-array validation. This L2 compatibility produces no loss/insertion receipt and does not infer identity, lifecycle or other missing fields. It accepts the empty-collection scenario; it cannot recover nonempty annotations discarded by a client.
 
 #### Client/IR projection principles
 
-Apply [semantic-equivalence compatibility](#semantic-equivalence-compatibility) first; classify remaining projection rules under the principles below. They are applications of the [conversion ladder](#conversion-ladder). Sections marked *implementation pending* state the target design; current behavior is unchanged until the corresponding [selected follow-up](../roadmap/unscheduled-issues.md#protocol-boundaries) lands.
+Apply [semantic-equivalence compatibility](#semantic-equivalence-compatibility) first; classify remaining projection rules under the principles below. They are applications of the [conversion ladder](#conversion-ladder).
 
 | Principle | Rule |
 |---|---|
@@ -323,7 +323,7 @@ Accepted applications:
 - **Messages terminal derivation (P1):** see [Messages terminal projection](#messages-terminal-projection).
 - **Messages baseline:** under the [version policy](index.md#protocols), `2023-06-01` is admitted over the current body grammar and beta headers are ignored, while beta body semantics follow body rules. Agents still learn unsupported features through [discovery](#generation-text-model-discovery).
 
-The presentation/continuity consumer projects Bailian Responses request copies before target validation. Auto resolves to the native default without a loss receipt; explicit granularity uses `responses.omit-reasoning-summary.v1`. Encrypted include uses `responses.omit-encrypted-reasoning-include.v1`, except that an admitted explicit thinking-off request has no new reasoning to encrypt and needs no loss receipt. These rules do not change activation, effort, budgets, context, read-history intent, history owners or source observations. Null/omitted visibility guards remain. This request-control policy is independent of S11 history qualification; other target families still need their selected consumers.
+Presentation and continuity requests project on candidate copies before final validation across target families. Native Responses retains its carriers; Messages and Google can approximate explicit summary granularity through their native summarizers. Auto resolves to the native default without a loss receipt; unavailable explicit granularity uses `generation.omit-reasoning-summary.v1`. Encrypted include uses `generation.omit-encrypted-reasoning-include.v1` without an opaque carrier, except that admitted explicit thinking-off has no new reasoning to encrypt and needs no loss receipt. These rules do not change activation, effort, budgets, context, read-history intent, history owners or source observations. Null/omitted visibility guards remain.
 
 The conditional-default consumers share one resolver for root definitions, namespace leaves where carried, and inline-added definitions. Projection mutates private settings/items only; supplied schemas and source observations are unchanged. Unknown schema keywords, including inside closed objects and referenced definitions, take the same named non-strict fallback rather than local normalization-feasibility classification. The existing subset walker checks closure and the known vocabulary together; it does not rewrite schemas. Property names and annotation values are not schema keywords. Explicit strict requests retain upstream delegation for unknown keywords, independently of conditional-default inference. Native Responses keeps omitted parameters and strictness; Chat's existing omitted non-strict default also keeps optional spelling. Bailian final writers omit the unsupported strict flag under their native non-strict default. The request disposition owner selects these rules before final encoding.
 
@@ -333,7 +333,7 @@ Responses retrieval retains the argument string selected by the shared event pro
 
 #### Delivery projection ownership
 
-`ClientAdapter` owns one stateful `ClientProjection` and a shared fact/disposition table. It selects native argument carriers, reasoning/refusal substitutions, report omissions, usage views, terminal mappings and grouping before rendering. SSE encodes its selected events; JSON and retained history reduce those events and render the resulting snapshot. Encoders retain protocol grammar, lifecycle and resource checks rather than selecting another conversion policy.
+The adapter module owns `ClientProjection` and its shared fact/disposition table. `ResponseDelivery` retains the incremental projection; snapshot conversion constructs a local projection. It selects native argument carriers, reasoning/refusal substitutions, report omissions, usage views, terminal mappings and grouping before rendering. SSE encodes its selected events; JSON and retained history reduce those events and render the resulting snapshot. Encoders retain protocol grammar, lifecycle and resource checks rather than selecting another conversion policy.
 
 Projection operates on private delivery copies. Execution-assigned response/item aliases are merged before materializing JSON or retained views; protected call dependencies keep their execution ownership until the separately scheduled identity migration. Wire-only Messages block/owner closure does not finish an incomplete semantic item.
 
@@ -389,7 +389,7 @@ Responses preserves `commentary` and `final_answer` labels. Targets without phas
 #### Service policies and reports
 
 - Requested service policies and served classes have separate owners. Anthropic `standard`/`priority` capacity and OpenAI `default`/`flex`/`priority` processing classes remain distinct; explicit policy constraints require a supported target meaning.
-- `openai.omit-unrepresentable-service-class.v1` omits served classes without an OpenAI carrier on delivery copies. It never substitutes an approximate tier. The test-only strict-complete reporting policy is scheduled for removal; production bindings use faithful reporting.
+- `openai.omit-unrepresentable-service-class.v1` omits served classes without an OpenAI carrier on delivery copies. It never substitutes an approximate tier.
 - Stream encoders validate original service observations before projecting rendering copies. Conflicting single-report or lifecycle updates still reject even when both classes would be omitted.
 
 #### Lifecycle settings and service reports
@@ -429,7 +429,7 @@ Existing Gemini 3.8 Flash bindings retain their narrower rules:
 
 The IR decouples reasoning activation from effort level and scope:
 - **Activation:** `ReasoningRequest` (enabled vs disabled).
-- **Effort Control:** `EffortControl { scope, level }` with [`EffortScope::Reasoning`](../../src/semantic/task/generation/content/reasoning.rs#L27) (per-thought) or [`EffortScope::Response`](../../src/semantic/task/generation/content/reasoning.rs#L27) (turn-wide).
+- **Effort Control:** `EffortControl { scope, level }` with [`EffortScope::Reasoning`](../../src/semantic/task/generation/content/reasoning.rs) (per-thought) or [`EffortScope::Response`](../../src/semantic/task/generation/content/reasoning.rs) (turn-wide).
 - Explicit `disabled` reasoning takes precedence over response-wide effort settings.
 
 Model-effective constraints independently declare whether disabled activation is unavailable and which positive effort levels are native. Grok 4.7 and GPT Astra/Sol reject explicit off; Luna retains off. Positive non-native levels use the existing nearest-level mapping, while omission remains omission. Discovery and dispatch consume the same constraint; dialect spelling does not create model support. See the [official source review](../refs/2026-11-12-generation-binding-contracts.md).
@@ -446,7 +446,7 @@ Named local effort is admitted only on system messages; omitted system content i
 
 ##### Google response-effort projection
 
-The model-qualified `google.<model>.response-effort-to-thinking.v1` rules map response-scoped effort to Gemini thinking effort via [`ReasoningConversion::Scope`](../../src/protocol/reasoning.rs#L131). Gemini 3.8 Flash, Gemini 4 Argon and Carbon map low/medium/high; Hydrogen also carries xhigh as native `XHIGH` on GenerateContent and `xhigh` on Interactions. Gemini 4 planning records its unified context window rather than relabeling it as independent input capacity. Sampling is ignored by these selected models; the existing named omission rules preserve that distinction. The selected 3.8-only terminal projections remain unchanged.
+The model-qualified `google.<model>.response-effort-to-thinking.v1` rules map response-scoped effort to Gemini thinking effort via [`ReasoningConversion::Scope`](../../src/protocol/reasoning.rs). Gemini 3.8 Flash, Gemini 4 Argon and Carbon map low/medium/high; Hydrogen also carries xhigh as native `XHIGH` on GenerateContent and `xhigh` on Interactions. Gemini 4 planning records its unified context window rather than relabeling it as independent input capacity. Sampling is ignored by these selected models; the existing named omission rules preserve that distinction. The selected 3.8-only terminal projections remain unchanged.
 
 #### Reasoning level calibration
 
@@ -454,9 +454,9 @@ Explicit hand-authored mappings define canonical model bindings. Under the [conv
 
 ##### Thinking-budget quantization
 
-When targets require discrete qualitative levels, numeric token budgets are quantized to discrete presets defined in [`ThinkingBudgets`](../../src/protocol/reasoning.rs#L35):
-- Canonical presets are maintained in [`SHARED_BUDGETS`](../../src/protocol/reasoning.rs#L49) (6 discrete tiers spanning minimal to max).
-- Selection matches minimal absolute token distance via [`ThinkingBudgets::nearest`](../../src/protocol/reasoning.rs#L108); exact ties resolve upward to the higher effort level.
+When targets require discrete qualitative levels, numeric token budgets are quantized to discrete presets defined in [`ThinkingBudgets`](../../src/protocol/reasoning.rs):
+- Canonical presets are maintained in [`SHARED_BUDGETS`](../../src/protocol/reasoning.rs) (6 discrete tiers spanning minimal to max).
+- Selection matches minimal absolute token distance via [`ThinkingBudgets::nearest`](../../src/protocol/reasoning.rs); exact ties resolve upward to the higher effort level.
 - Current validation rejects requests whose thinking budget exceeds the client-specified maximum output token ceiling.
 
 ##### Bounded token-budget adaptation
@@ -467,9 +467,9 @@ This direction does not select a general adjustment formula or change thinking-b
 
 ##### Initial mapping plan
 
-Bindings declare model-specific qualitative level translation via [`ReasoningEffortMapping`](../../src/protocol/reasoning.rs#L358) and [`ReasoningRequestPolicy`](../../src/protocol/reasoning.rs#L155):
+Bindings declare model-specific qualitative level translation via [`ReasoningEffortMapping`](../../src/protocol/reasoning.rs) and [`ReasoningRequestPolicy`](../../src/protocol/reasoning.rs):
 - Conversions are strictly directional. A level missing from a binding's table resolves to the nearest supported level, ties upward, under the binding's named effort rule. Bindings that expose no effort control omit it under a named rule (L4); explicit history-read intent keeps its own guard.
-- Upstream thinking budgets translate to qualitative effort via [`ReasoningConversion::BudgetToEffort`](../../src/protocol/reasoning.rs#L137), and qualitative effort expands to discrete token budgets via [`ReasoningConversion::EffortToBudget`](../../src/protocol/reasoning.rs#L142).
+- Upstream thinking budgets translate to qualitative effort via [`ReasoningConversion::BudgetToEffort`](../../src/protocol/reasoning.rs), and qualitative effort expands to discrete token budgets via [`ReasoningConversion::EffortToBudget`](../../src/protocol/reasoning.rs).
 
 ##### Implementation owners
 
@@ -492,19 +492,16 @@ Every lossy conversion or field omission generates bounded typed evidence. Inter
 
 #### Domain evidence interface
 
-The conversion pipeline tracks adaptation evidence via [`Conversion<T>`](../../src/protocol/conversion/generation/evidence.rs#L754), pairing transformed payloads with a typed [`EvidenceDelta`](../../src/protocol/conversion/generation/evidence.rs#L645):
-- **Body-free isolation:** Evidence records only structured [`Effect`](../../src/protocol/conversion/generation/evidence.rs#L384) items and rule IDs; user payloads, prompts, and tokens are strictly excluded.
-- **Change categories:** Field modifications classify into canonical [`Change`](../../src/protocol/conversion/generation/evidence.rs#L282) families (`Normalize`, `Derive`, `Default`, `InferFromRequest`, `Omit`, `Approximate`, `Estimate`).
-- **Bounded allowances:** Deltas enforce hard upper bounds of [`MAX_EFFECTS`](../../src/protocol/conversion/generation/evidence.rs#L632) (64 entries) and 16 KiB per delta. When saturated, an explicit truncation count is recorded without modifying business payloads.
+The conversion pipeline tracks adaptation evidence via [`Conversion<T>`](../../src/protocol/conversion/generation/evidence.rs), pairing transformed payloads with a typed [`EvidenceDelta`](../../src/protocol/conversion/generation/evidence.rs):
+- **Body-free isolation:** Evidence records only structured [`Effect`](../../src/protocol/conversion/generation/evidence.rs) items and rule IDs; user payloads, prompts, and tokens are strictly excluded.
+- **Change categories:** Field modifications classify into canonical [`Change`](../../src/protocol/conversion/generation/evidence.rs) families (`Normalize`, `Derive`, `Default`, `InferFromRequest`, `Omit`, `Approximate`, `Estimate`).
+- **Bounded allowances:** Deltas enforce hard upper bounds of [`MAX_EFFECTS`](../../src/protocol/conversion/generation/evidence.rs) (64 entries) and 16 KiB per delta. When saturated, an explicit truncation count is recorded without modifying business payloads.
 
 OpenAI event encoders receive the final `TargetContract` at construction. There is no target-policy setter or publication-time target lock; identity-bound metadata updates and source lifecycle/terminal checks remain independent.
 
 #### Atomic evidence and output batches
 
-Transformations return `Result<Conversion<T>, ConversionFailure>`. Evidence is committed only upon outer boundary acceptance:
-- `Ready(EncodedBatch)`: Output frames serialized and validated.
-- `NoCarrier(EvidenceDelta)`: Intentional transformation produced no output frames.
-- `Deferred`: State retained pending future events or markers.
+Transformations return `Result<Conversion<T>, ConversionFailure>`. Execution produces checked `EncodedBatch` frame collections, which may be empty. `Report::batch` accepts the associated `EvidenceDelta`; delivery acknowledgment and publication remain separate execution boundaries. Pending projection/coalescing state and deferred evidence remain with their owners. Dropping a batch does not acknowledge delivery.
 
 #### Typed conversion failures
 
@@ -553,7 +550,7 @@ The historical thinking-prefix requirement for manual thinking belongs to an act
 
 ### Missing output ceilings
 
-[`TargetContract.default_output_tokens`](../../src/protocol/anthropic/messages/target.rs#L70) defines optional ceiling insertion:
+[`TargetContract.default_output_tokens`](../../src/protocol/anthropic/messages/target.rs) defines optional ceiling insertion:
 - Declared by Go/Haiku Messages (`32000`) to satisfy Anthropic mandatory `max_tokens`.
 - Injected on candidate copies only when client request omits `max_tokens`. Explicit ceilings are preserved.
 

@@ -1,7 +1,8 @@
 //! Video extensions: Chat `video_url` and Responses `input_video`, each a video URL or
 //! base64 data URL, never a frame list. Chat's is shared by OpenRouter, DashScope, Zhipu,
 //! vLLM and ModelBest; Responses' by Open Responses and OpenRouter. Extras such as `fps`
-//! or `processing` are dialect-specific and ignored. Source: docs/refs/multimodal.md.
+//! or `processing` are dialect-specific and ignored.
+//! Media policy: docs/architecture/adaptation-and-dialects.md#media.
 use crate::protocol::openai::{CodecError, shape::*};
 use crate::semantic::task::generation::*;
 use serde_json::{Map, Value, json};

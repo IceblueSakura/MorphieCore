@@ -173,7 +173,7 @@ pub struct WireRules {
     /// Source: https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/chat_completion/protocol.py
     pub chat_inference_response_shape: bool,
     /// User video as `{"type":"video_url","video_url":{"url":…}}`, URL or data URL.
-    /// Source: docs/refs/multimodal.md.
+    /// Media policy: docs/architecture/adaptation-and-dialects.md#media.
     pub chat_video_url: bool,
     /// User video as `{"type":"input_video","video_url":…}`, URL or data URL; no
     /// tool-result carrier. Source: OpenRouter OpenAPI `InputVideo` (2026-10-13).
