@@ -46,7 +46,7 @@ Accepted losses and service limitations live in [Architecture](architecture/inde
 
 [flake.nix](../flake.nix) provides the development shells and tool availability checks. `flake.lock` pins Nix inputs; `rust-toolchain.toml` selects Rust and its matching LLVM coverage tools. Use declared tooling rather than host-wide upgrades.
 
-Cargo dependencies are pinned in `Cargo.toml` and `Cargo.lock`. The shared Python environment is owned by `tests/sdk/pyproject.toml`, `uv.lock` and `.python-version`; TypeScript SDK probes use `tests/sdk/pi/package-lock.json`. Restore the relevant locked environments before using their consumers. Generated environments and build caches are not hand-maintained sources.
+Cargo dependencies are pinned in `Cargo.toml` and `Cargo.lock`. The shared Python environment is owned by `tests/sdk/pyproject.toml`, `tests/sdk/uv.lock` and `tests/sdk/.python-version`; TypeScript SDK probes use `tests/sdk/pi/package-lock.json`. Restore the relevant locked environments before using their consumers. Generated environments and build caches are not hand-maintained sources.
 
 Keep application dependencies, protocol/SDK reference pins and installed Agent versions independent. Check stable release contracts before promoting dependency or source pins, respect upstream constraints, and recharacterize affected client behavior when the installed Agent changes.
 
@@ -105,13 +105,13 @@ Binary bodies, multipart inputs and asynchronous job states belong to their oper
 
 Use the current installed pi/OpenCode with safe unwrapped launchers, isolated HOME/XDG/session state and bounded child processes. Retain built-in model declarations for default-profile checks; select nondefault profiles explicitly. Do not patch serialized requests or returned history, downgrade clients to source pins, inspect personal configuration or retain historical compatibility branches.
 
-The existing synthetic client drivers own request budgets, timeout/cancellation, scratch state and independent authority oracles. Real Provider workflows follow the [real-service policy](../AGENTS.md#tests). Check actual tool execution, final state, continuation and request counts. Recharacterize changed serializers and controls at their affected boundary, using source and test-owned state.
+The existing synthetic client drivers own request budgets, timeout/cancellation, scratch state and independent authority oracles. Real Provider workflows follow the [real Provider checks](#real-provider-checks) policy below. Check actual tool execution, final state, continuation and request counts. Recharacterize changed serializers and controls at their affected boundary, using source and test-owned state.
 
 The `pi_gateway_context_discovery` gate additionally takes the current MorphieCore extension entry in `MORPHIECORE_PI_EXTENSION`. It connects real gateway discovery to native Pi model storage, selected-session context accounting and a separate offline RPC process. It checks metadata loading, not large-context inference quality or upstream token enforcement.
 
 ### Real Provider checks
 
-Follow [authorization](../AGENTS.md#authorization) and the [real-service policy](../AGENTS.md#tests), using the project loader exclusively. Select targets and additional requests as needed to complete the task, without repeated approval or a predeclared request budget. Normal OAuth renewal and credential persistence use the project manager. Keep retries visible, inspect failures before repeating calls, and report actual request counts.
+Follow [authorization](../AGENTS.md#authorization), using the project loader exclusively. Select targets and additional requests as needed to complete the task, without repeated approval or a predeclared request budget. Keep checks direct rather than building bespoke test harnesses, and do not impose fixed token, elapsed-time or request-count budgets unless the user requests them or the check specifically tests those controls (ordinary application and Provider safety limits and cancellation remain intact). Normal OAuth renewal and credential persistence use the project manager. Keep retries visible, inspect failures before repeating calls, and report actual request counts.
 
 Use synthetic task content and model-issued call/result identities with untouched returned history. Check the intended client workflow and honest termination. Report only redacted status, counts and error classifications; keep private captures temporary. Remaining real qualification belongs in the roadmap.
 
