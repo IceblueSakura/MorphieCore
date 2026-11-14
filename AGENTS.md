@@ -16,7 +16,7 @@
 ## Authorization
 
 - Work on `main`; preserve unrelated changes. Commit and push completed slices to `origin/main` after the verification below. Deployment, other publication and credential lifecycle operations require explicit approval.
-- Development-related real Provider calls are authorized without per-call confirmation or a spending cap. Fix the target, request count, output cap and timeout before each run; run serially without hidden retries, using the project loader and redacted reporting only.
+- Development-related real Provider calls are authorized without per-call confirmation or a spending cap. Fix the target, request budget and purpose before each run; run serially without hidden retries, using the project loader and redacted reporting only. Use the functional-test policy below for token and time limits.
 - Approved phases allow large deletions and breaking rewrites without compatibility shims. Frozen implementation gets only necessary maintenance.
 
 ## Security
@@ -38,6 +38,7 @@
 
 ## Tests
 
+- Keep real-service functional checks simple. Do not add token caps or tight per-request test deadlines unless verifying quantity-related controls such as `max_tokens`. Use ordinary configured service safety limits, and prefer direct functional checks over bespoke test harnesses.
 - Adapt production client boundaries and actual Agent acceptance only to the host's current latest pi, OpenCode and other Agents. Remove obsolete client-specific compatibility instead of retaining old-version pins, branches or a historical-version matrix; never downgrade to match source pins. Recharacterize relevant behavior after updates without maintaining tested-version inventories in documentation. Protocol/SDK/source pins remain independent reference and regression baselines. Use isolated test-owned state and safe unwrapped launchers without changing host credentials or personal configuration.
 - Keep tests that independently challenge a product assumption, public contract or concrete external failure risk. Aggressively delete implementation restatements, static catalog/configuration snapshots, trivial accessor/assembly checks, third-party self-tests and redundant permutations. Do not add replacement tests merely to preserve removed assertions or test counts. Follow the roadmap's phase-specific scope.
 - The [standards-reset design is human-approved](docs/architecture/decisions.md#scope-and-activation-decisions). Implement its integrated upstream-source test plan with each slice; unresolved concrete semantics and new integration still need their own selection. Historical mapping expectations are not the regression oracle, even if previously approved.

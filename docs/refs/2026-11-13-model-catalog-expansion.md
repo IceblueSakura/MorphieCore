@@ -58,7 +58,7 @@ The DashScope spelling is `kimi-k3.1-pro`. Text/images, tools and structured out
 - `glm-5.3` selects Responses with its existing low/high/max mapping; minimal maps to low, medium to high, and xhigh to max. DashScope capacities do not become TokenPlan capacities.
 - The exact new ID is `qwen4-max-preview`; no local `qwen4-max` alias is selected. It is TokenPlan-only. The published preview window is 2026-11-11 through 2026-11-25 (UTC+8). Its output maximum is 393,216; the model page's abbreviated `1M` context and a client configuration example do not establish an independent exact service input/context ceiling.
 - Qwen4 supports text/images/video, function tools, JSON Object and JSON Schema. Its low/medium/xhigh controls reuse the shared Qwen effort calibration under a model-specific rule. Thinking and answer share the output budget: Chat `max_tokens` and `max_completion_tokens` are equivalent total ceilings, and Responses uses `max_output_tokens`. This does not change older Qwen Chat's reply-only `max_tokens` interpretation. Numeric budget and effort remain mutually exclusive.
-- Function strictness follows the selected shared Bailian relaxation; generic file input remains unadvertised. TokenPlan real-call deferral belongs to the issue register, not protocol parsing.
+- Function strictness follows the selected shared Bailian relaxation; generic file input remains unadvertised. Account access and remaining service qualification belong to the issue register, not protocol parsing.
 
 ## One DeepSeek entry
 
