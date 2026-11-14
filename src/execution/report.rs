@@ -25,6 +25,7 @@ pub enum View {
 pub struct Failure {
     pub boundary: Option<ConversionBoundary>,
     pub cause: AttemptError,
+    pub(crate) decode: Option<super::attempt::DecodeFailure>,
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct Entry {
@@ -119,10 +120,19 @@ impl Report {
         self.with(|r| r.attempt.clone().unwrap_or_default())
     }
     pub fn failure(&self, boundary: Option<ConversionBoundary>, error: &AttemptError) {
+        self.failure_with_context(boundary, error, None);
+    }
+    pub(crate) fn failure_with_context(
+        &self,
+        boundary: Option<ConversionBoundary>,
+        error: &AttemptError,
+        decode: Option<super::attempt::DecodeFailure>,
+    ) {
         self.with(|r| {
             let failure = Failure {
                 boundary: error.boundary().or(boundary),
                 cause: error.clone(),
+                decode,
             };
             if let Some(a) = &mut r.attempt {
                 let source_already_observed = a.source_failure.is_some();

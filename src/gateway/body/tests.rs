@@ -109,6 +109,7 @@ async fn response(
     let request=entry.client.as_openai().unwrap().0.decode_request(serde_json::json!({"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"stream":stream,"stream_options":if stream {serde_json::json!({"include_usage":true,"include_obfuscation":false})}else{serde_json::Value::Null}}).to_string().as_bytes()).unwrap();
     let candidate = entry.candidates[0].clone();
     let mut trace = super::Trace::new(gate.state.diagnostics.as_ref());
+    trace.generation(entry.public.id.as_str(), entry.client.protocol());
     trace.capture = gate.state.capture.as_ref().map(|sink| sink.exchange());
     respond(
         entry,
@@ -1038,6 +1039,44 @@ async fn queued_first_frame_timeout_preserves_the_final_public_error() {
     let error = pending.await.unwrap_err();
     assert_eq!(error.status, 504);
     assert_eq!(report.request_error(), Some((error.diagnostic_code(), 504)));
+}
+
+#[tokio::test]
+async fn dropping_body_records_cancelled_summary_before_aborting_the_producer() {
+    use crate::gateway::{LogLevel, diagnostics::Sink};
+    let (sink, exporter) = Sink::memory_at(LogLevel::Info);
+    let mut gate = gateway(Limits {
+        concurrency: 1,
+        ..Limits::default()
+    });
+    Arc::get_mut(&mut gate.state).unwrap().diagnostics = Some(sink);
+    let (tx, source, dropped, _) = upstream(200, "text/event-stream");
+    tx.send(Ok(Bytes::from(frames()[..2].concat())))
+        .await
+        .unwrap();
+    let response = bounded(response(
+        &gate,
+        source,
+        true,
+        Instant::now() + Duration::from_secs(3),
+    ))
+    .await
+    .unwrap();
+    drop(response);
+    bounded(dropped).await.unwrap();
+    let _permit = bounded(gate.state.permits.clone().acquire_owned())
+        .await
+        .unwrap();
+    let logs = exporter.get_emitted_logs().unwrap();
+    assert_eq!(logs.len(), 1);
+    assert_eq!(logs[0].record.severity_text(), Some("INFO"));
+    assert!(
+        logs[0]
+            .record
+            .attributes_iter()
+            .any(|(key, value)| key.as_str() == "outcome"
+                && *value == opentelemetry::logs::AnyValue::from("cancelled"))
+    );
 }
 
 #[tokio::test]

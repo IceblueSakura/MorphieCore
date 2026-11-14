@@ -146,6 +146,12 @@ pub(crate) enum GenerationDecoder {
     Interactions(crate::protocol::google::interactions::GenerationSseDecoder),
 }
 impl GenerationDecoder {
+    pub(crate) fn last_event(&self) -> Option<crate::protocol::stream::SourceEvent> {
+        match self {
+            Self::Responses(decoder) => decoder.last_event(),
+            _ => None,
+        }
+    }
     pub(crate) fn event_failure(&self) -> Option<crate::protocol::failure::SourceFailureEvidence> {
         match self {
             Self::Responses(d) => d.event_failure(),

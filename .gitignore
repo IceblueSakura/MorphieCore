@@ -10,6 +10,8 @@
 /config/*
 !/config/*.example.json
 !/config/*.example.conf
+!/config/otelcol.example.yaml
+!/config/otelcol.example.service
 
 # Standalone protocol corpus derived artifacts and Python tool environments.
 /testdata/generated/

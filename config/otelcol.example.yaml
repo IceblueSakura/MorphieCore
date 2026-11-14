@@ -1,0 +1,32 @@
+# Official otelcol v0.165.0. Pre-create logs/ with mode 0700.
+# Rotation creates mode-0644 files; the private parent directory is the access boundary.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 127.0.0.1:4318
+        max_request_body_size: 1048576
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 96
+    spike_limit_mib: 24
+exporters:
+  file:
+    path: ./logs/generation.jsonl
+    format: json
+    rotation:
+      max_megabytes: 16
+      max_backups: 8
+      max_days: 7
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter]
+      exporters: [file]
+  telemetry:
+    logs:
+      level: warn
+    metrics:
+      level: none

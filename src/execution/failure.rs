@@ -169,6 +169,7 @@ fn shape_code(e: &ShapeReason) -> &'static str {
 
 fn carrier_code(e: &CarrierReason) -> &'static str {
     match e {
+        CarrierReason::ToolConstraint { .. } => "codec.unsupported.tool_constraint",
         CarrierReason::Schema => "codec.unsupported.schema",
         CarrierReason::CitationMetadata => "codec.unsupported.citation_metadata",
         CarrierReason::UrlContextMetadata => "codec.unsupported.url_context_metadata",

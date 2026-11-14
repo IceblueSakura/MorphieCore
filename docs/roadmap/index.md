@@ -44,7 +44,7 @@ No deployment or new API activation is implied.
 | Conditional tool follow-ups | [Conditional Stage-3 follow-ups](unscheduled-issues.md#conditional-stage-3-follow-ups) | Separate policy selection and affected-loop acceptance; not default Stage-4 prerequisites |
 | API expansion | Select and implement Stage-4 operation contracts | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Opt-in [per-Agent JSONL session storage](../architecture/history-and-replay.md#agent-session-files); unscheduled and not a Stage-4 prerequisite | Select isolation and lifetime bounds before implementation |
-| Production preparation | Select real diagnostic receiver/storage and deferred cluster observability scope | Explicit deployer selection; cleanup implementation does not deploy a Collector or backend |
+| Production preparation | Extend beyond the selected loopback Collector/file receiver only on concrete operational need | Indexed storage, stronger durability and cluster aggregation retain separate selection and acceptance |
 
 ## Planned order
 
@@ -125,7 +125,7 @@ The test strategy uses pinned upstream assets and standard SDK consumers rather 
 
 ### Observability follow-up
 
-Real receiver/backend activation, centralized cluster topology, public diagnostic schema stabilization and metrics aggregation still await production packaging.
+The selected loopback Collector/file receiver and Generation Text log timelines are described in [Usage](../usage/gateway-configuration.md#failure-diagnostics). Indexed backends, centralized cluster topology, public diagnostic schema stabilization and metrics aggregation remain deferred.
 
 Safe-to-ignore diagnostic extensions may be added without dedicated extension tests. That exception does not waive the selected logger/capture replacement's behavior, redaction, bounds, cancellation and exporter checks. Further aggregation remains deferred; existing standard Agent-loop and authoritative evidence checks remain required.
 

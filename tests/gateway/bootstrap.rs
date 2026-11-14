@@ -573,6 +573,7 @@ async fn private_failure_context_reaches_otlp_with_trusted_identity_and_redacted
     }));
     let gate = support::gateway(&origin, Default::default())
         .with_diagnostics(morphiecore::gateway::DiagnosticsConfig {
+            level: morphiecore::gateway::LogLevel::Warn,
             endpoint: collector.endpoint.clone(),
             private_bodies: true,
             body_bytes: 4096,
@@ -699,6 +700,7 @@ async fn unavailable_or_stalled_export_cannot_block_admission_or_a_healthy_gener
         };
         let gate = support::gateway(&origin, Default::default())
             .with_diagnostics(morphiecore::gateway::DiagnosticsConfig {
+                level: morphiecore::gateway::LogLevel::Warn,
                 endpoint,
                 private_bodies: false,
                 body_bytes: 1024,

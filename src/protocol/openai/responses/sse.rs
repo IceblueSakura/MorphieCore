@@ -30,6 +30,7 @@ pub struct ResponsesSseDecoder {
     done_marker: bool,
     closed: bool,
     rejected: bool,
+    last_event: Option<crate::protocol::stream::SourceEvent>,
 }
 impl ResponsesSseDecoder {
     pub(crate) fn event_failure(&self) -> Option<crate::protocol::failure::SourceFailureEvidence> {
@@ -62,6 +63,7 @@ impl ResponsesSseDecoder {
             done_marker: false,
             closed: false,
             rejected: false,
+            last_event: None,
         })
     }
     pub fn with_decoder(
@@ -103,6 +105,11 @@ impl ResponsesSseDecoder {
         result
     }
     fn frame(&mut self, frame: SseEvent) -> Result<Vec<StreamEvent>, SseError> {
+        self.last_event = Some(crate::protocol::stream::SourceEvent {
+            ordinal: self.events.saturating_add(1),
+            kind: event_kind(frame.event()),
+            sequence: None,
+        });
         if self.done_marker {
             return Err(SseError::Closed);
         }
@@ -114,6 +121,7 @@ impl ResponsesSseDecoder {
             return Ok(vec![]);
         }
         if frame.data() == "[DONE]" && self.codec.permits_responses_done() {
+            self.last_event.as_mut().expect("observed frame").kind = "done_marker";
             if frame
                 .event()
                 .is_some_and(|e| !e.is_empty() && e != "message")
@@ -127,6 +135,18 @@ impl ResponsesSseDecoder {
             return Ok(vec![]);
         }
         let mut payload = crate::protocol::json::decode(frame.data().as_bytes())?;
+        let context = self.last_event.as_mut().expect("observed frame");
+        context.sequence = payload.get("sequence_number").and_then(Value::as_u64);
+        let body_kind = payload.get("type").and_then(Value::as_str);
+        context.kind = if frame
+            .event()
+            .filter(|e| !e.is_empty())
+            .is_some_and(|header| body_kind.is_some_and(|body| header != body))
+        {
+            "type_mismatch"
+        } else {
+            event_kind(body_kind.or(frame.event()))
+        };
         let object = payload.as_object_mut().ok_or(CodecError::invalid())?;
         let declared = frame.event().filter(|s| !s.is_empty());
         match (declared, object.get("type")) {
@@ -150,6 +170,9 @@ impl ResponsesSseDecoder {
     }
     pub fn metadata(&self) -> Option<&ResponseMetadata> {
         self.codec.metadata()
+    }
+    pub(crate) fn last_event(&self) -> Option<crate::protocol::stream::SourceEvent> {
+        self.last_event
     }
     pub fn ignored_events(&self) -> usize {
         self.codec.ignored_events()
@@ -180,6 +203,45 @@ impl ResponsesSseDecoder {
         Ok(self.codec.materialize()?)
     }
 }
+fn event_kind(name: Option<&str>) -> &'static str {
+    const KINDS: &[&str] = &[
+        "response.created",
+        "response.queued",
+        "response.in_progress",
+        "response.completed",
+        "response.incomplete",
+        "response.failed",
+        "error",
+        "response.output_item.added",
+        "response.output_item.done",
+        "response.content_part.added",
+        "response.content_part.done",
+        "response.output_text.delta",
+        "response.output_text.done",
+        "response.output_text.annotation.added",
+        "response.refusal.delta",
+        "response.refusal.done",
+        "response.reasoning_summary_part.added",
+        "response.reasoning_summary_part.done",
+        "response.reasoning_summary_text.delta",
+        "response.reasoning_summary_text.done",
+        "response.reasoning_text.delta",
+        "response.reasoning_text.done",
+        "response.function_call_arguments.delta",
+        "response.function_call_arguments.done",
+        "response.custom_tool_call_input.delta",
+        "response.custom_tool_call_input.done",
+    ];
+    match name {
+        None => "missing",
+        Some(name) => KINDS
+            .iter()
+            .copied()
+            .find(|known| *known == name)
+            .unwrap_or("unknown"),
+    }
+}
+
 pub struct ResponsesSseEncoder {
     notice: Option<crate::protocol::diagnostics::AdaptationNotice>,
     codec: EventEncoder,

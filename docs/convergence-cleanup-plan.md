@@ -8,8 +8,8 @@
 
 | Boundary | Current disposition |
 |---|---|
-| Production receiver and access | Development uses test-owned in-memory/loopback consumers. Select the trusted receiver, authentication boundary and retention before external acceptance; deployment requires separate approval |
-| Backend persistence | Application export is best effort. Durable queues, indexing and access belong to the selected receiver/backend, not an application file fallback |
+| Receiver scope | The selected [loopback file receiver](usage/gateway-configuration.md#loopback-file-receiver) provides private bounded retention and SSH queries. External/cluster receivers and indexed storage remain separate selections |
+| Backend persistence | Application and file export remain best effort. Stronger durability, persistent forwarding queues and indexing belong to a separately selected receiver/backend, not an application file fallback |
 | Raw malformed content | Retain parser/omission facts and last safe events. Verbatim malformed/HTML/plain-text context needs a separately selected redaction policy |
 | Standalone failed-response bodies | Keep metadata-only coverage and immediate failed-head return. Reading error bodies needs a separately selected finite byte/time/cancellation policy |
 | Out-of-tree Rust consumers | Repository callers of changed constructors/evidence/report/capture APIs are migrated. No external consumer inventory or compatibility promise is claimed |

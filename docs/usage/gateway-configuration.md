@@ -169,6 +169,7 @@ Diagnostics are opt-in. Set `diagnostics` to an explicit trusted OTLP/HTTP Logs 
 {
   "diagnostics": {
     "endpoint": "http://127.0.0.1:4318/v1/logs",
+    "level": "warn",
     "private_bodies": false,
     "body_bytes": 16384
   }
@@ -178,12 +179,13 @@ Diagnostics are opt-in. Set `diagnostics` to an explicit trusted OTLP/HTTP Logs 
 | Field | Contract |
 |---|---|
 | `endpoint` | Complete HTTP/HTTPS Logs destination URL with a host; no userinfo, query or fragment. The usual Collector path is `/v1/logs`; the application does not require that path |
+| `level` | `error`, `warn` (default), `info` or `debug`; filters before export. Generation Text adds an INFO request summary and bounded DEBUG lifecycle events. Other tasks retain failure-only instrumentation |
 | `private_bodies` | Default `false`; explicit opt-in for [private failure context](#private-failure-context) |
 | `body_bytes` | Shared retained-body allowance in bytes; default `16384`, accepted `1024–65536` |
 
 Omit `diagnostics` or set it to `null` to disable the pipeline. Export disables proxy inheritance and redirects; ambient `OTEL_EXPORTER_OTLP_HEADERS` and `OTEL_EXPORTER_OTLP_LOGS_HEADERS` are rejected rather than used as another authentication path. Use an existing trusted local Collector if backend authentication or persistent queuing is needed. This configuration does not deploy a receiver.
 
-Event names are `gateway.failure`, optional correlated `gateway.failure.response`, and background `gateway.credential.failure`.
+Failure events are `gateway.failure`, optional correlated `gateway.failure.response`, and background `gateway.credential.failure`. Generation Text additionally emits `generation.request.finished` at INFO; DEBUG enables request start, first occurrence of each stage per attempt, candidate rejections, upstream send/terminal/finish and first/final local handoff events. No per-token/chunk events or OTel spans are exported. Raising the level never enables private bodies.
 
 Query severity WARN/ERROR, then `request_id`, `agent_id`, `operation`, `provider`, `account`, `model`, `upstream_model`, `attempt`, `stage`, `error.type` and `retry.planned` when present.
 
@@ -191,11 +193,53 @@ IDs are admission-generated runtime nonces/sequences, never caller identity/sess
 
 `http.response.status_code` is the observed upstream head; `gateway.error.status_code` is the selected local error presentation.
 
-`client.handoff_complete:true` describes acknowledged local delivery of a failed task, not remote receipt or successful inference.
+`client.handoff_complete:true` describes acknowledged final-frame local delivery, not remote receipt or successful inference. `response.outcome` separately records the decoded Generation result when available.
 
-Normal successful requests have no archive entry. A failed attempt selected for recovery is WARN, not proof of recovery. Source failures inside HTTP 200 remain failures; ordinary disconnect/shutdown alone does not create an ERROR. Closed categories and source boundaries remain useful without bodies. [Architecture](../architecture/runtime-and-routing.md#observability) owns classification.
+At the default WARN level, normal successful requests have no entry. INFO adds metadata-only request summaries, not successful exchange archives. A failed attempt selected for recovery is WARN, not proof of recovery. Source failures inside HTTP 200 remain failures; ordinary disconnect/shutdown alone does not create an ERROR. Closed categories and source boundaries remain useful without bodies. [Architecture](../architecture/runtime-and-routing.md#observability) owns classification.
 
-The SDK queue holds 64 records, batches at most four and schedules a 100 ms flush. HTTP export has a two-second timeout, no retries and a 1 MiB request bound. Saturation/export/flush failures issue fixed body-free stderr warnings; inference does not wait or change behavior. Shutdown flush is best effort; last-owner drop does not wait for export. The receiver owns retention, access and durability. No local files, rotation, tail recovery, metrics pipeline or mandatory trace exporter are configured.
+Timeline records share `request_id`, monotonic request-relative `elapsed_ms` and request-local `event.sequence`. `send_attempts` counts transport send invocations, not preflight candidates or proven upstream execution. `attempt` and `attempt.elapsed_ms` describe the current preparation/send ordinal, which can fail before dispatch. First local handoff may contain lifecycle frames; it is not model TTFT. `upstream.terminal_validated`, `upstream.finish_validated`, `client.published` and final handoff remain independent. An INFO `outcome:complete` means local processing completed; inspect `response.outcome` for incomplete or failed generation.
+
+Decode failures include `conversion.boundary` and `decode.operation` (`push` or `finish`). Responses SSE also reports `source.last_event.type`, `.ordinal` and, when representable, `.sequence`. The last complete frame is context, not necessarily the cause of a subsequent framing/EOF failure. A prior source failure keeps primary attribution; `handling.error.type` and decode context separately identify a later handling failure. Unrecognized names become `unknown`; no raw payload or arbitrary event name is retained. Google strict-tool rejection includes `tool.declaration_index` and a closed `tool.constraint`, without tool/property names or schema values. Preflight logs carry the trusted public model before any upstream is selected.
+
+The SDK queue holds 64 records, batches at most four and schedules a 100 ms flush. HTTP export has a two-second timeout, no retries and a 1 MiB request bound. Saturation/export/flush failures issue fixed body-free stderr warnings; inference does not wait or change behavior. DEBUG increases queue pressure and does not guarantee retention of failures during saturation. Shutdown flush is best effort; last-owner drop does not wait for export. The receiver owns retention, access and durability. The application owns no diagnostic files, rotation, tail recovery, metrics pipeline or trace exporter. Set `MORPHIECORE_REVISION` when building a release to populate the `service.revision` resource attribute; otherwise it is `unknown`.
+
+#### Loopback file receiver
+
+The minimal receiver is official `otelcol` with its OTLP HTTP receiver, memory limiter and file exporter. [Release pin and source](../references.md#telemetry-dependency-selection) own the selected version. Use [collector configuration](../../config/otelcol.example.yaml) and [user service](../../config/otelcol.example.service); no container, Collector-to-backend forwarding, external listener or custom receiver is required.
+
+Install the verified binary at `~/.local/lib/morphiecore-otel/0.165.0/otelcol`, create `~/.local/share/morphiecore-otel/logs` with mode `0700`, and copy the configuration to `~/.local/share/morphiecore-otel/collector.yaml`. Copy the unit to `~/.config/systemd/user/morphiecore-otel.service`. Keep configuration/unit files private. Validate from the configured working directory before enabling:
+
+```sh
+cd ~/.local/share/morphiecore-otel
+~/.local/lib/morphiecore-otel/0.165.0/otelcol validate --config=collector.yaml
+systemctl --user daemon-reload
+systemctl --user enable --now morphiecore-otel.service
+```
+
+The template listens only on `127.0.0.1:4318` and disables Collector metrics serving. Point MorphieCore diagnostics there with `private_bodies:false`. The file exporter is alpha; verify reception, restart preservation, rotation, access and isolated write failures with synthetic records before relying on it.
+
+The selected exporter creates mode-`0644` files on rotation despite the service umask. **The mode-`0700` parent directory is the access boundary**; do not move those files into a shared directory. The template keeps one current file and at most eight 16-MiB backups. Cleanup may transiently retain extra backups. `max_days` applies only to rotated files and is not strict TTL. Neither HTTP acceptance nor successful file writes promise fsync durability or zero loss.
+
+Files contain newline-delimited OTLP JSON **batches**, not one event per line. Query through SSH, bound the time/row range, and select metadata instead of printing bodies. For example, show the last 20 records' metadata with Python:
+
+```sh
+python3 - <<'PY'
+import collections, json, pathlib
+rows = collections.deque(maxlen=20)
+root = pathlib.Path.home() / ".local/share/morphiecore-otel/logs"
+for path in sorted(root.glob("generation*.jsonl"), key=lambda p: p.stat().st_mtime):
+    with path.open() as source:
+        for line in source:
+            for resource in json.loads(line).get("resourceLogs", []):
+                for scope in resource.get("scopeLogs", []):
+                    for record in scope.get("logRecords", []):
+                        rows.append({key: record[key] for key in
+                                     ("timeUnixNano", "eventName", "severityText", "attributes")
+                                     if key in record})
+for row in rows:
+    print(json.dumps(row))
+PY
+```
 
 ### Model configuration
 

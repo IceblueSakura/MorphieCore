@@ -166,6 +166,7 @@ impl Status {
     }
 }
 struct Output {
+    report: crate::execution::report::Report,
     first: Option<Chunk>,
     rx: mpsc::Receiver<Message>,
     status: Arc<Status>,
@@ -238,6 +239,12 @@ impl Stream for Output {
 impl Drop for Output {
     fn drop(&mut self) {
         if self.status.cancel() {
+            self.report.failure(
+                None,
+                &crate::execution::AttemptError::Delivery(
+                    crate::execution::attempt::DeliveryReason::BodyConsumerClosed,
+                ),
+            );
             self.abort.abort();
         }
     }
@@ -326,6 +333,7 @@ async fn send_chunk(
         history.map(|reservation| HistoryHandoff(Arc::new(Mutex::new(Some(reservation)))));
     // Publication freezes advancement; acknowledgement alone proves body handoff.
     lane.state.published.store(true, Ordering::Release);
+    trace.publishing();
     if final_frame {
         *lane.state.final_handoff.lock().expect("final handoff") = FinalHandoff::Queued;
     }
@@ -358,6 +366,7 @@ async fn send_chunk(
         ApiError::upstream()
     })?;
 
+    trace.handoff(final_frame);
     Ok(())
 }
 /// The work behind one response body: Generation's attempt chain or a
@@ -390,6 +399,7 @@ pub(super) async fn respond_producer(
     let (tx, mut rx) = mpsc::channel(1);
     let state = Arc::new(Status::default());
     let worker_state = state.clone();
+    let report = trace.report.clone();
     let worker = tokio::spawn(async move {
         trace.outcome(Outcome::Interrupted);
         let _permit = permit;
@@ -476,6 +486,7 @@ pub(super) async fn respond_producer(
     // this layer; encoding/queueing alone still never calls delivery.commit().
     state.published.store(true, Ordering::Release);
     let body = Body::from_stream(Output {
+        report,
         first: Some(first),
         rx,
         status: state,

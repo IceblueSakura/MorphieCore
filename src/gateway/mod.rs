@@ -23,7 +23,7 @@ use crate::protocol::openai::TargetContract;
 use crate::provider::ProviderDefinition;
 #[cfg(test)]
 use crate::provider::SecretMaterial;
-pub use diagnostics::DiagnosticsConfig;
+pub use diagnostics::{DiagnosticsConfig, LogLevel};
 use error::ApiError;
 use runtime::{BoundCandidate, BoundEntry, Runtime};
 pub use startup::credentials::Credentials;

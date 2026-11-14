@@ -104,6 +104,11 @@ impl std::fmt::Display for ShapeReason {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CarrierReason {
+    /// Indexed tool constraint; contains no names, schema keys or values.
+    ToolConstraint {
+        declaration: usize,
+        constraint: ToolConstraint,
+    },
     /// Target has no schema carrier for structured output.
     Schema,
     /// Target cannot represent citation coordinate metadata.
@@ -142,6 +147,29 @@ pub enum CarrierReason {
     Metadata,
     /// Target cannot represent the specified domain field.
     Field(Field),
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, strum::IntoStaticStr)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum ToolConstraint {
+    Declaration,
+    ConditionalStrictness,
+    RootObject,
+    Structure,
+    Depth,
+    Reference,
+    Composition,
+    ObjectClosure,
+    Items,
+    Type,
+    MinLength,
+    MaxLength,
+    Pattern,
+    Minimum,
+    Maximum,
+    MinItems,
+    MaxItems,
+    Keyword,
 }
 impl std::fmt::Display for CarrierReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

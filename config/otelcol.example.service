@@ -1,0 +1,20 @@
+[Unit]
+Description=MorphieCore loopback OTLP log receiver
+After=network.target
+
+[Service]
+WorkingDirectory=%h/.local/share/morphiecore-otel
+ExecStart=%h/.local/lib/morphiecore-otel/0.165.0/otelcol --config=%h/.local/share/morphiecore-otel/collector.yaml
+Restart=on-failure
+RestartSec=2
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/morphiecore-otel/logs
+MemoryMax=192M
+TasksMax=64
+
+[Install]
+WantedBy=default.target

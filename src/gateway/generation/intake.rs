@@ -198,7 +198,7 @@ async fn produce(
             let (used, events) = match attempt.push(rest) {
                 Ok(pushed) => pushed,
                 Err(error) => {
-                    trace.decode_error(&error);
+                    trace.decode_failure(&error, attempt);
                     let Some(failure) = error.source_failure().map(|source| {
                         source_failure(
                             provider,
@@ -214,6 +214,9 @@ async fn produce(
                     return fail_classified(lane, delivery, stream, failure, trace).await;
                 }
             };
+            if attempt.has_terminal() {
+                trace.terminal_validated();
+            }
             let mut retry_failure = None;
             if let Some(source) = attempt.reported_failure() {
                 let failure = source_failure(
@@ -308,7 +311,7 @@ async fn produce(
     }
     trace.stage(Stage::Terminal);
     if let Err(error) = attempt.finish() {
-        trace.decode_error(&error);
+        trace.decode_failure(&error, attempt);
         if let Some(source) = error.source_failure() {
             let failure = source_failure(
                 provider,
@@ -322,6 +325,7 @@ async fn produce(
         }
         return Err(ApiError::malformed());
     }
+    trace.finish_validated();
     let evidence = attempt.take_evidence();
     // Stream reports were observed with their source-unit provenance. Re-reading
     // the materialized response after draining those deltas would lose that basis.
@@ -360,6 +364,7 @@ async fn produce(
     let completion = {
         use crate::semantic::task::generation::{IncompleteReason, Outcome};
         let response = attempt.response().map_err(|_| ApiError::upstream())?;
+        trace.response_outcome(response.semantic.outcome());
         if let Some(failure) = failure {
             Completion::Failed(failure)
         } else if response.semantic.outcome() == Outcome::Completed
@@ -483,9 +488,9 @@ pub(in crate::gateway) async fn produce_candidate(
     history: Option<&super::history::Pending>,
     trace: &mut Trace,
 ) -> Result<Produced, ApiError> {
-    trace.stage(Stage::ResponseHead);
     let status = upstream.status().as_u16();
     trace.head(status);
+    trace.stage(Stage::ResponseHead);
     if !(200..300).contains(&status) {
         let class = match crate::provider::classify_status(status) {
             crate::provider::StatusClass::Failure(c) => c,

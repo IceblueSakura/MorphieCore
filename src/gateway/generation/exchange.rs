@@ -390,6 +390,7 @@ pub(in crate::gateway) async fn produce_chain(
                         }
                         state.waiting_upstream.store(true, Ordering::Release);
                         send_started = true;
+                        trace.sent();
                         let response = runtime
                             .transport
                             .send(
@@ -694,10 +695,12 @@ pub(in crate::gateway) async fn run(
     permit: OwnedSemaphorePermit,
     mut trace: Trace,
 ) -> Result<Response, ApiError> {
+    trace.generation(entry.public.id.as_str(), entry.client.protocol());
     let binding = observe_binding(&runtime, &entry, &request, &trace);
     let candidates = entry
         .eligible(&request, &runtime.affinity)
         .map_err(|cause| {
+            trace.planning_failure(&cause);
             use crate::execution::plan::{PlanError, RejectionReason};
             let reason = match &cause {
                 PlanError::CandidateRejected(reason) => Some(reason),

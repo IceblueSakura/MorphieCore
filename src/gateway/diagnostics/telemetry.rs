@@ -28,12 +28,35 @@ use tracing_subscriber::{Layer, layer::SubscriberExt};
 pub struct DiagnosticsConfig {
     /// Complete OTLP/HTTP Logs destination URL (typically `/v1/logs`).
     pub endpoint: String,
+    /// Generation timeline verbosity; failure-only by default.
+    #[serde(default)]
+    pub level: LogLevel,
     /// Explicit opt-in for sanitized business payload snippets on failures.
     #[serde(default)]
     pub private_bodies: bool,
     /// Shared retained-body budget across the four HTTP boundaries.
     #[serde(default = "body_bytes")]
     pub body_bytes: usize,
+}
+#[derive(Clone, Copy, Default, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    Error,
+    #[default]
+    Warn,
+    Info,
+    Debug,
+}
+impl LogLevel {
+    fn allows(self, severity: Severity) -> bool {
+        severity
+            >= match self {
+                Self::Error => Severity::Error,
+                Self::Warn => Severity::Warn,
+                Self::Info => Severity::Info,
+                Self::Debug => Severity::Debug,
+            }
+    }
 }
 fn body_bytes() -> usize {
     16 << 10
@@ -117,6 +140,7 @@ struct Telemetry {
     logger: SdkLogger,
     provider: SdkLoggerProvider,
     warnings: tracing::Dispatch,
+    level: LogLevel,
 }
 impl Drop for Telemetry {
     fn drop(&mut self) {
@@ -132,6 +156,7 @@ impl Sink {
     pub(in crate::gateway) fn open(config: &DiagnosticsConfig) -> std::io::Result<Self> {
         config.validate()?;
         let endpoint = config.endpoint.clone();
+        let level = config.level;
         // reqwest's blocking client must be constructed outside a Tokio runtime.
         std::thread::spawn(move || {
             tracing::dispatcher::with_default(&tracing::Dispatch::none(), || {
@@ -179,27 +204,43 @@ impl Sink {
                                     "service.version",
                                     env!("CARGO_PKG_VERSION"),
                                 ))
+                                .with_attribute(KeyValue::new(
+                                    "service.revision",
+                                    option_env!("MORPHIECORE_REVISION").unwrap_or("unknown"),
+                                ))
                                 .build(),
                         )
                         .with_log_processor(processor)
                         .build(),
                     warning,
+                    level,
                 ))
             })
         })
         .join()
         .map_err(|_| std::io::Error::other("diagnostics initialization"))?
     }
-    fn from_provider(provider: SdkLoggerProvider, warning: Arc<AtomicBool>) -> Self {
+    fn from_provider(
+        provider: SdkLoggerProvider,
+        warning: Arc<AtomicBool>,
+        level: LogLevel,
+    ) -> Self {
         let logger = provider.logger("morphiecore.gateway");
         Self(Arc::new(Telemetry {
             logger,
             provider,
             warnings: tracing::Dispatch::new(tracing_subscriber::registry().with(Warning(warning))),
+            level,
         }))
     }
     #[cfg(test)]
     pub(in crate::gateway) fn memory() -> (Self, opentelemetry_sdk::logs::InMemoryLogExporter) {
+        Self::memory_at(LogLevel::Warn)
+    }
+    #[cfg(test)]
+    pub(in crate::gateway) fn memory_at(
+        level: LogLevel,
+    ) -> (Self, opentelemetry_sdk::logs::InMemoryLogExporter) {
         let exporter = opentelemetry_sdk::logs::InMemoryLogExporter::default();
         (
             Self::from_provider(
@@ -208,6 +249,7 @@ impl Sink {
                     .with_simple_exporter(exporter.clone())
                     .build(),
                 Arc::new(AtomicBool::new(false)),
+                level,
             ),
             exporter,
         )
@@ -219,21 +261,28 @@ impl Sink {
         attributes: Vec<(opentelemetry::Key, AnyValue)>,
         body: AnyValue,
     ) {
+        if !self.enabled(severity) {
+            return;
+        }
         tracing::dispatcher::with_default(&self.0.warnings, || {
             let mut record = self.0.logger.create_log_record();
             record.set_event_name(name);
             record.set_target("morphiecore.gateway");
             record.set_timestamp(SystemTime::now());
             record.set_severity_number(severity);
-            record.set_severity_text(if severity == Severity::Warn {
-                "WARN"
-            } else {
-                "ERROR"
+            record.set_severity_text(match severity {
+                Severity::Debug => "DEBUG",
+                Severity::Info => "INFO",
+                Severity::Warn => "WARN",
+                _ => "ERROR",
             });
             record.add_attributes(attributes);
             record.set_body(body);
             self.0.logger.emit(record);
         });
+    }
+    pub(in crate::gateway) fn enabled(&self, severity: Severity) -> bool {
+        self.0.level.allows(severity)
     }
     pub(in crate::gateway) async fn flush(&self) {
         let provider = self.0.provider.clone();

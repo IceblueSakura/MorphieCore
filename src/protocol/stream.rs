@@ -7,6 +7,15 @@ use crate::{
     transport::sse::SseDecodeError,
 };
 
+/// Last complete source frame, not necessarily the frame causing a framing/EOF error.
+/// Event names come from a protocol-owned static vocabulary, never raw input.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SourceEvent {
+    pub ordinal: usize,
+    pub kind: &'static str,
+    pub sequence: Option<u64>,
+}
+
 /// Hard resource consumption bounds for Server-Sent Events (SSE) streams.
 #[derive(Clone, Copy, Debug)]
 pub struct SseLimits {

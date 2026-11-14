@@ -438,6 +438,7 @@ impl Attempt {
 /// Holds bounded decoder state, not a replay log. A terminal is withheld until
 /// strict EOF validation so a truncated/trailing-invalid body cannot emit success.
 pub struct Attempt {
+    decode_failure: Option<DecodeFailure>,
     evidence: crate::protocol::conversion::generation::EvidenceDelta,
     identity: std::sync::Arc<()>,
     adapter: UpstreamAdapter,
@@ -470,6 +471,7 @@ impl Attempt {
     }
     pub fn new(adapter: impl Into<UpstreamAdapter>, body_limit: usize, limits: SseLimits) -> Self {
         Self {
+            decode_failure: None,
             evidence: Default::default(),
             identity: std::sync::Arc::new(()),
             adapter: adapter.into(),
@@ -555,6 +557,7 @@ impl Attempt {
             Ok((n, events))
         })();
         if result.is_err() {
+            self.observe_decode_failure("push");
             self.reject();
         }
         result
@@ -619,6 +622,7 @@ impl Attempt {
                     self.intake = finished;
                 }
                 Err(error) => {
+                    self.observe_decode_failure("finish");
                     self.reject();
                     return Err(error);
                 }
@@ -689,6 +693,31 @@ impl Attempt {
     }
     pub fn cancel(&mut self) {
         self.reject();
+    }
+    fn observe_decode_failure(&mut self, operation: &'static str) {
+        let last_event = match &self.intake {
+            Intake::Stream { decoder, .. } => decoder.last_event(),
+            _ => None,
+        };
+        self.decode_failure.get_or_insert(DecodeFailure {
+            operation,
+            last_event,
+        });
+    }
+    pub(crate) fn decode_failure(&self) -> Option<DecodeFailure> {
+        self.decode_failure
+    }
+    pub(crate) fn has_terminal(&self) -> bool {
+        matches!(
+            &self.intake,
+            Intake::Stream {
+                terminal: Some(_),
+                ..
+            } | Intake::Finished {
+                terminal: Some(_),
+                ..
+            }
+        )
     }
     fn reject(&mut self) {
         self.intake = Intake::Rejected;
@@ -786,4 +815,10 @@ mod identity_tests {
             .is_err()
         );
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct DecodeFailure {
+    pub operation: &'static str,
+    pub last_event: Option<crate::protocol::stream::SourceEvent>,
 }
