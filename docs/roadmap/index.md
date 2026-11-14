@@ -132,7 +132,7 @@ Safe-to-ignore diagnostic extensions may be added without dedicated extension te
 
 ### Temporary routing freeze
 
-The [accepted account contract](../provider-account-redesign-plan.md) and [routing decisions](../architecture/decisions.md#routing-and-security-decisions) constrain future work. Further implementation does not authorize changing deployed credentials or activation.
+The [accepted account contract](../provider-account-redesign-plan.md) and [routing decisions](../architecture/decisions.md#routing-and-security-decisions) constrain future work. Provider access and normal OAuth renewal follow [project authorization](../../AGENTS.md#authorization); further implementation grants no additional credential or deployment permissions.
 
 The [stable routing baseline](../architecture/runtime-and-routing.md#failover) remains frozen unless its own change is explicitly selected. Unrelated codec and protocol work must not alter:
 - Account membership, health probes, or target ordering.

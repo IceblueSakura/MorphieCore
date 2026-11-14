@@ -105,13 +105,13 @@ Binary bodies, multipart inputs and asynchronous job states belong to their oper
 
 Use the current installed pi/OpenCode with safe unwrapped launchers, isolated HOME/XDG/session state and bounded child processes. Retain built-in model declarations for default-profile checks; select nondefault profiles explicitly. Do not patch serialized requests or returned history, downgrade clients to source pins, inspect personal configuration or retain historical compatibility branches.
 
-The existing client drivers own request budgets, timeout/cancellation, scratch state and independent authority oracles. Check actual tool execution, final state, continuation and request counts. Recharacterize changed serializers and controls at their affected boundary, using source and test-owned state.
+The existing synthetic client drivers own request budgets, timeout/cancellation, scratch state and independent authority oracles. Real Provider workflows follow the [real-service policy](../AGENTS.md#tests). Check actual tool execution, final state, continuation and request counts. Recharacterize changed serializers and controls at their affected boundary, using source and test-owned state.
 
 The `pi_gateway_context_discovery` gate additionally takes the current MorphieCore extension entry in `MORPHIECORE_PI_EXTENSION`. It connects real gateway discovery to native Pi model storage, selected-session context accounting and a separate offline RPC process. It checks metadata loading, not large-context inference quality or upstream token enforcement.
 
 ### Real Provider checks
 
-Follow [authorization](../AGENTS.md#authorization) and use the project loader exclusively. Before each serial run, fix the target/profile, total request budget including auxiliary calls and permitted recovery. Follow the [functional-test policy](../AGENTS.md#tests): do not add token caps or tight per-request test deadlines unless the selected check verifies quantity-related controls. Use ordinary configured service safety limits. Disable hidden retries and reject unexpected requests rather than expanding the budget.
+Follow [authorization](../AGENTS.md#authorization) and the [real-service policy](../AGENTS.md#tests), using the project loader exclusively. Select targets and additional requests as needed to complete the task, without repeated approval or a predeclared request budget. Normal OAuth renewal and credential persistence use the project manager. Keep retries visible, inspect failures before repeating calls, and report actual request counts.
 
 Use synthetic task content and model-issued call/result identities with untouched returned history. Check the intended client workflow and honest termination. Report only redacted status, counts and error classifications; keep private captures temporary. Remaining real qualification belongs in the roadmap.
 
