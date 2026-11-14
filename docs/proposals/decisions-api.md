@@ -14,8 +14,6 @@ See [Proposals Framework](index.md) for shared boundaries and [Roadmap](../roadm
 
 ## Decisions
 
-The [dual-SDK direction and capability-union principle](../architecture/index.md#decision-api-direction) are selected. The concrete realization below remains proposed, not approval of semantic layout, dialect behavior, SDK coverage or bindings. The [dated source note](../refs/2026-10-23-decision-contracts.md) owns protocol findings and discrepancies; the [roadmap](../roadmap/index.md#decision-api-closure) owns ordering and gates.
-
 ### SDK surfaces and discovery
 
 Provide both official SDK families without monkey-patches, custom answer types or a third public decision schema. Clients may configure the gateway base URL, gateway credential, public model and documented standard options. Stable access includes request serialization, typed answer consumption, model discovery, errors and cancellation within an explicit feature/version profile; merely parsing a success body is insufficient.
@@ -63,7 +61,7 @@ Cloudflare's account-bearing path and REST envelope must not leak into semantic 
 
 One meaning has one authoritative field. `state` and `input` map to `evidence`; `noul` and `predicate` map to `Predicate`; `criteria`, `choices` and `levels` map to the corresponding typed question. Requested meaning, a reported fact and a derived client value are three different authorities, not three competing request fields. Arbitrary business JSON is content; arbitrary protocol/options bags are not allowed.
 
-##### Decision request and evidence union
+#### Decision request and evidence union
 
 The sketches below describe semantic ownership, not compilable Rust or a third wire API. Names may change at implementation; no source discriminator is selected by the client model name.
 
@@ -130,7 +128,7 @@ Service intent lives in a small typed companion `DecisionServiceHints`, outside 
 
 Preserve meaningful presence and option-container relationships in typed fields. TypeSafe's experimental-image header is source admission/target opt-in, not a second Boolean competing with media content; codecs validate it and authorized target preparation derives required headers from admitted capabilities. Compression, multipart part names, model routing, origins, account IDs, credentials and retry state stay outside semantic owners. Do not import all of `ExecutionHints` or automatically synthesize Decision cache keys from Generation conversation state.
 
-##### Decision questions and evaluation requirements
+#### Decision questions and evaluation requirements
 
 ```rust
 struct DecisionQuestion {
@@ -180,7 +178,7 @@ Evaluation requirements express requested/implicit source semantics, not observe
 
 Actual group membership, overflow grouping and billing remain target/report facts. Exact grouped projection requires an attested compatible grouping contract, not just the shared visibility tag; unknown or changed partitions need a separate approximation. This preserves known question-context semantics without inventing caller-selected groups, a scheduler or per-question execution. The overflow requirement independently distinguishes rejection from permission for documented native text-state truncation only; neither permits dropping questions, media or arbitrary history. Source defaults resolve under the pinned source contract, not the selected upstream. A byte estimate cannot establish effective context limits, group membership or actual truncation.
 
-##### Decision source results and accounting
+#### Decision source results and accounting
 
 ```rust
 struct DecisionResult {
@@ -250,7 +248,7 @@ Native field ownership is explicit rather than an extension bag:
 | Native selected choice / score / probabilities / confidence | Request-bound `DecisionAnswer`; legend/name echoes validate against prepared expectations |
 | Native model / usage / REST envelope | Source identity/report accounting; platform envelope stays in codec/transport, never business evidence |
 
-##### Named Decision projections
+#### Named Decision projections
 
 Use this precedence per meaning: **exact carrier → justified derivation → selected approximation/simple estimate → rejection**. These are proposed rules, not an automatically enabled permissive mode. A rule has a typed owner, direction, prerequisites, fixed effect and body-free evidence. Target-local copies start from unchanged source IR; admission and encoding use the same rules and final target validation. No post-encoding JSON patch or generic `loss_policy` bag is added.
 
@@ -261,7 +259,6 @@ Use this precedence per meaning: **exact carrier → justified derivation → se
 | A: approximate | Explicit change to representation/behavior whose equivalence is not claimed |
 | S: estimated | Coarse non-authoritative scalar completion with a defined method and scope |
 | R: reject | No approved representation, derivation or acceptable approximation |
-
 | Proposed rule | Class / direction | Preconditions and effect |
 |---|---|---|
 | `decision.correlate-questions.v1` | E, request/result | Preserve source IDs/order/names through positions or generated wire keys only where keys are nonsemantic; validate bijection and restore client association |
@@ -297,7 +294,7 @@ Proposed simple usage completion follows Generation's **source facts → justifi
 
 Unselected safety/retention loss, group-shared→isolated context loss, remote media fetching, image resizing/orientation changes, audio transcription as a substitute, video-frame extraction, Box→score emulation and guessed Box confidence/frame/existence reject. These would require separate policies or operations, not convenient default projections. A future peer-question rendering could preserve visible clauses for an isolated target, but it must define the source group and acknowledge changed evaluation semantics rather than treating isolation as universally safe. No approval of probability/coordinate estimation follows from allowing simple accounting estimates.
 
-##### Decision reuse and review examples
+#### Decision reuse and review examples
 
 Reuse the existing `Text`, meaningful `Presence`, exact-number/strict-JSON utilities and appropriate inert media leaves. Extract neutral leaves only when actually shared. Do not directly reuse Generation's `StructuredValue` limits/error type, `ContentPart` (which lacks JSON evidence), `Item`/`ResourceTable`, `GenerationSettings`, `UsageReports`, replay fidelity or completion estimator. Their Generation-specific validation would both reject valid Decision content and admit unrelated semantics.
 

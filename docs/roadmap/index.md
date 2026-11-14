@@ -28,23 +28,23 @@ This page owns current scope, planned execution sequence, stage priorities, and 
 
 ## Current status
 
-The Generation review baseline has converged under the [partial-delivery exit](#partial-delivery-exit). Configuration/diagnostic cleanup, maintenance simplification, and lifecycle convergence are delivered under [Observability](../architecture/runtime-and-routing.md#observability), while remaining production observability, reliability, and privacy gates are deferred in the [cleanup plan](../convergence-cleanup-plan.md). Accepted contracts live in [Architecture](../architecture/index.md); overall acceptance status is summarized in [Development](../development.md#overall-acceptance-status). Residual limitations and prerequisites share the [issue register](unscheduled-issues.md#unscheduled-issues), without a separate review repair queue. Current work prioritizes the selected OpenRouter Luna Responses SSE intake issue before Stage 4 resumes. R09 real-account failover, remaining model-service qualification and Agent session storage remain outside that entry gate. No deployment or new API activation is implied.
+Current work prioritizes the selected [OpenRouter Luna Responses SSE intake issue](unscheduled-issues.md#content-and-client-qualification) before Stage 4 resumes. Other limitations and prerequisites share the [issue register](unscheduled-issues.md#unscheduled-issues); R09 real-account failover, remaining model-service qualification and Agent session storage retain separate scheduling decisions and remain outside that entry gate. [Development](../development.md#overall-acceptance-status) owns overall acceptance, and the [cleanup plan](../convergence-cleanup-plan.md) owns remaining production observability, reliability and privacy gates. No deployment or new API activation is implied.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
 | Current focus / before Stage 4 | Resolve [OpenRouter Luna Responses SSE intake](unscheduled-issues.md#content-and-client-qualification) | First failing event/error localized, independent regression and corrected native-to-IR-to-downstream stream acceptance |
-| Conditional tool follow-ups | [S3-T5–S3-T7](unscheduled-issues.md#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default handoff prerequisites |
+| Conditional tool follow-ups | [Conditional Stage-3 follow-ups](unscheduled-issues.md#conditional-stage-3-follow-ups) | Separate policy selection and affected-loop acceptance; not default Stage-4 prerequisites |
 | API expansion | Select and implement Stage-4 operation contracts | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Opt-in [per-Agent JSONL session storage](../architecture/history-and-replay.md#agent-session-files); unscheduled and not a Stage-4 prerequisite | Select isolation and lifetime bounds before implementation |
 | Production preparation | Select real diagnostic receiver/storage and deferred cluster observability scope | Explicit deployer selection; cleanup implementation does not deploy a Collector or backend |
 
 ## Planned order
 
-The Generation review baseline is delivered under the [partial-delivery contract](#partial-delivery-exit). Before resuming Stage 4, close the explicitly selected [OpenRouter Luna Responses SSE intake issue](unscheduled-issues.md#content-and-client-qualification). Other [unscheduled issues](unscheduled-issues.md#unscheduled-issues), including R09, do not become implicit prerequisites. Once this entry gate closes, Stage-4 families retain equal priority and advance as contracts are selected. Conditional tool packages keep their own policy gates; Stage 5 remains unscheduled.
+Before resuming Stage 4, close the explicitly selected [OpenRouter Luna Responses SSE intake issue](unscheduled-issues.md#content-and-client-qualification). Other [unscheduled issues](unscheduled-issues.md#unscheduled-issues), including R09, do not become implicit prerequisites. Once this entry gate closes, Stage-4 families retain equal priority and advance as contracts are selected. Conditional tool packages keep their own policy gates; Stage 5 remains unscheduled.
 
 | Stage | Goal | Exit evidence |
 |---|---|---|
-| **3 — Conditional compatibility follow-ups** | [S3-T5–S3-T7](unscheduled-issues.md#conditional-stage-3-follow-ups): namespace aliases, plain custom wrappers and examples projection | Separate policy selection and affected full-loop verification; not default blockers for Stage 4 or optional Agent qualification |
+| **3 — Conditional compatibility follow-ups** | [Conditional packages](unscheduled-issues.md#conditional-stage-3-follow-ups) | Separate policy selection and affected-loop verification; not default Stage-4 or optional Agent blockers |
 | **4 — Modalities, Decision & file resources** | Decision, Embedding extensions, Audio (Speech/Transcription/Translation), Images, Files/Uploads, and Video at equal priority | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
 | **5 — Unscheduled follow-ups** | Citations, tool discovery, hosted tools, server-side compaction, Batch, and Realtime | Requires explicit per-slice design selection and scheduling prior to implementation |
 
@@ -64,6 +64,7 @@ Stage 4 API families have equal priority and advance as their contracts are sele
 | Package | Scope | Exit criteria |
 |---|---|---|
 | **S4-0 Per-operation design** | Pin official contracts, select targets, define resource lifecycles, and apply the conversion ladder to each family's fields | Explicit contract decisions classifying fields by ladder level, without speculative shared abstractions |
+| **S4-1 Embedding extensions** | Select remaining extensions to the [independent Embedding contract](../proposals/tasks-and-counting.md#embeddings); existing implemented behavior is not pending | Independently verified selected input/result contracts, bounds and applicable SDK acceptance |
 | **S4-6 Decision closure** | Complete dual-SDK design, typed answers, and synchronous execution | Verified independent oracles, both SDK loops (TypeSafe and OpenAI), and bounded Provider evidence |
 | **S4-2a Speech** | Text-to-speech with static binary and optional streaming delivery | Bounded buffering, cancellation safety, and verified audio format carriage |
 | **S4-2b Transcription** | Audio-to-text recognition with multipart upstream preparation | Accurate text/timing carriage, format rejection, and bounded resource handling |
@@ -87,25 +88,20 @@ Selected direction: Dual-SDK support (TypeSafe and OpenAI) backed by a unified D
 | Family | Readiness | Next step |
 |---|---|---|
 | Decision | Dual-SDK direction selected; IR drafts under review | Finalize contract selection and implement codecs |
-| Images Generate | Grok static codec implemented; public contracts under review | Select public default encoding (PNG vs Base64) and response metadata |
+| Embedding extensions | Existing independent path implemented; additional extensions unselected | Select a concrete extension contract |
+| Images Generate | Grok static codec implemented; public contracts under review | Select standard versus explicit native-output delivery, encoding defaults separately from Base64/URL carriage, and required result metadata |
 | Images Edit & Stream | Research complete; mask boundaries and stream formats unselected | Await static Generate closure |
-| Audio (Speech/ASR) | Static paths exist; streaming and multipart unselected | Select bounded single-operation profile |
+| Audio (Speech/ASR) | Static speech/transcription and bounded client multipart intake exist; Aliyun speech consumes upstream SSE. Native multipart upstream preparation and downstream SSE profiles remain unselected | Select bounded single-operation profile |
 | Files & Uploads | Safety requirements defined; storage authority unselected | Select storage authority and ID authorization |
 | Video | Upstream API research available; job lifecycles unselected | Select job status and retrieval contract |
 
 #### Grok Imagine adaptation
 
-Before public Generate activation, resolve dimensions, quality tiers, creation timestamps, default encoding and response metadata using the existing static codec. OAuth must use the shared account source without inline login. Video integration requires a native asynchronous job contract rather than a synchronous facade.
+Before Grok public Generate activation, select public delivery, encoding defaults and metadata requirements under the [static Generate review](../proposals/multimodal.md#static-generate-review-proposal). Native ratio/resolution controls remain independently selectable. OAuth must use the shared account source without inline login. Video integration requires a native asynchronous job contract rather than a synchronous facade.
 
 ### Stage 5 backlog
 
-All Stage 5 tasks are currently unscheduled:
-- **Citations & source attribution:** Unified citation models ([1C proposal](../proposals/stage5-backlog.md#1c-design-messages-citations)).
-- **Tool discovery:** Dynamic tool discovery and native `web_search`.
-- **Hosted tool execution:** Separate contracts for Provider-executed tools and observations; ordinary declarations, aliases and custom-text adaptation remain in the Stage-3 tool work.
-- **Server-side compaction:** Provider-executed `/responses/compact` operations.
-- **Batch:** Asynchronous job processing and reconciliation.
-- **Realtime:** Bi-directional streaming sessions, interruption, and media transport.
+All Stage-5 work remains unscheduled. [Detailed proposals](../proposals/stage5-backlog.md) own citations, tool discovery/web search, hosted execution, compaction, Batch and Realtime designs; inclusion is not implementation or activation approval.
 
 ## Test supplementation
 
@@ -121,7 +117,7 @@ The test strategy uses pinned upstream assets and standard SDK consumers rather 
 
 ### Observability follow-up
 
-Application-side [failure diagnostics](../architecture/runtime-and-routing.md#observability), bounded private body context and custom-file removal are delivered. Real receiver/backend activation, centralized cluster topology, public diagnostic schema stabilization and metrics aggregation still await production packaging.
+Real receiver/backend activation, centralized cluster topology, public diagnostic schema stabilization and metrics aggregation still await production packaging.
 
 Safe-to-ignore diagnostic extensions may be added without dedicated extension tests. That exception does not waive the selected logger/capture replacement's behavior, redaction, bounds, cancellation and exporter checks. Further aggregation remains deferred; existing standard Agent-loop and authoritative evidence checks remain required.
 
@@ -132,7 +128,7 @@ Safe-to-ignore diagnostic extensions may be added without dedicated extension te
 
 ### Temporary routing freeze
 
-The [accepted account contract](../provider-account-redesign-plan.md) and [routing decisions](../architecture/decisions.md#routing-and-security-decisions) constrain future work. Provider access and normal OAuth renewal follow [project authorization](../../AGENTS.md#authorization); further implementation grants no additional credential or deployment permissions.
+The [accepted account contract](../architecture/runtime-and-routing.md#failover) and [routing decisions](../architecture/decisions.md#routing-and-security-decisions) constrain future work. Provider access and normal OAuth renewal follow [project authorization](../../AGENTS.md#authorization); further implementation grants no additional credential or deployment permissions.
 
 The [stable routing baseline](../architecture/runtime-and-routing.md#failover) remains frozen unless its own change is explicitly selected. Unrelated codec and protocol work must not alter:
 - Account membership, health probes, or target ordering.

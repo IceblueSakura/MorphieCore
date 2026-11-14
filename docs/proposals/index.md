@@ -8,10 +8,10 @@ The expansion proposals are modularized by operational domain:
 | Domain | Proposal document | Scope & Target Stage | Status |
 |---|---|---|---|
 | **Decision API** | [Decision API Proposal](decisions-api.md) | Stage 4: OpenAI Decisions + TypeSafe System One dual-SDK support | Ready for review |
-| **Multimodal Operations** | [Multimodal Media Proposals](multimodal.md) | Stage 4: Audio (Speech/Transcription), Images (Generate/Edit), Video (Grok H3) | Pending review |
-| **Tasks & Counting** | [Standalone Tasks and Token Counting](tasks-and-counting.md) | Stage 4: Responses input token counting, Messages token count, Embeddings expansion | Pending review |
+| **Multimodal Operations** | [Multimodal Media Proposals](multimodal.md) | Stage 4: Audio (Speech/Transcription/Translation), Images (Generate/Edit), Video (Grok Imagine; concrete contracts pending) | Pending review |
+| **Tasks & Counting** | [Standalone Tasks and Token Counting](tasks-and-counting.md) | Stage 3, deferred: Messages counting; Responses input-token counting remains unselected. Stage 4: Embedding extensions | Pending review |
 | **Files & Uploads** | [Files and Uploads Resource Proposals](files-and-uploads.md) | Stage 4: Files management, multipart uploads | Pending review |
-| **Stage 5 Backlog** | [Stage 5 Unscheduled Proposals Backlog](stage5-backlog.md) | Stage 5: Native batch, Realtime, Context compaction, Rauthy OAuth, Citations | Unscheduled |
+| **Stage 5 Backlog** | [Stage 5 Unscheduled Proposals Backlog](stage5-backlog.md) | Stage 5: Native batch, Realtime, Context compaction, Citations; other deferred directions retain separate scheduling | Unscheduled |
 
 [Architecture](../architecture/index.md) defines accepted principles, domain contracts, and architectural decisions. [Roadmap](../roadmap/index.md) defines scope, priorities, and acceptance gates. Configuration and operational commands belong to [Usage](../usage/index.md); development conventions and overall acceptance status belong to [Development](../development.md).
 
@@ -287,7 +287,7 @@ These recommendations have not been adopted merely by requesting this document.
 | Retention and deletion | Select expiry, deletion with active jobs/history, cascade behavior and restart guarantees. Durable jobs and resource mappings cannot inherit process-local Responses TTL accidentally | Resource/job lifecycle implementation |
 | Batch execution | Recommend native Provider batches. A gateway scheduler is a separate product with different billing, timing and cancellation semantics | Batch implementation |
 | Batch composition | Select compatible model/deployment restrictions and supported endpoint set; recommend explicit rejection over implicit cross-target splitting | Batch admission |
-| Custom voices | Recommend authorized voice references first; voice creation/consent management as a separate resource slice. Broader audio resource coverage may be selected explicitly | Voice-resource endpoints, not ordinary speech |
+| Custom voices | Recommend authorized voice references first; voice creation/consent management as a separate resource slice. Broader audio resource coverage may be selected explicitly. `TaskKind::VoiceDesign` and `TaskKind::VoiceClone` exist only as unactivated enum variants, establishing no request/result contract, route, binding or voice-resource implementation | Voice-resource endpoints, not ordinary speech |
 | Video contracts | Select current operations/endpoints, task versus content ownership, artifact access and any required job lifecycle before implementation | Video implementation, not stages 1–3 |
 | Realtime design | Client scenario, session/transport and interruption/recovery contracts are unselected; keep stage 5 unscheduled | Realtime implementation |
 | Later-operation selection | Generation Text closure and the selected Embedding design are complete; all stage-4 API families have equal priority, including Decision closure. Static Generate is an Images-internal recommendation; each operation needs just-in-time contract selection. All stage-5 tasks remain unscheduled | Per-operation design, activation and full-chain acceptance |

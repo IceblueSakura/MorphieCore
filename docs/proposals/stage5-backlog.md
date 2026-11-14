@@ -1,6 +1,6 @@
 # Stage 5 Unscheduled Proposals Backlog
 
-This document records unscheduled designs for Stage 5: Context Compaction, Native Batch Jobs, Realtime WebSocket/WebRTC sessions, Rauthy-backed Agent OAuth, and Messages citations.
+This document owns detailed unscheduled Stage-5 operation proposals and separately deferred discovery, Agent integration, cache-prewarming and service-policy directions. The latter retain their own scheduling decisions; inclusion here does not assign them to Stage 5.
 
 **All stage-5 tasks are currently unscheduled:** scope placement is not a start or delivery commitment. See [Proposals Framework](index.md) for shared boundaries and [Roadmap](../roadmap/index.md) for active execution priorities.
 
@@ -22,7 +22,7 @@ The [stage-5 backlog](../roadmap/index.md#stage-5-backlog) has no implementation
 
 The [model capability directory](../architecture/adaptation-and-dialects.md#generation-text-model-discovery) defines fact ownership, task-specific contracts, independent capacities, modalities and interface projection; [Usage](../usage/api-reference.md#generation-text-model-discovery) owns implemented endpoints and [OpenAPI](../openapi.json) owns machine schemas.
 
-Only Generation Text models, their assessed image inputs and current Pi Generation consumption are selected for runtime wiring. Embedding, Decision, independent Images/Audio/Video and Realtime receive discovery schema definitions only; they do not authorize inference contracts, bindings, new directory entries or client adapters. Existing independent APIs and standard Models/capabilities remain unchanged. Actual non-Generation discovery/client integration, broader media-domain assessment, conditional-capacity modes and resource-service discovery remain future selections, not an automatic queue. No version/revision maintenance or pagination system is selected.
+Enhanced `/v1/morphiecore/models` descriptors and Pi integration remain Generation Text-only. Embedding, Decision, independent Images/Audio/Video and Realtime descriptor-union schemas do not activate inference, bindings or client integration. Standard `/v1/models` already lists activated standalone-task labels, and `/v1/morphiecore/capabilities` publishes configured Embedding contracts. These startup-derived declarations are not live upstream probing or effectiveness certification. Further non-Generation descriptor/client integration requires selected operation contracts; no version/revision maintenance or pagination system is selected.
 
 ## Centralized agent authorization
 

@@ -88,7 +88,7 @@ Account affinity groups trusted Agent identity, public model and an explicit con
 
 `routing.max_wait_ms` (default 10000) bounds one pre-dispatch wait for a conversation's cooling bound target. Zero disables waiting. New conversations never wait for an unbound candidate; after waiting, lifecycle and cooldowns are checked again within the original request deadline.
 
-Each Provider declaration accepts an optional `recovery` object with the timing fields in [`RecoveryPolicy`](../../src/provider/recovery.rs). Omitted fields use the [selected defaults](../provider-account-redesign-plan.md#configuration-surface). Settings do not change failure classes, health scopes or the fixed two-send ceiling. `recovery_timeout_ms` bounds the one same-target retry through readiness for deliverable content; zero disables that retry. The original request deadline still bounds all work.
+Each Provider declaration accepts an optional `recovery` object with the timing fields in [`RecoveryPolicy`](../../src/provider/recovery.rs). Omitted fields use the [defaults below](#recovery-defaults). Settings do not change failure classes, health scopes or the fixed two-send ceiling. `recovery_timeout_ms` bounds the one same-target retry through readiness for deliverable content; zero disables that retry. The original request deadline still bounds all work.
 
 An API-key account may set `base_url` to a complete trusted API root. The catalog appends an explicit operation-relative suffix: `https://relay.example/custom/v1` plus `responses` becomes `/custom/v1/responses`. Omission retains each operation's original catalog target. HTTPS is required except for literal loopback HTTP; userinfo, queries, fragments and unsafe paths reject. OAuth overrides reject before credential borrowing.
 
@@ -103,6 +103,21 @@ morphiecore --config "$ROOT/gateway.json" --validate --json
 ```
 
 Gateway validation also uses the real model/task loader and Agent authentication configuration, without a listener or observation-sink activation. Schema errors, duplicate names/subjects, incompatible references and unsafe storage fail closed. Provision every referenced account first.
+
+### Recovery defaults
+
+Provider `recovery` fields use milliseconds except for integer multipliers. Service-wide wait, affinity and OAuth settings belong to [gateway configuration](gateway-configuration.md#configure-the-gateway), not per-account overrides.
+
+| Fields | Defaults |
+|---|---|
+| `recovery_timeout_ms` | `30000` |
+| `transient_cooldown_ms`, `transient_multiplier`, `transient_max_cooldown_ms` | `1000`, `2`, `60000` |
+| `rate_limit_cooldown_ms`, `rate_limit_multiplier`, `rate_limit_max_cooldown_ms` | `60000`, `2`, `1800000` |
+| `reset_hint_floor_ms`, `rate_limit_reset_max_ms`, `quota_reset_max_ms` | `1000`, `3600000`, `604800000` |
+| `quota_cooldown_ms`, `auth_cooldown_ms`, `permission_cooldown_ms` | `1800000` each |
+| `failure_free_reset_ms` | `1800000` |
+
+Policy values and their relationships remain operator-owned; ordinary strict parsing and security checks still apply. Zero recovery disables the extra send, never means unlimited execution and cannot relax identity, lifecycle or publication boundaries. [Health and recovery](../architecture/runtime-and-routing.md#health-and-recovery) owns failure classification and timing semantics.
 
 ### OAuth
 
@@ -131,13 +146,17 @@ morphiecore-auth --accounts "$ROOT/accounts.json" --store "$ROOT/credentials" \
   logout --provider chatgpt --account personal
 ```
 
-- Use `--provider grok` for Grok. It defaults to device login; `--method browser` selects browser login. SIWC defaults to browser login.
-- Grok device links prefill the code with `user_code`; confirm that it matches the CLI before approving.
-- `--consent` explicitly requests ChatGPT plan consent during login.
-- `--callback-port` sets the loopback callback port. Grok also accepts `--client-id`.
-- Browser login accepts either the HTTP callback or a full callback URL on stdin; the first valid result wins. No separate input mode is needed.
-- `logout --revoke` requests upstream revocation.
-- `login`, `refresh` and `logout` accept `--proxy`.
+| Option | Scope |
+|---|---|
+| `--accounts`, `--store`, `--json` | Global auth-CLI options |
+| `--proxy` | Accepted by `login`, `refresh`, `logout`, OAuth `remove` and every `key` subcommand. Key operations ignore it; OAuth removal remains local, not revocation. Not available on `status`, `validate` or `explain` |
+| `--method` | ChatGPT/SIWC supports browser only; Grok defaults to device and also supports browser |
+| `--callback-port` | Browser login only; explicit device selection rejects it |
+| `--client-id` | Grok login only; SIWC rejects it |
+| `--consent` | ChatGPT/SIWC login only; Grok rejects it for both browser and device methods |
+| `--revoke` | `logout` only; requests upstream revocation |
+
+Grok device links prefill `user_code`; confirm that it matches the CLI before approving. Browser login accepts either the HTTP callback or a full callback URL on stdin; the first valid result wins without a separate input mode.
 
 An Active account rejects another login; use `refresh`, or explicitly sign out before returning sign-in or consent. Pending login rejects concurrent login. Reauthorization and login after logout retain registration identity. Another alias cannot publish the same verified subject, even with another issued client; disablement, logout and reauthorization-required states retain that reservation.
 

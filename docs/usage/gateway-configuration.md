@@ -34,6 +34,7 @@ The repository's [`config/`](../../config/) directory contains public templates,
 | [`models.example.json`](../../config/models.example.json) | Narrow starting point: Qwen 3.8 Flash through the Token Plan Chat binding with standard Chat delivery |
 | [`models.advanced.example.json`](../../config/models.advanced.example.json) | Optional Generation controls: Messages/Google bindings, output limits, inherited-default clearing and both numeric thinking conversions |
 | [`models.tasks.example.json`](../../config/models.tasks.example.json) | Optional existing Embedding, Images, Speech and explicit Transcription binding selection, without Generation overrides |
+| [`pi-deepseek.example.json`](../../config/pi-deepseek.example.json) | Optional pi client model declaration for DeepSeek through the gateway; merge into pi's `models.json`, not gateway model configuration. See [Chat Completions](client-requests.md#chat-completions) |
 | [`nginx.example.conf`](../../config/nginx.example.conf) | Optional TLS virtual host, gzip SSE, proxy safety controls and example pre-authentication connection/upload limits; include from `http {}` |
 
 Choose one model template as `models.json`, or deliberately combine selected entries under one `models` object. The loader does not merge files, expand placeholders or discover templates. The advanced Messages candidate clears its output default, so uncapped requests require an explicit cap. Account targets remain independently configured.
@@ -79,10 +80,10 @@ Keep edited copies, credentials, certificates and captures outside the repositor
 | Field | Meaning |
 |---|---|
 | `version` | Required current schema version, `1` |
-| `auth_file` | Required private Agent-key file; default `auth.json` beside this file |
+| `auth_file` | Optional path, default `auth.json` beside this file; the resolved private Agent-key file must exist and validate |
 | `bind` | Loopback listener; default `127.0.0.1:8080` |
-| `models_file` | Model configuration path; default `models.json` beside this file |
-| `accounts_file` | Shared account configuration; default `accounts.json` beside this file |
+| `models_file` | Optional path, default `models.json` beside this file; the resolved model configuration must exist and validate |
+| `accounts_file` | Optional path, default `accounts.json` beside this file; the resolved account configuration must exist and validate |
 | `credentials_dir` | Optional credential-store path; omission retains the independent home-relative default |
 | `proxy` | Outbound proxy |
 | `routing` | Global affinity, pre-dispatch wait and downstream retry-hint policy |
@@ -156,9 +157,9 @@ Diagnostics are opt-in. Set `diagnostics` to an explicit trusted OTLP/HTTP Logs 
 
 | Field | Contract |
 |---|---|
-| `endpoint` | Complete HTTP/HTTPS URL, including `/v1/logs`; no userinfo, query or fragment |
+| `endpoint` | Complete HTTP/HTTPS Logs destination URL with a host; no userinfo, query or fragment. The usual Collector path is `/v1/logs`; the application does not require that path |
 | `private_bodies` | Default `false`; explicit opt-in for [private failure context](#private-failure-context) |
-| `body_bytes` | Shared retained-body allowance; default 16 KiB, accepted 1–64 KiB |
+| `body_bytes` | Shared retained-body allowance in bytes; default `16384`, accepted `1024–65536` |
 
 Omit `diagnostics` or set it to `null` to disable the pipeline. Export disables proxy inheritance and redirects; ambient `OTEL_EXPORTER_OTLP_HEADERS` and `OTEL_EXPORTER_OTLP_LOGS_HEADERS` are rejected rather than used as another authentication path. Use an existing trusted local Collector if backend authentication or persistent queuing is needed. This configuration does not deploy a receiver.
 
@@ -199,7 +200,7 @@ The Go/Haiku Messages binding declares a `32000` default; generic Messages targe
 
 Account selection happens before dispatch. Generation may retry one explicitly eligible unpublished network/server failure on that exact target, with the same credential material and wire request. Rate/quota/auth/permission/request failures, malformed output, trust/local faults and ambiguous post-dispatch timeouts do not authorize the additional send. A returned failure never causes another account or Provider to be dispatched in that request.
 
-Cooling targets are never tried early. If every otherwise-legal target is cooling or probing, the gateway returns 429 for rate/quota-only blocking and 503 otherwise. It supplies `Retry-After` only for a credible positive delay within `routing.retry_hint_horizon_ms`; probing alone supplies no deadline. [Health and recovery](../architecture/runtime-and-routing.md#health-and-recovery) defines cooldown scopes, delay bounds, foreground probes and cancellation.
+Cooling targets are never tried early. If every otherwise-legal target is cooling, the gateway returns 429 for rate/quota-only blocking and 503 otherwise. It supplies `Retry-After` only for a credible positive delay within `routing.retry_hint_horizon_ms`. [Health and recovery](../architecture/runtime-and-routing.md#health-and-recovery) defines cooldown scopes, delay bounds and cancellation.
 
 All Generation client protocols use the same configured candidate array. To send Responses clients through Chat, select a Chat binding.
 

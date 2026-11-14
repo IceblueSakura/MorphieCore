@@ -1,6 +1,6 @@
 # Multimodal Media Proposals
 
-This document details proposed operation contracts and execution models for media-bearing modalities in Stage 4: Audio (Speech & Transcription), Image generation/editing, and asynchronous Video generation.
+This document details proposed operation contracts and execution models for media-bearing modalities in Stage 4: Audio (Speech, Transcription & Translation), Image generation/editing, and asynchronous Video generation.
 
 See [Proposals Framework](index.md) for shared boundaries and [Roadmap](../roadmap/index.md) for Stage 4 execution gates.
 

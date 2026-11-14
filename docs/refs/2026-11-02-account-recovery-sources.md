@@ -1,6 +1,6 @@
 # Account recovery source boundaries
 
-Checked **2026-11-02** for the accepted [account rewrite](../provider-account-redesign-plan.md). This note records dependency and official-service evidence, not runtime acceptance or a new policy selection.
+Checked **2026-11-02** for the accepted [account lifecycle](../architecture/runtime-and-routing.md#oauth-maintenance). This note records dependency and official-service evidence, not runtime acceptance or a new policy selection.
 
 ## Locked dependency selection
 

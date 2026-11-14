@@ -48,7 +48,7 @@ The gateway converts fields and carriers under the accepted conversion ladder. W
 | Downstream | OpenAI Chat Completions, OpenAI Responses, Anthropic Messages |
 | Upstream | OpenAI Responses/Chat and compatible dialects, Anthropic Messages, Google generateContent, Google Interactions |
 
-Generation supports JSON and SSE delivery. Responses, native Messages and Google upstreams use streaming intake even for downstream JSON delivery. Chat retains the [qualified JSON exception](../refs/2026-10-27-client-ir-boundaries.md#production-corpus-and-intake-experiment-2026-10-30) for metadata and URL annotations without chunk carriers. Interactions uses stateless, full-history requests.
+Generation supports JSON and SSE delivery. Responses, native Messages and Google upstreams use streaming intake even for downstream JSON delivery. Chat retains the [qualified JSON exception](../refs/2026-10-27-client-ir-boundaries.md#chat-json-intake-evidence-2026-10-30) for metadata and URL annotations without chunk carriers. Interactions uses stateless, full-history requests.
 
 All three Generation client protocols dispatch through the public model's configured candidate route. A Messages client request does not require a native Anthropic upstream. Standalone tasks (Embeddings, Images, Speech, Transcription) operate on distinct contracts outside Generation.
 
@@ -60,7 +60,11 @@ Provider metadata resides in [providers.json](../../src/provider/providers.json)
 
 ### Shared Provider metadata
 
-`src/provider/providers.json` owns default origins, operation paths, override suffixes and authentication. It is embedded at compile time via `include_bytes!`, validated once, and immutable at runtime. Private `accounts.json` declarations bind named credentials and API-key target overrides through `src/account.rs`, deriving credential kind/profile from the catalog under the [credential ownership contract](../provider-account-redesign-plan.md#credential-kind-and-header-placement); secret material and verified OAuth identities stay in the credential store.
+`src/provider/providers.json` owns default origins, operation paths, override suffixes and authentication. It is embedded at compile time via `include_bytes!`, validated once, and immutable at runtime. Private `accounts.json` declarations bind named credentials and API-key target overrides through `src/account.rs`; secret material and verified OAuth identities stay in the credential store.
+
+Each Provider denotes one service access contract and fixes one credential kind and, for OAuth, one profile. Accounts reference managed instances by alias without repeating those facts. Separate `openai` API-key and `chatgpt` SIWC Providers may share codecs without sharing model catalogs, request restrictions or replay provenance. Endpoint header placement is independent: OpenCode Go can use bearer auth for Chat and `x-api-key` for Messages with the same key.
+
+Stable configured names identify accounts; credential provenance owns security identity. Shared binding, provisioning and diagnostics derive kind/profile from the catalog before secret access. A model route includes only explicitly declared Provider/model bindings; adding an account does not authorize model substitution. [Target trust and lifecycle](runtime-and-routing.md#trusted-account-targets) and [configuration](../usage/credentials-and-diagnostics.md#configure-accounts) own the remaining account contracts.
 
 | Field | Contract |
 |---|---|
@@ -243,17 +247,11 @@ Non-Generation tasks maintain independent request, execution, and result lifecyc
 
 #### Decision API direction
 
-Dual-SDK client access (TypeSafe Decision SDK and OpenAI Decision SDK) backed by a unified Decision IR.
-- Interoperability across TypeSafe, OpenAI, Perplexity, and Cloudflare.
-- Capability-union design: unambiguous typed owners for question rubrics, confidence scores, and structured justifications.
-- Independent synchronous execution without dependencies on Generation routing.
+Selected direction, not an implemented API: TypeSafe and OpenAI SDK access through a unified capability-union Decision IR, independent of Generation execution. Concrete layouts, mappings, SDK profiles, execution bounds and bindings remain under review in the [Decision proposal](../proposals/decisions-api.md#decisions).
 
 #### Token counting policy
 
-Token counting (`count_tokens`) adheres to an upstream-first policy:
-- Prefer upstream-reported token counts from target models.
-- When unavailable or inaccurate, use a documented character-based heuristic (`ceil(bytes / 4)`).
-- The gateway does not run local BPE tokenizers or reconstruct proprietary model templates.
+Selected policy direction for the deferred counting surface, not implemented endpoint behavior: prefer upstream counts, allow documented coarse estimates for inaccurate or unavailable counts, and do not run local BPE tokenizers or reconstruct proprietary templates. The recorded direction names `ceil(bytes / 4)` as a character-based fallback; the [counting proposal](../proposals/tasks-and-counting.md#token-counting) still requires concrete reliability criteria, input coverage and provenance. Reconcile that profile's estimation rule before activating an endpoint.
 
 #### Independent Embedding path
 

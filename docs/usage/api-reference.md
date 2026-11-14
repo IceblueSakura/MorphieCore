@@ -121,7 +121,7 @@ Generation JSON/SSE and successful Embedding responses carry `X-MorphieCore-Adap
 
 ## Errors and limits
 
-OpenAI routes return `{"error":{"message","type","param","code"}}`. Messages errors, including authentication failures before body polling, use Anthropic's `{"type":"error","error":{"type","message"}}` envelope. Unclassified Messages errors put the diagnostic `code` in the message, for example `The request could not be completed (upstream_error).` Messages 401 errors use `authentication_error`.
+OpenAI routes return `{"error":{"message","type","param","code"}}`. Messages errors, including authentication failures before body polling, use Anthropic's `{"type":"error","error":{"type","message"}}` envelope. Unclassified Messages errors put the public error code in the message, for example `The request could not be completed (upstream_error).` Messages 401 errors use `authentication_error`.
 
 When Standard Chat planning is blocked by required thinking history, HTTP 400 uses `error.type:"invalid_request_error"` and `error.code:"reasoning_history_required"`. Its fixed message explains the missing history carrier and suggests an explicit off request or a compatible model/API. The gateway neither dispatches the rejected request nor retries it with different thinking settings. This is a JSON error before SSE starts, including for `stream:true`; it needs no diagnostic extension. In mixed rejected routes, the first configured blocking candidate supplies the planning diagnosis.
 

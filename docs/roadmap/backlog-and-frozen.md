@@ -29,8 +29,9 @@ See [Roadmap Main](index.md) for active execution priorities and [Unscheduled is
 
 | Issue | Status | Action |
 |---|---|---|
-| Namespace aliases, custom text and examples | Conditional S3-T5–S3-T7 | Select each content/interface adaptation separately; do not make all three implicit core prerequisites |
+| Conditional tool adaptations | [Stage-3 follow-ups](unscheduled-issues.md#conditional-stage-3-follow-ups) | Select policy and affected-loop acceptance per package; not implicit core prerequisites |
 | Ordered control null/reset | Optional-null reset/default meanings remain unqualified | Qualify field-specific semantics before broadening admission; retain current null rejections |
+| Counting estimate precision | Architecture records a byte-based fallback while the deferred counting proposal leaves its concrete profile rule open | Reconcile scope, input coverage and provenance before endpoint activation; documentation cleanup selects no new counting behavior |
 | Complete citations | Stage 5 | Retain local point-anchor owner; defer full citation model |
 | Execution controls | Paused | Enforce pre-dispatch validation; reject unsupported controls |
 | Google error envelopes | Paused | Maintain per-API classification; avoid speculative unified parsing |
@@ -53,13 +54,13 @@ Further general Google API expansion remains paused. Maintenance of qualified ex
 Native no-output cache prewarming is unscheduled and remains separate from standard request execution.
 
 ### Deferred tool discovery and web search
-Dynamic tool discovery and native Provider web search remain unscheduled Stage 5 tasks.
+[Detailed tool-discovery and web-search proposals](../proposals/stage5-backlog.md#deferred-tool-discovery-and-web-search) remain unscheduled Stage-5 work; current unsupported semantics stay rejected.
 
 ### Deferred token counting
 `POST /v1/messages/count_tokens` is deferred. The gateway returns 404 rather than generating synthetic or estimated counts. Reopening requires defining upstream reliability criteria and coarse estimation provenance.
 
 ### Models discovery interfaces
-Discovery for other task families (Embeddings, Media, Decision) remains schema-only until those operations are publicly activated. Extend the existing [Generation discovery contract](../architecture/adaptation-and-dialects.md#generation-text-model-discovery) only with selected operation contracts.
+Enhanced model descriptors and Pi integration remain Generation Text-only. Other-task descriptor-union schemas do not activate integration. Standard `/v1/models` already lists activated standalone-task labels, and `/v1/morphiecore/capabilities` publishes configured Embedding contracts. [Discovery proposals](../proposals/stage5-backlog.md#models-discovery-interfaces) own further expansion.
 
 ### Messages citations
 Unified citation delivery ([1C proposal](../proposals/stage5-backlog.md#1c-design-messages-citations)) remains unscheduled. Requests requiring citation output are rejected.

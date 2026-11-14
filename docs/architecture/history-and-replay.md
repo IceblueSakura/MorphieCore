@@ -118,7 +118,8 @@ Google part/call thought signatures use this retained owner when the selected cl
 
 ### Agent session files
 
-Selected architectural direction for downstream session persistence:
+Selected direction only; persistence is unimplemented and unscheduled, not a Stage-4 prerequisite. Isolation and lifetime bounds require selection before implementation:
+
 - Per-Agent JSONL directories containing session interaction logs.
 - Cross-agent collaboration requires explicit read or copy operations, preserving author attribution and replay boundaries.
 

@@ -29,13 +29,19 @@ See [Architecture Overview](index.md) for system boundaries and core IR semantic
 
 ### Failover
 
-Shared named-account binding, scoped cooldowns, old-material auth cooldown release, advisory affinity and bounded same-target recovery implement the accepted [execution policy](../provider-account-redesign-plan.md#execution-policy). [Roadmap](../roadmap/unscheduled-issues.md#unscheduled-issues) tracks remaining profile qualification and prerequisites. Production deployment requires separate approval.
+Shared named-account binding, scoped cooldowns, old-material auth cooldown release, advisory affinity and bounded same-target recovery implement the contracts below. [Roadmap](../roadmap/unscheduled-issues.md#unscheduled-issues) tracks remaining profile qualification and prerequisites. Production deployment requires separate approval.
 
 Failover operates on precompiled candidate lists under a cache-affine routing policy.
 
 #### Legal candidates
 
 Routes compile at startup (up to 64 candidates per model). Ingress requests cannot specify arbitrary candidate targets.
+
+A target is one account serving a route candidate: Provider, credential/security identity, upstream model, operation/protocol and effective origin/path. Matching hostnames alone do not establish target identity. Candidate order precedes account declaration order; credential kind adds no priority. Every enabled, validly bound account in the declared route may serve a new request, including another Provider's account. Stored credentials alone authorize no destination or billing path. Standalone tasks retain fixed-account execution rather than Generation recovery.
+
+Selection prefers a fresh conversation binding when ready. Only that binding earns one cancellable cooldown wait, and only when its blocking deadline falls within the configured `max_wait`; otherwise select another ready legal candidate immediately or fail fast. Any permitted wait remains bounded by the original request deadline. Recheck lifecycle and cooldowns afterward. New or unbound requests never wait for a higher-priority cooling target. Do not loop through additional waits or balance traffic by weights, price, latency, usage or inferred cache value.
+
+Pre-dispatch representation checks may consider later candidates without weakening ingress, replay or explicit-guarantee validation. Once a send begins, upstream request/malformed failures never restart candidate search.
 
 #### Request conversion reuse
 
@@ -53,7 +59,17 @@ The production model loader fixes one account target before dispatch. Configurat
 
 Publication remains irreversible: no later attempt may replay committed output. Provider-owned finite classification separates health from the narrow resend allowlist. Typed transport causes distinguish positive interruption/connection timeout from TLS, local faults, unknown causes and ambiguous post-dispatch timeout; no private URL or third-party message enters policy. Unknown structured codes retain actual-status fallback and unknown in-band errors gain no synthetic-500 resend permission.
 
-The short recovery clock covers cleanup, hints, preparation and the retry until projected deliverable content or a validated successful no-content terminal. Headers, usage and lifecycle frames cannot remove it. Buffered JSON remains private and terminal publication still requires validated EOF; readiness removes neither the original request deadline nor the attempt deadline. The [execution contract](../provider-account-redesign-plan.md#bounded-same-target-retry) owns budgets and eligibility.
+The short recovery clock covers cleanup, hints, preparation and the retry until projected deliverable content or a validated successful no-content terminal. Headers, usage and lifecycle frames cannot remove it. Buffered JSON remains private and terminal publication still requires validated EOF; readiness removes neither the original request deadline nor the attempt deadline.
+
+##### Bounded same-target retry
+
+- **Eligible failures:** HTTP 408/500/502/503/504 and Provider-confirmed equivalent overload, unless structured evidence reclassifies them as an excluded class. In-band failures need the same positive classification; HTTP 2xx alone supplies none.
+- **Network evidence:** positive transient connection/I/O interruption or known connection-phase timeout. Ambiguous post-dispatch timeouts, unclassified send/connect errors and missing protocol terminals alone do not qualify.
+- **Exclusions:** rate limits, quota, auth, permission, invalid requests, malformed output, TLS/trust, local configuration faults and cancellation. Other 5xx statuses do not qualify merely by family.
+- **Isolation:** release the old upstream before the retry; discard unpublished frames, parser state, response IDs and output metadata. Preserve reported usage and attempt diagnostics independently. Sends never overlap; SDK and transport retries remain disabled.
+- **Timing:** one recovery deadline starts at the first eligible failure and is clipped to the original request deadline. Retry immediately after cleanup unless a valid upstream hint requires waiting. Never shorten that hint to fit the budget; return the original failure if no recovery time remains. No third send or new full timeout is granted.
+
+The request clock starts before body admission. Route resolution can tighten it relative to that start, never restart it. A network retry can repeat work already performed upstream; it does not promise exactly-once execution. Current installed-client acceptance must count client retries separately.
 
 #### Health and recovery
 
@@ -61,8 +77,30 @@ One exchange-local failure ledger retains the original HTTP observation, later i
 
 - **Scoping:** Auth/quota constrain an account; transient, rate-limit and permission failures constrain its exact model/operation/origin/path target. Independent constraints retain their own deadlines.
 - **Concurrency:** expired cooldowns admit ordinary concurrent requests. There are no exclusive probes, routing generations or affinity observation leases. Credential lifecycle coordination remains independent.
-- **Recovery:** Validated successful work clears expired constraints and resets exhausted backoff; live cooldowns survive concurrent successes. Reported failures and independently identified transport interruptions retain observation times and material revisions through cleanup or cancellation. Clean HTTP EOF missing a protocol terminal is malformed, not positive transport-interruption evidence. A completed retry discards its first failure's pending penalty; otherwise merged account/target constraints advance each affected scope at most once. Attempt-local output resets while usage and diagnostics remain separately attributable. Provider-owned timing and narrowly scoped material replacement follow the [selected contract](../provider-account-redesign-plan.md#cooldown-and-recovery).
+- **Recovery:** Validated successful work clears expired constraints and resets exhausted backoff; live cooldowns survive concurrent successes. Reported failures and independently identified transport interruptions retain observation times and material revisions through cleanup or cancellation. Clean HTTP EOF missing a protocol terminal is malformed, not positive transport-interruption evidence. A completed retry discards its first failure's pending penalty; otherwise merged account/target constraints advance each affected scope at most once. Attempt-local output resets while usage and diagnostics remain separately attributable.
 - **Downstream hints:** Upstream reset evidence remains available to health/recovery. Returned `Retry-After` describes only a credible short route-wide block and is suppressed when another usable target is ready; `x-should-retry` is never emitted.
+
+Provider-owned finite classifiers use status, structured codes, declared reset fields and in-band outcomes. Unknown codes retain actual-status fallback; operators do not supply error rules. Configuration defaults and parameter ownership live in [Usage](../usage/credentials-and-diagnostics.md#recovery-defaults).
+
+| Class | Scope and disposition |
+|---|---|
+| `request` / `malformed` | No cooldown: invalid/unsupported input or protocol-invalid output cannot rotate through accounts |
+| `transient` | Exact target; health includes failures such as timeout that may still be ineligible for retry |
+| `rate_limit` | Exact target unless classified as account quota |
+| `quota` / `auth` | Whole account; credential lifecycle vetoes remain independent of cooldown expiry |
+| `permission` | Exact model/operation/origin/path target |
+
+Failures extend deadlines; another failure inside an open window does not escalate backoff. Successful completion clears only expired constraints; a configured failure-free interval can reset backoff. Valid `Retry-After` delta/date and Provider reset fields supply deadlines; malformed, missing and expired hints do not. Health hint floors/caps never authorize retrying earlier than a valid hint. Several keys in one upstream organization may share quota and caches; aliases alone provide no independent failover domain.
+
+Delivery, outcome and health are separate facts. A completed tool/refusal turn or output-limit incomplete completion can settle success, while HTTP success, raw EOF or delivering a failure cannot. A cancelled or undeliverable response never renews affinity. Preserve independently observed upstream failures through later malformed output, local timeout or cancellation; do not infer upstream failure from client disconnect. For example, `503 → quota` retains both target-transient and account-quota constraints, while `503 → malformed` retains the original transient observation only.
+
+The final attempted failure supplies the client error. A recovery deadline expiring during the second attempt is a timeout, not a fabricated upstream error. Never concatenate failure bodies or retract published content.
+
+##### Downstream signals
+
+If all otherwise-legal targets are blocked, return 429 for rate/quota-only blocking and 503 otherwise. For each lifecycle-usable target, availability is the latest deadline of its blocking scopes; the route hint is the earliest such availability. Emit `Retry-After`, rounded up to seconds, only for a known positive delay within the configured horizon. Quarantine, renewal and reauthorization do not acquire invented reset times.
+
+Dispatched native failures keep their protocol meaning; upstream credential failure is not downstream authentication failure. Do not forward `x-should-retry` or rewrite native failed outcomes merely to trigger client retries. Headers are fixed before publication; published streams use their protocol error mechanism rather than revised status/headers.
 
 #### Routing unit
 
@@ -123,6 +161,8 @@ separate official contracts from observed SIWC behavior.
 
 Route/cache identity includes configuration namespace, credential provenance and the exact public-model/target/operation identity. Native OpenAI reasoning uses a separate model-independent service-source identity; compaction and other native signatures remain strict. [History and replay](history-and-replay.md#reasoning-replay) owns the scope rules. API-key replacement invalidates old private replay; normal OAuth material renewal preserves provenance.
 
+Affinity is an advisory, success-updated preference scoped by authenticated Agent, public model and declared conversation. Failure never deletes or moves it. Only validated eligible success stores or renews its sliding idle TTL; lookup and failure do not. The last eligible completion wins and may recreate an expired/evicted entry, without leases or version arbitration. Insertion drops expired entries and evicts the least recently successful entry at capacity. Zero TTL or capacity retains nothing. Restart persistence remains [unselected](../roadmap/unscheduled-issues.md#routing-qualification).
+
 ### Streaming and delivery
 
 Delivery lifecycle and event streaming are coordinated by [`ResponseDelivery`](../../src/execution/delivery.rs) under [`SseLimits`](../../src/protocol/stream.rs):
@@ -163,9 +203,27 @@ Configured via [`DeltaCoalescing`](../../src/execution/delivery/coalescing.rs) (
 - **Store:** Private files and redacted, zeroizing in-memory secret types; loaders reject unsafe paths. Provider documents hold typed OAuth/key maps, rejecting duplicate aliases and malformed known fields across both partitions. Publication moves and returns records without secret-cloning APIs, preserving shared locks, bounds, quarantine and atomic-write ordering. Only the current format is maintained: no historical filename detection or migration; generic invalid-directory rejection and reserved namespace protection remain.
 - **Driver ownership:** Managers share an immutable driver registry. Each driver has one registration-aware login entrance and one renewal entrance; pending renewal still requires its separate identity verification and durable publication steps.
 - **Browser login input:** Every browser login accepts HTTP callback and a full callback URL on stdin together; the first valid result wins at the shared listener. Stdin uses ordinary echoed lines, with no mode switch, hidden-input parser or partial-line coordination. Pasted URLs relay only to the prepared loopback target and share state/field validation, PKCE, issued-client binding, nonce, identity proof and the original deadline. No token import or second exchange is introduced. See [operation](../usage/credentials-and-diagnostics.md#oauth) and [implementation references](../refs/2026-11-02-account-recovery-sources.md#headless-browser-callback-input).
-- **Automatic OAuth renewal:** Startup owns the deduplicated maintenance registry, including configured disabled accounts. Listener-owned renewal consumes that registry and scans tokens expiring within 120s, rotating credentials serially under account locks. [OAuth maintenance](../provider-account-redesign-plan.md#oauth-maintenance) owns filesystem-phase cancellation and replacement-verification checkpoints.
+- **Automatic OAuth renewal:** Startup owns the deduplicated maintenance registry, including configured disabled or route-unreferenced accounts. Listener-owned renewal consumes that registry and rotates credentials serially under account locks. [OAuth maintenance](#oauth-maintenance) owns cancellation and replacement-verification checkpoints.
 - **API-key access:** Startup binds a reference; borrowing enforces enabled state, quarantine, record/epoch/generation identity and material digest. No separate strict-binding policy is maintained.
 - **Ingress Auth:** Binds exactly one configured Agent key via Bearer token or `x-api-key`.
+
+#### Trusted account targets
+
+Validate target bindings before borrowing secrets. API-key `base_url` overrides are complete HTTPS API roots (literal loopback HTTP is also permitted) without userinfo, query or fragment. Append the catalog's explicit operation suffix after normalizing the joining slash; never guess or remove version prefixes. OAuth accounts reject overrides and send tokens only to their profile's resource origin. Business data selects neither origins, credentials, auth headers nor proxies.
+
+Account enablement controls routing only. OAuth registrations with the same verified subject under one Provider cannot become separate managed aliases, even with different issued clients. Login publication reserves that subject atomically across processes. Disabled, signed-out and reauthorization-required records retain the reservation; explicit removal releases it. Active sessions and pending login reject duplicate login before authority I/O; reauthorization replaces the existing unusable registration. Ordinary renewal preserves provenance, while a changed registration or API key cannot inherit private replay identity.
+
+#### OAuth maintenance
+
+Inference borrowing and eligibility checks are network-free and never start login or refresh. Listener-owned polling and explicit CLI maintenance share the account lifecycle owner, re-read latest material under the lock and use each registration's issued client. API-key mutations need only their short store transaction. Each runtime has one maintenance listener; no multi-listener arbitration is added.
+
+- **Scheduling:** check on startup, then poll with configured scan, refresh-ahead, timeout and safe failed-renewal delay. Successful short-grant renewals also respect minimum spacing. Defaults live in [Usage](../usage/gateway-configuration.md#configure-the-gateway). Unknown expiry stays unknown; no paid inference tests validity. Serial account queueing and failure delays can exceed a scan interval, so polling does not guarantee renewal before expiry.
+- **Cancellation:** filesystem phases run off async workers while retaining account ownership. Cancellation drops network work, prevents queued preparation and drains any started atomic filesystem phase before releasing ownership. Once replacement/pending material is returned, revision-checked publication completes even after cancellation: old refresh material may already be consumed. SIGINT and SIGTERM share this path; filesystem completion is not a hard wall-clock guarantee.
+- **Verification:** persist complete replacement material before secondary identity verification. Grok UserInfo and SIWC failures leave pending, unusable material; explicit refresh resumes verification without another exchange. Network/timeout verification failures may resume automatically after the safe delay; denial, identity mismatch, protocol and validation failures wait for explicit refresh. Uncertain exchanges retain recovery/quarantine state rather than restoring or blindly resending old tokens.
+- **Auth availability:** verified durable replacement releases only old-material auth cooldowns. Stale 401 observations cannot penalize replacement material; quota, permission, reauthorization and lifecycle vetoes remain. Refresh moves neither affinity nor billing accounts.
+- **Logout and inspection:** coordinate logout with renewal so late publication cannot reactivate a signed-out account. Local removal and remote revocation have separate outcomes; incomplete revocation surfaces honestly. Status/explanation stays read-only and redacted.
+
+Profile-specific verification, rotation and terminal-error semantics follow the [account source guide](../refs/2026-11-02-account-recovery-sources.md); global timing cannot weaken them.
 
 ### Agent identity and cluster diagnostics
 

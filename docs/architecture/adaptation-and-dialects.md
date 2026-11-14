@@ -434,7 +434,7 @@ The IR decouples reasoning activation from effort level and scope:
 
 Model-effective constraints independently declare whether disabled activation is unavailable and which positive effort levels are native. Grok 4.7 and GPT Astra/Sol reject explicit off; Luna retains off. Positive non-native levels use the existing nearest-level mapping, while omission remains omission. Discovery and dispatch consume the same constraint; dialect spelling does not create model support. See the [official source review](../refs/2026-11-12-generation-binding-contracts.md).
 
-##### Ordered effort repair direction
+##### Ordered effort projection
 
 Root settings are initial controls. `ConfigurationUpdate.boundary` independently carries `FollowingResponse` or `NewInputTurn`; effort scope describes the affected work, never activation timing. Responses updates select subsequent responses. Messages updates immediately after a new-input user turn select its reply; elsewhere they remain pending until new user input. Tool-result-only turns do not activate them; mixed results and new input do. Active values persist until replaced. `GenerationRequest::resolved_configuration` derives active/pending controls in one bounded, pure scan without storing a second mutable setting. Active and pending values are derived `ConfigurationState` snapshots, not merged update patches. Both use one ordered transition rule, so off clears prior reasoning effort and later enable cannot resurrect it; immediate updates also apply to the pending state.
 
@@ -465,7 +465,7 @@ Functionality may take precedence over conservative gateway-derived token defaul
 
 This direction does not select a general adjustment formula or change thinking-budget validation. The [output-ceiling adaptation](#output-ceiling-adaptation) separately selects equivalent spelling, model-maximum clamp, narrower-scope approximation and carrier-less omission with loss evidence. Other allocation changes must name the changed intent, target, finite bound, useful answer reserve and evidence; numeric thinking intent is not silently overridden. Source protocol validity, model maxima, memory/wire limits, timeouts and terminal honesty remain enforced. Unknown capacity is not unlimited capacity. The [budget proposal](../proposals/index.md#independent-output-ceilings-unselected) owns unresolved alternatives.
 
-##### Initial mapping plan
+##### Binding-level mapping
 
 Bindings declare model-specific qualitative level translation via [`ReasoningEffortMapping`](../../src/protocol/reasoning.rs) and [`ReasoningRequestPolicy`](../../src/protocol/reasoning.rs):
 - Conversions are strictly directional. A level missing from a binding's table resolves to the nearest supported level, ties upward, under the binding's named effort rule. Bindings that expose no effort control omit it under a named rule (L4); explicit history-read intent keeps its own guard.

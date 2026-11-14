@@ -31,23 +31,23 @@ Exit evidence: independent request/result oracles cover upstream preference and 
 
 The sample-centered text/scoped-token IR, native Google integration, immutable preparation and explicit ancillary/numeric delivery rules are implemented. Their authoritative contract is [Independent Embedding path](../architecture/index.md#independent-embedding-path), not a pending proposal. This section retains only extension boundaries.
 
-#### Embedding chain and ownership
+### Embedding chain and ownership
 
 Preserve the independent single-target chain, source/delivery separation and one immutable prepared plan. Future operations must establish their own admission and response expectations before activation; no generic provider-options bag, hidden fan-out or Generation failover is proposed. Native error-body inspection is not selected: status and Retry-After remain authoritative even if a body stalls.
 
-#### Embedding inputs and admission
+### Embedding inputs and admission
 
 Future joint image/audio/video inputs need typed content owners, source validation and model-specific input processing controls. Keep independent samples distinct from joint parts within a sample. Do not infer joint semantics by concatenating text or reuse generation attachments without reviewing their contract.
 
 Task purpose and explicit overflow/truncation controls would belong to each sample, not competing batch defaults. No task prefix injection or implicit truncation is selected. New tokenizer scopes need vocabulary, special-token, per-input and aggregate limits plus actual target-carrier evidence; the implemented ordinary `cl100k_base` subset does not attest other tokenizers.
 
-#### Embedding results and encoding
+### Embedding results and encoding
 
 Quantized int8/uint8/binary vectors and multi-representation output require an explicit numerical representation independent of transport encoding. Base64 alone cannot identify element width or dtype. Tensor/soft-token results require a separate shape/index contract, not flattening into ordinary dense embeddings. Contextualized chunks need a distinct shared-context relation rather than being represented as independent batch samples.
 
 Embedding-space identity remains a trusted model contract. Equal widths, labels or a hash of request options are not sufficient for substitutability. Retrieval indexes, chunking, contextual grouping and migration/re-embedding remain outside the current path.
 
-#### Google Embedding profile
+### Google Embedding profile
 
 The implemented target uses native synchronous `batchEmbedContents`, nested controls and explicit no-truncation; [dated source/protocol evidence](../refs/2026-10-22-embedding-image-contracts.md#google-wire-source-reconciliation) distinguishes current REST from lagging SDK converters. The Google OpenAI-compatible endpoint, native downstream APIs, `gemini-embedding-001`, multimodal ingestion and tensors remain unselected. A future extension must characterize its own configuration and reporting rather than inherit text-only acceptance.
 

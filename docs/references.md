@@ -19,7 +19,7 @@ This document separates protocol authority, reproducible regression pins, implem
 
 ## Source guides
 
-Start here for source navigation rather than an old field-support matrix. Reviewed **2026-10-27**; each guide records release, immutable revision, license, useful paths and limits.
+Start here for source navigation rather than an old field-support matrix. Initial review **2026-10-27**; dated follow-ups are recorded in each guide, alongside releases, immutable revisions, licenses, useful paths and limits.
 
 | Reference | Long-term use | Evidence boundary |
 |---|---|---|
@@ -64,7 +64,20 @@ Resolved from crates.io release metadata on **2026-10-24**, with native Logs tra
 
 Primary contract entry points: [OTLP HTTP/runtime/configuration](https://docs.rs/opentelemetry-otlp/0.33.1/opentelemetry_otlp/), [native Logs API](https://docs.rs/opentelemetry/0.33.1/opentelemetry/logs/), and [batch log processor source](https://github.com/open-telemetry/opentelemetry-rust/blob/372ebbc74d4dba71bb9820732f57f7316b4e7a1e/opentelemetry-sdk/src/logs/batch_log_processor.rs). Trace/appender bridges and the dependency-only prototype are removed; [Development](development.md#overall-acceptance-status) summarizes overall acceptance.
 
-Historical revisions remain next to the specific dated observations that need them, not in a second version catalog. The SDK loopback gate uses `tests/sdk/uv.lock`; source pins and package execution locks are distinct. Passing old scenarios under a new SDK does not accept new protocol semantics.
+Historical revisions remain next to the specific dated observations that need them, not in a second version catalog. SDK consumers use `tests/sdk/uv.lock` and `tests/sdk/pi/package-lock.json`; source pins and execution locks are distinct. Passing old scenarios under a new SDK does not accept new protocol semantics.
+
+### Recorded protocol artifacts
+
+The source lock also fingerprints four Google protocol artifacts. Exact URLs, SHA-256 values and source dates remain in [sources.lock.json](../tests/upstream/sources.lock.json), not a second hash catalog.
+
+| Artifact | Recorded version / revision |
+|---|---|
+| `google-interactions-v1` | `v1` |
+| `google-interactions-v1beta` | `v1beta` |
+| `google-generate-content-v1` | `v1` / `20261023` |
+| `google-generate-content-v1beta` | `v1beta` / `20261023` |
+
+These fingerprints are distinct from vendored regression assets. `tests/upstream/assets.py` verifies the asset lock, not these remote artifacts. The [Interactions source-access qualification](refs/2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04) retains the historical 404 and unverified hash-equality boundary; indexing a lock is not a new availability or integrity check.
 
 ## Test source repositories
 
@@ -77,7 +90,7 @@ The imported subset is identified in [assets.lock.json](../tests/upstream/assets
 | OpenAI official SDKs | [Python](https://github.com/openai/openai-python), [Node](https://github.com/openai/openai-node) | Chat/Responses request, response, streaming, parser and returned-history tests; applicable interruption, backpressure and cleanup cases. Operation/resource tests are candidates for selected stage-4 slices |
 | Anthropic official SDKs | [Python](https://github.com/anthropics/anthropic-sdk-python), [TypeScript](https://github.com/anthropics/anthropic-sdk-typescript) | Messages blocks, tool-input fragments, thinking/signatures, partial output and history fixtures; not automatic tool runners |
 | Google Gen AI official SDKs | [Python](https://github.com/googleapis/python-genai), [JavaScript](https://github.com/googleapis/js-genai) | generateContent/Interactions wire and stream cases within selected upstream directions; operation-specific Image/Embedding candidates. Not automatic function calling or new native client admission |
-| Vercel AI SDK | [Repository](https://github.com/vercel/ai) | Official-protocol and Provider packages, including `openai`, `anthropic`, `google`, `alibaba`, `deepseek`, `xai` and `openai-compatible`; raw JSON/chunk fixtures and applicable adapter assertions, including image-model candidates for stage 4. Not its IR or implicit repair policies |
+| Vercel AI SDK | [Repository](https://github.com/vercel/ai) | Selected package entries cover `ai`, OpenAI, Anthropic and Google. Alibaba, DeepSeek, xAI and OpenAI-compatible are repository inspection candidates, not separately selected package pins or imported coverage. Raw JSON/chunk and image-model fixtures may inform selected slices; its IR and implicit repair policies are not protocol authority |
 | Web Platform Tests | [EventSource](https://github.com/web-platform-tests/wpt/tree/master/eventsource) | SSE format/parser cases; browser-only API, reconnection and security-context behavior are separate |
 | EventSource Parser | [Repository and tests](https://github.com/rexxars/eventsource-parser) | Incremental parsing, multiline/multibyte, buffering and stream regressions; reference behavior is not authority for gateway resource budgets |
 
@@ -94,11 +107,12 @@ Keep dated evidence that is not better owned by a current source guide, accepted
 | [Protocol reset, 2026-10-23](refs/2026-10-23-stable-protocol-contracts.md) | API migration, strictness/cache/effort distinctions and imported-fixture boundaries |
 | [Request boundaries, 2026-10-26](refs/2026-10-26-standard-request-boundaries.md) | Independent request/history union, nullability, grammar and replay counterexamples; resolved disposition, not an open defect list |
 | [Chat reasoning carriers, 2026-11-08](refs/2026-11-08-chat-reasoning-carriers.md) | Dated pi/OpenCode detail retention, the adjacent text-signature counterexample, tagged native replay, and the 2026-11-12 cross-source/OpenAI cross-model reasoning review |
-| [Client/IR boundaries, 2026-10-27](refs/2026-10-27-client-ir-boundaries.md) | Output/history distinctions, dated capability families, metadata/binding-history authority, conversion-ladder inventory, Generation null contracts, native-default Agent blockers, tool-root defects, the [nine-direction tool assessment](refs/2026-10-27-client-ir-boundaries.md#nine-direction-tool-assessment-2026-11-04), [tool-contract qualification](refs/2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04), [current-Agent artifact recheck](refs/2026-10-27-client-ir-boundaries.md#current-agent-tool-exit-recheck-2026-11-05) and [ordered effort qualification](refs/2026-10-27-client-ir-boundaries.md#ordered-effort-contract-qualification-2026-11-05) |
+| [Client/IR boundaries, 2026-10-27 onward](refs/2026-10-27-client-ir-boundaries.md) | Protocol expressiveness, endpoint-qualified reasoning history, semantic equivalence/nullability, Chat JSON-only carriers, tool-source counterexamples and ordered-effort timing; includes the 2026-11-13 hosted MiniCPM recheck |
+| [Official SDK source guide, 2026-10-27 onward](refs/2026-10-27-official-sdk-sources.md) | Immutable SDK sources, 2026-11-04 tool-contract recheck and 2026-11-09 Google function-argument evidence |
 | [Google and cross-protocol distinctions, 2026-10-17 onward](refs/2026-10-17-generation-contracts.md) | Lifecycle/resource versus event meaning, unresolved streamed score scope, sparse accounting relationships and the 2026-11-01 official Chat terminal-label recheck |
 | [Instruction authority, 2026-10-25](refs/2026-10-25-instruction-authority.md) | Application versus vendor authority, legacy roles and Provider/Vercel comparisons |
 | [Model discovery, 2026-10-26](refs/2026-10-26-model-discovery.md) | Service-qualified capacity sources and remaining unknown limits, pi image carriers, native-effort/planning follow-up, and the 2026-11-13 context/input audit |
-| [Generation binding contracts, 2026-11-12](refs/2026-11-12-generation-binding-contracts.md) | SIWC tool carriers, GPT strict/image support, model-effective reasoning restrictions and source-versus-carrier replay ownership |
+| [Generation binding contracts, 2026-11-12/13](refs/2026-11-12-generation-binding-contracts.md) | SIWC tool carriers, GPT strict/image support, model-effective reasoning restrictions, replay ownership and the 2026-11-13 parameter-contract/session-carrier rechecks |
 | [Model catalog refresh, 2026-11-13](refs/2026-11-13-model-catalog-expansion.md) | Terra, Gemini 4, current Go/router models, Kimi and Qwen4 service controls, target-qualified capacities and the unified DeepSeek beta entry |
 | [Chat custom tools, 2026-10-16](refs/2026-10-16-chat-custom-tools.md) | Original complete-value carriers; later SSE disagreement linked separately |
 | [Bailian compatible requests, 2026-10-19](refs/2026-10-19-bailian-compatible-requests.md) | Model-specific ceilings, ignored controls, aliases and compatible-versus-RPC distinctions; 2026-11-08 output-format refresh and [2026-11-09 function-guarantee recheck](refs/2026-10-19-bailian-compatible-requests.md#function-guarantee-recheck-2026-11-09) |
