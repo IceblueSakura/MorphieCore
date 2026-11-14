@@ -141,7 +141,6 @@ async fn selected_target_never_changes_after_dispatch() {
                         .path
                         .clone(),
                 },
-                task: TaskKind::Generation,
                 protocol: GenerationProtocol::OpenAiResponses,
                 upstream_model: format!("{id}-alias"),
                 representation: GenerationCodec::new(
@@ -164,7 +163,6 @@ async fn selected_target_never_changes_after_dispatch() {
         }
         let route = Route {
             id: RouteId::new("route").unwrap(),
-            task: TaskKind::Generation,
             endpoints: vec![EndpointId::new("a").unwrap(), EndpointId::new("b").unwrap()],
             policy: RoutePolicy {
                 total_timeout_ms: (status == 1).then_some(50),
@@ -174,7 +172,6 @@ async fn selected_target_never_changes_after_dispatch() {
         let public = PublicModel::new(
             ModelId::new("public").unwrap(),
             ModelId::new("canonical").unwrap(),
-            TaskKind::Generation,
             route.id.clone(),
             Dispositions::text_images(),
         );
@@ -185,7 +182,6 @@ async fn selected_target_never_changes_after_dispatch() {
             vec![public],
             vec![CanonicalModel {
                 id: ModelId::new("canonical").unwrap(),
-                task: TaskKind::Generation,
                 contract: Dispositions::full(),
             }],
         )

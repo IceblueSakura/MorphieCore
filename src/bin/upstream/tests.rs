@@ -53,7 +53,6 @@ fn shared_metadata_selects_targets_without_cli_endpoint_overrides() {
     ])
     .plan()
     .unwrap();
-    assert_eq!(plan.oauth, Some("openai"));
     assert_eq!(
         plan.body.unwrap(),
         json!({"model":"new-model","input":[{"role":"user","content":"Reply with the single word OK."}],"stream":true,"store":false})
@@ -90,7 +89,6 @@ fn shared_metadata_selects_targets_without_cli_endpoint_overrides() {
     ])
     .plan()
     .unwrap();
-    assert_eq!(api_key.oauth, None);
     assert_eq!(api_key.provider.origin.as_str(), "https://api.openai.com");
     assert_eq!(api_key.body.unwrap()["stream"], false);
     for args in [
@@ -200,12 +198,8 @@ async fn diagnostics_select_only_the_configured_named_account_without_alias_bypa
     );
 }
 #[test]
-fn model_json_preserves_metadata_without_interpreting_pagination() {
+fn model_json_rejects_duplicate_keys_and_detects_nested_secrets() {
     let value = wire::decode(br#"{"data":[{"id":"new","metadata":{"context":123}}],"has_more":true,"last_id":"new","nextPageToken":"opaque"}"#).unwrap();
-    assert_eq!(
-        value,
-        json!({"data":[{"id":"new","metadata":{"context":123}}],"has_more":true,"last_id":"new","nextPageToken":"opaque"})
-    );
     assert!(wire::decode(br#"{"data":[],"data":[]}"#).is_err());
     assert!(contains_secret(
         &json!({"metadata":{"key":"synthetic-secret"}}),

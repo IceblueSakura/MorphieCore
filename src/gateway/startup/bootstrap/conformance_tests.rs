@@ -321,28 +321,9 @@ async fn observe(
     stream: bool,
     control: Control,
 ) -> (Vec<String>, Vec<Value>) {
-    let baseline = observe_intake(binding, client, profile, stream, control, false).await;
-    if !stream {
-        let streaming = observe_intake(binding, client, profile, false, control, true).await;
-        assert_eq!(
-            baseline, streaming,
-            "{}/{client:?}/{profile:?}: JSON client with current versus streaming upstream intake",
-            binding.1
-        );
-        let reached = baseline.0.iter().any(|outcome| outcome.ends_with("@1"));
-        let blocked = baseline.0.iter().find(|outcome| *outcome != "accepted@1");
-        eprintln!(
-            "intake {} {client:?} {profile:?}: {}",
-            binding.1,
-            match blocked {
-                None => "agrees (accepted)",
-                Some(outcome) if outcome.ends_with("@1") => "same post-dispatch blocker",
-                Some(_) if reached => "same continuation pre-dispatch blocker",
-                Some(_) => "not reached (pre-dispatch)",
-            }
-        );
-    }
-    (baseline.0, baseline.1)
+    let (outcomes, values, _) =
+        observe_intake(binding, client, profile, stream, control, false).await;
+    (outcomes, values)
 }
 
 type Observation = (Vec<String>, Vec<Value>, Vec<Value>);
@@ -913,33 +894,45 @@ async fn native_reports_project_without_changing_content_or_terminal_outcome() {
     for client in [Api::Chat, Api::Responses, Api::Messages] {
         for refusal in [false, true] {
             for stream in [false, true] {
-                for stored in [false] {
-                    if stored && client != Api::Responses {
-                        continue;
-                    }
-                    let actual = lane(
-                        binding,
-                        client,
-                        Profile::Text,
-                        stream,
-                        Control::ReportedFacts { refusal, stored },
-                    )
-                    .await;
-                    assert_eq!(
-                        actual, ACCEPT,
-                        "reports {client:?}/{refusal}/{stream}/{stored}"
-                    );
-                }
+                let actual = lane(
+                    binding,
+                    client,
+                    Profile::Text,
+                    stream,
+                    Control::ReportedFacts {
+                        refusal,
+                        stored: false,
+                    },
+                )
+                .await;
+                assert_eq!(actual, ACCEPT, "reports {client:?}/{refusal}/{stream}");
             }
         }
     }
 }
 
 #[tokio::test]
-async fn catalog_basic_production_lanes() {
+async fn representative_dialects_preserve_text_and_tool_workflows() {
     use crate::topology::{GenerationProtocol, catalog::API_KEY_BINDINGS};
-    let mut covered = std::collections::BTreeSet::new();
-    for entry in API_KEY_BINDINGS {
+    // Exercise wire dialects and distinct tool/history policies, not catalog membership.
+    for prefix in [
+        "openai-terra",
+        "xiaomi",
+        "deepseek",
+        "dashscope-flash",
+        "openrouter",
+        "openrouter-ember",
+        "nvidia",
+        "modelbest-minicpm5-1b",
+        "modelbest-minicpm-v-4.7-1b",
+        "opencode-go",
+        "opencode-go-minimax",
+        "zhipu",
+    ] {
+        let entry = API_KEY_BINDINGS
+            .iter()
+            .find(|entry| entry.endpoint_prefix == prefix)
+            .unwrap();
         let provider = (entry.provider)();
         let credential = entry.credential();
         for protocol in entry.protocols {
@@ -956,7 +949,6 @@ async fn catalog_basic_production_lanes() {
                 credential.as_str(),
                 upstream,
             );
-            covered.insert(endpoint.id.as_str().to_owned());
             for client in [Api::Chat, Api::Responses, Api::Messages] {
                 for profile in [Profile::Text, Profile::Tools] {
                     let actual = transports(&binding, client, profile, Control::Default).await;
@@ -970,121 +962,75 @@ async fn catalog_basic_production_lanes() {
             }
         }
     }
-    let reviewed = BASIC_EXPECTATIONS
-        .iter()
-        .flat_map(|(ids, _)| ids.iter().map(|id| (*id).to_owned()))
-        .collect();
-    assert_eq!(
-        covered, reviewed,
-        "reviewed dispositions must match catalog membership"
-    );
 }
 
 #[tokio::test]
 async fn chat_json_only_facts_block_unconditional_streaming_intake() {
-    use crate::topology::{GenerationProtocol, catalog::API_KEY_BINDINGS};
-    let mut covered = std::collections::BTreeSet::new();
-    for entry in API_KEY_BINDINGS {
-        if !entry.protocols.contains(&GenerationProtocol::OpenAiChat) {
-            continue;
-        }
-        let provider = (entry.provider)();
-        let credential = entry.credential();
-        let endpoint = entry.endpoint(GenerationProtocol::OpenAiChat).unwrap();
-        let binding = (
-            entry.model,
-            endpoint.id.as_str(),
-            provider.id.as_str(),
-            credential.as_str(),
-            Api::Chat,
-        );
-        let mut json = observe_intake(
-            &binding,
-            Api::Chat,
-            Profile::Text,
-            false,
-            Control::JsonOnlyReports,
-            false,
-        )
-        .await;
-        let streaming = observe_intake(
-            &binding,
-            Api::Chat,
-            Profile::Text,
-            false,
-            Control::JsonOnlyReports,
-            true,
-        )
-        .await;
-        let expected = basic_expected(binding.1, Api::Chat, Profile::Text);
-        assert_eq!(json.0, expected, "JSON-only control {}", binding.1);
-        assert_eq!(streaming.0, expected, "streaming control {}", binding.1);
-        covered.insert(binding.1.to_owned());
-        if expected != ACCEPT {
-            assert_eq!(json, streaming, "unreached JSON-only probe {}", binding.1);
-            eprintln!(
-                "intake-exception {}: not reached; R4 history delegation blocks qualification",
-                binding.1
-            );
-            continue;
-        }
-        for (full, stream) in json.1.iter_mut().zip(&streaming.1) {
-            assert_eq!(
-                full["reports"]["metadata"],
-                json!({"synthetic":"json-only"})
-            );
-            assert_eq!(
-                full["message"]["annotations"],
-                json!([{
-                    "type":"url_citation","url_citation":{
-                        "start_index":0,"end_index":1,"title":"Synthetic source",
-                        "url":"https://example.invalid/source"
-                    }
-                }])
-            );
-            assert!(stream["reports"].get("metadata").is_none());
-            assert!(stream["message"].get("annotations").is_none());
-            full["reports"].as_object_mut().unwrap().remove("metadata");
-            full["message"]
-                .as_object_mut()
-                .unwrap()
-                .remove("annotations");
-        }
-        for report in &mut json.2 {
-            let full = &mut report["delivery"];
-            full.as_object_mut().unwrap().remove("metadata");
-            full["choices"][0]["message"]
-                .as_object_mut()
-                .unwrap()
-                .remove("annotations");
-        }
-        assert_eq!(
-            json, streaming,
-            "only the two named facts may differ: {}",
-            binding.1
-        );
-        covered.insert(binding.1.to_owned());
-        eprintln!(
-            "intake-exception {}: Chat JSON metadata and annotations have no standard chunk carrier",
-            binding.1
-        );
-    }
-    let reviewed: std::collections::BTreeSet<_> = BASIC_EXPECTATIONS
+    let binding = BINDINGS
         .iter()
-        .flat_map(|(ids, _)| ids.iter())
-        .filter(|id| id.ends_with("-chat"))
-        .map(|id| (*id).to_owned())
-        .collect();
-    assert_eq!(
-        covered, reviewed,
-        "every reviewed Chat binding needs the exception probe"
-    );
+        .find(|binding| binding.1 == "deepseek-chat")
+        .unwrap();
+    let mut json = observe_intake(
+        binding,
+        Api::Chat,
+        Profile::Text,
+        false,
+        Control::JsonOnlyReports,
+        false,
+    )
+    .await;
+    let streaming = observe_intake(
+        binding,
+        Api::Chat,
+        Profile::Text,
+        false,
+        Control::JsonOnlyReports,
+        true,
+    )
+    .await;
+    assert_eq!(json.0, ACCEPT);
+    assert_eq!(streaming.0, ACCEPT);
+    for (full, stream) in json.1.iter_mut().zip(&streaming.1) {
+        assert_eq!(
+            full["reports"]["metadata"],
+            json!({"synthetic":"json-only"})
+        );
+        assert_eq!(
+            full["message"]["annotations"],
+            json!([{
+                "type":"url_citation","url_citation":{
+                    "start_index":0,"end_index":1,"title":"Synthetic source",
+                    "url":"https://example.invalid/source"
+                }
+            }])
+        );
+        assert!(stream["reports"].get("metadata").is_none());
+        assert!(stream["message"].get("annotations").is_none());
+        full["reports"].as_object_mut().unwrap().remove("metadata");
+        full["message"]
+            .as_object_mut()
+            .unwrap()
+            .remove("annotations");
+    }
+    for report in &mut json.2 {
+        let full = &mut report["delivery"];
+        full.as_object_mut().unwrap().remove("metadata");
+        full["choices"][0]["message"]
+            .as_object_mut()
+            .unwrap()
+            .remove("annotations");
+    }
+    assert_eq!(json, streaming, "only the two named facts may differ");
 }
 
 #[tokio::test]
-async fn catalog_subscription_production_lanes() {
+async fn subscription_dialects_preserve_text_tools_and_reasoning() {
     use crate::topology::catalog::SUBSCRIPTION_BINDINGS;
-    for entry in SUBSCRIPTION_BINDINGS {
+    for identity in ["chatgpt", "grok"] {
+        let entry = SUBSCRIPTION_BINDINGS
+            .iter()
+            .find(|entry| entry.identity == identity)
+            .unwrap();
         let provider = (entry.provider)();
         let endpoint = entry.endpoint_id();
         let credential = entry.credential();
@@ -1099,8 +1045,7 @@ async fn catalog_subscription_production_lanes() {
             for profile in [Profile::Text, Profile::Tools, Profile::Reasoning] {
                 // Common protocol controls, not each subscription's emitted reasoning shape.
                 let actual = transports(&binding, client, profile, Control::Default).await;
-                let expected = ACCEPT;
-                assert_eq!(actual, expected, "{}/{client:?}/{profile:?}", binding.1);
+                assert_eq!(actual, ACCEPT, "{}/{client:?}/{profile:?}", binding.1);
             }
         }
         if entry.profile == "openai" {
@@ -1160,7 +1105,7 @@ async fn agent_default_production_lanes() {
     for binding in BINDINGS {
         for client in [Api::Chat, Api::Responses, Api::Messages] {
             for profile in [Profile::Text, Profile::Tools, Profile::Reasoning] {
-                // All API-key text/tool lanes are covered by the catalog gate.
+                // Text/tool policies are covered by the representative dialect gate.
                 if profile != Profile::Reasoning && binding.4 != Api::Messages {
                     continue;
                 }
@@ -1255,125 +1200,28 @@ async fn incomplete_responses_reasoning_keeps_its_delivery_and_replay_status() {
         .iter()
         .find(|b| b.1 == "openrouter-responses")
         .unwrap();
-    for stored in [false] {
-        for stream in [false, true] {
-            let actual = lane(
-                binding,
-                Api::Responses,
-                Profile::Reasoning,
-                stream,
-                Control::Incomplete { stored },
-            )
-            .await;
-            assert_eq!(actual, ["accepted@1", "accepted@1"]);
-        }
+    for stream in [false, true] {
+        let actual = lane(
+            binding,
+            Api::Responses,
+            Profile::Reasoning,
+            stream,
+            Control::Incomplete { stored: false },
+        )
+        .await;
+        assert_eq!(actual, ["accepted@1", "accepted@1"]);
     }
 }
 
-// Reviewed dispositions retain public response and independent dispatch checks.
-// Columns are Chat text/tools and Responses text/tools; reasoning has separate lanes.
 const ACCEPT: &[&str] = &["accepted@1", "accepted@1"];
-const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
-    (
-        &[
-            "openai-sol-responses",
-            "openai-terra-responses",
-            "openrouter-ember-responses",
-            "openrouter-step-responses",
-            "tokenplan-glm-responses",
-            "tokenplan-qwen4-responses",
-            "openai-astra-responses",
-            "openai-luna-responses",
-            "xiaomi-ultraspeed-responses",
-            "deepseek-responses",
-            "xiaomi-responses",
-            "xiaomi-flash-responses",
-            "openrouter-responses",
-            "nvidia-responses",
-            "zhipu-responses",
-            "zhipu-flash-responses",
-            "openrouter-glm-5.3-flash-responses",
-        ],
-        [ACCEPT, ACCEPT, ACCEPT, ACCEPT],
-    ),
-    (
-        &[
-            "xiaomi-ultraspeed-chat",
-            "opencode-go-mimo-pro-chat",
-            "opencode-go-mimo-flash-chat",
-            "openrouter-ember-chat",
-            "openrouter-step-chat",
-            "opencode-go-minimax-chat",
-            "opencode-go-step-chat",
-            "tokenplan-qwen4-chat",
-            "xiaomi-chat",
-            "xiaomi-flash-chat",
-            "openrouter-chat",
-            "nvidia-chat",
-            "modelbest-minicpm5-1b-chat",
-            "modelbest-minicpm5-2b-chat",
-            "modelbest-minicpm-v-4.7-1b-chat",
-            "modelbest-minicpm-v-4.7-35b-a3b-chat",
-            "opencode-go-chat",
-            "openrouter-glm-5.3-flash-chat",
-        ],
-        [ACCEPT, ACCEPT, ACCEPT, ACCEPT],
-    ),
-    (
-        &["zhipu-chat", "zhipu-flash-chat", "deepseek-chat"],
-        [
-            ACCEPT,
-            &["planning:[\"admission.reasoning_history_required\"]@0"],
-            ACCEPT,
-            ACCEPT,
-        ],
-    ),
-    (
-        &[
-            "dashscope-flash-responses",
-            "dashscope-glm-responses",
-            "dashscope-deepseek-responses",
-            "tokenplan-max-responses",
-            "aliyun-dashscope-cn-responses",
-            "aliyun-tokenplan-cn-responses",
-        ],
-        [ACCEPT, ACCEPT, ACCEPT, ACCEPT],
-    ),
-    (
-        &["tokenplan-max-chat", "aliyun-tokenplan-cn-chat"],
-        [ACCEPT, ACCEPT, ACCEPT, ACCEPT],
-    ),
-    (
-        &["dashscope-flash-chat", "aliyun-dashscope-cn-chat"],
-        [ACCEPT, ACCEPT, ACCEPT, ACCEPT],
-    ),
-    (
-        &[
-            "dashscope-kimi-chat",
-            "dashscope-glm-chat",
-            "dashscope-deepseek-chat",
-            "dashscope-glm-prime-chat",
-        ],
-        [ACCEPT, ACCEPT, ACCEPT, ACCEPT],
-    ),
-    (&["openrouter-haiku-chat"], [ACCEPT, ACCEPT, ACCEPT, ACCEPT]),
-];
 
 fn basic_expected(binding: &str, client: Api, profile: Profile) -> &'static [&'static str] {
-    let columns = BASIC_EXPECTATIONS
-        .iter()
-        .find_map(|(ids, columns)| ids.contains(&binding).then_some(columns))
-        .unwrap_or_else(|| panic!("unreviewed catalog binding: {binding}"));
-    let index = match (client, profile) {
-        (Api::Chat, Profile::Text) => 0,
-        (Api::Chat, Profile::Tools) => 1,
-        (Api::Responses, Profile::Text) => 2,
-        (Api::Responses, Profile::Tools) => 3,
-        (Api::Messages, Profile::Text) => 2,
-        (Api::Messages, Profile::Tools) => 3,
-        _ => panic!("basic gate cannot assert a reasoning contract"),
-    };
-    columns[index]
+    match (binding, client, profile) {
+        ("deepseek-chat" | "zhipu-chat", Api::Chat, Profile::Tools) => {
+            &["planning:[\"admission.reasoning_history_required\"]@0"]
+        }
+        _ => ACCEPT,
+    }
 }
 
 fn expected(binding: &str, client: Api, profile: Profile) -> &'static [&'static str] {

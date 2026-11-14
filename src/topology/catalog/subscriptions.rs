@@ -89,7 +89,6 @@ impl SubscriptionBinding {
         PublicModel {
             id: ModelId::new(self.model).unwrap(),
             canonical_model: ModelId::new(self.model).unwrap(),
-            task: TaskKind::Generation,
             route: RouteId::new(&format!("{}-generation", self.identity)).unwrap(),
             // An alternative keeps the existing public promise; SIWC restrictions
             // still apply to this endpoint during candidate preparation.
@@ -145,7 +144,6 @@ impl SubscriptionBinding {
                 origin: provider.origin,
                 path,
             },
-            task: TaskKind::Generation,
             protocol: GenerationProtocol::OpenAiResponses,
             upstream_model: self.upstream.into(),
             representation: adapter.contract(&contract).into(),

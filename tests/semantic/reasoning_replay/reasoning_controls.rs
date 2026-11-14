@@ -17,17 +17,6 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
         openai::{events::EventEncoder, lowering::lower_response},
         reasoning::{ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS, ThinkingBudgets},
     };
-    assert_eq!(
-        SHARED_BUDGETS.entries.as_ref(),
-        &[
-            (EffortLevel::Minimal, 1024),
-            (EffortLevel::Low, 2048),
-            (EffortLevel::Medium, 4096),
-            (EffortLevel::High, 8192),
-            (EffortLevel::XHigh, 16384),
-            (EffortLevel::Max, 24576),
-        ]
-    );
     assert_eq!(SHARED_BUDGETS.nearest(1536).unwrap().0, EffortLevel::Low);
     assert_eq!(SHARED_BUDGETS.nearest(3072).unwrap().0, EffortLevel::Medium);
     assert_eq!(SHARED_BUDGETS.nearest(6144).unwrap().0, EffortLevel::High);

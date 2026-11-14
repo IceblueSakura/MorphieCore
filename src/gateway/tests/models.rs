@@ -428,7 +428,7 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
         },
         topology::{
             CanonicalModel, Dispositions, Endpoint, EndpointId, EndpointTarget, ExecutionContract,
-            GenerationProtocol, ModelId, PublicModel, Route, RouteId, TaskKind, compile,
+            GenerationProtocol, ModelId, PublicModel, Route, RouteId, compile,
         },
     };
     let canonical = ModelId::new("synthetic-canonical").unwrap();
@@ -459,7 +459,6 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
                 .path
                 .clone(),
         },
-        task: TaskKind::Generation,
         protocol: GenerationProtocol::OpenAiChat,
         upstream_model: "private-synthetic-model".into(),
         representation: TargetContract::full().into(),
@@ -474,7 +473,6 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
     };
     let route = Route {
         id: RouteId::new("synthetic-route").unwrap(),
-        task: TaskKind::Generation,
         endpoints: vec![endpoint.id.clone()],
         policy: crate::topology::RoutePolicy::default(),
     };
@@ -483,7 +481,6 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
             PublicModel::new(
                 ModelId::new(&format!("alias-{i:02}")).unwrap(),
                 canonical.clone(),
-                TaskKind::Generation,
                 route.id.clone(),
                 Dispositions::full(),
             )
@@ -496,7 +493,6 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
         models,
         vec![CanonicalModel {
             id: canonical.clone(),
-            task: TaskKind::Generation,
             contract: Dispositions::full(),
         }],
     )

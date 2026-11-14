@@ -72,25 +72,17 @@ impl<'a> Items<'a> {
         Ok(PartId::scoped(self.scope, self.next_part))
     }
     pub fn refusal(&mut self, text: Text) -> Result<Part, CodecError> {
-        self.next_part += 1;
-        if self.next_part as usize > MAX_ITEMS {
-            return Err(CodecError::Limit);
-        }
         Ok(Part {
             replay: None,
-            id: PartId::scoped(self.scope, self.next_part),
+            id: self.part_id()?,
             content: ContentPart::Refusal(text.into()),
             cache: None,
         })
     }
     pub fn part(&mut self, s: &str) -> Result<Part, CodecError> {
-        self.next_part += 1;
-        if self.next_part as usize > MAX_ITEMS {
-            return Err(CodecError::Limit);
-        }
         Ok(Part {
             replay: None,
-            id: PartId::scoped(self.scope, self.next_part),
+            id: self.part_id()?,
             cache: None,
             content: ContentPart::Text(
                 Text::allowing_empty(s, "text", MAX_TEXT_BYTES)

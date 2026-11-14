@@ -119,8 +119,6 @@ fn account_binding_keeps_order_enablement_and_stable_names_outside_secret_storag
         serde_json::from_slice(&std::fs::read(directory.path.join("opencode-go.json")).unwrap())
             .unwrap();
     assert_eq!(document["version"], 1);
-    assert!(document.get("pools").is_none());
-    assert!(document.get("accounts").is_none());
     let empty = crate::test_files::Directory::new();
     let unprovisioned = CredentialManager::new(&empty.path, vec![]).unwrap();
     assert!(

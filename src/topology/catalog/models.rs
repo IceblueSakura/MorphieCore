@@ -1,7 +1,7 @@
 //! Explicit canonical declarations. Upstream aliases and public routes never create models.
 use crate::{
     lowering::disposition::Dispositions,
-    topology::{CanonicalModel, ModelId, TaskKind},
+    topology::{CanonicalModel, ModelId},
 };
 pub struct ModelDefinition {
     pub id: &'static str,
@@ -297,7 +297,6 @@ pub fn canonical_models() -> Vec<CanonicalModel> {
         .iter()
         .map(|m| CanonicalModel {
             id: ModelId::new(m.id).expect("static id"),
-            task: TaskKind::Generation,
             contract: contract(m.id),
         })
         .collect()

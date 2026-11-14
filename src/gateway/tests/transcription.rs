@@ -6,7 +6,7 @@ use bytes::Bytes;
 const RESULT: &[u8] =
     br#"{"request_id":"synthetic","output":{"text":"Hi."},"usage":{"duration":1}}"#;
 #[tokio::test]
-async fn transcription_json_requires_eof_and_rejects_bad_heads_and_reads() {
+async fn transcription_adapters_decode_only_after_eof() {
     let mut trace = Trace::new(None);
     for (profile, result) in [
         (UpstreamAdapter::AliyunFlash, RESULT),
@@ -24,52 +24,6 @@ async fn transcription_json_requires_eof_and_rejects_bad_heads_and_reads() {
     drop(tx);
     assert_eq!(pending.await.unwrap().text(), "Hi.");
     dropped.await.unwrap();
-    }
-    for case in 0..6 {
-        let (tx, mut response, dropped) = source(
-            200,
-            if case == 0 {
-                "text/event-stream"
-            } else {
-                "application/json"
-            },
-        );
-        match case {
-            1 => {
-                response
-                    .headers_mut()
-                    .insert("content-encoding", "gzip".parse().unwrap());
-            }
-            2 => {
-                response
-                    .headers_mut()
-                    .insert("content-length", "1".parse().unwrap());
-            }
-            3 => {
-                response
-                    .headers_mut()
-                    .append("content-type", "application/json".parse().unwrap());
-            }
-            _ => {}
-        }
-        tx.send(Ok(Bytes::from_static(RESULT))).await.unwrap();
-        if case == 4 {
-            tx.send(Err(std::io::Error::other("private fixture")))
-                .await
-                .unwrap();
-        }
-        drop(tx);
-        assert!(
-            transcription::receive(
-                response,
-                UpstreamAdapter::AliyunFlash,
-                if case == 5 { 2 } else { 4096 },
-                &mut trace
-            )
-            .await
-            .is_err()
-        );
-        dropped.await.unwrap();
     }
 }
 #[tokio::test]

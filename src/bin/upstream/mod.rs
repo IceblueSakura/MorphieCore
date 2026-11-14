@@ -128,8 +128,6 @@ struct Plan {
     provider: ProviderDefinition,
     path: EndpointPath,
     auth: AuthScheme,
-    oauth: Option<&'static str>,
-    siwc: bool,
     body: Option<Value>,
 }
 impl Command {
@@ -150,11 +148,7 @@ impl Command {
             Self::Probe(options) => options.protocol.operation().into(),
         };
         let entry = provider.entry(operation).ok_or(Error::Endpoint)?;
-        let oauth = match entry.auth.kind() {
-            CredentialKind::OAuth(profile) => Some(profile),
-            CredentialKind::ApiKey => None,
-        };
-        let siwc = oauth == Some("openai");
+        let siwc = entry.auth.kind() == CredentialKind::OAuth("openai");
         let (path, body) = match self {
             Self::Models(_) => (entry.path.clone(), None),
             Self::Probe(options) => {
@@ -190,8 +184,6 @@ impl Command {
             provider: provider.clone(),
             path,
             auth: entry.auth,
-            oauth,
-            siwc,
             body,
         })
     }
@@ -239,7 +231,7 @@ pub async fn execute(options: Options) -> Result<Value, Error> {
     let (_, account) = accounts
         .account(&target.provider, &target.account)
         .map_err(|_| Error::Account)?;
-    let drivers = if plan.oauth.is_some() {
+    let drivers = if matches!(plan.auth.kind(), CredentialKind::OAuth(_)) {
         builtin_drivers(target.proxy.as_deref())?
     } else {
         vec![]
@@ -265,7 +257,11 @@ pub async fn execute(options: Options) -> Result<Value, Error> {
             probe
                 .protocol
                 .operation()
-                .resolve_path(entry.path, model, plan.siwc)
+                .resolve_path(
+                    entry.path,
+                    model,
+                    plan.auth.kind() == CredentialKind::OAuth("openai"),
+                )
                 .map_err(|_| Error::Invalid)?
         }
     };
@@ -293,11 +289,12 @@ async fn run(
 ) -> Result<Value, Error> {
     let start = Instant::now();
     let target = command.target();
+    let siwc = plan.auth.kind() == CredentialKind::OAuth("openai");
     let (secret, refreshed) = credential(manager, account, binding).await?;
     let material = SecretMaterial::new(secret.expose()).map_err(|_| Error::Invalid)?;
     let mut headers = vec![(
         "accept".into(),
-        if plan.siwc && plan.body.is_some() {
+        if siwc && plan.body.is_some() {
             "text/event-stream"
         } else {
             "application/json"
@@ -341,13 +338,13 @@ async fn run(
     if status != 200 {
         return Err(Error::Http(status));
     }
-    let expected = if plan.siwc && plan.body.is_some() {
+    let expected = if siwc && plan.body.is_some() {
         "text/event-stream"
     } else {
         "application/json"
     };
     match response.headers().get("content-type") {
-        None if plan.siwc && plan.body.is_some() => {}
+        None if siwc && plan.body.is_some() => {}
         Some(value) => {
             let content_type = value
                 .to_str()
@@ -386,7 +383,7 @@ async fn run(
         }
         return Ok(value);
     };
-    let result = if plan.siwc {
+    let result = if siwc {
         wire::responses_stream(&bytes)?
     } else {
         wire::probe(&bytes, options.protocol)?

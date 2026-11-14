@@ -466,7 +466,6 @@ mod image_binding {
             vec![],
             vec![topology::CanonicalModel {
                 id: route.canonical_model.clone(),
-                task: topology::TaskKind::Generation,
                 contract: topology::Dispositions::full(),
             }],
         )

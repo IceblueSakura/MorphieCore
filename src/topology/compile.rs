@@ -206,12 +206,9 @@ fn compile_deployments(
     let mut endpoint_map = BTreeMap::new();
     for endpoint in endpoints {
         endpoint.validate()?;
-        let canonical = canonical_map
+        canonical_map
             .get(endpoint.canonical_model.as_str())
             .ok_or(TopologyError::UnknownCanonicalModel)?;
-        if canonical.task != endpoint.task {
-            return Err(TopologyError::TaskMismatch);
-        }
         let definition = endpoint_providers
             .get(endpoint.id.as_str())
             .or_else(|| provider_map.get(endpoint.provider.as_str()))
@@ -248,12 +245,9 @@ fn compile_deployments(
             if !seen.insert(candidate) {
                 return Err(TopologyError::DuplicateCandidate);
             }
-            let endpoint = endpoint_map
+            endpoint_map
                 .get(candidate.as_str())
                 .ok_or(TopologyError::UnknownEndpoint)?;
-            if endpoint.task != route.task {
-                return Err(TopologyError::TaskMismatch);
-            }
         }
         if route_map
             .insert(route.id.as_str().to_string(), route)
@@ -267,18 +261,12 @@ fn compile_deployments(
         let canonical = canonical_map
             .get(model.canonical_model.as_str())
             .ok_or(TopologyError::UnknownCanonicalModel)?;
-        if canonical.task != model.task {
-            return Err(TopologyError::TaskMismatch);
-        }
         if !canonical.contract.supports(&model.contract) {
             return Err(TopologyError::SemanticUnsatisfiable);
         }
         let route = route_map
             .get(model.route.as_str())
             .ok_or(TopologyError::UnknownRoute)?;
-        if route.task != model.task {
-            return Err(TopologyError::TaskMismatch);
-        }
         for candidate in &route.endpoints {
             let endpoint = &endpoint_map[candidate.as_str()];
             if endpoint.canonical_model != model.canonical_model {
@@ -322,9 +310,7 @@ mod tests {
             CredentialBindingId, CredentialKind, EndpointPath, ProviderDefinition, ProviderId,
             TrustedOrigin, auth::AuthScheme,
         },
-        topology::{
-            Endpoint, EndpointTarget, ExecutionContract, GenerationProtocol, ModelId, TaskKind,
-        },
+        topology::{Endpoint, EndpointTarget, ExecutionContract, GenerationProtocol, ModelId},
     };
 
     fn provider() -> ProviderDefinition {
@@ -369,7 +355,6 @@ mod tests {
                 origin: definition.origin,
                 path,
             },
-            task: TaskKind::Generation,
             protocol,
             upstream_model: "fixture-model".into(),
             canonical_model: ModelId::new("fixture-model").unwrap(),
@@ -389,7 +374,6 @@ mod tests {
         Route {
             policy: super::super::RoutePolicy::default(),
             id: RouteId::new("fixture-route").unwrap(),
-            task: TaskKind::Generation,
             endpoints: vec![EndpointId::new("fixture-endpoint").unwrap()],
         }
     }
@@ -397,7 +381,6 @@ mod tests {
     fn canonical() -> CanonicalModel {
         CanonicalModel {
             id: ModelId::new("fixture-model").unwrap(),
-            task: TaskKind::Generation,
             contract: Dispositions::full(),
         }
     }
@@ -405,7 +388,6 @@ mod tests {
         PublicModel::new(
             ModelId::new("fixture-model").unwrap(),
             ModelId::new("fixture-model").unwrap(),
-            TaskKind::Generation,
             RouteId::new("fixture-route").unwrap(),
             contract.dispositions,
         )
@@ -554,7 +536,6 @@ mod tests {
                 vec![wrong_origin],
                 vec![Route {
                     id: RouteId::new("fixture-route").unwrap(),
-                    task: TaskKind::Generation,
                     endpoints: vec![EndpointId::new("fixture-endpoint").unwrap()],
                     policy: super::super::RoutePolicy::default(),
                 }],
@@ -586,7 +567,6 @@ mod tests {
                 vec![],
                 vec![Route {
                     id: RouteId::new("fixture-route").unwrap(),
-                    task: TaskKind::Generation,
                     endpoints: vec![EndpointId::new("missing").unwrap()],
                     policy: super::super::RoutePolicy::default(),
                 }],
@@ -607,7 +587,6 @@ mod tests {
                 vec![endpoint(GenerationProtocol::OpenAiChat)],
                 vec![Route {
                     id: RouteId::new("fixture-route").unwrap(),
-                    task: TaskKind::Generation,
                     endpoints: vec![],
                     policy: super::super::RoutePolicy::default(),
                 }],

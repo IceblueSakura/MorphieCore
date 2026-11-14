@@ -3,6 +3,7 @@ use crate::{
     gateway::{
         ApiError, Credentials, Runtime, StartupError, TranscriptionEntry, body,
         diagnostics::{Stage, Trace},
+        ingress::admission,
     },
     protocol::openai::transcription as codec,
     semantic::task::speech_recognition::RecognitionResult,
@@ -82,15 +83,7 @@ fn upload_head(headers: &HeaderMap, limit: usize) -> Result<(String, Option<u64>
 async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, ApiError> {
     let started = Instant::now();
     let mut trace = Trace::for_request(runtime.diagnostics.as_ref(), &request);
-    if runtime.shutdown.is_cancelled() {
-        return Err(ApiError::shutdown());
-    }
-    let permit = runtime.permits.clone().try_acquire_owned().map_err(|_| {
-        ApiError::new(
-            StatusCode::TOO_MANY_REQUESTS,
-            crate::gateway::error::ErrorKind::GatewayBusy,
-        )
-    })?;
+    let permit = admission::acquire_permit(&runtime)?;
     let limit = runtime.limits.transcription_request_bytes;
     let (media, length) = upload_head(request.headers(), limit)?;
     let bytes = crate::gateway::ingress::http::read_body(
@@ -140,33 +133,6 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
     )
     .await
 }
-async fn produce_one(
-    runtime: &Runtime,
-    entry: &BoundTranscription,
-    prepared: crate::execution::task::PreparedTaskRequest,
-    deadline: Instant,
-    lane: &body::Lane<'_>,
-    trace: &mut Trace,
-) -> Result<(), ApiError> {
-    let upstream = super::exchange::send(runtime, entry, prepared, deadline, trace).await?;
-    let result = receive(
-        upstream,
-        entry.route.endpoint.profile,
-        runtime
-            .limits
-            .response_bytes
-            .min(entry.route.endpoint.execution.response_body_limit),
-        trace,
-    )
-    .await?;
-    trace.stage(Stage::Projection);
-    let projected = codec::project_result(&result).map_err(|_| ApiError::upstream())?;
-    crate::semantic::value::json_size(&projected.body, runtime.limits.response_bytes)
-        .map_err(|_| ApiError::upstream())?;
-    let bytes = serde_json::to_vec(&projected.body).map_err(|_| ApiError::upstream())?;
-    body::send_final_frame(lane, bytes.into(), trace).await?;
-    Ok(())
-}
 pub(in crate::gateway) async fn receive(
     upstream: reqwest::Response,
     profile: crate::adapter::transcription::UpstreamAdapter,
@@ -204,7 +170,28 @@ impl body::Produce for Exchange {
             entry.route.model.as_str(),
             &entry.route.endpoint.upstream_model,
         );
-        let result = produce_one(&runtime, &entry, prepared, deadline, lane, trace).await;
+        let result: Result<(), ApiError> = async {
+            let upstream =
+                super::exchange::send(&runtime, &entry, prepared, deadline, trace).await?;
+            let result = receive(
+                upstream,
+                entry.route.endpoint.profile,
+                runtime
+                    .limits
+                    .response_bytes
+                    .min(entry.route.endpoint.execution.response_body_limit),
+                trace,
+            )
+            .await?;
+            trace.stage(Stage::Projection);
+            let projected = codec::project_result(&result).map_err(|_| ApiError::upstream())?;
+            crate::semantic::value::json_size(&projected.body, runtime.limits.response_bytes)
+                .map_err(|_| ApiError::upstream())?;
+            let bytes = serde_json::to_vec(&projected.body).map_err(|_| ApiError::upstream())?;
+            body::send_final_frame(lane, bytes.into(), trace).await?;
+            Ok(())
+        }
+        .await;
         trace.end_candidate(result.as_ref().err().map(|e| e.diagnostic_code()), false);
         result
     }

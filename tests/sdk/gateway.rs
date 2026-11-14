@@ -158,26 +158,6 @@ fn tool_response(turn: u8) -> Value {
     }
     response
 }
-fn tool_events(turn: u8) -> Vec<Value> {
-    let mut events = wire::events(turn);
-    if turn == 1 {
-        let mut terminal = events.pop().unwrap();
-        terminal["response"] = tool_response(turn);
-        events.extend([
-            json!({"type":"response.output_item.added","output_index":4,
-                "item":{"id":"function-large","type":"function_call","call_id":"c_lookup_large",
-                    "name":"lookup","arguments":"","status":"in_progress"}}),
-            json!({"type":"response.function_call_arguments.delta","output_index":4,
-                "item_id":"function-large","delta":" { \"n\": 9007199254740993 } "}),
-            json!({"type":"response.function_call_arguments.done","output_index":4,
-                "item_id":"function-large","arguments":" { \"n\": 9007199254740993 } "}),
-            json!({"type":"response.output_item.done","output_index":4,
-                "item":tool_response(turn)["output"][4]}),
-            terminal,
-        ]);
-    }
-    events
-}
 fn owner_response() -> Value {
     let mut value = wire::response(2);
     value["output"] = json!([
@@ -185,24 +165,6 @@ fn owner_response() -> Value {
         {"id":"lookup-call","type":"function_call","call_id":"call-local","name":"lookup","arguments":"{\"n\":1}","status":"completed"}
     ]);
     value
-}
-fn owner_events() -> Vec<Value> {
-    let completed = owner_response();
-    let mut initial = completed.clone();
-    initial["status"] = json!("in_progress");
-    initial["output"] = json!([]);
-    initial["usage"] = Value::Null;
-    initial["completed_at"] = Value::Null;
-    vec![
-        json!({"type":"response.created","response":initial}),
-        json!({"type":"response.output_item.added","output_index":0,"item":{"id":"empty-owner","type":"message","role":"assistant","content":[],"status":"in_progress"}}),
-        json!({"type":"response.output_item.done","output_index":0,"item":completed["output"][0]}),
-        json!({"type":"response.output_item.added","output_index":1,"item":{"id":"lookup-call","type":"function_call","call_id":"call-local","name":"lookup","arguments":"","status":"in_progress"}}),
-        json!({"type":"response.function_call_arguments.delta","output_index":1,"item_id":"lookup-call","delta":"{\"n\":1}"}),
-        json!({"type":"response.function_call_arguments.done","output_index":1,"item_id":"lookup-call","arguments":"{\"n\":1}"}),
-        json!({"type":"response.output_item.done","output_index":1,"item":completed["output"][1]}),
-        json!({"type":"response.completed","response":completed}),
-    ]
 }
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 struct Scenario {
@@ -414,15 +376,15 @@ async fn provider(
     let bytes = if stream {
         let mut output = Vec::new();
         let frames = if owner_case {
-            owner_events()
+            wire::response_events(owner_response())
         } else if chat {
             chat_wire::events(if missing_usage { 2 } else { turn })
         } else {
-            tool_events(if nonstandard_usage || missing_usage {
+            wire::response_events(tool_response(if nonstandard_usage || missing_usage {
                 2
             } else {
                 turn
-            })
+            }))
         };
         for (sequence, mut value) in frames.into_iter().enumerate() {
             if !chat {

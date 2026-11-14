@@ -55,11 +55,6 @@ ident!(ModelId, |id: &str| {
 ident!(EndpointId, ident_ok);
 ident!(RouteId, ident_ok);
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TaskKind {
-    Generation,
-}
-
 /// Wire protocol profile an endpoint speaks. Kept separate from codec types so
 /// topology stays free of protocol implementation internals.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

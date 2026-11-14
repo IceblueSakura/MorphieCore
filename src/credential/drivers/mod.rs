@@ -8,10 +8,7 @@ use crate::credential::{
 };
 use std::sync::Arc;
 pub fn builtin_drivers(proxy: Option<&str>) -> Result<Vec<Arc<dyn AuthDriver>>, CredentialError> {
-    Ok(vec![
-        Arc::new(GrokAuthority::new(proxy)?),
-        Arc::new(SiwcAuthority::new(proxy)?),
-    ])
+    builtin_drivers_with_environment(proxy, true)
 }
 pub(crate) fn builtin_drivers_with_environment(
     proxy: Option<&str>,

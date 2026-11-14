@@ -67,7 +67,6 @@ mod native_bindings {
                 })
                 .unwrap(),
             },
-            task: TaskKind::Generation,
             protocol,
             upstream_model: "synthetic-model".into(),
             canonical_model: ModelId::new("synthetic-model").unwrap(),
@@ -106,7 +105,6 @@ mod native_bindings {
             vec![],
             vec![CanonicalModel {
                 id: ModelId::new("synthetic-model").unwrap(),
-                task: TaskKind::Generation,
                 contract: Dispositions::full(),
             }],
         )
@@ -141,7 +139,6 @@ mod native_bindings {
         let native = endpoint(GenerationProtocol::AnthropicMessages);
         let route = Route {
             id: RouteId::new("synthetic-route").unwrap(),
-            task: TaskKind::Generation,
             endpoints: vec![native.id.clone()],
             policy: RoutePolicy::default(),
         };
@@ -149,7 +146,6 @@ mod native_bindings {
             PublicModel::new(
                 ModelId::new("public-native").unwrap(),
                 native.canonical_model.clone(),
-                TaskKind::Generation,
                 route.id.clone(),
                 contract,
             )
@@ -162,7 +158,6 @@ mod native_bindings {
                 vec![model],
                 vec![CanonicalModel {
                     id: native.canonical_model.clone(),
-                    task: TaskKind::Generation,
                     contract: Dispositions::full(),
                 }],
             )

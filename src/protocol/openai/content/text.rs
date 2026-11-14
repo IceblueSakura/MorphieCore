@@ -29,22 +29,28 @@ pub(in crate::protocol::openai) fn read_existing(
             return Err(CodecError::invalid());
         }
     };
-    let logprobs = o
-        .get("logprobs")
-        .filter(|value| !value.is_null())
-        .map(read_logprobs)
-        .transpose()?;
-    if matches!(
+    let require_complete = matches!(
         items.direction,
         DecodeDirection::Request | DecodeDirection::Client(_)
-    ) && let Some(value) = o.get("logprobs")
-    {
-        complete_logprobs(value)?;
-    }
+    );
+    let logprobs = o
+        .get("logprobs")
+        .filter(|value| require_complete || !value.is_null())
+        .map(|value| -> Result<_, CodecError> {
+            let parsed = read_logprobs(value)?;
+            if require_complete {
+                check_complete_logprobs(&parsed)?;
+            }
+            Ok(parsed)
+        })
+        .transpose()?;
     Ok(TextContent::new(text, annotations, logprobs)?)
 }
 pub(in crate::protocol::openai) fn complete_logprobs(value: &Value) -> Result<(), CodecError> {
-    for p in read_logprobs(value)? {
+    check_complete_logprobs(&read_logprobs(value)?)
+}
+fn check_complete_logprobs(probs: &[Logprob]) -> Result<(), CodecError> {
+    for p in probs {
         if p.bytes.is_none()
             || p.top_logprobs.as_ref().is_none_or(|top| {
                 top.iter()

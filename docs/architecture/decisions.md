@@ -129,6 +129,7 @@ See [Architecture Overview](index.md) for system boundaries and core IR semantic
 |---|---|---|
 | Upstream protocol tests | Verification | Pinned official SDK and upstream fixtures serve as regression baseline. |
 | Product-hypothesis test selection | Verification | Aggressively prunes implementation restatements and dependency experiments; retains independent product, protocol, and safety evidence. [Selection procedure](../development.md#test-selection-and-pruning) |
+| Generation-specific topology | Topology | Generation models, endpoints, routes and execution plans have no single-valued task marker or impossible task comparisons. Standalone routes retain distinct types and cross-task identity checks. [Task boundaries](index.md#protocols) |
 | Runtime ownership convergence | Runtime | One projection owns delivery adaptations; one exchange ledger retains independent failure observations, and terminal cleanup releases health before awaiting normalization. [Credential ownership](runtime-and-routing.md#credentials-and-security) uses a unified driver contract and startup-owned maintenance registration. |
 | Final-delivery settlement | Delivery | Final acknowledgement wins over later consumer drop, shutdown, and deadlines only for the synchronous completion suffix. Retains eligible-success checks, live cooldowns, and pre-final cancellation. [Delivery contract](runtime-and-routing.md#streaming-and-delivery) |
 | Delta coalescing | Streaming | Default 50ms / 16 KiB buffer merges adjacent text deltas. |

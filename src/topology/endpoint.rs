@@ -6,7 +6,7 @@ use crate::{
         EndpointPath, ProviderId, TrustedOrigin,
         auth::{CredentialBindingId, CredentialKind},
     },
-    topology::{EndpointId, GenerationProtocol, TaskKind},
+    topology::{EndpointId, GenerationProtocol},
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -35,7 +35,6 @@ pub struct Endpoint {
     pub id: EndpointId,
     pub provider: ProviderId,
     pub target: EndpointTarget,
-    pub task: TaskKind,
     pub protocol: GenerationProtocol,
     /// Exact Provider spelling, bound at compile time and injected at attempt time.
     /// Different Providers may spell the same canonical model differently.

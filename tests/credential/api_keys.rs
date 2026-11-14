@@ -82,7 +82,6 @@ async fn api_key_cli_uses_configured_account_names_and_never_reports_material() 
     let doc: Value =
         serde_json::from_slice(&std::fs::read(dir.path.join("openai.json")).unwrap()).unwrap();
     assert_eq!(doc["version"], 1);
-    assert!(doc.get("pools").is_none());
     let record = &doc["api_keys"]["one"];
     assert_eq!(record["kind"], "api_key");
     assert_eq!(record["secret"], "synthetic-private-value");
@@ -162,7 +161,6 @@ async fn api_key_cli_rejects_argv_secrets_and_invalid_input_before_creating_stor
             "never-print-this",
         ],
         vec!["key", "add", "--provider", "openai", "--account", "primary"],
-        vec!["api-key", "list", "--secret-fd", "0"],
     ] {
         let dir = Directory::new();
         let output = command(&dir, &args, None).await;

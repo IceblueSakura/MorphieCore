@@ -54,7 +54,6 @@ mod candidates {
                         .clone(),
                 },
                 canonical_model: model_id.clone(),
-                task: TaskKind::Generation,
                 protocol: GenerationProtocol::OpenAiResponses,
                 upstream_model: format!("{id}-alias"),
                 representation: representation.into(),
@@ -70,7 +69,6 @@ mod candidates {
         }
         let route = Route {
             id: RouteId::new("route").unwrap(),
-            task: TaskKind::Generation,
             endpoints: vec![EndpointId::new("a").unwrap(), EndpointId::new("b").unwrap()],
             policy: RoutePolicy {
                 candidates: policy,
@@ -80,7 +78,6 @@ mod candidates {
         let public = PublicModel::new(
             ModelId::new("public").unwrap(),
             model_id.clone(),
-            TaskKind::Generation,
             route.id.clone(),
             Dispositions::text_images(),
         );
@@ -91,7 +88,6 @@ mod candidates {
             vec![public],
             vec![CanonicalModel {
                 id: model_id,
-                task: TaskKind::Generation,
                 contract: Dispositions::full(),
             }],
         )

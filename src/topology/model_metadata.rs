@@ -86,7 +86,6 @@ mod tests {
             (0..count)
                 .map(|i| super::super::CanonicalModel {
                     id: ModelId::new(&format!("canonical-{i}")).unwrap(),
-                    task: super::super::TaskKind::Generation,
                     contract: super::super::Dispositions::full(),
                 })
                 .collect(),

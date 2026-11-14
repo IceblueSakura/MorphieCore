@@ -570,23 +570,33 @@ mod schema_admission {
     /// Strict schemas are admitted to the IR; only an OpenAI target checks its subset.
     fn lowers(schema: Value, strict: bool) -> bool {
         let d = decode(schema, strict);
-        let responses = lower_request(
+        lower_request(
             &d.semantic,
             &d.fidelity,
             GenerationApi::Responses,
             TargetContract::full(),
-        );
-        let chat = lower_request(
-            &d.semantic,
-            &d.fidelity,
-            GenerationApi::Chat,
-            TargetContract::full(),
-        );
-        assert_eq!(responses.is_ok(), chat.is_ok());
-        responses.is_ok()
+        )
+        .is_ok()
     }
     fn closed_property(value: Value) -> Value {
         json!({"type":"object","properties":{"value":value},"required":["value"],"additionalProperties":false})
+    }
+
+    #[test]
+    fn both_openai_targets_enforce_the_shared_strict_subset() {
+        for (schema, accepted) in [
+            (closed_property(json!({"type":"boolean"})), true),
+            (json!({"type":"object","additionalProperties":true}), false),
+        ] {
+            let d = decode(schema, true);
+            for target in [GenerationApi::Chat, GenerationApi::Responses] {
+                assert_eq!(
+                    lower_request(&d.semantic, &d.fidelity, target, TargetContract::full()).is_ok(),
+                    accepted,
+                    "{target:?}"
+                );
+            }
+        }
     }
 
     #[test]

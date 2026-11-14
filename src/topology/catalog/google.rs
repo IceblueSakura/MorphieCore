@@ -128,7 +128,6 @@ impl GoogleBinding {
                 origin: provider.origin,
                 path,
             },
-            task: TaskKind::Generation,
             protocol: GenerationProtocol::GoogleGenerateContent,
             upstream_model: self.upstream.into(),
             canonical_model: ModelId::new(self.model).expect("static model"),
@@ -159,7 +158,6 @@ impl GoogleBinding {
     pub fn route(&self) -> Route {
         Route {
             id: RouteId::new(&format!("google-{}", self.model)).expect("static route"),
-            task: TaskKind::Generation,
             endpoints: vec![self.endpoint().id, self.interactions_endpoint().id],
             policy: RoutePolicy {
                 candidates: CandidatePolicy::SkipUnrepresentable,
@@ -193,7 +191,6 @@ impl GoogleBinding {
         PublicModel::new(
             model.clone(),
             model,
-            TaskKind::Generation,
             self.route().id,
             self.accepted_contract(),
         )
@@ -201,7 +198,6 @@ impl GoogleBinding {
     pub fn canonical_model(&self) -> CanonicalModel {
         CanonicalModel {
             id: ModelId::new(self.model).expect("static model"),
-            task: TaskKind::Generation,
             contract: self.accepted_contract(),
         }
     }

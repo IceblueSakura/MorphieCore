@@ -89,7 +89,7 @@ use crate::{
     provider::{CredentialBindingId, CredentialKind},
     topology::{
         Endpoint, EndpointId, EndpointTarget, ExecutionContract, ModelId, PublicModel, RouteId,
-        TaskKind, TopologyError,
+        TopologyError,
     },
 };
 impl ApiKeyBinding {
@@ -100,7 +100,6 @@ impl ApiKeyBinding {
         PublicModel {
             id: ModelId::new(self.model).expect("static id"),
             canonical_model: ModelId::new(self.canonical_model).expect("static id"),
-            task: TaskKind::Generation,
             route: RouteId::new(&format!("{}-generation", self.endpoint_prefix))
                 .expect("static id"),
             contract: self
@@ -267,7 +266,6 @@ impl ApiKeyBinding {
                 origin: provider.origin,
                 path,
             },
-            task: TaskKind::Generation,
             protocol,
             upstream_model: self.upstream.into(),
             representation: adapter.contract(&contract).into(),

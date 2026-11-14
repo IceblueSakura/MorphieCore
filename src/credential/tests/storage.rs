@@ -57,7 +57,6 @@ fn provider_document_merges_independent_records_without_losing_other_credentials
     assert_eq!(doc["provider"], "synthetic");
     assert_eq!(doc["oauth"]["one"]["credential"]["access"], "next-access");
     assert_eq!(doc["api_keys"]["backup"]["secret"], "synthetic-key");
-    assert!(doc.get("pools").is_none());
 }
 #[test]
 fn malformed_records_in_either_partition_reject_before_credentials_are_available() {

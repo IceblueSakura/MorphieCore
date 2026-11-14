@@ -4,7 +4,7 @@
 //! deriving a plan can never expand, reorder or re-target it.
 
 use crate::topology::{
-    CandidatePolicy, CompiledTopology, Endpoint, EndpointId, ModelId, RoutePolicy, TaskKind,
+    CandidatePolicy, CompiledTopology, Endpoint, EndpointId, ModelId, RoutePolicy,
 };
 
 /// Downstream interaction requirement, independent of upstream protocol.
@@ -24,7 +24,6 @@ pub struct CandidatePlan {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecutionPlan {
     pub model: ModelId,
-    pub task: TaskKind,
     pub delivery: Delivery,
     /// Fixed route order. Candidates project independently from immutable input.
     pub candidates: Vec<CandidatePlan>,
@@ -219,7 +218,6 @@ impl ExecutionPlan {
         )?;
         Ok(Self {
             model: public.id.clone(),
-            task: public.task,
             delivery: if request.delivery.streaming() {
                 Delivery::Stream
             } else {

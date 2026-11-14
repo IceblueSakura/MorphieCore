@@ -340,7 +340,6 @@ async fn native_fixture() -> NativeFixture {
     let model = endpoint.canonical_model.clone();
     let route = topology::Route {
         id: topology::RouteId::new("native").unwrap(),
-        task: topology::TaskKind::Generation,
         endpoints: endpoint_ids.clone(),
         policy: topology::RoutePolicy {
             ..Default::default()
@@ -350,7 +349,6 @@ async fn native_fixture() -> NativeFixture {
     let public = topology::PublicModel::new(
         model.clone(),
         model.clone(),
-        topology::TaskKind::Generation,
         route.id.clone(),
         contract.clone(),
     );
@@ -362,7 +360,6 @@ async fn native_fixture() -> NativeFixture {
         vec![public],
         vec![topology::CanonicalModel {
             id: model.clone(),
-            task: topology::TaskKind::Generation,
             contract,
         }],
     )

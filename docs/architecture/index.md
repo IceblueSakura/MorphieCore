@@ -64,6 +64,8 @@ Generation supports JSON and SSE delivery. Responses, native Messages and Google
 
 All three Generation client protocols dispatch through the public model's configured candidate route. A Messages client request does not require a native Anthropic upstream. Standalone tasks (Embeddings, Images, Speech, Transcription) operate on distinct contracts outside Generation.
 
+Generation topology types are task-specific; they carry no constant task discriminator. Standalone route types and topology compilation enforce cross-task public identity separation.
+
 - **Official Protocol Baselines:** Public Chat, Responses, and Messages adhere to current official versioned specifications. Provider-specific syntax and deviations belong strictly to trusted upstream adapters. No public replay profiles or client-specific semantic retention extensions are offered; unrepresentable ordinary signatures follow the [field-level rejection contract](history-and-replay.md#stateless-api-boundaries).
 - **Diagnostic Extensions:** Optional namespaced response fields (`morphiecore`) provide safe-to-ignore telemetry and loss reporting. Standard SDK agent loops operate without parsing or returning these extensions.
 - **Messages Version Policy:** Downstream Messages requires exactly one `anthropic-version` header, either `2023-06-01` or `2026-10-21` (including `?beta=true`), over the same current body grammar. Missing, duplicate, combined and unsupported versions reject before body collection. Legacy sampling fields (`temperature`, `top_p`, `top_k`) are validated then omitted under `messages.omit-removed-sampling.v1`; null defaults need no loss receipt. `anthropic-beta` is ignored as a header and never selects body semantics or trusted upstream headers.

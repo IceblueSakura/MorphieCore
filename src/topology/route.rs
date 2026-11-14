@@ -2,7 +2,7 @@
 
 use crate::{
     topology::Dispositions,
-    topology::{EndpointId, ModelId, RouteId, TaskKind},
+    topology::{EndpointId, ModelId, RouteId},
 };
 
 pub const MAX_ROUTE_CANDIDATES: usize = 64;
@@ -47,7 +47,6 @@ impl Default for RoutePolicy {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Route {
     pub id: RouteId,
-    pub task: TaskKind,
     pub endpoints: Vec<EndpointId>,
     pub policy: RoutePolicy,
 }
@@ -60,7 +59,6 @@ pub struct PublicModel {
     pub id: ModelId,
     /// Semantic identity shared by every member of the fixed Route.
     pub canonical_model: ModelId,
-    pub task: TaskKind,
     pub route: RouteId,
     pub contract: Dispositions,
 }

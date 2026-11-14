@@ -100,7 +100,6 @@ impl MessagesBinding {
                 origin: provider.origin,
                 path,
             },
-            task: TaskKind::Generation,
             protocol: GenerationProtocol::AnthropicMessages,
             upstream_model: self.upstream.into(),
             canonical_model: ModelId::new(self.model).expect("static model"),
@@ -118,7 +117,6 @@ impl MessagesBinding {
     pub fn route(&self) -> Route {
         Route {
             id: RouteId::new("opencode-go-haiku-native").expect("static route"),
-            task: TaskKind::Generation,
             endpoints: vec![self.endpoint().id],
             policy: RoutePolicy {
                 ..RoutePolicy::default()
@@ -134,13 +132,7 @@ impl MessagesBinding {
             true,
         );
         contract.set_native(crate::semantic::task::generation::Feature::TopP, true);
-        PublicModel::new(
-            model.clone(),
-            model,
-            TaskKind::Generation,
-            self.route().id,
-            contract,
-        )
+        PublicModel::new(model.clone(), model, self.route().id, contract)
     }
     pub fn canonical_model(&self) -> CanonicalModel {
         let mut contract = haiku_contract(Profile::AdaptiveTextTools.semantic_contract());
@@ -155,7 +147,6 @@ impl MessagesBinding {
         );
         CanonicalModel {
             id: ModelId::new(self.model).expect("static model"),
-            task: TaskKind::Generation,
             contract,
         }
     }

@@ -127,104 +127,59 @@ fn deepseek_chat_rejects_schema_and_thinking_forcing_without_restricting_respons
     let responses = binding
         .endpoint(GenerationProtocol::OpenAiResponses)
         .unwrap();
-    for prefix in ["deepseek", "deepseek"] {
-        let chat = API_KEY_BINDINGS
-            .iter()
-            .find(|b| b.endpoint_prefix == prefix)
-            .unwrap()
-            .endpoint(GenerationProtocol::OpenAiChat)
+    let chat = binding.endpoint(GenerationProtocol::OpenAiChat).unwrap();
+    let schema = json!({"type":"json_schema","json_schema":{"name":"record","strict":true,
+        "schema":{"type":"object","properties":{"ok":{"type":"boolean"}},
+            "required":["ok"],"additionalProperties":false}}});
+    for format in [
+        json!({"type":"text"}),
+        json!({"type":"json_object"}),
+        schema,
+    ] {
+        let body = json!({"model":"public","messages":[{"role":"user","content":"Return JSON."}],
+            "response_format":format});
+        let source = client
+            .decode_request(&serde_json::to_vec(&body).unwrap())
             .unwrap();
-        let schema = json!({"type":"json_schema","json_schema":{"name":"record","strict":true,
-            "schema":{"type":"object","properties":{"ok":{"type":"boolean"}},
-                "required":["ok"],"additionalProperties":false}}});
-        for format in [
-            json!({"type":"text"}),
-            json!({"type":"json_object"}),
-            schema,
-        ] {
-            let body = json!({"model":"public","messages":[{"role":"user","content":"Return JSON."}],
-                "response_format":format});
-            let source = client
-                .decode_request(&serde_json::to_vec(&body).unwrap())
-                .unwrap();
-            let before = source.clone();
-            let result = chat.encode_request(&source);
-            if format["type"] == "json_schema" {
-                assert!(matches!(
-                    result.unwrap_err().cause,
-                    ConversionCause::Representation(RepresentationError::Admission(
-                        Feature::StructuredOutput
-                    ))
-                ));
-                assert_eq!(
-                    responses.encode_request(&source).unwrap()["text"]["format"]["schema"],
-                    format["json_schema"]["schema"]
-                );
-            } else {
-                assert_eq!(result.unwrap()["response_format"], format);
-            }
-            assert_eq!(source, before);
+        let before = source.clone();
+        let result = chat.encode_request(&source);
+        if format["type"] == "json_schema" {
+            assert!(matches!(
+                result.unwrap_err().cause,
+                ConversionCause::Representation(RepresentationError::Admission(
+                    Feature::StructuredOutput
+                ))
+            ));
+            assert_eq!(
+                responses.encode_request(&source).unwrap()["text"]["format"]["schema"],
+                format["json_schema"]["schema"]
+            );
+        } else {
+            assert_eq!(result.unwrap()["response_format"], format);
         }
-        for choice in [
-            json!("required"),
-            json!({"type":"allowed_tools","allowed_tools":{"mode":"required","tools":[{"type":"function","function":{"name":"lookup"}}]}}),
-        ] {
-            for effort in [None, Some("high"), Some("none")] {
-                let mut body = json!({"model":"public","messages":[{"role":"user","content":"go"}],
-                    "tools":[{"type":"function","function":{"name":"lookup","strict":false,
-                        "parameters":{"type":"object","properties":{}}}}],
-                    "tool_choice":choice});
-                if let Some(effort) = effort {
-                    body["reasoning_effort"] = json!(effort);
-                }
-                let source = client
-                    .decode_request(&serde_json::to_vec(&body).unwrap())
-                    .unwrap();
-                let before = source.clone();
-                let result = chat.encode_request(&source);
-                if effort == Some("none") {
-                    let wire = result.unwrap();
-                    assert_eq!(wire["tool_choice"], "required");
-                    assert_eq!(wire["reasoning_effort"], "none");
-                } else {
-                    assert!(matches!(
-                        result.unwrap_err().cause,
-                        ConversionCause::Representation(RepresentationError::Admission(
-                            Feature::ToolChoice
-                        ))
-                    ));
-                }
-                if choice == "required" {
-                    assert_eq!(
-                        responses.encode_request(&source).unwrap()["tool_choice"],
-                        "required"
-                    );
-                }
-                assert_eq!(source, before);
-            }
-        }
-        // A full optional set is equivalent to auto; a proper subset must not
-        // discard unselected declarations merely to fit the native enum.
-        for full in [true, false] {
+        assert_eq!(source, before);
+    }
+    for choice in [
+        json!("required"),
+        json!({"type":"allowed_tools","allowed_tools":{"mode":"required","tools":[{"type":"function","function":{"name":"lookup"}}]}}),
+    ] {
+        for effort in [None, Some("high"), Some("none")] {
             let mut body = json!({"model":"public","messages":[{"role":"user","content":"go"}],
-                "reasoning_effort":"none",
                 "tools":[{"type":"function","function":{"name":"lookup","strict":false,
                     "parameters":{"type":"object","properties":{}}}}],
-                "tool_choice":{"type":"allowed_tools","allowed_tools":{"mode":"auto",
-                    "tools":[{"type":"function","function":{"name":"lookup"}}]}}});
-            if !full {
-                body["tools"].as_array_mut().unwrap().push(json!({"type":"function",
-                    "function":{"name":"other","strict":false,"parameters":{"type":"object","properties":{}}}}));
+                "tool_choice":choice});
+            if let Some(effort) = effort {
+                body["reasoning_effort"] = json!(effort);
             }
             let source = client
                 .decode_request(&serde_json::to_vec(&body).unwrap())
                 .unwrap();
             let before = source.clone();
             let result = chat.encode_request(&source);
-            if full {
+            if effort == Some("none") {
                 let wire = result.unwrap();
-                assert_eq!(wire["tool_choice"], "auto");
-                assert_eq!(wire["tools"], body["tools"]);
+                assert_eq!(wire["tool_choice"], "required");
+                assert_eq!(wire["reasoning_effort"], "none");
             } else {
                 assert!(matches!(
                     result.unwrap_err().cause,
@@ -233,8 +188,46 @@ fn deepseek_chat_rejects_schema_and_thinking_forcing_without_restricting_respons
                     ))
                 ));
             }
+            if choice == "required" {
+                assert_eq!(
+                    responses.encode_request(&source).unwrap()["tool_choice"],
+                    "required"
+                );
+            }
             assert_eq!(source, before);
         }
+    }
+    // A full optional set is equivalent to auto; a proper subset must not
+    // discard unselected declarations merely to fit the native enum.
+    for full in [true, false] {
+        let mut body = json!({"model":"public","messages":[{"role":"user","content":"go"}],
+            "reasoning_effort":"none",
+            "tools":[{"type":"function","function":{"name":"lookup","strict":false,
+                "parameters":{"type":"object","properties":{}}}}],
+            "tool_choice":{"type":"allowed_tools","allowed_tools":{"mode":"auto",
+                "tools":[{"type":"function","function":{"name":"lookup"}}]}}});
+        if !full {
+            body["tools"].as_array_mut().unwrap().push(json!({"type":"function",
+                "function":{"name":"other","strict":false,"parameters":{"type":"object","properties":{}}}}));
+        }
+        let source = client
+            .decode_request(&serde_json::to_vec(&body).unwrap())
+            .unwrap();
+        let before = source.clone();
+        let result = chat.encode_request(&source);
+        if full {
+            let wire = result.unwrap();
+            assert_eq!(wire["tool_choice"], "auto");
+            assert_eq!(wire["tools"], body["tools"]);
+        } else {
+            assert!(matches!(
+                result.unwrap_err().cause,
+                ConversionCause::Representation(RepresentationError::Admission(
+                    Feature::ToolChoice
+                ))
+            ));
+        }
+        assert_eq!(source, before);
     }
 }
 

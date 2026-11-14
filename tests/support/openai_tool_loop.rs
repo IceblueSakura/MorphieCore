@@ -344,7 +344,6 @@ async fn start_with_recovery(
     }
     let canonical = topology::CanonicalModel {
         id: public.canonical_model.clone(),
-        task: public.task,
         contract: public.contract.clone(),
     };
     entries.push(Entry {

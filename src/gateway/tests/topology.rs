@@ -9,7 +9,6 @@ use crate::{
     topology::{
         self, CanonicalModel, CompiledTopology, Dispositions, Endpoint, EndpointId, EndpointTarget,
         ExecutionContract, GenerationProtocol, ModelId, ModelMetadata, PublicModel, Route, RouteId,
-        TaskKind,
     },
 };
 
@@ -102,7 +101,6 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
                         .clone()
                 },
             },
-            task: TaskKind::Generation,
             protocol,
             upstream_model: "private-fixture".into(),
             canonical_model: canonical.clone(),
@@ -119,7 +117,6 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
     .into_iter()
     .map(|(id, endpoints)| Route {
         id: RouteId::new(id).unwrap(),
-        task: TaskKind::Generation,
         endpoints: endpoints
             .into_iter()
             .map(|id| EndpointId::new(id).unwrap())
@@ -141,7 +138,6 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
         PublicModel::new(
             ModelId::new(id).unwrap(),
             canonical.clone(),
-            TaskKind::Generation,
             RouteId::new(route).unwrap(),
             contract,
         )
@@ -156,7 +152,6 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
         models,
         vec![CanonicalModel {
             id: canonical.clone(),
-            task: TaskKind::Generation,
             contract: Dispositions::full(),
         }],
     )

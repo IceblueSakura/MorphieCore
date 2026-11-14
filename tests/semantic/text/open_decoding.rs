@@ -195,6 +195,16 @@ fn client_text_history_defaults_only_missing_annotations() {
         json!({"type":"output_text","text":"hello","annotations":[]})
     );
     assert!(a.decode_request(history.to_string().as_bytes()).is_ok());
+    for invalid in [Value::Null, json!([{"token":"hello","logprob":-0.5}])] {
+        history["input"][0]["content"][0]["logprobs"] = invalid;
+        let bytes = history.to_string();
+        assert!(a.decode_client_request(bytes.as_bytes()).is_err());
+        assert!(a.decode_request(bytes.as_bytes()).is_err());
+    }
+    history["input"][0]["content"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("logprobs");
     for invalid in [
         Value::Null,
         json!({}),

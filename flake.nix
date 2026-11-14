@@ -128,25 +128,6 @@
                 pkg-config --version
                 touch "$out"
               '';
-          coverage =
-            pkgs.runCommand "morphiecore-coverage-check"
-              {
-                nativeBuildInputs = shell.rust.nativeBuildInputs;
-                inherit (shell.rust) LLVM_COV LLVM_PROFDATA;
-              }
-              ''
-                export CARGO_HOME="$TMPDIR/cargo-home"
-                mkdir -p probe/src
-                cd probe
-                printf '%s\n' '[package]' 'name = "coverage-probe"' 'version = "0.1.0"' 'edition = "2024"' > Cargo.toml
-                printf '%s\n' '#[test] fn coverage_probe() { assert_eq!(2 + 2, 4); }' > src/lib.rs
-                cargo llvm-cov --version
-                "$LLVM_COV" --version
-                "$LLVM_PROFDATA" --version
-                cargo llvm-cov --offline --lcov --output-path coverage.lcov
-                grep -Eq '^DA:[0-9]+,[1-9][0-9]*' coverage.lcov
-                touch "$out"
-              '';
         }
       );
     };

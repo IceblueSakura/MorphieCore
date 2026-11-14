@@ -65,9 +65,6 @@ struct IdentityWire {
 }
 
 impl GrokAuthority {
-    pub fn new(proxy: Option<&str>) -> Result<Self, Error> {
-        Self::with_environment(proxy, true)
-    }
     pub(in crate::credential) fn with_environment(
         proxy: Option<&str>,
         environment: bool,

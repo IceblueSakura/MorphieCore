@@ -56,7 +56,6 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
         }
         routes.push(Route {
             id: public.route.clone(),
-            task: public.task,
             policy: RoutePolicy::for_candidates(group.len()),
             endpoints: group
                 .iter()
@@ -69,7 +68,6 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
         let public = binding.public_model();
         routes.push(Route {
             id: public.route.clone(),
-            task: public.task,
             policy: RoutePolicy::default(),
             endpoints: vec![binding.endpoint_id()],
         });

@@ -12,7 +12,7 @@ use axum::{
 };
 use futures_util::StreamExt;
 use std::sync::Arc;
-pub(super) fn acquire_permit(
+pub(in crate::gateway) fn acquire_permit(
     state: &Runtime,
 ) -> Result<tokio::sync::OwnedSemaphorePermit, ApiError> {
     if state.shutdown.is_cancelled() {

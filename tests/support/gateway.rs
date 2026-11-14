@@ -10,7 +10,7 @@ use morphiecore::{
     semantic::value::ReplayOrigin,
     topology::{
         CanonicalModel, Dispositions, Endpoint, EndpointId, EndpointTarget, ExecutionContract,
-        GenerationProtocol, ModelId, PublicModel, Route, RouteId, TaskKind, compile,
+        GenerationProtocol, ModelId, PublicModel, Route, RouteId, compile,
     },
 };
 use std::{collections::BTreeMap, sync::Arc};
@@ -77,7 +77,6 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
                 .path
                 .clone(),
         },
-        task: TaskKind::Generation,
         protocol,
         upstream_model: "private-model".into(),
         canonical_model: ModelId::new("canonical-fixture").unwrap(),
@@ -116,7 +115,6 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
     let route = Route {
         policy: morphiecore::topology::RoutePolicy::default(),
         id: RouteId::new("fixture-route").unwrap(),
-        task: TaskKind::Generation,
         endpoints: vec![
             EndpointId::new("responses").unwrap(),
             EndpointId::new("chat").unwrap(),
@@ -127,7 +125,6 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
         .map(|label| PublicModel {
             id: ModelId::new(label).unwrap(),
             canonical_model: ModelId::new("canonical-fixture").unwrap(),
-            task: TaskKind::Generation,
             route: route.id.clone(),
             contract: (Dispositions::full()).with_native(
                 morphiecore::semantic::task::generation::Feature::FileInput,
@@ -137,7 +134,6 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
         .collect();
     let canonical = CanonicalModel {
         id: ModelId::new("canonical-fixture").unwrap(),
-        task: TaskKind::Generation,
         contract: Dispositions::full(),
     };
     let (image_provider, image_route) = image_support::binding(origin);

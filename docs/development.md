@@ -142,6 +142,8 @@ Keep a test when it can falsify a product assumption, public protocol contract o
 
 Delete implementation-derived expectations, trivial accessors/assembly checks, catalog/example snapshots, third-party self-tests and redundant permutations, together with exclusive helpers, fixtures and dependencies. Do not relocate low-value assertions or invent replacements to preserve test counts.
 
+Production-constructed conformance checks select representative wire dialects and distinct tool/history policies, not every catalog member. Common subset-validation matrices run at their shared owner with representative per-protocol wiring checks. SDK parameter checks validate actual MorphieCore output, not mutations that exercise only the SDK's own schemas.
+
 Preserve independent wire-to-IR / IR-to-wire expectations and connected consumer workflows at their responsible boundaries. Use existing property-based machinery for meaningful fragmentation, malformed-input and lifecycle counterexamples; retain minimized reproducers rather than adding a parallel framework.
 
 Run affected gates and reuse valid results. Judge completion by delivered behavior and remaining boundaries, not coverage percentages, test counts or an expanding acceptance archive.

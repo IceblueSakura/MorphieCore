@@ -146,7 +146,6 @@ fn gateway(origin: &str, profile: GenerationApi, dialect: Dialect) -> Gateway {
                 .path
                 .clone(),
         },
-        task: TaskKind::Generation,
         protocol: if profile == GenerationApi::Chat {
             GenerationProtocol::OpenAiChat
         } else {
@@ -171,20 +170,17 @@ fn gateway(origin: &str, profile: GenerationApi, dialect: Dialect) -> Gateway {
         vec![endpoint],
         vec![Route {
             id: RouteId::new("route").unwrap(),
-            task: TaskKind::Generation,
             endpoints: vec![EndpointId::new("endpoint").unwrap()],
             policy: RoutePolicy::default(),
         }],
         vec![PublicModel::new(
             ModelId::new("public").unwrap(),
             ModelId::new("canonical").unwrap(),
-            TaskKind::Generation,
             RouteId::new("route").unwrap(),
             Dispositions::full(),
         )],
         vec![CanonicalModel {
             id: ModelId::new("canonical").unwrap(),
-            task: TaskKind::Generation,
             contract: Dispositions::full(),
         }],
     )

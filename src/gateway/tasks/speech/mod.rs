@@ -46,15 +46,7 @@ pub(in crate::gateway) async fn handle(
 async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, ApiError> {
     let started = Instant::now();
     let mut trace = Trace::for_request(runtime.diagnostics.as_ref(), &request);
-    if runtime.shutdown.is_cancelled() {
-        return Err(ApiError::shutdown());
-    }
-    let permit = runtime.permits.clone().try_acquire_owned().map_err(|_| {
-        ApiError::new(
-            StatusCode::TOO_MANY_REQUESTS,
-            crate::gateway::error::ErrorKind::GatewayBusy,
-        )
-    })?;
+    let permit = admission::acquire_permit(&runtime)?;
     admission::headers(request.headers(), runtime.limits.request_bytes)?;
     let bytes = crate::gateway::ingress::http::read_body(
         &runtime,
@@ -102,52 +94,6 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
         trace,
     )
     .await
-}
-async fn produce_one(
-    runtime: &Runtime,
-    entry: &BoundSpeech,
-    request: &crate::protocol::speech::Request,
-    prepared: crate::execution::task::PreparedTaskRequest,
-    deadline: Instant,
-    lane: &body::Lane<'_>,
-    trace: &mut Trace,
-) -> Result<(), ApiError> {
-    let upstream = super::exchange::send(runtime, entry, prepared, deadline, trace).await?;
-    let limit = runtime
-        .limits
-        .speech_bytes
-        .min(runtime.limits.response_bytes)
-        .min(entry.route.endpoint.execution.response_body_limit)
-        .min(MAX_AUDIO_BYTES);
-    let audio = if entry.route.endpoint.profile.upstream_sse() {
-        let result = crate::gateway::tasks::speech::aliyun::receive(
-            upstream,
-            limit,
-            runtime
-                .limits
-                .response_bytes
-                .min(entry.route.endpoint.execution.response_body_limit),
-            runtime.limits.event_bytes,
-            runtime.limits.max_events,
-            trace,
-        )
-        .await?;
-        codec::project_result(&result)
-            .map_err(|_| ApiError::upstream())?
-            .audio
-    } else {
-        receive(
-            upstream,
-            &request.task,
-            entry.route.endpoint.profile,
-            limit,
-            trace,
-        )
-        .await?
-    };
-    trace.stage(Stage::Projection);
-    body::send_final_audio(lane, audio, trace).await?;
-    Ok(())
 }
 pub(in crate::gateway) async fn receive(
     upstream: reqwest::Response,
@@ -197,7 +143,46 @@ impl body::Produce for Exchange {
             entry.route.model.as_str(),
             &entry.route.endpoint.upstream_model,
         );
-        let result = produce_one(&runtime, &entry, &request, prepared, deadline, lane, trace).await;
+        let result: Result<(), ApiError> = async {
+            let upstream =
+                super::exchange::send(&runtime, &entry, prepared, deadline, trace).await?;
+            let limit = runtime
+                .limits
+                .speech_bytes
+                .min(runtime.limits.response_bytes)
+                .min(entry.route.endpoint.execution.response_body_limit)
+                .min(MAX_AUDIO_BYTES);
+            let audio = if entry.route.endpoint.profile.upstream_sse() {
+                let result = crate::gateway::tasks::speech::aliyun::receive(
+                    upstream,
+                    limit,
+                    runtime
+                        .limits
+                        .response_bytes
+                        .min(entry.route.endpoint.execution.response_body_limit),
+                    runtime.limits.event_bytes,
+                    runtime.limits.max_events,
+                    trace,
+                )
+                .await?;
+                codec::project_result(&result)
+                    .map_err(|_| ApiError::upstream())?
+                    .audio
+            } else {
+                receive(
+                    upstream,
+                    &request.task,
+                    entry.route.endpoint.profile,
+                    limit,
+                    trace,
+                )
+                .await?
+            };
+            trace.stage(Stage::Projection);
+            body::send_final_audio(lane, audio, trace).await?;
+            Ok(())
+        }
+        .await;
         trace.end_candidate(result.as_ref().err().map(|e| e.diagnostic_code()), false);
         result
     }

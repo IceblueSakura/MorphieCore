@@ -41,15 +41,7 @@ pub(in crate::gateway) async fn handle(
 async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, ApiError> {
     let started = Instant::now();
     let mut trace = Trace::for_request(runtime.diagnostics.as_ref(), &request);
-    if runtime.shutdown.is_cancelled() {
-        return Err(ApiError::shutdown());
-    }
-    let permit = runtime.permits.clone().try_acquire_owned().map_err(|_| {
-        ApiError::new(
-            StatusCode::TOO_MANY_REQUESTS,
-            crate::gateway::error::ErrorKind::GatewayBusy,
-        )
-    })?;
+    let permit = admission::acquire_permit(&runtime)?;
     admission::headers(request.headers(), runtime.limits.request_bytes)?;
     let bytes = crate::gateway::ingress::http::read_body(
         &runtime,
@@ -117,40 +109,6 @@ fn check_response(
     }
     Ok(())
 }
-async fn produce_one(
-    runtime: &Runtime,
-    entry: &BoundImage,
-    request: &crate::protocol::image::Request,
-    prepared: crate::execution::task::PreparedTaskRequest,
-    deadline: Instant,
-    lane: &body::Lane<'_>,
-    trace: &mut Trace,
-) -> Result<(), ApiError> {
-    let upstream = super::exchange::send(runtime, entry, prepared, deadline, trace).await?;
-    let limit = runtime
-        .limits
-        .response_bytes
-        .min(entry.route.endpoint.execution.response_body_limit)
-        .min(crate::semantic::value::JsonLimits::IMAGE_RESPONSE.bytes);
-    let response = receive(upstream, entry.route.endpoint.profile, limit, trace).await?;
-    check_response(
-        &response,
-        &request.task,
-        runtime.limits.image_bytes,
-        runtime.limits.images_bytes,
-    )?;
-    trace.stage(Stage::Projection);
-    let projected =
-        crate::protocol::image::projection::project_response(&response, entry.route.accounting)
-            .map_err(|_| ApiError::upstream())?;
-
-    let value = images::encode_response(&projected.response).map_err(|_| ApiError::upstream())?;
-    crate::semantic::value::json_size(&value, runtime.limits.response_bytes)
-        .map_err(|_| ApiError::upstream())?;
-    let output = serde_json::to_vec(&value).map_err(|_| ApiError::upstream())?;
-    body::send_final_frame(lane, output.into(), trace).await?;
-    Ok(())
-}
 pub(in crate::gateway) async fn receive(
     upstream: reqwest::Response,
     codec: crate::adapter::images::UpstreamAdapter,
@@ -198,7 +156,37 @@ impl body::Produce for Exchange {
             entry.route.model.as_str(),
             &entry.route.endpoint.upstream_model,
         );
-        let result = produce_one(&runtime, &entry, &request, prepared, deadline, lane, trace).await;
+        let result: Result<(), ApiError> = async {
+            let upstream =
+                super::exchange::send(&runtime, &entry, prepared, deadline, trace).await?;
+            let limit = runtime
+                .limits
+                .response_bytes
+                .min(entry.route.endpoint.execution.response_body_limit)
+                .min(crate::semantic::value::JsonLimits::IMAGE_RESPONSE.bytes);
+            let response = receive(upstream, entry.route.endpoint.profile, limit, trace).await?;
+            check_response(
+                &response,
+                &request.task,
+                runtime.limits.image_bytes,
+                runtime.limits.images_bytes,
+            )?;
+            trace.stage(Stage::Projection);
+            let projected = crate::protocol::image::projection::project_response(
+                &response,
+                entry.route.accounting,
+            )
+            .map_err(|_| ApiError::upstream())?;
+
+            let value =
+                images::encode_response(&projected.response).map_err(|_| ApiError::upstream())?;
+            crate::semantic::value::json_size(&value, runtime.limits.response_bytes)
+                .map_err(|_| ApiError::upstream())?;
+            let output = serde_json::to_vec(&value).map_err(|_| ApiError::upstream())?;
+            body::send_final_frame(lane, output.into(), trace).await?;
+            Ok(())
+        }
+        .await;
         trace.end_candidate(result.as_ref().err().map(|e| e.diagnostic_code()), false);
         result
     }
