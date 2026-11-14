@@ -22,13 +22,11 @@ Grok 4.7 returns Responses encrypted reasoning by default and documents unchange
 
 ## Parameter contract recheck — 2026-11-13
 
-The loader-mediated [OpenCode Go directory](https://opencode.ai/inference/go/v1/models)
-declares HY4 reasoning efforts `none/high`, and Muse positive efforts
-`minimal/low/medium/high/xhigh`. HY4's standard Chat effort carrier distinguishes
-enabled reasoning from explicit off; Muse accepts the standard Responses effort
-carrier. These facts do not qualify Go MiMo controls, Muse off behavior, numeric
-thinking budgets or structured-text enforcement. Missing controls retain the
-service default. Non-native positive levels use the existing nearest-level rule.
+Current Go model controls and endpoint paths are sourced in the
+[catalog refresh](2026-11-13-model-catalog-expansion.md#opencode-go).
+The accepted [Go control policy](../architecture/adaptation-and-dialects.md#opencode-go-controls)
+owns activation and nearest-level projection; service qualification remains
+model-specific.
 
 The [Luna router endpoint inventory](https://openrouter.ai/api/v1/models/openai/gpt-6-luna/endpoints)
 lists `verbosity` on every listed endpoint. It does not justify removing Luna's

@@ -16,17 +16,17 @@ TokenPlan's shared dialect and separate authority follow the [accepted billing-d
 
 ## Observed definitions and selected treatment
 
-This is the 2026-10-19 inventory and selected implementation subset. The dated source refresh below supersedes its string-only source claim, and qualifies its adjacency claim; it does not silently widen the implementation.
+This is the retained 2026-10-19 Qwen/GLM inventory and selected implementation subset. The dated source refresh below supersedes its string-only source claim, and qualifies its adjacency claim; it does not silently widen the implementation. Current Kimi and Qwen4 model-specific declarations belong to the [catalog refresh](2026-11-13-model-catalog-expansion.md#aliyun-plans).
 
 | Domain | Official distinction | Existing-IR treatment |
 |---|---|---|
 | Current-turn activation | `enable_thinking` is a boolean; Responses also supports `reasoning.effort` with higher precedence | Preserve explicit on/off, never fill a default. Conflicting declarations reject rather than relying on precedence to hide intent. Native GLM5.3 cannot turn thinking off |
-| Chat allocation | Positive `thinking_budget`; GLM5.3 ignores it and Kimi-K3 does not support it | Existing budgeted mode only, no qualitative effort mix, and no allocation exceeding an explicit total cap. Reject ignored/unrepresentable cases; no clipping or preset conversion |
+| Chat allocation | Positive `thinking_budget`; GLM5.3 ignores it | Existing budgeted mode only, no qualitative effort mix, and no allocation exceeding an explicit total cap. Reject ignored/unrepresentable cases; no clipping or preset conversion |
 | Qualitative effort | Qwen3.8 supports low/medium/xhigh; minimal aliases low and high/max alias xhigh | Model-bound named mapping on both protocols. Native intake normalizes declared aliases; projection records changed levels |
-| GLM/Kimi effort | Chat GLM5.3 and Kimi-K3 list low/high/max; Responses GLM5.3 additionally maps minimal→low, medium→high, xhigh→max | Keep protocol-specific mappings. Native undocumented `none` is rejected before generic parsing erases its spelling. Semantic disabled activation may still use a documented boolean carrier where supported |
-| Chat caps | Current bound Qwen3.8, GLM5.3/Prime and Kimi-K3 support total `max_completion_tokens`. Legacy Qwen/Kimi `max_tokens` excludes thinking; GLM5.3's includes it | Encode the total spelling for all current bindings and both plans. Native legacy intake accepts the GLM exception or explicitly disabled thinking; otherwise reject reply-only semantics |
+| GLM effort | Chat GLM5.3 lists low/high/max; Responses GLM5.3 additionally maps minimal→low, medium→high, xhigh→max | Keep protocol-specific mappings. Native undocumented `none` is rejected before generic parsing erases its spelling. Semantic disabled activation may still use a documented boolean carrier where supported |
+| Chat caps | Qwen3.8 and GLM5.3/Prime support total `max_completion_tokens`. Qwen3.8 `max_tokens` excludes thinking; GLM5.3's includes it | Encode the total spelling for these bindings on both plans. Native legacy intake accepts the GLM exception or explicitly disabled thinking; otherwise reject reply-only semantics |
 | Responses caps | Qwen3.8 `max_output_tokens` includes thoughts; other models use a reply ceiling; minimum 16 | Accept a total ceiling only for Qwen3.8 or explicit thinking-off. An always-thinking GLM reply ceiling cannot represent the IR total limit |
-| Sampling | Temperature [0,2), top-p (0,1]; Qwen3.8 thinking raises temperature below 0.6; top-k is positive ≤100 and unsupported on Kimi-K3 | Reject silent temperature adjustment and invalid values. Add the top-k codec carrier without widening catalog admission. Seed/probability bounds remain strict; current bound models do not gain unverified logprob support |
+| Sampling | Temperature [0,2), top-p (0,1]; Qwen3.8 thinking raises temperature below 0.6; top-k is positive ≤100 | Reject silent temperature adjustment and invalid values. Add the top-k codec carrier without widening catalog admission. Seed/probability bounds remain strict; current bound models do not gain unverified logprob support |
 | Chat tools | Functions with descriptions; Qwen required selection is unsupported; named forcing is unsupported while thinking | Reject unsupported kinds/dispatch/strict intent and unsupported selection. Use the documented non-strict shell, not an implicit schema-normalization promise |
 | Responses tools | Flat functions; only one function for required/specific selection; required subset uses `allowed_tools` | Explicit false or native non-strict omission only. Convert a single specific function to its exact required subset; do not weaken strict/default-normalization intent |
 | Responses results | Function output is a string and must immediately follow its corresponding call | Reject arrays/media and non-adjacent results. Do not stringify, flatten or reorder them |
@@ -54,11 +54,11 @@ The current [international Chat reference](https://www.alibabacloud.com/help/en/
 
 ## Responses tool-policy refresh, 2026-11-08
 
-The same international Responses reference lists `parallel_tool_calls` with default true, false disabling parallel calls, and a Kimi-K3 exception that cannot guarantee sequential calls. The Chinese request table fetched alongside it does not list that control. The international table also documents string `required` and `allowed_tools` with mode `required`, each requiring exactly one declared tool. These documented fields do not establish function strictness.
+The same international Responses reference lists `parallel_tool_calls` with default true and false disabling parallel calls. The Chinese request table fetched alongside it does not list that control. The international table also documents string `required` and `allowed_tools` with mode `required`, each requiring exactly one declared tool. These documented fields do not establish function strictness.
 
 Bounded China-Provider controls separate the guarantees. Qwen Flash and GLM, each with native low effort, return one call when asked for two under `parallel_tool_calls:false`. With a conflicting no-tool prompt, both return zero calls under `allowed_tools/required`; string `required` independently returns zero calls in an initial sample and all three explicit repeats per model. All twelve sends return HTTP 200. Field echo and a completed terminal alone do not establish forced invocation.
 
-The selected implementation carries the parallel boolean, keeps Kimi serial rejection, and rejects default/enabled-thinking forcing for those two exact models. Other model/mode cells remain independently scoped. [Development](../development.md#overall-acceptance-status) summarizes overall acceptance; [Architecture](../architecture/adaptation-and-dialects.md#shared-aliyun-billing-dialect) owns the contract.
+The selected implementation carries the parallel boolean and rejects default/enabled-thinking forcing for those two exact models. Other model/mode cells remain independently scoped. [Development](../development.md#overall-acceptance-status) summarizes overall acceptance; [Architecture](../architecture/adaptation-and-dialects.md#shared-aliyun-billing-dialect) owns the contract.
 
 ## Function-guarantee recheck, 2026-11-09
 
