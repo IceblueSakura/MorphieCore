@@ -1,6 +1,7 @@
 //! Bounded representation records. Only surviving semantic owners may reuse them.
 mod history;
 mod replay;
+mod report_values;
 mod response_records;
 use super::CodecError;
 use crate::{
@@ -12,9 +13,9 @@ use crate::{
 };
 #[cfg(test)]
 pub(crate) use replay::REASONING_FINGERPRINT_BYTES;
+pub(crate) use report_values::check_budget as check_report_budget;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
-const RESPONSE_EXTRAS_BUDGET: usize = 4096;
 /// Outgoing carrier identity, not an upstream-reported fact or persistent key.
 pub(crate) fn generated_item_id(owner: ItemId, prefix: &str) -> String {
     if owner.scope() == LocalScope::ROOT {
@@ -112,8 +113,8 @@ impl FidelityRecords {
             + [self.response_extras.as_ref(), self.routing_extras.as_ref()]
                 .into_iter()
                 .flatten()
-                .count()
-                * (RESPONSE_EXTRAS_BUDGET * 128 + 1024)
+                .map(ResponseExtras::retained_bytes)
+                .sum::<usize>()
     }
     /// Compatibility association only, not resource authorization or target selection.
     pub fn record_cached_context(

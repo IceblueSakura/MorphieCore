@@ -291,6 +291,17 @@ JSON, SSE and retained snapshots use this same owner and custom-tool capability 
 - Derived operations (such as total tokens = input + output) occur only where established by upstream protocol contracts.
 - Messages stream intake processes incremental usage checkpoints, emitting the final usage report at message closure.
 
+Protocol-owned source reports, including usage attribution, filtering and routing/billing
+views, remain separate from typed billed totals. They retain exact values only for the
+matching protocol, dialect, trusted origin, response identity and semantic dependency;
+they never become request-history controls. Their combined retained values use the
+existing Generation byte bound, and attribution collections use the existing item
+bound rather than a separate small-history ceiling. Internal storage paths are not
+native report data. Native JSON/node/depth and stream limits remain independent.
+Retention compacts filtered object tables, and optional delivery buffering charges
+the actual report trees conservatively. No overflow truncates reports, weakens known
+field checks or supplies a successful terminal.
+
 #### Cached context references
 
 `GenerationRequest` supports explicit cached input base references (`cached_context`), retaining opaque identifiers and reported expiration timestamps. The gateway does not perform client-side cache creation, fetching, or renewal.

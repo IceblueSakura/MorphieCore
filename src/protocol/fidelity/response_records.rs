@@ -96,21 +96,20 @@ impl FidelityRecords {
         o: &Map<String, Value>,
         semantic: Option<&GenerationResponse>,
     ) -> Result<(), CodecError> {
-        let mut values = BTreeMap::new();
-        let mut used = 0usize;
-        for name in declared_response_extras(protocol, adaptation) {
-            if let Some(value) = o.get(*name) {
-                used = used.saturating_add(
-                    crate::semantic::value::json_size(value, RESPONSE_EXTRAS_BUDGET)
-                        .map_err(|_| CodecError::Limit)?,
-                );
-                if used > RESPONSE_EXTRAS_BUDGET {
-                    return Err(CodecError::Limit);
-                }
-                values.insert((*name).into(), value.clone());
-            }
-        }
+        check_report_budget(
+            declared_response_extras(protocol, adaptation)
+                .iter()
+                .filter_map(|name| o.get(*name))
+                .chain(self.routing_extras.iter().flat_map(|r| r.values.values())),
+        )?;
         if let Some(semantic) = semantic {
+            let values = declared_response_extras(protocol, adaptation)
+                .iter()
+                .filter_map(|name| {
+                    o.get(*name)
+                        .map(|value| ((*name).into(), report_values::compact(value.clone())))
+                })
+                .collect::<BTreeMap<_, _>>();
             self.response_extras = if values.is_empty() {
                 None
             } else {
@@ -160,7 +159,11 @@ impl FidelityRecords {
         semantic: &GenerationResponse,
         response_id: &str,
     ) -> Result<(), CodecError> {
-        crate::protocol::openai::dialect::adapter_shapes::check_budget(&values)?;
+        check_report_budget(
+            values
+                .values()
+                .chain(self.response_extras.iter().flat_map(|r| r.values.values())),
+        )?;
         self.routing_extras = if values.is_empty() {
             None
         } else {
@@ -182,7 +185,10 @@ impl FidelityRecords {
                 response_id: Text::new(response_id, "response identity", 256)
                     .map_err(|_| CodecError::Limit)?,
                 dependency: response_dependency(semantic),
-                values,
+                values: values
+                    .into_iter()
+                    .map(|(key, value)| (key, report_values::compact(value)))
+                    .collect(),
             })
         };
         Ok(())

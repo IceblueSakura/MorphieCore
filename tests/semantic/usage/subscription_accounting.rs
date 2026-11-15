@@ -13,6 +13,63 @@ fn adapter(dialect: Dialect, scope: &str) -> GenerationCodec {
 }
 
 #[test]
+fn siwc_long_history_accounting_survives_json_and_terminal_reports() {
+    use morphiecore::protocol::{openai::responses::sse::ResponsesSseDecoder, stream::SseLimits};
+    let source = adapter(Dialect::Siwc, "one");
+    let counters = json!({"input_tokens":0,"output_tokens":0,
+        "cached_tokens":0,"cache_write_tokens":0});
+    let mut items = (0..65)
+        .map(|index| (format!("input.{index}"), counters.clone()))
+        .collect::<serde_json::Map<_, _>>();
+    items.get_mut("input.0").unwrap()["content"] = json!(vec![counters; 65]);
+    let attribution = json!({"items":items});
+    let mut body = crate::wire::response(2);
+    body["usage"]["attribution"] = attribution.clone();
+    body["tool_usage"] = json!({"image_gen":{"input_tokens":0,
+        "input_tokens_details":{"image_tokens":0,"text_tokens":0},"output_tokens":0,
+        "output_tokens_details":{"image_tokens":0,"text_tokens":0},"total_tokens":0},
+        "web_search":{"num_requests":0}});
+    let decoded = source.decode_response(body.to_string().as_bytes()).unwrap();
+    assert_eq!(decoded.semantic.usage().unwrap().input_tokens, Some(3));
+    assert_eq!(
+        source.encode_response(&decoded, &Contract::full()).unwrap()["usage"]["attribution"],
+        attribution
+    );
+    let bytes = crate::wire::response_events(body)
+        .iter()
+        .map(|event| format!("data: {event}\n\n"))
+        .collect::<String>();
+    let mut decoder = ResponsesSseDecoder::with_decoder(
+        200,
+        "text/event-stream",
+        SseLimits::default(),
+        source.event_decoder(),
+    )
+    .unwrap();
+    let mut remaining = bytes.as_bytes();
+    while !remaining.is_empty() {
+        let (used, _) = decoder.consume(remaining).unwrap();
+        assert!(used > 0);
+        remaining = &remaining[used..];
+    }
+    decoder.finish().unwrap();
+    let streamed = decoder.materialize().unwrap();
+    assert_eq!(streamed.semantic.usage().unwrap().output_tokens, Some(5));
+    assert_eq!(
+        source
+            .encode_response(&streamed, &Contract::full())
+            .unwrap()["usage"]["attribution"],
+        attribution
+    );
+    let other = adapter(Dialect::Siwc, "two");
+    assert!(
+        other.encode_response(&streamed, &Contract::full()).unwrap()["usage"]
+            .get("attribution")
+            .is_none()
+    );
+}
+
+#[test]
 fn siwc_uses_only_closed_public_programs_in_static_and_event_snapshots() {
     let source = adapter(Dialect::Siwc, "one");
     let mut response = crate::wire::response(2);

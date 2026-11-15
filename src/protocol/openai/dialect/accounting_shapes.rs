@@ -96,7 +96,7 @@ fn attribution(value: &mut Value, direction: DecodeDirection) -> Result<(), Code
         .get_mut("items")
         .and_then(Value::as_object_mut)
         .ok_or(CodecError::Invalid(ShapeReason::Usage))?;
-    if items.len() > 64 {
+    if items.len() > crate::semantic::task::generation::MAX_ITEMS {
         return Err(CodecError::Limit);
     }
     let counts = |value: &mut Value, item: bool| -> Result<(), CodecError> {
@@ -130,7 +130,7 @@ fn attribution(value: &mut Value, direction: DecodeDirection) -> Result<(), Code
             continue;
         };
         let content = content.as_array_mut().ok_or(CodecError::invalid())?;
-        if content.len() > 64 {
+        if content.len() > crate::semantic::task::generation::MAX_ITEMS {
             return Err(CodecError::Limit);
         }
         for part in content {

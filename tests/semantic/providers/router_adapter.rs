@@ -34,7 +34,6 @@ fn router_rejects_unknown_or_unowned_shapes_and_never_masks_invalid_usage() {
             "/choices/0/message/reasoning_details",
             json!([{"type":"reasoning.encrypted","data":"synthetic"}]),
         ),
-        ("/provider", json!("x".repeat(4097))),
     ] {
         let mut body = chat();
         *body.pointer_mut(pointer).unwrap() = value;
@@ -56,6 +55,39 @@ fn router_rejects_unknown_or_unowned_shapes_and_never_masks_invalid_usage() {
 fn chunk(delta: Value, reason: Value) -> Value {
     json!({"id":"r1","object":"chat.completion.chunk","created":2,"model":"openai/gpt-6-luna",
         "provider":"Synthetic","choices":[{"index":0,"delta":delta,"finish_reason":reason,"native_finish_reason":reason}]})
+}
+
+#[test]
+fn response_filter_reports_survive_static_and_terminal_snapshots() {
+    let source = adapter(GenerationApi::Responses, Dialect::OpenRouter, "source");
+    let reports = json!(vec![json!({"role":"assistant","level":0}); 133]);
+    let mut body = crate::wire::response(2);
+    body["content_filters"] = reports.clone();
+    let decoded = source.decode_response(body.to_string().as_bytes()).unwrap();
+    assert_eq!(
+        source.encode_response(&decoded, &Contract::full()).unwrap()["content_filters"],
+        reports
+    );
+    let mut decoder = source.event_decoder();
+    for event in crate::wire::response_events(body) {
+        decoder.push(&event).unwrap();
+    }
+    decoder.finish().unwrap();
+    let streamed = decoder.materialize().unwrap();
+    assert_eq!(
+        source
+            .encode_response(&streamed, &Contract::full())
+            .unwrap()["content_filters"],
+        reports
+    );
+    let other = adapter(GenerationApi::Responses, Dialect::OpenRouter, "other");
+    assert!(
+        other
+            .encode_response(&streamed, &Contract::full())
+            .unwrap()
+            .get("content_filters")
+            .is_none()
+    );
 }
 
 #[test]

@@ -159,7 +159,9 @@ impl EventDecoder {
             };
             if self.profile == GenerationApi::Chat && self.chat.pending.is_some() {
                 self.chat.extras.extend(extras);
-                crate::protocol::openai::dialect::adapter_shapes::check_budget(&self.chat.extras)?;
+                crate::protocol::openai::dialect::adapter_shapes::check_budget(
+                    self.chat.extras.values(),
+                )?;
             } else if self.profile == GenerationApi::Responses
                 && !extras.is_empty()
                 && self

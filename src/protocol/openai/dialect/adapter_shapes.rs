@@ -12,20 +12,7 @@ use serde_json::{Map, Value};
 use std::{borrow::Cow, collections::BTreeMap};
 
 pub(crate) type Extras = BTreeMap<String, Value>;
-const BUDGET: usize = 4096;
-
-pub(crate) fn check_budget(values: &Extras) -> Result<(), CodecError> {
-    let mut used = 0usize;
-    for (key, value) in values {
-        used = used.saturating_add(key.len()).saturating_add(
-            crate::semantic::value::json_size(value, BUDGET).map_err(|_| CodecError::Limit)?,
-        );
-        if used > BUDGET {
-            return Err(CodecError::Limit);
-        }
-    }
-    Ok(())
-}
+pub(crate) use crate::protocol::fidelity::check_report_budget as check_budget;
 fn money(value: &Value) -> bool {
     value.is_null() || value.as_f64().is_some_and(|n| n.is_finite() && n >= 0.0)
 }
@@ -107,7 +94,7 @@ fn extract(o: &mut Map<String, Value>, profile: GenerationApi) -> Result<Extras,
             &mut extras,
         );
     }
-    check_budget(&extras)?;
+    check_budget(extras.values())?;
     Ok(extras)
 }
 /// Validate one response_api row and promote its explicitly reported modality facts.
@@ -390,7 +377,7 @@ pub(crate) fn decode<'a>(
                 direction,
             )?;
         }
-        check_budget(&extras)?;
+        check_budget(extras.values())?;
     }
     if profile == GenerationApi::Chat {
         if adaptation.rules.reported_request_id {
@@ -434,7 +421,7 @@ pub(crate) fn decode<'a>(
             }
         }
     }
-    check_budget(&extras)?;
+    check_budget(extras.values())?;
     if profile == GenerationApi::Chat
         && adaptation.rules.accept_reasoning_alias
         && let Some(choices) = o.get_mut("choices").and_then(Value::as_array_mut)
