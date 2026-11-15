@@ -30,8 +30,7 @@ This page owns current scope, planned execution sequence, stage priorities, and 
 
 Stateful upstream/downstream APIs remain [experimental and disabled](../architecture/history-and-replay.md#stateful-history). Their acceptance is excluded from current model adaptation and repairs until explicit user activation; no other work package enables them implicitly.
 
-Current maintenance closes the selected schema-admission and Pi strict-preference
-defects in that order, then returns to the selected
+Current maintenance closes the selected Pi strict-preference defect, then returns to the selected
 [OpenRouter Luna Responses SSE intake issue](unscheduled-issues.md#content-and-client-qualification)
 before Stage 4 resumes. Source-report retention follows the
 [bounded accounting contract](../architecture/index.md#scoped-accounting).
@@ -44,7 +43,7 @@ No deployment or new API activation is implied.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
-| Selected maintenance / before Luna intake | Repair schema admission, then Pi preference resolution | Target-side rejection without schema loss and current-client preference/require separation under the required offline and affected consumer gates |
+| Selected maintenance / before Luna intake | Repair Pi preference resolution | Current-client preference/require separation under the required offline and affected consumer gates |
 | Current focus / before Stage 4 | Resolve [OpenRouter Luna Responses SSE intake](unscheduled-issues.md#content-and-client-qualification) | First failing event/error localized, independent regression and corrected native-to-IR-to-downstream stream acceptance |
 | Conditional tool follow-ups | [Conditional Stage-3 follow-ups](unscheduled-issues.md#conditional-stage-3-follow-ups) | Separate policy selection and affected-loop acceptance; not default Stage-4 prerequisites |
 | API expansion | Select and implement Stage-4 operation contracts | Per-operation lifecycle, protocol and SDK acceptance |
@@ -53,8 +52,7 @@ No deployment or new API activation is implied.
 
 ## Planned order
 
-First close the explicitly selected schema-admission and Pi
-preference repairs in order, then close the
+First close the explicitly selected Pi preference repair, then close the
 [OpenRouter Luna Responses SSE intake issue](unscheduled-issues.md#content-and-client-qualification)
 before resuming Stage 4. Other [unscheduled issues](unscheduled-issues.md#unscheduled-issues),
 including R09, do not become implicit prerequisites. Once these selected repairs

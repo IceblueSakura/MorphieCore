@@ -1268,11 +1268,15 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     };
     tool.parameters = Some(json!({"type":"string"}).into());
     let scalar = bare.with_settings(scalar).unwrap();
-    assert!(matches!(
-        encode_generation_request(&scalar, &observed.fidelity, &target(), None),
-        Err(morphiecore::protocol::CodecError::Unsupported(reason))
-            if reason == morphiecore::protocol::failure::CarrierReason::Unavailable
-    ));
+    assert_eq!(
+        encode_generation_request(&scalar, &observed.fidelity, &target(), None).unwrap_err(),
+        morphiecore::protocol::CodecError::Unsupported(
+            morphiecore::protocol::failure::CarrierReason::ToolConstraint {
+                declaration: 0,
+                constraint: morphiecore::protocol::failure::ToolConstraint::RootObject,
+            }
+        )
+    );
     let other = ReplayTarget::new("synthetic-google", "gemini-other").unwrap();
     assert!(encode_generation_request(&request, &observed.fidelity, &other, None).is_err());
     let mut settings = request.settings().clone();

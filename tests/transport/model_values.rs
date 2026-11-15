@@ -600,6 +600,158 @@ fn projected(endpoint: &Endpoint, request: &Request) -> (Value, Vec<&'static str
 }
 
 #[test]
+fn go_root_composition_rejects_before_dispatch_without_rewriting_nested_schemas() {
+    use morphiecore::{
+        execution::AttemptError,
+        protocol::{
+            ConversionCause,
+            failure::{CarrierReason, ToolConstraint},
+        },
+        semantic::context::ConversationContext,
+        topology::catalog::MESSAGES_BINDINGS,
+    };
+    let binding = &MESSAGES_BINDINGS[0];
+    let endpoint = binding.endpoint();
+    let secret = SecretMaterial::new("synthetic").unwrap();
+    for (keyword, strict, choice, inline, nested) in [
+        ("anyOf", Some(false), "auto", false, false),
+        ("allOf", Some(false), "auto", false, false),
+        ("oneOf", Some(false), "auto", false, false),
+        ("anyOf", None, "auto", false, false),
+        ("anyOf", Some(true), "auto", false, false),
+        ("anyOf", Some(false), "none", false, false),
+        ("anyOf", Some(false), "auto", true, false),
+        ("anyOf", Some(false), "auto", false, true),
+        ("anyOf", Some(false), "auto", true, true),
+    ] {
+        let mut schema = json!({"type":"object","properties":{
+            "a":{"type":"integer"},"b":{"type":"integer"}},"additionalProperties":false});
+        schema[keyword] = json!([{"required":["a"]},{"required":["b"]}]);
+        if nested {
+            schema = json!({"type":"object","properties":{"value":schema},
+                "required":["value"],"additionalProperties":false});
+        }
+        let mut body = json!({"model":binding.model,"input":"go","tool_choice":choice,
+            "tools":[{"type":"function","name":"probe","parameters":schema}]});
+        if let Some(strict) = strict {
+            body["tools"][0]["strict"] = json!(strict);
+        }
+        let mut request = source(body);
+        request.conversation =
+            Some(ConversationContext::independent_request("synthetic-schema").unwrap());
+        if inline {
+            let ToolDefinition::Function(tool) = request.task.semantic.tools()[0].clone() else {
+                panic!("function");
+            };
+            let mut settings = request.task.semantic.settings().clone();
+            settings.tools = None;
+            let mut items = request.task.semantic.items().to_vec();
+            items.push((
+                ItemId::new(2),
+                Item::ToolChange(ToolChange {
+                    action: ToolChangeAction::AddDefinition(Box::new(tool)),
+                    cache: None,
+                }),
+            ));
+            request.task.semantic = request
+                .task
+                .semantic
+                .with_settings(settings)
+                .unwrap()
+                .with_items(items)
+                .unwrap();
+        }
+        let before = request.clone();
+        if nested {
+            assert_eq!(representable(&endpoint, &request), Ok(()));
+            let prepared = prepare(&endpoint, &binding.provider(), &secret, &request).unwrap();
+            let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
+            if !inline {
+                assert_eq!(wire["tools"][0]["input_schema"], schema);
+            } else {
+                assert_eq!(
+                    wire["messages"][1]["content"][0]["tool"]["definition"]["input_schema"],
+                    schema
+                );
+            }
+        } else {
+            let error = endpoint.encode_request_with_rules(&request).unwrap_err();
+            assert_eq!(
+                error.cause,
+                ConversionCause::Codec(CodecError::Unsupported(CarrierReason::ToolConstraint {
+                    declaration: 0,
+                    constraint: ToolConstraint::Composition
+                }))
+            );
+            assert_eq!(
+                representable(&endpoint, &request),
+                Err(RejectionReason::Conversion(Box::new(error.clone())))
+            );
+            assert!(
+                matches!(prepare(&endpoint, &binding.provider(), &secret, &request),
+                Err(AttemptError::Conversion(actual)) if actual == error)
+            );
+        }
+        assert_eq!(request, before);
+    }
+}
+
+#[test]
+fn interactions_scalar_parameters_require_no_call_in_preflight_and_preparation() {
+    let endpoint = GOOGLE_BINDINGS[0].interactions_endpoint();
+    for strict in [Some(false), Some(true), None] {
+        let mut body = json!({"model":GOOGLE_BINDINGS[0].model,"input":"go",
+            "tool_choice":"none","parallel_tool_calls":false,
+            "tools":[{"type":"function","name":"probe","parameters":{"type":"string"}}]});
+        if let Some(strict) = strict {
+            body["tools"][0]["strict"] = json!(strict);
+        }
+        let request = source(body.clone());
+        let (wire, rules) = projected(&endpoint, &request);
+        assert_eq!(wire["tools"][0]["parameters"], json!({"type":"string"}));
+        assert_eq!(wire["generation_config"]["tool_choice"], "none");
+        assert!(rules.is_empty());
+        for choice in ["auto", "required"] {
+            body["tool_choice"] = json!(choice);
+            body["parallel_tool_calls"] = json!(true);
+            let request = source(body.clone());
+            let before = request.clone();
+            assert_eq!(
+                endpoint
+                    .encode_request_with_rules(&request)
+                    .unwrap_err()
+                    .cause,
+                morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(
+                    morphiecore::protocol::failure::CarrierReason::ToolConstraint {
+                        declaration: 0,
+                        constraint: morphiecore::protocol::failure::ToolConstraint::RootObject,
+                    }
+                ))
+            );
+            assert!(representable(&endpoint, &request).is_err());
+            assert!(
+                prepare(
+                    &endpoint,
+                    &GOOGLE_BINDINGS[0].provider(),
+                    &SecretMaterial::new("synthetic").unwrap(),
+                    &request
+                )
+                .is_err()
+            );
+            assert_eq!(request, before);
+        }
+        body["tools"][0]["parameters"] =
+            json!({"type":"object","properties":{},"additionalProperties":false});
+        let request = source(body);
+        let (wire, _) = projected(&endpoint, &request);
+        assert_eq!(
+            wire["tools"][0]["parameters"],
+            json!({"type":"object","properties":{},"additionalProperties":false})
+        );
+    }
+}
+
+#[test]
 fn google_no_call_admission_agrees_with_preparation_without_relaxing_other_choices() {
     let parameters = json!({"type":"object","properties":{
         "label":{"type":"string","minLength":5}},"required":["label"],"additionalProperties":false});

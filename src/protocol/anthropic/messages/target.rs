@@ -109,6 +109,20 @@ impl TargetContract {
                 request.inferred_affinity,
                 crate::protocol::cache::SessionNamespace::OpenCodeGo,
             )?;
+            // Go validates every declaration even with tool_choice:none.
+            // Nested composition remains legal; never erase a root constraint.
+            for (declaration, tool) in request.task.semantic.function_tools().enumerate() {
+                if tool.parameters.as_ref().is_some_and(|schema| {
+                    ["anyOf", "allOf", "oneOf"]
+                        .iter()
+                        .any(|keyword| schema.root().get(*keyword).is_some())
+                }) {
+                    return Err(CodecError::Unsupported(CarrierReason::ToolConstraint {
+                        declaration,
+                        constraint: crate::protocol::failure::ToolConstraint::Composition,
+                    }));
+                }
+            }
         }
         if context != ExecutionHints::default() || request.n.value().is_some_and(|n| *n != 1) {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));

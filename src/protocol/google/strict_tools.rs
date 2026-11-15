@@ -234,6 +234,16 @@ pub(crate) fn validated(request: &GenerationRequest) -> Result<bool, CodecError>
         let ToolDefinition::Function(tool) = tool else {
             return Err(unsupported(index, Reason::Declaration));
         };
+        // Call-enabled native functions take an object, independently of
+        // strictness. Omitted/root-reference schemas still go to the upstream.
+        if tool.parameters.as_ref().is_some_and(|schema| {
+            schema
+                .root()
+                .get("type")
+                .is_some_and(|kind| kind.as_str() != Some("object"))
+        }) {
+            return Err(unsupported(index, Reason::RootObject));
+        }
         match tool.strict {
             FunctionStrictness::Explicit(true) => strict = true,
             FunctionStrictness::Omitted(StrictDefault::Conditional) => {

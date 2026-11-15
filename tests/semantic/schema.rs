@@ -504,7 +504,8 @@ mod schema_admission {
 
     #[test]
     fn every_client_protocol_admits_an_mcp_tool_schema_unchanged() {
-        let schema = mcp_schema();
+        let mut schema = mcp_schema();
+        schema["anyOf"] = json!([{"required":["key"]},{"required":["mode"]}]);
         let chat = json!({"model":"m","messages":[{"role":"user","content":"go"}],
             "tools":[{"type":"function","function":{"name":"lookup","parameters":schema}}]});
         let responses = json!({"model":"m","input":"go",

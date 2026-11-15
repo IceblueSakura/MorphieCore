@@ -109,7 +109,9 @@ Existing generateContent and Interactions targets admit a qualified closed-objec
 
   Non-strict schemas remain unchanged for upstream validation, without a literal root-type injection.
 
-  Explicit scalar roots still reject.
+  With calls enabled, a supplied root `type` must be the literal `"object"`;
+  this carrier check is independent of strictness. Omitted types and root
+  references remain unchanged for upstream validation.
 - **Bounded strict references:** a root `$defs` object and `#/$defs/<name>` references may describe this same subset, including root aliases and nested/nullable references.
 
   Decode one JSON Pointer token with standard `~0`/`~1` escapes using `serde_json::Value::pointer`; never fetch, inline or normalize schemas.
@@ -124,6 +126,9 @@ Existing generateContent and Interactions targets admit a qualified closed-objec
 - Strict automatic selection uses `VALIDATED` / `validated`; required selection uses `ANY` / `any`; none stays none. Allowed names remain exact. generateContent optional allowed subsets use `VALIDATED`, including non-strict requests, without claiming a new strict guarantee.
 - When calls are enabled, the mode covers the whole effective inventory. With any strict tool, every declaration's supplied schema must fit the subset. Mixed strict/non-strict declarations are accepted only within that inventory; non-strictness does not promise invalid arguments. Conditional source defaults resolve on candidate copies through the same schema and inventory check, otherwise taking the existing named conditional-default fallback. Explicit true never takes that fallback.
 - **Native no-call equivalence:** explicit `tool_choice:none` uses `NONE` / `none`, which prohibits every call and satisfies argument/cardinality guarantees vacuously. Shared admission and direct writers retain complete declarations/schemas, skip conditional-strict fallback and accept serial intent without requesting validated decoding. This does not relax auto/required selection or bypass known-field, bounds, trust, history or other declaration-carrier checks.
+  Interactions retains scalar-root declarations in this mode. generateContent
+  keeps its separate non-object-root carrier rejection; success on one API
+  does not qualify the other's declaration parser.
 - Parameter omission keeps the native parameterless declaration. No schema deletion, argument repair, inferred prompting or local retry supplies a missing guarantee. Serial intent still rejects when calls are enabled; one declared function can produce multiple calls.
 
 Ordinary Google text/call signatures without a lawful stateless carrier reject on Responses and Chat/Messages. Managed continuation is experimental and disabled under the [stateful freeze](history-and-replay.md#stateful-history); the [field-level boundary](history-and-replay.md#stateless-api-boundaries) records owners and rejection timing. No public replay extension, signature deletion or surrogate reasoning owner is available.
@@ -162,6 +167,14 @@ guarantees retain their existing scope. MiniMax and OpenRouter Muse Ember only
 support automatic tool selection; explicit restrictive choices reject before
 dispatch. [Current service contracts](../refs/2026-11-13-model-catalog-expansion.md#opencode-go)
 own the directory evidence and native endpoint paths.
+
+Go Messages rejects tool parameter schemas containing top-level `anyOf`, `allOf`
+or `oneOf`, including non-strict tools and explicit no-call requests. Candidate
+encoding checks root and retained inline definitions before dispatch and reports
+the declaration index with a closed composition reason. Nested composition stays
+unchanged. This is a Go target limitation, not a restriction on client parsing or
+the semantic schema union; no tool deletion, constraint erasure or argument
+wrapping supplies an equivalent carrier.
 
 OpenRouter Luna preserves verbosity through the ordinary Chat and Responses
 carriers. Its sampling, truncation, parallel-tool and strictness policies remain
@@ -313,6 +326,7 @@ Applications selected on 2026-10-30 are implemented, including request strictnes
 |---|---|
 | Explicit `strict:true` without an equivalent carrier | L5 unless a concrete loss is selected, as in the [Bailian service policy](#shared-aliyun-billing-dialect) (L3). Conditional (omitted) strictness is always resolvable without a compatibility classifier: an already-closed schema on a target with an equivalent strict carrier stays strict, every other case resolves non-strict under the conditional-default loss (L3); a request-wide strict grammar overflow resolves all conditional definitions non-strict, and rejects only when explicit strict tools alone overflow |
 | Google strictness/serial intent with explicit `tool_choice:none` | L2 compatibility without a loss receipt: native no-call mode satisfies both guarantees, preserving all declarations and schemas without strict-default fallback; enabled calls retain their independent admission gates |
+| Go Messages tool schemas with root `anyOf` / `allOf` / `oneOf` | L5 target-carrier rejection, including no-call mode and retained inline definitions; nested schemas and source declarations remain unchanged |
 | Effort | Nearest supported level, ties upward, across Reasoning/Response scopes at the same level (L3); manual budgets on adaptive-only bindings convert to adaptive plus effort. When an explicit effort already exists, preserve it rather than replacing it with a budget-derived level; omit the uncarriable numeric budget under a named loss |
 | ModelBest Chat thinking | L2 compatibility without a loss receipt: explicit activation uses the nested Boolean; positive reasoning effort also activates thinking and retains the same-name effort field. Absence keeps the hosted default |
 | DeepSeek Chat whole-inventory selection | L2 `deepseek.full-tool-inventory-choice.v1`: a complete function allowed set uses scalar `auto/required`, preserving every declaration and selection intent; proper subsets and thinking-mode forcing retain rejection |
