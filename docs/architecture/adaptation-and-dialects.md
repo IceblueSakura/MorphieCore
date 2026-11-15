@@ -440,6 +440,14 @@ Apply [semantic-equivalence compatibility](#semantic-equivalence-compatibility) 
 
 Accepted applications:
 
+- **Client sampling preferences:** an optional client-side JSON-schema `prefer`
+  is not an explicit wire guarantee. Partial/non-compositional discovery cannot
+  establish strict compatibility for the active inventory. The MorphieCore Pi
+  extension therefore resolves optional preferences on request-context copies
+  before native serialization, preserving schemas, tool changes and source history.
+  Explicit `require` stays with the native serializer and ordinary target admission.
+  The gateway never reinterprets an incoming `strict:true` as an optional preference.
+  This integration changes neither Pi itself nor the public protocol.
 - **Omitted Responses strictness (P5):** the [Responses reference](https://developers.openai.com/api/reference/resources/responses/methods/create) and [function-calling guide](https://developers.openai.com/api/docs/guides/function-calling#strict-mode) define attempted strict normalization with non-strict fallback; Chat omission is non-strict.
 
   Implemented on OpenAI Chat/Bailian and Messages paths: an already-closed schema with an equivalent strict carrier stays strict; every other omitted-strict definition resolves non-strict under `openai.omit-conditional-tool-strictness.v1` (L3).

@@ -30,10 +30,9 @@ This page owns current scope, planned execution sequence, stage priorities, and 
 
 Stateful upstream/downstream APIs remain [experimental and disabled](../architecture/history-and-replay.md#stateful-history). Their acceptance is excluded from current model adaptation and repairs until explicit user activation; no other work package enables them implicitly.
 
-Current maintenance closes the selected Pi strict-preference defect, then returns to the selected
+Current work prioritizes the selected
 [OpenRouter Luna Responses SSE intake issue](unscheduled-issues.md#content-and-client-qualification)
-before Stage 4 resumes. Source-report retention follows the
-[bounded accounting contract](../architecture/index.md#scoped-accounting).
+before Stage 4 resumes.
 
 Other limitations and prerequisites share the [issue register](unscheduled-issues.md#unscheduled-issues); R09 real-account failover, remaining model-service qualification and Agent session storage retain separate scheduling decisions and remain outside that entry gate.
 
@@ -43,7 +42,6 @@ No deployment or new API activation is implied.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
-| Selected maintenance / before Luna intake | Repair Pi preference resolution | Current-client preference/require separation under the required offline and affected consumer gates |
 | Current focus / before Stage 4 | Resolve [OpenRouter Luna Responses SSE intake](unscheduled-issues.md#content-and-client-qualification) | First failing event/error localized, independent regression and corrected native-to-IR-to-downstream stream acceptance |
 | Conditional tool follow-ups | [Conditional Stage-3 follow-ups](unscheduled-issues.md#conditional-stage-3-follow-ups) | Separate policy selection and affected-loop acceptance; not default Stage-4 prerequisites |
 | API expansion | Select and implement Stage-4 operation contracts | Per-operation lifecycle, protocol and SDK acceptance |
@@ -52,13 +50,12 @@ No deployment or new API activation is implied.
 
 ## Planned order
 
-First close the explicitly selected Pi preference repair, then close the
-[OpenRouter Luna Responses SSE intake issue](unscheduled-issues.md#content-and-client-qualification)
-before resuming Stage 4. Other [unscheduled issues](unscheduled-issues.md#unscheduled-issues),
-including R09, do not become implicit prerequisites. Once these selected repairs
-and the entry gate close, Stage-4 families retain equal priority and advance as
-contracts are selected. Conditional tool packages keep their own policy gates;
-Stage 5 remains unscheduled.
+Before resuming Stage 4, close the explicitly selected
+[OpenRouter Luna Responses SSE intake issue](unscheduled-issues.md#content-and-client-qualification).
+Other [unscheduled issues](unscheduled-issues.md#unscheduled-issues), including R09,
+do not become implicit prerequisites. Once this entry gate closes, Stage-4 families
+retain equal priority and advance as contracts are selected. Conditional tool
+packages keep their own policy gates; Stage 5 remains unscheduled.
 
 | Stage | Goal | Exit evidence |
 |---|---|---|
