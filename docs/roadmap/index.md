@@ -9,6 +9,9 @@ This page owns current scope, planned execution sequence, stage priorities, and 
 - [Current status](#current-status)
 - [Planned order](#planned-order)
   - [Execution sequence and work-package rules](#execution-sequence-and-work-package-rules)
+  - [Observability prerequisite](#observability-prerequisite)
+    - [Delivery sequence](#delivery-sequence)
+    - [Completion criteria](#completion-criteria)
   - [Stage 4 scope](#stage-4-scope)
     - [Decision API closure](#decision-api-closure)
     - [Stage-4 operation readiness](#stage-4-operation-readiness)
@@ -17,7 +20,6 @@ This page owns current scope, planned execution sequence, stage priorities, and 
 - [Test supplementation](#test-supplementation)
   - [Stage-4 reuse and acceptance](#stage-4-reuse-and-acceptance)
 - [Phase rules](#phase-rules)
-  - [Observability follow-up](#observability-follow-up)
   - [Agent authorization and diagnostics follow-up](#agent-authorization-and-diagnostics-follow-up)
   - [Temporary routing freeze](#temporary-routing-freeze)
   - [IR and codec migration](#ir-and-codec-migration)
@@ -30,8 +32,10 @@ This page owns current scope, planned execution sequence, stage priorities, and 
 
 Stateful upstream/downstream APIs remain [experimental and disabled](../architecture/history-and-replay.md#stateful-history). Their acceptance is excluded from current model adaptation and repairs until explicit user activation; no other work package enables them implicitly.
 
-Stage 4 remains at per-operation contract selection; existing static carriers do
-not activate new public APIs.
+The selected [observability prerequisite](#observability-prerequisite) precedes
+further Stage-4 work. Its design and completion criteria are accepted;
+implementation and observable acceptance remain pending. Existing static carriers
+do not activate new public APIs.
 
 Other limitations and prerequisites share the [issue register](unscheduled-issues.md#unscheduled-issues); R09 real-account failover, remaining model-service qualification and Agent session storage retain separate scheduling decisions and are not implicit Stage-4 prerequisites.
 
@@ -41,19 +45,23 @@ No deployment or new API activation is implied.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
+| Before Stage 4 | Deliver the selected [logs-and-traces slice](#observability-prerequisite) | All eight [completion criteria](#completion-criteria) observed and verified |
 | Conditional tool follow-ups | [Conditional Stage-3 follow-ups](unscheduled-issues.md#conditional-stage-3-follow-ups) | Separate policy selection and affected-loop acceptance; not default Stage-4 prerequisites |
 | API expansion | Select and implement Stage-4 operation contracts | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Opt-in [per-Agent JSONL session storage](../architecture/history-and-replay.md#agent-session-files); unscheduled and not a Stage-4 prerequisite | Select isolation and lifetime bounds before implementation |
 
 ## Planned order
 
-Stage-4 families retain equal priority and advance as contracts are selected.
+Complete the [observability prerequisite](#observability-prerequisite), then
+resume Stage-4 contract selection and implementation. Stage-4 families retain
+equal priority.
 Other [unscheduled issues](unscheduled-issues.md#unscheduled-issues), including R09,
 do not become implicit prerequisites. Conditional tool packages keep their own
 policy gates; Stage 5 remains unscheduled.
 
 | Stage | Goal | Exit evidence |
 |---|---|---|
+| **Before Stage 4 — Observability** | Correlated structured logs and traces across existing runtime boundaries, with a development query path | The eight [observable completion criteria](#completion-criteria); no production deployment or new API activation |
 | **3 — Conditional compatibility follow-ups** | [Conditional packages](unscheduled-issues.md#conditional-stage-3-follow-ups) | Separate policy selection and affected-loop verification; not default Stage-4 or optional Agent blockers |
 | **4 — Modalities, Decision & file resources** | Decision, Embedding extensions, Audio (Speech/Transcription/Translation), Images, Files/Uploads, and Video at equal priority | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
 | **5 — Unscheduled follow-ups** | Citations, tool discovery, hosted tools, server-side compaction, Batch, and Realtime | Requires explicit per-slice design selection and scheduling prior to implementation |
@@ -67,9 +75,76 @@ Prefer small, independently decidable repairs before complex integration; diagno
 4. **Evidence:** Provide independent directional tests and focused failure assertions at the responsible layer. Classify each field's ladder level and give rejections their L5 reason.
 5. **Exit:** Run the offline baseline and relevant SDK gates before commit and push. Remove completed roadmap packages and record decisions in [Architecture](../architecture/index.md).
 
+### Observability prerequisite
+
+**Status:** selected and not yet implemented. This section owns this slice's
+scope, execution order and completion gate; [Architecture](../architecture/runtime-and-routing.md#selected-logs-and-traces-design)
+owns the accepted design. Current temporary diagnostics remain described in
+[Usage](../usage/gateway-configuration.md#failure-diagnostics).
+
+Deliver correlated structured logs and traces for ingress/admission, Generation
+planning and same-target attempts, upstream response consumption, downstream body
+delivery, OAuth renewal/storage, startup/shutdown and existing standalone-task
+execution. Keep protocol/semantic transformations pure. Reuse official
+OpenTelemetry SDKs, bridges, processors and Collector facilities rather than a
+custom tracer, event bus, buffering pipeline or diagnostic store.
+
+The slice includes a test-owned development query path, not a production
+observability platform. Business metrics, tail sampling, success-payload archives,
+new client correlation requirements and external trace propagation are outside
+this slice. Existing routing, credential, stateful-API and modality freezes remain
+unchanged. Persistent service deployment and new external data recipients retain
+their separate authorization requirements.
+
+#### Delivery sequence
+
+Each row is an independently verifiable implementation slice, not a new framework
+or a required client/model/protocol cross-product.
+
+| Slice | Main owners | Deliverable and local exit |
+|---|---|---|
+| Foundation vertical slice | Cargo pins, telemetry composition root, `src/gateway/startup/`, `src/bin/morphiecore.rs`, diagnostics SDK wiring | Pin compatible released SDK/bridge sources; one Responses request produces correlated logs and spans visible in a development backend; disabled export creates no exporter; embedded users/tests do not compete for global subscribers |
+| Request and stream lifecycle | `src/gateway/ingress/`, `generation/{exchange,intake}.rs`, `body.rs`, `src/transport/http.rs` and response consumers | Cover admission, selection, actual attempts, body consumption and handoff; normal, decode-failure, retry and cancellation paths end and attribute correctly |
+| Background and existing task coverage | `src/gateway/renewal.rs`, `src/credential/manager/refresh.rs`, shared `src/gateway/tasks/` exchange and CLI entry points | Correlate renewal, verification and durable commits; cover existing task I/O without changing modality contracts; preserve CLI JSON stdout |
+| Migration and simplification | `src/gateway/diagnostics/`, runtime configuration and affected Usage/Architecture | Replace redundant manual clocks, sequence and timeline machinery with standard spans/events; retain adaptation-notice facts and private-capture boundaries; leave one logging/export path rather than permanent dual writes |
+| Operational acceptance | Collector examples, development queries and focused lifecycle/privacy/exporter checks | Demonstrate all eight completion criteria below; distinguish synthetic, SDK, live-service and deployment evidence |
+
+Request-lifecycle and background/task slices may proceed independently after the
+foundation. Remove old diagnostic machinery only when its relevant failure and
+cancellation coverage is preserved. Update only the current configuration schema
+and examples; do not introduce historical aliases or migrations.
+
+#### Completion criteria
+
+All eight results are mandatory for this prerequisite. Approval of this plan,
+successful compilation, or screenshots alone do not establish completion. Reuse
+existing body, renewal, diagnostics and capture scenarios; add maintained tests
+only for actual correlation, lifetime, safety or exporter gaps.
+
+| # | Observable result | Verification boundary |
+|---|---|---|
+| 1 | A failure log identifies its logical request, responsible attempt when one exists, and failure boundary in the query backend | SDK in-memory assertions verify trace/span correlation and closed error attribution; a development-backend query verifies navigation from the exported log to the trace |
+| 2 | Upstream headers, first projected content, terminal validation, EOF validation and downstream handoff have distinct timing/meaning | Controlled streaming scenarios verify their order and request/attempt attribution; response headers or handler return do not end body-consuming spans; first frame is not mislabeled TTFT |
+| 3 | A recovered same-target retry preserves the initial failure while recording the correct final request result | Existing synthetic upstream authority verifies actual sends and target identity; exported attempt outcomes distinguish retry planned from executed without treating send invocations as exact upstream executions |
+| 4 | Consumer cancellation and late stream errors cannot fabricate successful completion | Body-drop, late-truncation and terminal/EOF scenarios verify exactly-once observed endings consistent with existing delivery arbitration; local handoff never claims remote receipt |
+| 5 | Renewal timeout/cancellation and a subsequent durable credential commit remain separately observable and correlated | Existing queued-commit/rotation scenarios verify context across async/blocking tasks and commit lifetime through storage drain; observations agree with independent persisted-state checks |
+| 6 | Collector outage or queue saturation does not change business behavior, and possible telemetry loss has a safe local indication | Test-owned unavailable/slow receivers and SDK limits exercise nonblocking bounded export and shutdown; exporter diagnostics are body-free and cannot recursively enter their own export pipeline |
+| 7 | Final exported logs/spans contain no forbidden sensitive fields | Synthetic secret canaries exercise normal, failure, bridge and background paths; inspect emitted records and resources, not only call-site fields; private capture remains separately opted in and credential-redacted |
+| 8 | Enabling or disabling instrumentation preserves wire behavior, cancellation, publication fences and history replay | Reuse affected gateway/SDK and lifecycle oracles with instrumentation on/off; independent outputs and state, not telemetry itself, establish behavioral equivalence |
+
+Run the [offline baseline and affected gates](../development.md#verification-gates)
+before publishing implementation. Keep verification proportional to changed
+contracts; this gate requires no broad Provider sweep or telemetry-text snapshots.
+Record remaining uncertainty in the existing issue register without marking an
+unverified criterion passed. Resume Stage 4 only after all eight criteria are
+verified; later metrics, backend expansion and production deployment are not
+additional implicit gates. Remove this completed slice from the roadmap while
+retaining its architectural decisions.
+
 ### Stage 4 scope
 
-Stage 4 API families have equal priority and advance as their contracts are selected:
+After the [observability prerequisite](#observability-prerequisite), Stage 4 API
+families have equal priority and advance as their contracts are selected:
 
 | Package | Scope | Exit criteria |
 |---|---|---|
@@ -124,12 +199,6 @@ The test strategy uses pinned upstream assets and standard SDK consumers rather 
 3. Preserve the full offline baseline while adding operation-specific lifecycle and safety checks.
 
 ## Phase rules
-
-### Observability follow-up
-
-Current diagnostic reports/logger and the loopback receiver are temporary; [Usage](../usage/gateway-configuration.md#failure-diagnostics) describes their configuration. Future tracing, metrics and backend changes follow concrete needs, not a fixed production-readiness gate.
-
-Safe-to-ignore diagnostic extensions may be added without dedicated extension tests. Changes to logging or capture still require applicable redaction, bounds, cancellation and exporter checks. Execution and acceptance evidence remain independent of optional instrumentation.
 
 ### Agent authorization and diagnostics follow-up
 

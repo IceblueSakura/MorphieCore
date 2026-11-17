@@ -28,6 +28,7 @@ See [Architecture Overview](index.md) for system boundaries and core IR semantic
     - [Identity and authentication](#identity-and-authentication)
     - [Shared history and usage attribution](#shared-history-and-usage-attribution)
   - [Observability](#observability)
+    - [Selected logs and traces design](#selected-logs-and-traces-design)
   - [Configurable exchange capture](#configurable-exchange-capture)
 
 ## Runtime and trust
@@ -278,7 +279,11 @@ Profile-specific verification, rotation and terminal-error semantics follow the 
 
 Configuration intake reports a domain and fixed safe reason, with a root location for schema/type errors. It does not traverse Serde paths or emit rejected values or private map keys. Semantic validation may retain its schema-owned field/index attribution.
 
-Current diagnostic reports and logging are temporary instrumentation. Future tracing and metrics will evolve from concrete diagnostic and operational needs, not a fixed framework or production-acceptance gate.
+Current diagnostic reports and logging are temporary instrumentation. The
+[selected logs-and-traces slice](../roadmap/index.md#observability-prerequisite)
+now precedes Stage 4; its implementation and observable acceptance are pending.
+The following describes current behavior, separately from the selected design
+below.
 
 The current implementation uses one runtime-owned native OpenTelemetry Logs provider, the standard bounded batch processor and official OTLP/HTTP JSON exporter. The receiver owns retention and optional durability. The application owns no diagnostic files, span tree, successful-exchange archive or diagnostic usage ledger. Generation Text optionally records metadata-only INFO summaries and bounded DEBUG timelines; WARN remains the default. Execution facts remain independent of optional export.
 
@@ -290,6 +295,65 @@ The current implementation uses one runtime-owned native OpenTelemetry Logs prov
 - **Maintenance:** OAuth renewal uses the same logger with trusted account/profile and a closed category. Token replies, grants, credential locators and raw third-party errors are never diagnostic bodies.
 
 Public adaptation notices retain bounded semantic conversion evidence independently of diagnostic logging. Acknowledgment, delivery commit, publication fences and history reservations remain execution responsibilities. Logs cannot prove upstream execution counts; synthetic authorities and client outcomes are the acceptance oracle.
+
+#### Selected logs and traces design
+
+This is the accepted target, not a claim that the current logger has been
+replaced. [Roadmap](../roadmap/index.md#observability-prerequisite) owns delivery
+order and completion criteria.
+
+- **Standard pipeline:** Use `tracing` as the application instrumentation entry,
+  [`tracing-opentelemetry`](https://docs.rs/tracing-opentelemetry/0.34.0/tracing_opentelemetry/)
+  for spans and the official
+  [`opentelemetry-appender-tracing`](https://docs.rs/opentelemetry-appender-tracing/0.33.1/opentelemetry_appender_tracing/)
+  for Logs. Official SDK processors/exporters own bounded buffering and OTLP;
+  Collector facilities own downstream batching, retry and optional persistence.
+  Keep application glue limited to configuration, safe field mapping and
+  lifecycle ownership. Pin compatible releases before integration.
+- **Ownership and coverage:** The binary composition root owns providers and
+  subscriber installation; embedded Gateway users and tests retain isolated
+  subscriber ownership. Request spans cover ingress through response-body end or
+  drop, including body-free authentication/admission rejection. Upstream client
+  spans cover response consumption, not just header receipt. Propagate context
+  across spawned futures, blocking storage work and body polling without holding
+  entered guards across awaits. Instrument orchestration/I/O owners, never pure
+  semantic, codec, adapter or lowering transformations.
+- **Meaning and volume:** Separate logical requests, physical attempt slots and
+  actual send invocations. Use spans for operations and bounded one-shot events
+  for headers, first content, publication, terminal/EOF checks and handoffs,
+  never per-token/chunk spans or logs. Preserve HTTP, semantic and delivery
+  outcomes independently; typed execution facts, not automatic error-event
+  mapping, determine the final result. First frame is not TTFT and local
+  handoff is not remote receipt. No Agent/tool-execution spans are invented.
+- **Logs and traces:** Use separate layer filters so log verbosity cannot disable
+  request spans. Target controlled INFO operation starts/results, WARN recovered
+  failures and relevant rejections, ERROR unrecovered failures, and bounded DEBUG
+  milestones. Preserve the original failure across recovery/cancellation.
+  Application logging replaces the old direct Sink path, while domain facts
+  consumed by public adaptation notices remain independent. Do not serialize
+  entire Reports or retain permanent dual logging.
+- **Data and trust:** Explicitly allowlist final emitted fields and Resource
+  attributes. Prefer standard names and namespace gateway-specific fields under
+  `morphiecore.*`. Exclude credentials, provenance, raw headers/URLs/private paths,
+  session identifiers, business content and third-party error/debug strings.
+  Disable unsafe automatic exception enrichment and implicit ambient
+  authentication/resource enrichment; keep exporter diagnostics safe and local.
+  Generate local trace roots by default, without client baggage, Provider header
+  injection or new client echo requirements. Private capture remains separate
+  opt-in data handling, not ordinary span attributes.
+- **Sampling and query path:** Initially collect bounded coarse-grained spans for
+  all instrumented operations in the development workflow. Business metrics and
+  tail sampling remain deferred rather than prerequisites. Reuse an existing
+  OTLP backend when available; the official
+  [Grafana OTLP development image](https://grafana.com/docs/opentelemetry/docker-lgtm/)
+  is a development/test query option, not an approved production deployment.
+  Do not build an application-owned diagnostic database or promise zero loss.
+- **Shutdown and failure isolation:** Stop ingress and cancel/drain request
+  producers, preserve required credential commits, then close providers with
+  bounded SDK shutdown off async workers. Do not block request/body destructors
+  on export or let a telemetry deadline abandon rotated credentials. Backend
+  outage and queue loss cannot change inference, routing, replay or credential
+  state; safe local warnings must not recursively export themselves.
 
 ### Configurable exchange capture
 
