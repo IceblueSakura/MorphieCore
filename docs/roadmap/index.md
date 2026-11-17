@@ -80,9 +80,11 @@ Prefer small, independently decidable repairs before complex integration; diagno
 **Status:** in progress; the SDK/request foundation is implemented, not the full
 prerequisite. Correlated server spans and Logs, body lifetime, isolated
 subscribers and producer/provider shutdown are covered by focused synthetic
-checks. Attempt/client spans, maintenance tracing, manual-timeline replacement
-and indexed development-backend queries remain pending. None of the eight
-criteria is closed solely by this foundation.
+checks. Internal operation/attempt spans and bounded SDK events have replaced
+manual diagnostic clocks, stage timelines and log counters, with focused
+retry/cancellation/capture attribution checks. Upstream HTTP-client spans, first
+content observations, maintenance tracing and indexed development-backend queries
+remain pending. None of the eight criteria is closed solely by these local checks.
 
 This section owns this slice's
 scope, execution order and completion gate; [Architecture](../architecture/runtime-and-routing.md#selected-logs-and-traces-design)
@@ -113,7 +115,6 @@ or a required client/model/protocol cross-product.
 | Foundation vertical slice | Cargo pins, telemetry composition root, `src/gateway/startup/`, `src/bin/morphiecore.rs`, diagnostics SDK wiring | Pin compatible released SDK/bridge sources; one Responses request produces correlated logs and spans visible in a development backend; disabled export creates no exporter; embedded users/tests do not compete for global subscribers |
 | Request and stream lifecycle | `src/gateway/ingress/`, `generation/{exchange,intake}.rs`, `body.rs`, `src/transport/http.rs` and response consumers | Cover admission, selection, actual attempts, body consumption and handoff; normal, decode-failure, retry and cancellation paths end and attribute correctly |
 | Background and existing task coverage | `src/gateway/renewal.rs`, `src/credential/manager/refresh.rs`, shared `src/gateway/tasks/` exchange and CLI entry points | Correlate renewal, verification and durable commits; cover existing task I/O without changing modality contracts; preserve CLI JSON stdout |
-| Migration and simplification | `src/gateway/diagnostics/`, runtime configuration and affected Usage/Architecture | Replace redundant manual clocks, sequence and timeline machinery with standard spans/events; retain adaptation-notice facts and private-capture boundaries; leave one logging/export path rather than permanent dual writes |
 | Operational acceptance | Collector examples, development queries and focused lifecycle/privacy/exporter checks | Demonstrate all eight completion criteria below; distinguish synthetic, SDK, live-service and deployment evidence |
 
 Request-lifecycle and background/task slices may proceed independently after the

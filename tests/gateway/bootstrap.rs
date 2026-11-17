@@ -616,8 +616,23 @@ async fn private_failure_context_reaches_otlp_with_trusted_identity_and_redacted
         .iter()
         .find(|span| span["name"] == "gateway.request")
         .unwrap();
+    let operation_span = spans
+        .iter()
+        .find(|span| span["name"] == "gateway.operation")
+        .unwrap();
+    let attempt_span = spans
+        .iter()
+        .find(|span| span["name"] == "gateway.attempt")
+        .unwrap();
     assert_eq!(failure["traceId"], request_span["traceId"]);
-    assert_eq!(failure["spanId"], request_span["spanId"]);
+    assert_eq!(failure["spanId"], attempt_span["spanId"]);
+    assert_eq!(attempt_span["parentSpanId"], operation_span["spanId"]);
+    assert_eq!(operation_span["parentSpanId"], request_span["spanId"]);
+    let followup = logs
+        .iter()
+        .find(|log| log["eventName"] == "gateway.failure.response")
+        .unwrap();
+    assert_eq!(followup["spanId"], request_span["spanId"]);
     assert_eq!(failure["traceId"].as_str().unwrap().len(), 32);
     let trace_text = serde_json::to_string(&spans).unwrap();
     assert!(

@@ -1,17 +1,20 @@
-//! Request-local attribution and bounded Generation timelines, independent of export.
+//! Execution attribution and standard span milestones, independent of optional export.
 pub(super) mod request;
 mod telemetry;
 use crate::execution::AttemptError;
 use opentelemetry::logs::{AnyValue, Severity};
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicI64, Ordering},
-    },
-    time::Instant,
+use opentelemetry::{
+    KeyValue,
+    trace::{SpanContext, Status, TraceContextExt},
+};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 pub(super) use telemetry::Sink;
 pub use telemetry::{DiagnosticsConfig, LogLevel};
+use tracing::Span;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 type Attributes = Vec<(opentelemetry::Key, AnyValue)>;
 
 #[derive(Clone, Default)]
@@ -73,18 +76,16 @@ pub(super) struct Trace {
     stage: Stage,
     outcome: Outcome,
     status: Option<u16>,
-    active: bool,
+    operation_span: Span,
+    attempt_span: Option<Span>,
+    request_context: SpanContext,
     failure_logged: bool,
     emitted: Option<Emitted>,
-    started: Instant,
-    attempt_started: Instant,
-    sequence: AtomicI64,
-    seen_stages: u16,
     sends: i64,
     terminal_validated: bool,
     finish_validated: bool,
     published: bool,
-    first_handoff_ms: Option<i64>,
+    first_handoff: bool,
     final_handoff: bool,
     response_outcome: Option<&'static str>,
 }
@@ -111,7 +112,9 @@ impl Trace {
             .cloned();
         trace.emitted = request.extensions().get::<Emitted>().cloned();
         trace.operation = operation(request.uri().path());
-        trace.timeline("generation.request.started", Severity::Debug, vec![]);
+        trace
+            .operation_span
+            .set_attribute("morphiecore.operation", trace.operation);
         trace
     }
     #[cfg(test)]
@@ -130,6 +133,16 @@ impl Trace {
         Self::new(sink)
     }
     fn build(sink: Option<&Sink>, request_id: Option<String>, agent_id: Option<String>) -> Self {
+        let request_context = opentelemetry::Context::current()
+            .span()
+            .span_context()
+            .clone();
+        let operation_span = sink.map_or_else(Span::none, |sink| {
+            tracing::dispatcher::with_default(&sink.dispatch(), || {
+                tracing::info_span!(target: "morphiecore.operation", "gateway.operation",
+                    otel.kind = "internal")
+            })
+        });
         Self {
             tasks: None,
             report: Default::default(),
@@ -146,18 +159,16 @@ impl Trace {
             stage: Stage::Admission,
             outcome: Outcome::Interrupted,
             status: None,
-            active: false,
+            operation_span,
+            attempt_span: None,
+            request_context,
             failure_logged: false,
             emitted: None,
-            started: Instant::now(),
-            attempt_started: Instant::now(),
-            sequence: AtomicI64::new(0),
-            seen_stages: 0,
             sends: 0,
             terminal_validated: false,
             finish_validated: false,
             published: false,
-            first_handoff_ms: None,
+            first_handoff: false,
             final_handoff: false,
             response_outcome: None,
         }
@@ -178,6 +189,9 @@ impl Trace {
         );
         trace.capture = capture;
         trace.operation = operation;
+        trace
+            .operation_span
+            .set_attribute("morphiecore.operation", operation);
         trace.stage = Stage::HttpResponse;
         trace.report.request_failure(code, status);
     }
@@ -187,30 +201,67 @@ impl Trace {
             capture.begin(ordinal);
         }
         self.capture_attempt = ordinal;
-        self.attempt_started = Instant::now();
         self.response_outcome = None;
         self.status = None;
         self.stage = Stage::Prepare;
-        self.seen_stages = 0;
         self.terminal_validated = false;
         self.finish_validated = false;
         self.provider = None;
         self.account = None;
         self.upstream_model = None;
-        self.active = true;
+        self.attempt_span = Some(self.sink.as_ref().map_or_else(Span::none, |sink| {
+            tracing::dispatcher::with_default(&sink.dispatch(), || {
+                tracing::info_span!(target: "morphiecore.operation", parent: &self.operation_span,
+                    "gateway.attempt", otel.kind = "internal", morphiecore.attempt = ordinal as i64)
+            })
+        }));
         self.failure_logged = false;
     }
     pub(super) fn end_candidate(&mut self, fallback: Option<&'static str>, retry: bool) {
-        if !self.active {
+        if self.attempt_span.is_none() {
             return;
         }
-        self.active = false;
-        if let Some(code) = self
+        let failure = self
             .failure_code()
-            .or(fallback.filter(|code| *code != "interrupted"))
+            .or(fallback.filter(|code| *code != "interrupted"));
+        let outcome = if !self.cancelled_only() && failure.is_some() {
+            "failed"
+        } else if matches!(self.outcome, Outcome::Shutdown) {
+            "shutdown"
+        } else if self.cancelled_only() {
+            "cancelled"
+        } else if fallback == Some("interrupted") {
+            "interrupted"
+        } else {
+            "complete"
+        };
+        if let Some(code) = failure
             && !self.cancelled_only()
         {
+            self.current_span().set_status(Status::error(code));
+            self.current_span().set_attribute("error.type", code);
             self.emit_failure(code, retry);
+        }
+        let span = self.attempt_span.take().expect("active attempt");
+        span.set_attribute("morphiecore.outcome", outcome);
+        span.set_attribute("morphiecore.retry.planned", retry);
+        self.close_span(span);
+    }
+    fn current_span(&self) -> &Span {
+        self.attempt_span.as_ref().unwrap_or(&self.operation_span)
+    }
+    fn in_scope<T>(&self, action: impl FnOnce() -> T) -> T {
+        match &self.sink {
+            Some(sink) => tracing::dispatcher::with_default(&sink.dispatch(), || {
+                self.current_span().in_scope(action)
+            }),
+            None => action(),
+        }
+    }
+    fn close_span(&self, span: Span) {
+        match &self.sink {
+            Some(sink) => tracing::dispatcher::with_default(&sink.dispatch(), || drop(span)),
+            None => drop(span),
         }
     }
     fn cancelled_only(&self) -> bool {
@@ -235,13 +286,23 @@ impl Trace {
     }
     pub(super) fn executor(&mut self, provider: &str) {
         self.provider = Some(provider.to_owned());
+        self.current_span()
+            .set_attribute("morphiecore.provider", provider.to_owned());
     }
     pub(super) fn named_account(&mut self, account: Option<&str>) {
         self.account = account.map(str::to_owned);
+        if let Some(account) = account {
+            self.current_span()
+                .set_attribute("morphiecore.account", account.to_owned());
+        }
     }
     pub(super) fn models(&mut self, public: &str, upstream: &str) {
         self.public_model = Some(public.to_owned());
         self.upstream_model = Some(upstream.to_owned());
+        self.operation_span
+            .set_attribute("morphiecore.model", public.to_owned());
+        self.current_span()
+            .set_attribute("morphiecore.upstream_model", upstream.to_owned());
     }
     pub(super) fn generation(&mut self, public: &str, client: crate::protocol::ClientProtocol) {
         self.public_model = Some(public.to_owned());
@@ -250,6 +311,10 @@ impl Trace {
             crate::protocol::ClientProtocol::Responses => "responses",
             crate::protocol::ClientProtocol::Messages => "messages",
         };
+        self.operation_span
+            .set_attribute("morphiecore.operation", self.operation);
+        self.operation_span
+            .set_attribute("morphiecore.model", public.to_owned());
     }
     pub(super) fn planning_failure(&mut self, cause: &crate::execution::plan::PlanError) {
         use crate::execution::plan::{PlanError, RejectionReason};
@@ -267,47 +332,45 @@ impl Trace {
                     &AttemptError::Conversion(failure.as_ref().clone()),
                 );
             }
-            self.timeline(
-                "generation.candidate.rejected",
-                Severity::Debug,
+            self.operation_span.add_event(
+                "gateway.candidate.rejected",
                 vec![
-                    ("rejection.index".into(), AnyValue::from(index as i64)),
-                    ("error.type".into(), AnyValue::from(reason.code())),
+                    KeyValue::new("morphiecore.rejection.index", index as i64),
+                    KeyValue::new("error.type", reason.code()),
                 ],
             );
         }
     }
     pub(super) fn stage(&mut self, stage: Stage) {
+        // A failure location, not a duration interval or per-chunk event.
         self.stage = stage;
-        let bit = 1 << stage as u16;
-        if self.seen_stages & bit == 0 {
-            self.seen_stages |= bit;
-            self.timeline(
-                "generation.stage",
-                Severity::Debug,
-                vec![("stage".into(), AnyValue::from(<&'static str>::from(stage)))],
-            );
-        }
     }
     pub(super) fn outcome(&mut self, outcome: Outcome) {
         self.outcome = outcome;
     }
     pub(super) fn head(&mut self, status: u16) {
         self.status = Some(status);
+        self.current_span()
+            .set_attribute("http.response.status_code", status as i64);
+        self.current_span()
+            .add_event("gateway.upstream.headers", vec![]);
     }
     pub(super) fn sent(&mut self) {
         self.sends = self.sends.saturating_add(1);
-        self.timeline("generation.upstream.sent", Severity::Debug, vec![]);
+        self.current_span()
+            .add_event("gateway.upstream.sent", vec![]);
     }
     pub(super) fn terminal_validated(&mut self) {
         if !self.terminal_validated {
             self.terminal_validated = true;
-            self.timeline("generation.upstream.terminal", Severity::Debug, vec![]);
+            self.current_span()
+                .add_event("gateway.upstream.terminal", vec![]);
         }
     }
     pub(super) fn finish_validated(&mut self) {
         self.finish_validated = true;
-        self.timeline("generation.upstream.finished", Severity::Debug, vec![]);
+        self.current_span()
+            .add_event("gateway.upstream.eof", vec![]);
     }
     pub(super) fn response_outcome(&mut self, outcome: crate::semantic::task::generation::Outcome) {
         use crate::semantic::task::generation::Outcome;
@@ -319,16 +382,22 @@ impl Trace {
         });
     }
     pub(super) fn publishing(&mut self) {
-        self.published = true;
+        if !self.published {
+            self.published = true;
+            self.current_span()
+                .add_event("gateway.client.published", vec![]);
+        }
     }
     pub(super) fn handoff(&mut self, final_frame: bool) {
-        if self.first_handoff_ms.is_none() {
-            self.first_handoff_ms = Some(self.elapsed_ms());
-            self.timeline("generation.client.first_handoff", Severity::Debug, vec![]);
+        if !self.first_handoff {
+            self.first_handoff = true;
+            self.current_span()
+                .add_event("gateway.client.first_handoff", vec![]);
         }
         if final_frame {
             self.final_handoff = true;
-            self.timeline("generation.client.final_handoff", Severity::Debug, vec![]);
+            self.current_span()
+                .add_event("gateway.client.final_handoff", vec![]);
         }
     }
     pub(super) fn decode_failure(
@@ -361,15 +430,9 @@ impl Trace {
     ) {
         self.report.failure(Some(boundary), error);
     }
-    fn elapsed_ms(&self) -> i64 {
-        self.started.elapsed().as_millis().min(i64::MAX as u128) as i64
-    }
     fn attributes(&self) -> Attributes {
-        let sequence = self.sequence.fetch_add(1, Ordering::Relaxed) + 1;
         let mut attributes = vec![
             ("operation".into(), AnyValue::from(self.operation)),
-            ("event.sequence".into(), AnyValue::from(sequence)),
-            ("elapsed_ms".into(), AnyValue::from(self.elapsed_ms())),
             ("send_attempts".into(), AnyValue::from(self.sends)),
             (
                 "upstream.terminal_validated".into(),
@@ -402,21 +465,9 @@ impl Trace {
                 "attempt".into(),
                 AnyValue::from(self.capture_attempt as i64),
             ));
-            attributes.push((
-                "attempt.elapsed_ms".into(),
-                AnyValue::from(
-                    self.attempt_started
-                        .elapsed()
-                        .as_millis()
-                        .min(i64::MAX as u128) as i64,
-                ),
-            ));
         }
         if let Some(outcome) = self.response_outcome {
             attributes.push(("response.outcome".into(), AnyValue::from(outcome)));
-        }
-        if let Some(ms) = self.first_handoff_ms {
-            attributes.push(("client.first_handoff_ms".into(), AnyValue::from(ms)));
         }
         if let Some(status) = self.status {
             attributes.push((
@@ -431,18 +482,6 @@ impl Trace {
             ));
         }
         attributes
-    }
-    fn timeline(&self, name: &'static str, severity: Severity, extra: Attributes) {
-        if !matches!(self.operation, "chat" | "responses" | "messages") {
-            return;
-        }
-        if let Some(sink) = &self.sink
-            && sink.enabled(severity)
-        {
-            let mut attributes = self.attributes();
-            attributes.extend(extra);
-            sink.emit(name, severity, attributes, AnyValue::from(name));
-        }
     }
     fn emit_failure(&mut self, code: &'static str, retry: bool) {
         use crate::protocol::conversion::generation::ConversionBoundary as Boundary;
@@ -550,14 +589,21 @@ impl Trace {
         let mut body = vec![("message", AnyValue::from(code))];
         if let Some(capture) = &self.capture {
             body.extend(capture.context());
-            capture.followup(sink.clone(), attributes.clone(), severity);
+            let context = if self.request_context.is_valid() {
+                self.request_context.clone()
+            } else {
+                self.operation_span.context().span().span_context().clone()
+            };
+            capture.followup(sink.clone(), context, attributes.clone(), severity);
         }
-        sink.emit(
-            "gateway.failure",
-            severity,
-            attributes,
-            body.into_iter().collect(),
-        );
+        self.in_scope(|| {
+            sink.emit(
+                "gateway.failure",
+                severity,
+                attributes,
+                body.into_iter().collect(),
+            )
+        });
     }
 }
 impl Drop for Trace {
@@ -591,11 +637,38 @@ impl Drop for Trace {
                 Outcome::Shutdown => "shutdown",
             }
         };
-        self.timeline(
-            "generation.request.finished",
-            Severity::Info,
-            vec![("outcome".into(), AnyValue::from(outcome))],
-        );
+        self.operation_span
+            .set_attribute("morphiecore.operation", self.operation);
+        self.operation_span
+            .set_attribute("morphiecore.outcome", outcome);
+        self.operation_span
+            .set_attribute("morphiecore.send_attempts", self.sends);
+        if matches!(outcome, "failed" | "timeout") {
+            self.operation_span.set_status(Status::error(
+                self.failure_code()
+                    .or(self.report.request_error().map(|(code, _)| code))
+                    .unwrap_or("gateway.request_failed"),
+            ));
+        }
+        self.in_scope(|| {
+            tracing::info!(name: "gateway.operation.finished", target: "morphiecore.operation",
+                {
+                    morphiecore.operation = self.operation,
+                    morphiecore.outcome = outcome,
+                    morphiecore.model = self.public_model.as_deref(),
+                    morphiecore.send_attempts = self.sends,
+                    morphiecore.response.outcome = self.response_outcome,
+                    morphiecore.upstream.terminal_validated = self.terminal_validated,
+                    morphiecore.upstream.finish_validated = self.finish_validated,
+                    morphiecore.client.published = self.published,
+                    morphiecore.client.handoff_complete = self.final_handoff
+                },
+                "operation ended"
+            );
+        });
+        // Close before releasing the sink, including direct/embedded callers.
+        let span = std::mem::replace(&mut self.operation_span, Span::none());
+        self.close_span(span);
     }
 }
 #[cfg(test)]

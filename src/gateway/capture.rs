@@ -98,6 +98,7 @@ impl Exchange {
     pub(super) fn followup(
         &self,
         sink: super::diagnostics::Sink,
+        trace: SpanContext,
         mut attributes: Attributes,
         severity: Severity,
     ) {
@@ -115,10 +116,7 @@ impl Exchange {
             .expect("private diagnostic context")
             .followup = Some(Followup {
             sink,
-            trace: opentelemetry::Context::current()
-                .span()
-                .span_context()
-                .clone(),
+            trace,
             attributes,
             severity,
         });

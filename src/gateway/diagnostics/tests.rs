@@ -20,14 +20,16 @@ fn attribute(record: &SdkLogRecord, name: &str) -> Option<AnyValue> {
 }
 #[test]
 fn recovered_attempt_is_warn_without_a_success_archive_or_duplicate_failure() {
-    let (sink, exporter) = Sink::memory();
+    let (sink, exporter, spans) = Sink::memory_signals(LogLevel::Warn);
     let mut trace = Trace::new(Some(&sink));
     trace.begin_candidate(1);
+    trace.sent();
     trace.head(503);
     trace.executor("synthetic");
     trace.named_account(Some("primary"));
     trace.end_candidate(Some("gateway.upstream"), true);
     trace.begin_candidate(2);
+    trace.sent();
     trace.head(200);
     trace.end_candidate(None, false);
     trace.outcome(Outcome::Complete);
@@ -44,6 +46,27 @@ fn recovered_attempt_is_warn_without_a_success_archive_or_duplicate_failure() {
         attribute(&logs[0].record, "account"),
         Some("primary".into())
     );
+    let spans = spans.get_finished_spans().unwrap();
+    let attempts: Vec<_> = spans
+        .iter()
+        .filter(|span| span.name == "gateway.attempt")
+        .collect();
+    let operation = spans
+        .iter()
+        .find(|span| span.name == "gateway.operation")
+        .unwrap();
+    assert_eq!(attempts.len(), 2);
+    assert!(matches!(
+        attempts[0].status,
+        opentelemetry::trace::Status::Error { .. }
+    ));
+    assert_eq!(attempts[1].status, opentelemetry::trace::Status::Unset);
+    assert_eq!(operation.status, opentelemetry::trace::Status::Unset);
+    assert_eq!(attempts[0].parent_span_id, operation.span_context.span_id());
+    assert_eq!(attempts[1].parent_span_id, operation.span_context.span_id());
+    let failed_context = logs[0].record.trace_context().unwrap();
+    assert_eq!(failed_context.span_id, attempts[0].span_context.span_id());
+    assert_eq!(failed_context.trace_id, operation.span_context.trace_id());
 }
 #[test]
 fn failed_task_inside_http_success_preserves_source_through_consumer_cancellation() {
@@ -82,7 +105,7 @@ fn failed_task_inside_http_success_preserves_source_through_consumer_cancellatio
 }
 #[test]
 fn consumer_close_alone_is_not_a_system_failure() {
-    let (sink, exporter) = Sink::memory();
+    let (sink, exporter, spans) = Sink::memory_signals(LogLevel::Warn);
     let mut trace = Trace::new(Some(&sink));
     trace.begin_candidate(1);
     trace.report.failure(
@@ -92,10 +115,21 @@ fn consumer_close_alone_is_not_a_system_failure() {
     trace.outcome(Outcome::Error);
     drop(trace);
     assert!(exporter.get_emitted_logs().unwrap().is_empty());
+    let spans = spans.get_finished_spans().unwrap();
+    assert_eq!(spans.len(), 2);
+    for span in spans {
+        assert_eq!(span.status, opentelemetry::trace::Status::Unset);
+        assert!(
+            span.attributes
+                .iter()
+                .any(|attribute| attribute.key.as_str() == "morphiecore.outcome"
+                    && attribute.value.as_str() == "cancelled")
+        );
+    }
 }
 #[test]
-fn generation_timeline_is_bounded_and_separates_terminal_eof_and_handoff() {
-    let (sink, exporter) = Sink::memory_at(LogLevel::Debug);
+fn span_milestones_are_bounded_and_separate_terminal_eof_and_handoff() {
+    let (sink, exporter, spans) = Sink::memory_signals(LogLevel::Info);
     let mut trace = Trace::new(Some(&sink));
     trace.generation("public", crate::protocol::ClientProtocol::Responses);
     trace.begin_candidate(1);
@@ -106,43 +140,64 @@ fn generation_timeline_is_bounded_and_separates_terminal_eof_and_handoff() {
         trace.stage(Stage::Projection);
         trace.stage(Stage::Delivery);
     }
-    trace.terminal_validated();
+    for _ in 0..1000 {
+        trace.terminal_validated();
+    }
     trace.finish_validated();
-    trace.publishing();
+    for _ in 0..1000 {
+        trace.publishing();
+        trace.handoff(false);
+    }
     trace.handoff(true);
     trace.outcome(Outcome::Complete);
     trace.end_candidate(None, false);
     drop(trace);
     let logs = exporter.get_emitted_logs().unwrap();
-    assert_eq!(logs.len(), 9);
-    let records: Vec<_> = logs.iter().map(|log| &log.record).collect();
-    let request_id = attribute(records[0], "request_id").unwrap();
-    for (index, record) in records.iter().enumerate() {
-        assert_eq!(attribute(record, "request_id"), Some(request_id.clone()));
-        assert_eq!(
-            attribute(record, "event.sequence"),
-            Some(((index + 1) as i64).into())
-        );
-    }
-    let terminal = records[4];
+    assert_eq!(logs.len(), 1);
+    let spans = spans.get_finished_spans().unwrap();
+    let attempt = spans
+        .iter()
+        .find(|span| span.name == "gateway.attempt")
+        .unwrap();
+    let events: Vec<_> = attempt
+        .events
+        .iter()
+        .map(|event| event.name.as_ref())
+        .collect();
     assert_eq!(
-        attribute(terminal, "upstream.terminal_validated"),
-        Some(true.into())
+        events,
+        [
+            "gateway.upstream.sent",
+            "gateway.upstream.headers",
+            "gateway.upstream.terminal",
+            "gateway.upstream.eof",
+            "gateway.client.published",
+            "gateway.client.first_handoff",
+            "gateway.client.final_handoff",
+        ]
     );
+    let operation = spans
+        .iter()
+        .find(|span| span.name == "gateway.operation")
+        .unwrap();
+    assert_eq!(attempt.parent_span_id, operation.span_context.span_id());
+    let summary = &logs[0].record;
+    assert_eq!(summary.event_name(), Some("gateway.operation.finished"));
     assert_eq!(
-        attribute(terminal, "upstream.finish_validated"),
-        Some(false.into())
+        summary.trace_context().unwrap().span_id,
+        operation.span_context.span_id()
     );
-    assert_eq!(
-        attribute(terminal, "client.handoff_complete"),
-        Some(false.into())
-    );
-    let summary = records.last().unwrap();
     assert_eq!(summary.severity_number(), Some(Severity::Info));
-    assert_eq!(attribute(summary, "outcome"), Some("complete".into()));
-    assert_eq!(attribute(summary, "send_attempts"), Some(1i64.into()));
     assert_eq!(
-        attribute(summary, "client.handoff_complete"),
+        attribute(summary, "morphiecore.outcome"),
+        Some("complete".into())
+    );
+    assert_eq!(
+        attribute(summary, "morphiecore.send_attempts"),
+        Some(1i64.into())
+    );
+    assert_eq!(
+        attribute(summary, "morphiecore.client.handoff_complete"),
         Some(true.into())
     );
 }
@@ -162,7 +217,7 @@ fn info_level_emits_cancelled_summary_without_promoting_cancellation_to_failure(
     assert_eq!(logs.len(), 1);
     assert_eq!(logs[0].record.severity_text(), Some("INFO"));
     assert_eq!(
-        attribute(&logs[0].record, "outcome"),
+        attribute(&logs[0].record, "morphiecore.outcome"),
         Some("cancelled".into())
     );
 }
@@ -391,16 +446,18 @@ async fn official_otlp_exporter_delivers_failure_logs_to_a_loopback_receiver() {
     let server = tokio::spawn(async move {
         axum::serve(
             listener,
-            Router::new().route(
-                "/v1/logs",
-                post(move |Json(body): Json<serde_json::Value>| {
-                    let sent = sent.clone();
-                    async move {
-                        sent.try_send(body).unwrap();
-                        Json(serde_json::json!({}))
-                    }
-                }),
-            ),
+            Router::new()
+                .route(
+                    "/v1/logs",
+                    post(move |Json(body): Json<serde_json::Value>| {
+                        let sent = sent.clone();
+                        async move {
+                            sent.try_send(body).unwrap();
+                            Json(serde_json::json!({}))
+                        }
+                    }),
+                )
+                .route("/v1/traces", post(|| async { Json(serde_json::json!({})) })),
         )
         .await
         .unwrap();
@@ -425,7 +482,8 @@ async fn official_otlp_exporter_delivers_failure_logs_to_a_loopback_receiver() {
     let log = &body["resourceLogs"][0]["scopeLogs"][0]["logRecords"][0];
     assert_eq!(log["severityText"], "ERROR");
     assert_eq!(log["eventName"], "gateway.failure");
-    assert!(log.get("traceId").is_none_or(|id| id == ""));
+    assert_eq!(log["traceId"].as_str().unwrap().len(), 32);
+    assert_eq!(log["spanId"].as_str().unwrap().len(), 16);
     server.abort();
 }
 

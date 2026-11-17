@@ -425,7 +425,7 @@ async fn diagnostics_correlate_auth_rejection_without_capturing_unauthenticated_
         }
     }
     let spans = spans.get_finished_spans().unwrap();
-    assert_eq!(spans.len(), 4);
+    assert_eq!(spans.len(), 6);
     for log in &logs {
         let context = log.record.trace_context().unwrap();
         assert!(
@@ -452,7 +452,9 @@ async fn diagnostics_correlate_auth_rejection_without_capturing_unauthenticated_
                 })
                 .unwrap();
             assert_eq!(context.trace_id, span.span_context.trace_id());
-            assert_eq!(context.span_id, span.span_context.span_id());
+            if log.record.event_name() == Some("gateway.failure.response") {
+                assert_eq!(context.span_id, span.span_context.span_id());
+            }
         }
     }
     let text = format!("{logs:?} {spans:?}");

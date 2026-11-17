@@ -1074,7 +1074,7 @@ async fn dropping_body_records_cancelled_summary_before_aborting_the_producer() 
         logs[0]
             .record
             .attributes_iter()
-            .any(|(key, value)| key.as_str() == "outcome"
+            .any(|(key, value)| key.as_str() == "morphiecore.outcome"
                 && *value == opentelemetry::logs::AnyValue::from("cancelled"))
     );
 }

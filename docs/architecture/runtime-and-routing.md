@@ -292,9 +292,12 @@ subscriber with official bridges records request lifecycle logs and server spans
 no process-global subscriber is installed by the library. Request context follows
 spawned producers and response-body polling. Local roots cover authentication
 rejections without exposing unauthenticated input. INFO is the log default;
-log filtering does not disable spans. Generation adaptation diagnostics still
-emit native structured Logs and manual timelines during migration. Attempt/client
-spans, maintenance context and an indexed development query backend remain pending.
+log filtering does not disable spans. Internal `gateway.operation` and
+`gateway.attempt` spans replace manual diagnostic clocks, stage timelines and
+log sequence counters. Standard span events retain bounded milestones; the
+operation summary uses the Logs bridge. Structured adaptation failures and private
+capture retain their native Logs representation. Upstream HTTP-client spans,
+maintenance context and an indexed development query backend remain pending.
 The receiver owns retention/durability; the application owns no diagnostic files,
 success-wire archive or diagnostic usage ledger. Execution facts remain
 independent of optional export.
@@ -302,7 +305,7 @@ independent of optional export.
 - **Population and severity:** recovered attempt failures and client/upstream 4xx rejection are WARN; unrecovered service, transport, decode and terminal failures are ERROR. HTTP-200 failed tasks use their source class. Ordinary cancellation/shutdown is not a default error; independently observed upstream failures survive it. Length stops, refusal, accepted adaptation and ignored fields do not generate warnings.
 - **Attribution:** closed reason codes, original source/conversion boundary, trusted Agent/request identity, operation, selected Provider/account, public/upstream model and attempt. HTTP status alone does not assign blame. `http.response.status_code` is the observed upstream head; `gateway.error.status_code` is the selected local error presentation. `client.handoff_complete:true` records acknowledged local delivery, not remote receipt or inference success.
 - **Lifecycle:** requests enqueue without waiting for export. Bounded SDK queues/batches, explicit all-on sampling/span limits, finite HTTP timeout and no export retries. Queue/export/flush problems produce a fixed body-free warning once per owner without changing inference, routing, replay or credential state. The binary waits for request producers and required storage work before bounded provider shutdown off async workers, including early post-bootstrap exits. Embedded owners explicitly flush/shut down after stopping producers; last-owner destruction never waits for export. Telemetry delivery is best effort.
-- **Generation timelines:** gateway-owned request identity and event order correlate monotonic request/attempt timing, actual send invocations, source terminal validation, EOF validation and local handoffs. Stage events are first-occurrence milestones per attempt, never per-token logs. Last complete Responses source-event context survives decoder rejection and is attached to the first responsible failure; later cancellation cannot replace it. Protocol owners return pure closed diagnostic data, not log records. Metadata summaries do not establish successful inference, exact upstream execution counts or remote receipt.
+- **Operation and attempt observations:** SDK span lifetimes own durations and SDK event timestamps locate actual sends, response headers, terminal/EOF validation, publication and local handoffs. Preparation/delivery are part of the internal attempt, not a claim of network-only latency. No per-chunk stage events, custom elapsed clocks or log sequence counters remain; the last stage still attributes failures. A failed attempt keeps its own status/log context while successful recovery leaves the final operation successful. Client-response capture follow-ups explicitly reference the HTTP request rather than whichever attempt or ambient span is current. Last complete Responses source-event context and its native sequence survive decoder rejection; later cancellation cannot replace them. Protocol owners return pure closed data, not log records. Telemetry does not establish exact upstream execution counts or remote receipt.
 - **Receiver:** the selected single-host Collector writes bounded rotating OTLP JSON batches behind a private directory and loopback listener. It provides neither indexed queries nor zero-loss guarantees. File permissions, retention and operation live in [Usage](../usage/gateway-configuration.md#loopback-file-receiver).
 - **Maintenance:** OAuth renewal uses the same logger with trusted account/profile and a closed category. Token replies, grants, credential locators and raw third-party errors are never diagnostic bodies.
 

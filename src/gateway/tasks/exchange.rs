@@ -42,6 +42,7 @@ pub(super) async fn send<R>(
     if let Some(capture) = &trace.capture {
         capture.upstream_request(&prepared, trace.capture_attempt);
     }
+    trace.sent();
 
     runtime
         .transport
