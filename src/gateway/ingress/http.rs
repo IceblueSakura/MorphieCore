@@ -111,6 +111,7 @@ impl Gateway {
         let _owner = self.state.shutdown.clone().drop_guard();
         let router = self.router();
         let maintenance = self.clone();
+        let storage_tasks = tokio_util::task::TaskTracker::new();
         let server = axum::serve(listener, router)
             .with_graceful_shutdown(async move {
                 tokio::select! {
@@ -121,11 +122,17 @@ impl Gateway {
             })
             .into_future();
         tokio::pin!(server);
-        tokio::select! {
+        let result = tokio::select! {
             biased;
             result = &mut server => result,
-            _ = maintenance.renew_credentials() => server.await,
-        }
+            _ = maintenance.renew_credentials(&storage_tasks) => server.await,
+        };
+        maintenance.shutdown();
+        // Cancellation stops Provider I/O, but queued filesystem commits must
+        // preserve rotated material and release account locks before we return.
+        storage_tasks.close();
+        storage_tasks.wait().await;
+        result
     }
 }
 fn ingress_error(path: &str, error: ApiError) -> Response {

@@ -12,6 +12,7 @@ use tokio::sync::Notify;
 struct Driver {
     calls: Arc<AtomicUsize>,
     entered: Arc<Notify>,
+    release: Arc<Notify>,
     hold: bool,
 }
 fn grant() -> Grant {
@@ -72,7 +73,7 @@ impl AuthDriver for Driver {
             self.calls.fetch_add(1, Ordering::SeqCst);
             self.entered.notify_one();
             if self.hold {
-                std::future::pending::<()>().await;
+                self.release.notified().await;
             }
             Ok(Renewal::Verified(grant()))
         })
@@ -87,15 +88,18 @@ async fn setup(
     CredentialManager,
     Arc<AtomicUsize>,
     Arc<Notify>,
+    Arc<Notify>,
 ) {
     let directory = tempfile::tempdir().unwrap();
     let calls = Arc::new(AtomicUsize::new(0));
     let entered = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
     let manager = CredentialManager::new(
         directory.path().join("credentials"),
         vec![Arc::new(Driver {
             calls: calls.clone(),
             entered: entered.clone(),
+            release: release.clone(),
             hold,
         })],
     )
@@ -114,7 +118,7 @@ async fn setup(
         );
     }
     Arc::get_mut(&mut gate.state).unwrap().oauth_accounts = credentials.oauth_accounts;
-    (directory, gate, manager, calls, entered)
+    (directory, gate, manager, calls, entered, release)
 }
 async fn poll_maintenance(future: &mut std::pin::Pin<Box<impl std::future::Future<Output = ()>>>) {
     tokio::select! {
@@ -145,7 +149,7 @@ async fn scan_maintenance(
 #[tokio::test(start_paused = true)]
 async fn configured_scan_and_success_spacing_control_rotation_without_requests() {
     use std::time::Duration;
-    let (_dir, gate, _, calls, _) = setup(
+    let (_dir, gate, _, calls, _, _) = setup(
         false,
         Limits {
             oauth_scan_interval: Duration::from_secs(2),
@@ -154,7 +158,8 @@ async fn configured_scan_and_success_spacing_control_rotation_without_requests()
         },
     )
     .await;
-    let mut maintenance = Box::pin(gate.renew_credentials());
+    let storage_tasks = tokio_util::task::TaskTracker::new();
+    let mut maintenance = Box::pin(gate.renew_credentials(&storage_tasks));
     scan_maintenance(&gate, &mut maintenance).await;
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     tokio::time::advance(Duration::from_secs(5)).await;
@@ -186,8 +191,9 @@ async fn zero_scan_is_startup_only_and_zero_renewal_budget_never_consumes_materi
             0,
         ),
     ] {
-        let (_dir, gate, manager, calls, _) = setup(false, limits).await;
-        let mut maintenance = Box::pin(gate.renew_credentials());
+        let (_dir, gate, manager, calls, _, _) = setup(false, limits).await;
+        let storage_tasks = tokio_util::task::TaskTracker::new();
+        let mut maintenance = Box::pin(gate.renew_credentials(&storage_tasks));
         if expected == 1 {
             scan_maintenance(&gate, &mut maintenance).await;
         } else {
@@ -205,7 +211,7 @@ async fn zero_scan_is_startup_only_and_zero_renewal_budget_never_consumes_materi
 
 #[tokio::test(start_paused = true)]
 async fn refresh_ahead_is_not_an_implicit_always_renew_window() {
-    let (_dir, gate, manager, calls, _) = setup(
+    let (_dir, gate, manager, calls, _, _) = setup(
         false,
         Limits {
             oauth_refresh_ahead_seconds: 0,
@@ -219,7 +225,8 @@ async fn refresh_ahead_is_not_an_implicit_always_renew_window() {
         .borrow()
         .unwrap()
         .material_revision;
-    let mut maintenance = Box::pin(gate.renew_credentials());
+    let storage_tasks = tokio_util::task::TaskTracker::new();
+    let mut maintenance = Box::pin(gate.renew_credentials(&storage_tasks));
     scan_maintenance(&gate, &mut maintenance).await;
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     assert_eq!(
@@ -236,7 +243,7 @@ async fn refresh_ahead_is_not_an_implicit_always_renew_window() {
 }
 #[tokio::test(start_paused = true)]
 async fn duplicate_bindings_renew_without_requests_and_short_grants_are_rate_bounded() {
-    let (_dir, gate, manager, calls, _) = setup(false, Limits::default()).await;
+    let (_dir, gate, manager, calls, _, _) = setup(false, Limits::default()).await;
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     let _router = gate.router();
     assert_eq!(calls.load(Ordering::SeqCst), 0);
@@ -260,7 +267,8 @@ async fn duplicate_bindings_renew_without_requests_and_short_grants_are_rate_bou
             .unavailable(&candidate.health, now)
             .is_some()
     );
-    let mut maintenance = Box::pin(gate.renew_credentials());
+    let storage_tasks = tokio_util::task::TaskTracker::new();
+    let mut maintenance = Box::pin(gate.renew_credentials(&storage_tasks));
     scan_maintenance(&gate, &mut maintenance).await;
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     let renewed = binding.borrow().unwrap();
@@ -338,7 +346,7 @@ async fn duplicate_bindings_renew_without_requests_and_short_grants_are_rate_bou
 #[tokio::test]
 async fn contended_maintenance_storage_does_not_stall_listener_requests() {
     use std::time::{Duration, Instant};
-    let (dir, gate, manager, _, _) = setup(false, Limits::default()).await;
+    let (dir, gate, manager, _, _, _) = setup(false, Limits::default()).await;
     let lock = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -380,7 +388,7 @@ async fn contended_maintenance_storage_does_not_stall_listener_requests() {
 #[tokio::test]
 async fn listener_cancellation_stops_inflight_renewal_without_reusing_consumed_material() {
     for graceful in [false, true] {
-        let (_dir, gate, manager, calls, entered) = setup(true, Limits::default()).await;
+        let (_dir, gate, manager, calls, entered, _) = setup(true, Limits::default()).await;
         let owner = gate.clone();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let server = tokio::spawn(gate.serve(listener, std::future::pending()));
@@ -403,7 +411,7 @@ async fn listener_cancellation_stops_inflight_renewal_without_reusing_consumed_m
             !manager
                 .bind_access("synthetic", "one")
                 .unwrap()
-                .refresh_if_due(120)
+                .refresh_if_due(120, &tokio_util::task::TaskTracker::new())
                 .await
                 .unwrap()
         );
@@ -417,7 +425,7 @@ async fn listener_cancellation_stops_inflight_renewal_without_reusing_consumed_m
 }
 #[tokio::test(start_paused = true)]
 async fn renewal_timeout_is_bounded_and_never_retried() {
-    let (_dir, mut gate, manager, calls, entered) = setup(
+    let (_dir, mut gate, manager, calls, entered, _) = setup(
         true,
         Limits {
             oauth_renewal_timeout: std::time::Duration::from_secs(2),
@@ -429,7 +437,8 @@ async fn renewal_timeout_is_bounded_and_never_retried() {
     let state = Arc::get_mut(&mut gate.state).unwrap();
     state.diagnostics = Some(sink);
     state.oauth_accounts[0].name = Some("configured-account".into());
-    let mut maintenance = Box::pin(gate.renew_credentials());
+    let storage_tasks = tokio_util::task::TaskTracker::new();
+    let mut maintenance = Box::pin(gate.renew_credentials(&storage_tasks));
     tokio::select! {
         _ = &mut maintenance => panic!("maintenance should remain active"),
         _ = entered.notified() => {},
@@ -459,4 +468,47 @@ async fn renewal_timeout_is_bounded_and_never_retried() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     gate.shutdown();
     maintenance.await;
+}
+
+#[test]
+fn graceful_shutdown_drains_queued_rotated_material_before_returning() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let (_dir, gate, manager, _, entered, release) = setup(true, Limits::default()).await;
+        let owner = gate.clone();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut server = Box::pin(gate.serve(listener, std::future::pending()));
+        tokio::select! {
+            _ = &mut server => panic!("listener ended before renewal"),
+            _ = entered.notified() => {}
+        }
+        let (unblock, held) = std::sync::mpsc::channel();
+        let (started, waiting) = std::sync::mpsc::channel();
+        let worker = tokio::task::spawn_blocking(move || {
+            started.send(()).unwrap();
+            held.recv().unwrap();
+        });
+        waiting.recv().unwrap();
+        release.notify_one();
+        // Drive renewal through the Provider reply into the queued commit.
+        assert!(futures_util::poll!(&mut server).is_pending());
+        owner.shutdown();
+        let early = tokio::time::timeout(std::time::Duration::from_millis(100), &mut server)
+            .await
+            .is_ok();
+        // Always release the test worker, even when the assertion will fail.
+        unblock.send(()).unwrap();
+        worker.await.unwrap();
+        assert!(
+            !early,
+            "listener returned before rotated material was committed"
+        );
+        server.await.unwrap();
+        assert_eq!(manager.list(None).unwrap()[0].state, AccountState::Active);
+        manager.logout("synthetic", "one", false).await.unwrap();
+    });
 }

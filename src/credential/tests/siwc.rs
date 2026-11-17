@@ -362,7 +362,12 @@ async fn rotated_material_survives_jwks_failure_and_recovers_without_token_reuse
         ),
         failure,
     ]);
-    assert!(binding.refresh_if_due(120).await.is_err());
+    assert!(
+        binding
+            .refresh_if_due(120, &tokio_util::task::TaskTracker::new())
+            .await
+            .is_err()
+    );
     let state = manager.list(Some("openai")).unwrap().remove(0);
     assert!(state.renewal_pending);
     assert!(binding.borrow().is_err());
@@ -378,7 +383,12 @@ async fn rotated_material_survives_jwks_failure_and_recovers_without_token_reuse
         .unwrap()
         .push_back(step("/.well-known/jwks.json", vec![], keys()));
     // A transient verification failure resumes automatically without token reuse.
-    assert!(binding.refresh_if_due(120).await.unwrap());
+    assert!(
+        binding
+            .refresh_if_due(120, &tokio_util::task::TaskTracker::new())
+            .await
+            .unwrap()
+    );
     assert!(!manager.list(Some("openai")).unwrap()[0].renewal_pending);
     assert_eq!(binding.borrow().unwrap().access.expose(), "new-access");
     assert!(

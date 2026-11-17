@@ -66,9 +66,13 @@ impl AccessBinding {
     }
     /// Explicit maintenance, never called by inference borrowing. Eligibility
     /// and pinned identity are rechecked under the manager's account lock.
-    pub(crate) async fn refresh_if_due(&self, ahead: u64) -> Result<bool, Error> {
+    pub(crate) async fn refresh_if_due(
+        &self,
+        ahead: u64,
+        tasks: &tokio_util::task::TaskTracker,
+    ) -> Result<bool, Error> {
         self.manager
-            .refresh_account(&self.profile, &self.alias, Some((self, ahead)))
+            .refresh_account(&self.profile, &self.alias, Some((self, ahead)), tasks)
             .await
             .map(|status| status.is_some())
     }

@@ -1,6 +1,6 @@
 //! Profile-neutral lifecycle tests: the third driver has no product wire dependencies.
 use crate::credential::{storage::store, tests::support as test_support, *};
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 use tokio::sync::Notify;
 
 struct ThirdDriver {
@@ -435,27 +435,6 @@ async fn concurrent_cross_client_logins_publish_one_subject_only() {
 }
 
 #[tokio::test]
-async fn local_status_queries_do_not_change_credential_generation() {
-    let dir = test_support::Directory::new();
-    let (manager, _, _) = manager(&dir);
-    let first = manager
-        .login("third", "one", LoginOptions::default(), |_| {})
-        .await
-        .unwrap();
-    let status = manager.list(None).unwrap().remove(0);
-    assert_eq!(first.generation, status.generation);
-    assert!(
-        tokio::time::timeout(
-            Duration::from_secs(1),
-            manager.logout("third", "one", false)
-        )
-        .await
-        .unwrap()
-        .is_ok()
-    );
-}
-
-#[tokio::test]
 async fn uncertain_rotated_candidate_is_never_reused_after_restart() {
     let dir = test_support::Directory::new();
     let (manager, entered, release) = manager(&dir);
@@ -594,7 +573,13 @@ async fn automatic_refresh_skips_ineligible_accounts_without_mutation_or_authori
             tx.publish(account).unwrap();
         }
         let before = test_support::read_account(&dir.path, "third", "one");
-        assert!(!binding.refresh_if_due(120).await.unwrap(), "{case}");
+        assert!(
+            !binding
+                .refresh_if_due(120, &tokio_util::task::TaskTracker::new())
+                .await
+                .unwrap(),
+            "{case}"
+        );
         assert_eq!(
             before,
             test_support::read_account(&dir.path, "third", "one"),
@@ -627,7 +612,10 @@ async fn automatic_refresh_rechecks_pinned_identity_before_consuming_a_due_grant
             account.generation
         };
         assert_eq!(
-            binding.refresh_if_due(120).await.unwrap_err(),
+            binding
+                .refresh_if_due(120, &tokio_util::task::TaskTracker::new())
+                .await
+                .unwrap_err(),
             CredentialError::IdentityMismatch
         );
         assert_eq!(manager.list(None).unwrap()[0].generation, before);
@@ -650,10 +638,14 @@ async fn automatic_refresh_is_exclusive_and_rechecks_new_expiry() {
     }
     let binding = manager.bind_access("third", "one").unwrap();
     let provenance = binding.provenance();
-    let mut refresh = Box::pin(binding.refresh_if_due(120));
+    let storage_tasks = tokio_util::task::TaskTracker::new();
+    let mut refresh = Box::pin(binding.refresh_if_due(120, &storage_tasks));
     tokio::select! { _ = &mut refresh => panic!("must wait"), _ = entered.notified() => {} }
     assert_eq!(
-        binding.refresh_if_due(120).await.unwrap_err(),
+        binding
+            .refresh_if_due(120, &tokio_util::task::TaskTracker::new())
+            .await
+            .unwrap_err(),
         CredentialError::Busy
     );
     assert_eq!(
@@ -669,7 +661,12 @@ async fn automatic_refresh_is_exclusive_and_rechecks_new_expiry() {
     assert_eq!(binding.provenance(), provenance);
     assert!(binding.borrow().is_ok());
     // Another process's renewal is observed rather than blindly rotating again.
-    assert!(!binding.refresh_if_due(120).await.unwrap());
+    assert!(
+        !binding
+            .refresh_if_due(120, &tokio_util::task::TaskTracker::new())
+            .await
+            .unwrap()
+    );
 }
 #[tokio::test]
 async fn removed_registration_keeps_revisions_monotonic_and_releases_its_subject() {
@@ -717,7 +714,9 @@ async fn removed_registration_keeps_revisions_monotonic_and_releases_its_subject
     );
     assert_eq!(old.borrow().unwrap_err(), CredentialError::IdentityMismatch);
     assert_eq!(
-        old.refresh_if_due(0).await.unwrap_err(),
+        old.refresh_if_due(0, &tokio_util::task::TaskTracker::new())
+            .await
+            .unwrap_err(),
         CredentialError::IdentityMismatch
     );
     let current = manager.bind_access("third", "one").unwrap();

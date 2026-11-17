@@ -5,14 +5,17 @@ use crate::credential::{
     storage::{fs::FileLock, store::Transaction},
 };
 use std::sync::{Mutex, MutexGuard, PoisonError};
+use tokio_util::task::TaskTracker;
 
 #[derive(Default)]
 struct StorageState {
     cancelled: bool,
     account_lock: Option<FileLock>,
 }
-#[derive(Default)]
-struct RefreshStorage(Arc<Mutex<StorageState>>);
+struct RefreshStorage {
+    state: Arc<Mutex<StorageState>>,
+    tasks: TaskTracker,
+}
 fn state(shared: &Mutex<StorageState>) -> MutexGuard<'_, StorageState> {
     // A panicking phase leaves no partial in-memory state worth rejecting;
     // the store itself owns publication recovery.
@@ -39,16 +42,17 @@ impl RefreshStorage {
         commit: bool,
         phase: impl FnOnce(&mut Option<FileLock>) -> Result<T, Error> + Send + 'static,
     ) -> Result<T, Error> {
-        let shared = self.0.clone();
-        tokio::task::spawn_blocking(move || {
-            let mut state = state(&shared);
-            if state.cancelled && !commit {
-                return Err(Error::Superseded);
-            }
-            phase(&mut state.account_lock)
-        })
-        .await
-        .map_err(|_| Error::Storage)?
+        let shared = self.state.clone();
+        self.tasks
+            .spawn_blocking(move || {
+                let mut state = state(&shared);
+                if state.cancelled && !commit {
+                    return Err(Error::Superseded);
+                }
+                phase(&mut state.account_lock)
+            })
+            .await
+            .map_err(|_| Error::Storage)?
     }
 }
 impl Drop for RefreshStorage {
@@ -57,7 +61,7 @@ impl Drop for RefreshStorage {
         // started phase before releasing exclusivity or acknowledging cancellation;
         // queued preparation must never run after the caller has gone away. A
         // queued commit keeps the shared lock until its blocking task drops it.
-        let mut state = state(&self.0);
+        let mut state = state(&self.state);
         state.cancelled = true;
     }
 }
@@ -68,7 +72,7 @@ enum Prepared {
 }
 impl CredentialManager {
     pub async fn refresh(&self, profile: &str, alias: &str) -> Result<AccountStatus, Error> {
-        self.refresh_account(profile, alias, None)
+        self.refresh_account(profile, alias, None, &TaskTracker::new())
             .await?
             .ok_or(Error::LoginRequired)
     }
@@ -77,6 +81,7 @@ impl CredentialManager {
         profile: &str,
         alias: &str,
         automatic: Option<(&AccessBinding, u64)>,
+        tasks: &TaskTracker,
     ) -> Result<Option<AccountStatus>, Error> {
         let driver = self.driver(profile)?;
         if !driver.can_refresh() {
@@ -86,7 +91,10 @@ impl CredentialManager {
                 Err(Error::Unsupported)
             };
         }
-        let storage = RefreshStorage::default();
+        let storage = RefreshStorage {
+            state: Arc::default(),
+            tasks: tasks.clone(),
+        };
         let manager = self.clone();
         let profile = profile.to_owned();
         let alias = alias.to_owned();

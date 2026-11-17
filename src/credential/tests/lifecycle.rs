@@ -191,7 +191,12 @@ async fn rotation_and_omitted_replacement_use_account_bound_refresh() {
         account.credential.as_mut().unwrap().expires_at = Some(1);
         tx.publish(account).unwrap();
     }
-    assert!(binding.refresh_if_due(120).await.unwrap());
+    assert!(
+        binding
+            .refresh_if_due(120, &tokio_util::task::TaskTracker::new())
+            .await
+            .unwrap()
+    );
     assert_eq!(binding.borrow().unwrap().access.expose(), "new-access");
     let first = pool.list(Some("grok")).unwrap().remove(0);
     let second = pool.refresh("grok", "alice").await.unwrap();
@@ -238,7 +243,12 @@ async fn rotated_material_survives_userinfo_failure_without_refresh_replay() {
     assert_eq!(status.state, AccountState::NeedsReauthorization);
     assert!(binding.borrow().is_err());
     // UserInfo needs no token exchange, so automatic renewal resumes it.
-    assert!(binding.refresh_if_due(120).await.unwrap());
+    assert!(
+        binding
+            .refresh_if_due(120, &tokio_util::task::TaskTracker::new())
+            .await
+            .unwrap()
+    );
     assert_eq!(reopened.list(None).unwrap()[0].state, AccountState::Active);
     assert_eq!(binding.borrow().unwrap().access.expose(), "new-access");
     authority.done();
@@ -278,13 +288,21 @@ async fn rejected_userinfo_verification_waits_for_explicit_refresh() {
         tx.publish(account).unwrap();
     }
     assert_eq!(
-        binding.refresh_if_due(120).await.unwrap_err(),
+        binding
+            .refresh_if_due(120, &tokio_util::task::TaskTracker::new())
+            .await
+            .unwrap_err(),
         CredentialError::Denied
     );
     assert!(pool.list(None).unwrap()[0].renewal_pending);
     // Later scans neither exchange tokens nor call UserInfo again.
     let before = read_account(&dir.path, "grok", "alice");
-    assert!(!binding.refresh_if_due(120).await.unwrap());
+    assert!(
+        !binding
+            .refresh_if_due(120, &tokio_util::task::TaskTracker::new())
+            .await
+            .unwrap()
+    );
     assert_eq!(before, read_account(&dir.path, "grok", "alice"));
     assert_eq!(
         pool.refresh("grok", "alice").await.unwrap().state,

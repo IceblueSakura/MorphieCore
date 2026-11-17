@@ -7,7 +7,7 @@ use opentelemetry::logs::{AnyValue, Severity};
 use tokio::time::{Instant, MissedTickBehavior};
 
 impl Gateway {
-    pub(super) async fn renew_credentials(&self) {
+    pub(super) async fn renew_credentials(&self, storage_tasks: &tokio_util::task::TaskTracker) {
         let mut accounts: Vec<(RenewalAccount, Instant)> = self
             .state
             .oauth_accounts
@@ -45,7 +45,7 @@ impl Gateway {
                     _ = self.state.shutdown.cancelled() => return,
                     result = tokio::time::timeout(
                         policy.oauth_renewal_timeout,
-                        account.binding.refresh_if_due(policy.oauth_refresh_ahead_seconds),
+                        account.binding.refresh_if_due(policy.oauth_refresh_ahead_seconds, storage_tasks),
                     ) => result,
                 };
                 match result {
