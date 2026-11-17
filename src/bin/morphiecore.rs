@@ -107,6 +107,12 @@ async fn main() -> std::process::ExitCode {
             return std::process::ExitCode::FAILURE;
         }
     };
+    let owner = bootstrap.gateway.clone();
+    let result = serve(bootstrap).await;
+    owner.shutdown_diagnostics().await;
+    result
+}
+async fn serve(bootstrap: Bootstrap) -> std::process::ExitCode {
     let shutdown = match shutdown::signal() {
         Ok(signal) => signal,
         Err(error) => {
@@ -124,9 +130,7 @@ async fn main() -> std::process::ExitCode {
     if let Ok(address) = listener.local_addr() {
         println!("MorphieCore listening on http://{address}");
     }
-    let owner = bootstrap.gateway.clone();
     let result = bootstrap.gateway.serve(listener, shutdown).await;
-    owner.flush_diagnostics().await;
     match result {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(_) => {

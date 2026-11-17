@@ -7,6 +7,7 @@ use futures_util::Stream;
 use opentelemetry::{
     Key,
     logs::{AnyValue, Severity},
+    trace::{SpanContext, TraceContextExt},
 };
 use redaction::sanitize;
 use serde_json::Value;
@@ -69,6 +70,7 @@ struct Slot {
 type Attributes = Vec<(Key, AnyValue)>;
 struct Followup {
     sink: super::diagnostics::Sink,
+    trace: SpanContext,
     attributes: Attributes,
     severity: Severity,
 }
@@ -113,6 +115,10 @@ impl Exchange {
             .expect("private diagnostic context")
             .followup = Some(Followup {
             sink,
+            trace: opentelemetry::Context::current()
+                .span()
+                .span_context()
+                .clone(),
             attributes,
             severity,
         });
@@ -139,6 +145,8 @@ impl Exchange {
             (context.followup.take(), slot_body(&context.slots[3]))
         };
         if let Some(followup) = followup {
+            let context = opentelemetry::Context::new().with_remote_span_context(followup.trace);
+            let _context = context.attach();
             followup.sink.emit(
                 "gateway.failure.response",
                 followup.severity,

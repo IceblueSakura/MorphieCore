@@ -42,7 +42,7 @@ pub struct Gateway {
 }
 /// Optional observation sinks, installed before the gateway is shared.
 impl Gateway {
-    /// Enable bounded failure logs at a trusted OTLP receiver before sharing the gateway.
+    /// Enable correlated Logs/Traces at a trusted OTLP/HTTP base URL.
     pub fn with_diagnostics(mut self, config: DiagnosticsConfig) -> Result<Self, StartupError> {
         let state = Arc::get_mut(&mut self.state).ok_or(StartupError::Environment)?;
         state.diagnostics = Some(
@@ -58,6 +58,12 @@ impl Gateway {
     pub async fn flush_diagnostics(&self) {
         if let Some(sink) = &self.state.diagnostics {
             sink.flush().await;
+        }
+    }
+    /// Stop observation producers first; a composition root then closes both providers.
+    pub async fn shutdown_diagnostics(&self) {
+        if let Some(sink) = &self.state.diagnostics {
+            sink.shutdown().await;
         }
     }
 }

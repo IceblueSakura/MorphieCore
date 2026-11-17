@@ -387,7 +387,7 @@ async fn official_otlp_exporter_delivers_failure_logs_to_a_loopback_receiver() {
     use std::time::Duration;
     let (sent, mut received) = tokio::sync::mpsc::channel(1);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let endpoint = format!("http://{}/v1/logs", listener.local_addr().unwrap());
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
     let server = tokio::spawn(async move {
         axum::serve(
             listener,
@@ -439,7 +439,7 @@ async fn last_logger_owner_does_not_wait_for_a_stalled_export_on_drop() {
     let started = Arc::new(tokio::sync::Notify::new());
     let notification = started.clone();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let endpoint = format!("http://{}/v1/logs", listener.local_addr().unwrap());
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
     let server = tokio::spawn(async move {
         axum::serve(
             listener,
@@ -482,4 +482,86 @@ async fn last_logger_owner_does_not_wait_for_a_stalled_export_on_drop() {
         "last owner must not wait for the two-second HTTP timeout"
     );
     server.abort();
+}
+#[tokio::test]
+async fn queued_private_records_fit_the_otlp_request_bound_after_a_slow_export() {
+    use axum::{Json, Router, extract::DefaultBodyLimit, routing::post};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use std::time::Duration;
+    let records = Arc::new(AtomicUsize::new(0));
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let output = records.clone();
+    let started = entered.clone();
+    let resume = release.clone();
+    let server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route(
+                    "/v1/logs",
+                    post(move |Json(payload): Json<serde_json::Value>| {
+                        let output = output.clone();
+                        let started = started.clone();
+                        let resume = resume.clone();
+                        async move {
+                            let count = payload["resourceLogs"]
+                                .as_array()
+                                .unwrap()
+                                .iter()
+                                .flat_map(|r| r["scopeLogs"].as_array().unwrap())
+                                .map(|s| s["logRecords"].as_array().unwrap().len())
+                                .sum::<usize>();
+                            if output.fetch_add(count, Ordering::SeqCst) == 0 {
+                                started.notify_one();
+                                resume.notified().await;
+                            }
+                            Json(serde_json::json!({}))
+                        }
+                    }),
+                )
+                .layer(DefaultBodyLimit::max(1 << 20)),
+        )
+        .await
+        .unwrap();
+    });
+    let sink = Sink::open(&DiagnosticsConfig {
+        endpoint,
+        level: LogLevel::Warn,
+        private_bodies: true,
+        body_bytes: 64 << 10,
+    })
+    .unwrap();
+    for _ in 0..4 {
+        sink.emit(
+            "gateway.failure",
+            Severity::Error,
+            vec![],
+            AnyValue::from("synthetic"),
+        );
+    }
+    tokio::time::timeout(Duration::from_secs(3), entered.notified())
+        .await
+        .unwrap();
+    for _ in 0..24 {
+        sink.emit(
+            "gateway.failure",
+            Severity::Error,
+            vec![],
+            AnyValue::from("x".repeat(64 << 10)),
+        );
+    }
+    release.notify_one();
+    sink.flush().await;
+    let count = records.load(Ordering::SeqCst);
+    server.abort();
+    assert_eq!(
+        count, 28,
+        "healthy export must not discard an oversized accumulated batch"
+    );
 }

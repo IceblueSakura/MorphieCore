@@ -400,7 +400,9 @@ pub(super) async fn respond_producer(
     let state = Arc::new(Status::default());
     let worker_state = state.clone();
     let report = trace.report.clone();
-    let worker = tokio::spawn(async move {
+    let tasks = trace.tasks.clone().unwrap_or_default();
+    use tracing::{Instrument, instrument::WithSubscriber};
+    let worker = tasks.spawn(async move {
         trace.outcome(Outcome::Interrupted);
         let _permit = permit;
         use crate::execution::{
@@ -459,7 +461,7 @@ pub(super) async fn respond_producer(
                 let _ = tx.try_send(Message::Error(error));
             }
         }
-    });
+    }.in_current_span().with_current_subscriber());
     let abort = worker.abort_handle();
     let first = match rx.recv().await {
         Some(Message::Chunk(chunk)) => {

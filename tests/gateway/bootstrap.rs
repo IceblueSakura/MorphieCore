@@ -611,6 +611,19 @@ async fn private_failure_context_reaches_otlp_with_trusted_identity_and_redacted
         .find(|log| log["eventName"] == "gateway.failure")
         .unwrap();
     assert_eq!(failure["severityText"], "WARN");
+    let spans = collector.spans();
+    let request_span = spans
+        .iter()
+        .find(|span| span["name"] == "gateway.request")
+        .unwrap();
+    assert_eq!(failure["traceId"], request_span["traceId"]);
+    assert_eq!(failure["spanId"], request_span["spanId"]);
+    assert_eq!(failure["traceId"].as_str().unwrap().len(), 32);
+    let trace_text = serde_json::to_string(&spans).unwrap();
+    assert!(
+        !trace_text.contains("business-prompt")
+            && !trace_text.contains("synthetic business failure")
+    );
     assert_eq!(
         crate::telemetry::attribute(failure, "http.response.status_code")["intValue"],
         "400"
@@ -629,7 +642,7 @@ async fn private_failure_context_reaches_otlp_with_trusted_identity_and_redacted
             id
         );
     }
-    let text = serde_json::to_string(&logs).unwrap();
+    let text = format!("{} {}", serde_json::to_string(&logs).unwrap(), trace_text);
     assert!(text.contains("business-prompt") && text.contains("synthetic business failure"));
     for secret in [
         support::CLIENT_KEY,
@@ -681,7 +694,7 @@ async fn unavailable_or_stalled_export_cannot_block_admission_or_a_healthy_gener
     }));
     for stalled in [false, true] {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = format!("http://{}/v1/logs", listener.local_addr().unwrap());
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
         let _collector = if stalled {
             Some(Guard(tokio::spawn(async move {
                 axum::serve(
@@ -706,7 +719,7 @@ async fn unavailable_or_stalled_export_cannot_block_admission_or_a_healthy_gener
                 body_bytes: 1024,
             })
             .unwrap();
-        // More failure events than the bounded SDK queue, while its exporter is stalled.
+        // Repeated failures and a healthy request must not wait for a stalled exporter.
         for _ in 0..80 {
             let response = tokio::time::timeout(
                 Duration::from_secs(5),

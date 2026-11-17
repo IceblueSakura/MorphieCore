@@ -33,8 +33,8 @@ This page owns current scope, planned execution sequence, stage priorities, and 
 Stateful upstream/downstream APIs remain [experimental and disabled](../architecture/history-and-replay.md#stateful-history). Their acceptance is excluded from current model adaptation and repairs until explicit user activation; no other work package enables them implicitly.
 
 The selected [observability prerequisite](#observability-prerequisite) precedes
-further Stage-4 work. Its design and completion criteria are accepted;
-implementation and observable acceptance remain pending. Existing static carriers
+further Stage-4 work. Its SDK/request foundation is implemented; the full
+observable acceptance gate remains open. Existing static carriers
 do not activate new public APIs.
 
 Other limitations and prerequisites share the [issue register](unscheduled-issues.md#unscheduled-issues); R09 real-account failover, remaining model-service qualification and Agent session storage retain separate scheduling decisions and are not implicit Stage-4 prerequisites.
@@ -77,7 +77,14 @@ Prefer small, independently decidable repairs before complex integration; diagno
 
 ### Observability prerequisite
 
-**Status:** selected and not yet implemented. This section owns this slice's
+**Status:** in progress; the SDK/request foundation is implemented, not the full
+prerequisite. Correlated server spans and Logs, body lifetime, isolated
+subscribers and producer/provider shutdown are covered by focused synthetic
+checks. Attempt/client spans, maintenance tracing, manual-timeline replacement
+and indexed development-backend queries remain pending. None of the eight
+criteria is closed solely by this foundation.
+
+This section owns this slice's
 scope, execution order and completion gate; [Architecture](../architecture/runtime-and-routing.md#selected-logs-and-traces-design)
 owns the accepted design. Current temporary diagnostics remain described in
 [Usage](../usage/gateway-configuration.md#failure-diagnostics).

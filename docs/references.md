@@ -59,15 +59,18 @@ The [stable-release protocol recheck](refs/2026-10-23-stable-protocol-contracts.
 
 ### Telemetry dependency selection
 
-Resolved from crates.io release metadata on **2026-10-24**, with native Logs transport selection rechecked on **2026-11-10**:
+Resolved from release metadata, with bridge selection rechecked against published
+crate VCS metadata on **2026-11-17**:
 
 | Packages | Selected release / source revision | License |
 |---|---|---|
 | `tracing` | 0.1.44 / [`2d55f6f`](https://github.com/tokio-rs/tracing/tree/2d55f6faf9be83e7e4634129fb96813241aac2b8/tracing) | MIT |
 | `tracing-subscriber` | 0.3.23 / [`54ede4d`](https://github.com/tokio-rs/tracing/tree/54ede4d5d85a536aed5485c5213011d9ec961935/tracing-subscriber) | MIT |
 | `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp` | 0.33.1 / [`372ebbc`](https://github.com/open-telemetry/opentelemetry-rust/tree/372ebbc74d4dba71bb9820732f57f7316b4e7a1e) | Apache-2.0 |
+| `opentelemetry-appender-tracing` | 0.33.1 / [`372ebbc`](https://github.com/open-telemetry/opentelemetry-rust/tree/372ebbc74d4dba71bb9820732f57f7316b4e7a1e/opentelemetry-appender-tracing) | Apache-2.0 |
+| `tracing-opentelemetry` | 0.34.0 / [`8c1a02d`](https://github.com/tokio-rs/tracing-opentelemetry/tree/8c1a02d68034de317607ada0b1dd0d98abefd6cd) | MIT |
 
-Primary contract entry points: [OTLP HTTP/runtime/configuration](https://docs.rs/opentelemetry-otlp/0.33.1/opentelemetry_otlp/), [native Logs API](https://docs.rs/opentelemetry/0.33.1/opentelemetry/logs/), and [batch log processor source](https://github.com/open-telemetry/opentelemetry-rust/blob/372ebbc74d4dba71bb9820732f57f7316b4e7a1e/opentelemetry-sdk/src/logs/batch_log_processor.rs). Trace/appender bridges and the dependency-only prototype are removed; [Development](development.md#overall-acceptance-status) summarizes overall acceptance.
+Primary contract entry points: [OTLP HTTP/runtime/configuration](https://docs.rs/opentelemetry-otlp/0.33.1/opentelemetry_otlp/), [Logs bridge](https://docs.rs/opentelemetry-appender-tracing/0.33.1/opentelemetry_appender_tracing/), [trace layer/context and exception controls](https://docs.rs/tracing-opentelemetry/0.34.0/tracing_opentelemetry/struct.OpenTelemetryLayer.html), and [batch log processor source](https://github.com/open-telemetry/opentelemetry-rust/blob/372ebbc74d4dba71bb9820732f57f7316b4e7a1e/opentelemetry-sdk/src/logs/batch_log_processor.rs). Bridge context activation and explicit safe fields inform the gateway integration; framework self-tests are not product acceptance. [Development](development.md#overall-acceptance-status) summarizes delivered coverage and remaining boundaries.
 
 Receiver selection checked **2026-11-14**: official [OpenTelemetry Collector v0.165.0](https://github.com/open-telemetry/opentelemetry-collector-releases/releases/tag/v0.165.0), Apache-2.0. Its [core distribution manifest](https://github.com/open-telemetry/opentelemetry-collector-releases/blob/v0.165.0/distributions/otelcol/manifest.yaml) includes OTLP reception, memory limiting and the alpha [file exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/v0.165.0/exporter/fileexporter/README.md). The `otelcol_0.165.0_linux_amd64.tar.gz` release SHA-256 is `78570dd4bd6570bc41eb327869ef913bbf91b87dd8170ebebbf43bec71f6370d`. File rotation, append incompatibility, batch JSON format and non-TTL `max_days` follow that pinned exporter; storage is best effort, not an audit ledger.
 

@@ -12,8 +12,15 @@ processors:
     limit_mib: 96
     spike_limit_mib: 24
 exporters:
-  file:
+  file/logs:
     path: ./logs/generation.jsonl
+    format: json
+    rotation:
+      max_megabytes: 16
+      max_backups: 8
+      max_days: 7
+  file/traces:
+    path: ./logs/traces.jsonl
     format: json
     rotation:
       max_megabytes: 16
@@ -24,7 +31,11 @@ service:
     logs:
       receivers: [otlp]
       processors: [memory_limiter]
-      exporters: [file]
+      exporters: [file/logs]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter]
+      exporters: [file/traces]
   telemetry:
     logs:
       level: warn

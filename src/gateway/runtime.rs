@@ -152,6 +152,7 @@ pub(super) struct Runtime {
     pub(super) permits: Arc<Semaphore>,
     pub(super) transport: HttpTransport,
     pub(super) shutdown: CancellationToken,
+    pub(super) request_tasks: tokio_util::task::TaskTracker,
 }
 
 #[cfg(test)]

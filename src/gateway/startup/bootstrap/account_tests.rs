@@ -453,7 +453,7 @@ async fn read_only_validation_checks_observation_configuration_without_creating_
     super::Bootstrap::validate(&root.join("gateway.json"), Some(&store), None).unwrap();
     let collector = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     collector.set_nonblocking(true).unwrap();
-    let endpoint = format!("http://{}/v1/logs", collector.local_addr().unwrap());
+    let endpoint = format!("http://{}", collector.local_addr().unwrap());
     let mut config = json!({"version":1,"auth_file":"auth.json","diagnostics":{"endpoint":endpoint,"private_bodies":true}});
     super::test_support::write_private(
         &root.join("gateway.json"),

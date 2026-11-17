@@ -1,4 +1,5 @@
 //! Request-local attribution and bounded Generation timelines, independent of export.
+pub(super) mod request;
 mod telemetry;
 use crate::execution::AttemptError;
 use opentelemetry::logs::{AnyValue, Severity};
@@ -57,6 +58,7 @@ pub(super) enum Outcome {
     Complete,
 }
 pub(super) struct Trace {
+    pub(super) tasks: Option<tokio_util::task::TaskTracker>,
     pub(super) report: crate::execution::report::Report,
     pub(super) capture: Option<super::capture::Exchange>,
     pub(super) capture_attempt: usize,
@@ -103,6 +105,10 @@ impl Trace {
             .extensions()
             .get::<super::capture::Exchange>()
             .cloned();
+        trace.tasks = request
+            .extensions()
+            .get::<tokio_util::task::TaskTracker>()
+            .cloned();
         trace.emitted = request.extensions().get::<Emitted>().cloned();
         trace.operation = operation(request.uri().path());
         trace.timeline("generation.request.started", Severity::Debug, vec![]);
@@ -125,6 +131,7 @@ impl Trace {
     }
     fn build(sink: Option<&Sink>, request_id: Option<String>, agent_id: Option<String>) -> Self {
         Self {
+            tasks: None,
             report: Default::default(),
             capture: None,
             capture_attempt: 0,

@@ -18,6 +18,7 @@ use std::{
     sync::Arc,
 };
 use tokio::net::TcpListener;
+use tracing::{Instrument, instrument::WithSubscriber};
 impl Gateway {
     /// Embedding callers own listener security; `serve` enforces loopback itself.
     pub fn router(&self) -> Router {
@@ -128,6 +129,8 @@ impl Gateway {
             _ = maintenance.renew_credentials(&storage_tasks) => server.await,
         };
         maintenance.shutdown();
+        maintenance.state.request_tasks.close();
+        maintenance.state.request_tasks.wait().await;
         // Cancellation stops Provider I/O, but queued filesystem commits must
         // preserve rotated material and release account locks before we return.
         storage_tasks.close();
@@ -151,7 +154,29 @@ pub(in crate::gateway) async fn authenticate(
     mut request: Request,
     next: Next,
 ) -> Response {
+    let request_id = state.request_ids.next();
+    request.extensions_mut().insert(state.request_tasks.clone());
+    if let Some(id) = &request_id {
+        request.extensions_mut().insert(id.clone());
+    }
+    let Some(sink) = &state.diagnostics else {
+        return authenticated(state, request, next).await;
+    };
+    let observation = crate::gateway::diagnostics::request::RequestTrace::new(
+        sink,
+        crate::gateway::diagnostics::operation(request.uri().path()),
+        request_id.as_ref().map(|id| id.0.as_ref()),
+    );
+    let response = authenticated(state.clone(), request, next)
+        .instrument(observation.span())
+        .with_subscriber(sink.dispatch())
+        .await;
+    observation.response(response)
+}
+async fn authenticated(state: Arc<Runtime>, mut request: Request, next: Next) -> Response {
     let Some(agent) = state.auth.authenticate(request.headers()) else {
+        tracing::warn!(name: "gateway.auth.rejected", target: "morphiecore.request",
+            { error.type = "gateway.unauthorized" }, "authentication rejected");
         return ingress_error(
             request.uri().path(),
             ApiError::new(
@@ -160,7 +185,10 @@ pub(in crate::gateway) async fn authenticate(
             ),
         );
     };
-    let request_id = state.request_ids.next();
+    let request_id = request
+        .extensions()
+        .get::<crate::gateway::ingress::correlation::RequestId>()
+        .cloned();
     request.extensions_mut().insert(agent.clone());
     if let Some(id) = &request_id {
         request.extensions_mut().insert(id.clone());

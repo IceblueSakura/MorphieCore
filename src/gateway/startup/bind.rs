@@ -127,6 +127,7 @@ impl Gateway {
                 limits,
                 transport,
                 shutdown: CancellationToken::new(),
+                request_tasks: tokio_util::task::TaskTracker::new(),
             }),
         })
     }

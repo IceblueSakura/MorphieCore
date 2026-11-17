@@ -371,13 +371,14 @@ async fn model_request_limits_do_not_suppress_client_reported_facts() {
 }
 
 #[tokio::test]
-async fn diagnostics_only_record_authenticated_requests_and_never_expose_headers() {
-    let (sink, exporter) = crate::gateway::diagnostics::Sink::memory();
+async fn diagnostics_correlate_auth_rejection_without_capturing_unauthenticated_input() {
+    let (sink, exporter, spans) =
+        crate::gateway::diagnostics::Sink::memory_signals(crate::gateway::LogLevel::Warn);
     let mut gate = gateway(Limits::default());
     let state = Arc::get_mut(&mut gate.state).unwrap();
     state.diagnostics = Some(sink);
     state.capture = Some(crate::gateway::capture::Sink::new(16 << 10));
-    for authenticated in [false, true] {
+    for (authenticated, consume) in [(false, true), (true, true), (true, false)] {
         let mut request = HttpRequest::builder()
             .method("POST")
             .uri("/v1/chat/completions?api_key=synthetic-query-secret")
@@ -396,21 +397,65 @@ async fn diagnostics_only_record_authenticated_requests_and_never_expose_headers
             .await
             .unwrap();
         assert_eq!(response.status(), if authenticated { 400 } else { 401 });
-        axum::body::to_bytes(response.into_body(), 65536)
-            .await
-            .unwrap();
+        if consume {
+            axum::body::to_bytes(response.into_body(), 65536)
+                .await
+                .unwrap();
+        } else {
+            let unrelated = crate::gateway::diagnostics::request::RequestTrace::new(
+                gate.state.diagnostics.as_ref().unwrap(),
+                "other",
+                Some("synthetic-unrelated"),
+            );
+            unrelated.span().in_scope(|| drop(response));
+        }
     }
     let logs = exporter.get_emitted_logs().unwrap();
     assert!(!logs.is_empty());
     for log in &logs {
-        assert!(
-            log.record
-                .attributes_iter()
-                .any(|(key, value)| key.as_str() == "agent_id"
-                    && *value == opentelemetry::logs::AnyValue::from("fixture-agent"))
-        );
+        assert!(log.record.trace_context().is_some());
+        let has_agent = log.record.attributes_iter().any(|(key, value)| {
+            key.as_str() == "agent_id"
+                && *value == opentelemetry::logs::AnyValue::from("fixture-agent")
+        });
+        if log.record.event_name() == Some("gateway.auth.rejected") {
+            assert!(!has_agent);
+        } else {
+            assert!(has_agent);
+        }
     }
-    let text = format!("{logs:?}");
+    let spans = spans.get_finished_spans().unwrap();
+    assert_eq!(spans.len(), 4);
+    for log in &logs {
+        let context = log.record.trace_context().unwrap();
+        assert!(
+            spans
+                .iter()
+                .any(|span| span.span_context.trace_id() == context.trace_id
+                    && span.span_context.span_id() == context.span_id)
+        );
+        if let Some((_, id)) = log
+            .record
+            .attributes_iter()
+            .find(|(key, _)| key.as_str() == "request_id")
+        {
+            let opentelemetry::logs::AnyValue::String(id) = id else {
+                panic!("request id");
+            };
+            let span = spans
+                .iter()
+                .find(|span| {
+                    span.attributes.iter().any(|kv| {
+                        kv.key.as_str() == "morphiecore.request_id"
+                            && kv.value.as_str() == id.as_str()
+                    })
+                })
+                .unwrap();
+            assert_eq!(context.trace_id, span.span_context.trace_id());
+            assert_eq!(context.span_id, span.span_context.span_id());
+        }
+    }
+    let text = format!("{logs:?} {spans:?}");
     for secret in [
         KEY,
         "synthetic-query-secret",
