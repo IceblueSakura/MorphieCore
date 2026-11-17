@@ -17,7 +17,8 @@ pub struct WireRules {
     /// Closed aliases selected by a trusted dialect, shared by JSON and chunks.
     pub chat_finish_reasons: &'static [(&'static str, ChatFinishReason)],
     /// Closed opening-to-terminal reasoning/service resolutions on the selected
-    /// OpenRouter Responses contract. Same-phase drift is never admitted.
+    /// OpenRouter Luna contract, including its complete default reasoning report
+    /// after an opening null. Same-phase drift is never admitted.
     pub responses_lifecycle_reports: bool,
     /// Public SIWC is a restricted Responses operation, not a product-backend alias.
     /// https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations

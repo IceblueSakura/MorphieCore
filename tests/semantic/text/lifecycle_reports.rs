@@ -175,6 +175,12 @@ fn each_resolution_is_closed_phase_local_and_source_checked() {
             json!("default"),
             json!("default"),
         ),
+        (
+            Value::Null,
+            json!({"effort":"medium","summary":"detailed","context":"all_turns","mode":"standard"}),
+            json!("auto"),
+            json!("default"),
+        ),
     ] {
         let expected = morphiecore::protocol::failure::ShapeReason::SettingsConflict;
         let first = event("created", 0, opening, a);
@@ -207,6 +213,15 @@ fn each_resolution_is_closed_phase_local_and_source_checked() {
         (json!({}), json!({"mode":"pro"})),
         (json!({"context":null}), json!({"context":"all_turns"})),
         (json!({"mode":null}), json!({"mode":"standard"})),
+        (
+            Value::Null,
+            json!({"effort":"high","summary":"detailed","context":"all_turns","mode":"standard"}),
+        ),
+        (Value::Null, json!({"effort":"medium"})),
+        (
+            json!({"effort":"low"}),
+            json!({"effort":"medium","summary":"detailed","context":"all_turns","mode":"standard"}),
+        ),
     ] {
         let mut decoder = adapter().event_decoder();
         decoder
@@ -295,6 +310,57 @@ fn each_resolution_is_closed_phase_local_and_source_checked() {
     assert!(
         decoder.push(&malformed).is_err(),
         "rejection poisons intake"
+    );
+}
+
+#[test]
+fn luna_null_and_effective_reasoning_reports_remain_distinct_on_delivery() {
+    let terminal = json!({
+        "effort":"medium","summary":"detailed","context":"all_turns","mode":"standard"
+    });
+    let first = event("created", 0, Value::Null, json!("auto"));
+    let last = event("completed", 1, terminal.clone(), json!("default"));
+    let mut decoder = adapter().event_decoder();
+    decoder.push(&first).unwrap();
+    decoder.push(&last).unwrap();
+    decoder.finish().unwrap();
+    let source = decoder.metadata().unwrap().clone();
+    let opening = source.context.reports.at(ReportPhase::Opening).unwrap();
+    let settings = opening.settings.as_ref().unwrap();
+    assert_eq!(settings.reasoning.presence, ReasoningPresence::Null);
+    assert_eq!(settings.effort, None);
+    let settings = source.context.settings().unwrap();
+    assert_eq!(
+        settings.effort,
+        Some(EffortControl {
+            scope: EffortScope::Reasoning,
+            level: EffortLevel::Medium
+        })
+    );
+    let fidelity = FidelityRecords::default();
+    let mut encoder = EventEncoder::new(
+        GenerationApi::Responses,
+        source.clone(),
+        TargetContract::full(),
+    )
+    .unwrap();
+    let frames = encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
+    assert_eq!(frames[0]["response"]["reasoning"], Value::Null);
+    let frames = encoder
+        .encode(
+            &StreamEvent::Terminal {
+                terminal: StreamTerminal::Completed,
+                details: Default::default(),
+            },
+            &fidelity,
+        )
+        .unwrap();
+    assert_eq!(frames[0]["response"]["reasoning"], terminal);
+    encoder.finish().unwrap();
+    assert_eq!(
+        decoder.metadata(),
+        Some(&source),
+        "delivery must not rewrite source reports"
     );
 }
 

@@ -58,12 +58,17 @@ fn chunk(delta: Value, reason: Value) -> Value {
 }
 
 #[test]
-fn response_filter_reports_survive_static_and_terminal_snapshots() {
+fn response_source_reports_survive_static_and_terminal_snapshots_without_crossing_scopes() {
     let source = adapter(GenerationApi::Responses, Dialect::OpenRouter, "source");
     let reports = json!(vec![json!({"role":"assistant","level":0}); 133]);
     let mut body = crate::wire::response(2);
     body["content_filters"] = reports.clone();
+    body["access_programs"] = json!({"cyber":"standard"});
     let decoded = source.decode_response(body.to_string().as_bytes()).unwrap();
+    assert_eq!(
+        source.encode_response(&decoded, &Contract::full()).unwrap()["access_programs"],
+        json!({"cyber":"standard"})
+    );
     assert_eq!(
         source.encode_response(&decoded, &Contract::full()).unwrap()["content_filters"],
         reports
@@ -80,14 +85,22 @@ fn response_filter_reports_survive_static_and_terminal_snapshots() {
             .unwrap()["content_filters"],
         reports
     );
-    let other = adapter(GenerationApi::Responses, Dialect::OpenRouter, "other");
-    assert!(
-        other
+    assert_eq!(
+        source
             .encode_response(&streamed, &Contract::full())
-            .unwrap()
-            .get("content_filters")
-            .is_none()
+            .unwrap()["access_programs"],
+        json!({"cyber":"standard"})
     );
+    let other = adapter(GenerationApi::Responses, Dialect::OpenRouter, "other");
+    let projected = other.encode_response(&streamed, &Contract::full()).unwrap();
+    assert!(projected.get("content_filters").is_none());
+    assert_eq!(projected.get("access_programs"), Some(&Value::Null));
+    let mut invalid = crate::wire::response(2);
+    invalid["access_programs"] = json!({"cyber":17});
+    assert!(matches!(
+        source.decode_response(invalid.to_string().as_bytes()),
+        Err(morphiecore::protocol::CodecError::Invalid(_))
+    ));
 }
 
 #[test]

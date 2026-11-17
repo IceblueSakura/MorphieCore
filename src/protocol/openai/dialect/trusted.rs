@@ -102,6 +102,7 @@ impl Dialect {
                     openrouter_session: true,
                     response_extras: true,
                     responses_reasoning_format: true,
+                    responses_access_programs: true,
                     responses_done_marker: true,
                     accept_reasoning_alias: true,
                     reasoning_alias: true,

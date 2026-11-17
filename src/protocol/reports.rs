@@ -12,6 +12,8 @@
 //! - **Reasoning Summary**: [`ReasoningSummary::Auto`] → [`ReasoningSummary::Detailed`].
 //! - **Reasoning Context**: Absent → [`ReasoningContext::AllTurns`].
 //! - **Reasoning Mode**: Absent → [`ReasoningMode::Standard`].
+//! - **Luna default reasoning report**: Null → the complete observed
+//!   medium/detailed/all-turns/standard terminal report, without rewriting null.
 //!
 //! Independently of reasoning resolutions, Responses may resolve service class
 //! from configured processing to standard processing at completion.
@@ -24,7 +26,10 @@ use super::CodecError;
 use crate::protocol::failure::{CarrierReason, ShapeReason};
 use crate::semantic::{
     context::{ResponseReports, ServiceClass},
-    task::generation::{ReasoningContext, ReasoningMode, ReasoningSummary},
+    task::generation::{
+        EffortControl, EffortLevel, EffortScope, ReasoningContext, ReasoningMode,
+        ReasoningPresence, ReasoningRequest, ReasoningSummary,
+    },
     value::Presence,
 };
 
@@ -44,6 +49,24 @@ pub(crate) fn relation(reports: &ResponseReports, resolution: bool) -> Result<()
     if let (Some(before), Some(after)) = (&opening.settings, &terminal.settings) {
         let mut allowed = before.clone();
         if resolution {
+            let mut unconfigured = ReasoningRequest::absent();
+            unconfigured.presence = ReasoningPresence::Null;
+            let mut resolved = ReasoningRequest::present(Some(ReasoningSummary::Detailed));
+            resolved.context = Presence::Value(ReasoningContext::AllTurns);
+            resolved.mode = Presence::Value(ReasoningMode::Standard);
+            if before.reasoning == unconfigured
+                && before.effort.is_none()
+                && after.reasoning == resolved
+                && after.effort
+                    == Some(EffortControl {
+                        scope: EffortScope::Reasoning,
+                        level: EffortLevel::Medium,
+                    })
+            {
+                // Compare only: both native phase observations remain intact.
+                allowed.reasoning = resolved;
+                allowed.effort = after.effort;
+            }
             if before.reasoning.presentation.summary == Some(ReasoningSummary::Auto)
                 && after.reasoning.presentation.summary == Some(ReasoningSummary::Detailed)
             {
