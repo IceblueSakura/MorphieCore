@@ -197,7 +197,7 @@ Responses additionally declares `responses.infer-required-settings.v1` for missi
 
 See [the fallback rules and limitations](../architecture/adaptation-and-dialects.md#downstream-schema-completion); optional diagnostics never alter standard field meaning.
 
-The first request slice lists explicit public-admission rejection of safety policy, cached-context references and normalization-default tools where applicable; absence does not establish support.
+The current request slice assesses tools, tool selection, output formats and output caps. Unlisted safety-policy, cached-context-reference and cache-retention cases remain `not_assessed` by this partial discovery view; request validation and candidate-local projection still apply.
 
 Delivery lists selected incidental-settings omissions, assessment-only safety-report omission, protected blocking-safety rejection and completion-cause carriers equally for JSON/SSE.
 
@@ -208,8 +208,6 @@ Chat lists `chat.coarsen-completion-cause.v1` and Responses `responses.omit-comp
 Responses capabilities mark experimental stored projections as rejected. Returned native phase/history carriage remains stateless and does not activate storage.
 
 Phase cases describe exact native Responses assistant labels. Chat and Messages preserve visible content/order but omit phase under `generation.omit-delivery-message-phase.v1`; returned phase is not supported there. These cases do not promise phase-aware UI, client retention, or successful conversion of other content/terminals. Request-side phase transfer and cache-retention policies remain unassessed by this partial route-wide view.
-
-Messages request cases distinguish `generation.cache` domain `valid_owner_local_breakpoints_5m_or_1h` from `request_wide_automatic_policy`. The former is faithful only under the selected all-native admission contract; mixed configurations publish rejection. These declarations do not promise cache creation/hits, billed TTLs, storage retention or signed-thinking replay.
 
 Selected Google Messages entries additionally declare `generate_content_stop_without_configured_sequences` or `interactions_completed_without_configured_sequences` with their terminal rules.
 

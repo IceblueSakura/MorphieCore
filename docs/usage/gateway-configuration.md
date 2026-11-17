@@ -104,7 +104,7 @@ Keep edited copies, credentials, certificates and captures outside the repositor
 
 Paths in the service file resolve relative to that file, not the process working directory. CLI paths remain explicit process-relative or absolute paths.
 
-The configuration uses **version 1**. Policy fields belong to the following objects. Omit a group or field to use its default. Groups and numeric/boolean fields reject `null`; `delivery.delta_coalescing:null` explicitly disables batching. Optional paths, proxy and diagnostics retain their nullable form.
+The configuration uses **version 1**. Policy fields belong to the following objects. Omit a group or field to use its default. Groups and numeric/boolean fields reject `null`; `delivery.delta_coalescing:null` explicitly disables batching. `auth_file`, `models_file` and `accounts_file` may be omitted but reject `null`. `credentials_dir`, `proxy` and `diagnostics` accept `null`.
 
 | Group | Fields and defaults | Bounds / effect |
 |---|---|---|

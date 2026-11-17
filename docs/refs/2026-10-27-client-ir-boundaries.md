@@ -1,6 +1,6 @@
 # Client and IR protocol boundary review
 
-Dated protocol-source evidence from 2026-10-27 through 2026-11-13. [Architecture](../architecture/index.md) owns accepted contracts, [References](../references.md) owns regression pins, and the [issue register](../roadmap/unscheduled-issues.md) owns unresolved qualifications. Synthetic observations, installed-client behavior and real service observations below retain their separate scopes; none is a complete support matrix.
+Dated protocol-source evidence from 2026-10-27 through 2026-11-17. [Architecture](../architecture/index.md) owns accepted contracts, [References](../references.md) owns regression pins, and the [issue register](../roadmap/unscheduled-issues.md) owns unresolved qualifications. Synthetic observations, installed-client behavior and real service observations below retain their separate scopes; none is a complete support matrix.
 
 ## Contents
 
@@ -15,6 +15,7 @@ Dated protocol-source evidence from 2026-10-27 through 2026-11-13. [Architecture
 - [Follow-up source and feasibility review (2026-10-28)](#follow-up-source-and-feasibility-review-2026-10-28)
 - [Binding-history source review (2026-10-28)](#binding-history-source-review-2026-10-28)
   - [Hosted MiniCPM control recheck (2026-11-13)](#hosted-minicpm-control-recheck-2026-11-13)
+  - [OpenRouter response reports (2026-11-17)](#openrouter-response-reports-2026-11-17)
 - [Pre-stage-4 contract qualification (2026-10-29)](#pre-stage-4-contract-qualification-2026-10-29)
 - [Semantic-equivalence review (2026-10-28)](#semantic-equivalence-review-2026-10-28)
 - [Chat JSON intake evidence (2026-10-30)](#chat-json-intake-evidence-2026-10-30)
@@ -203,6 +204,25 @@ The two output aliases have one semantic owner.
 Native tool-call/result continuations preserve the returned readable field, while whether history is consumed, ignored or required remains unassessed.
 
 The [MiniCPM5 deployment guide](https://github.com/OpenBMB/MiniCPM/blob/f4293a1a7bde05d1acce99488235792615fc241b/docs/deployment/sglang.md) and model templates are self-hosted references, not authority for hosted history requirements.
+
+### OpenRouter response reports (2026-11-17)
+
+The current [OpenRouter Responses schema](https://openrouter.ai/docs/api/api-reference/responses/create-a-response)
+defines `access_programs` on `OpenResponsesResult` as a nullable report of the
+effective Cyber program, with `standard`, `daybreak_blue` and `daybreak_red`
+spellings. Its request-side access-program selection is a distinct operation
+intent; observing the report grants no program permission. The existing bounded,
+source-bound accounting view is reused without changing SDK pins or activating
+request-side controls.
+
+Luna native opening snapshots report `reasoning:null` when the request omits
+reasoning controls; completion can report medium effort, detailed summary,
+all-turns context and standard mode. Explicit low/auto requests instead retain
+the already selected summary/context/mode resolution. These are separate native
+phase observations, not proof of default equivalence. The selected relation
+preserves both snapshots and admits only the complete observed null-to-effective
+tuple. General settings drift, explicit effort conflicts and same-phase changes
+remain outside it.
 
 ## Pre-stage-4 contract qualification (2026-10-29)
 

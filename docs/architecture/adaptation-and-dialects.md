@@ -178,7 +178,10 @@ wrapping supplies an equivalent carrier.
 
 OpenRouter Luna preserves verbosity through the ordinary Chat and Responses
 carriers. Its sampling, truncation, parallel-tool and strictness policies remain
-separate.
+separate. OpenRouter Responses access-program reports use the existing bounded,
+source-bound report view; they do not activate client access-program controls or
+become billed token counts. The [source recheck](../refs/2026-10-27-client-ir-boundaries.md#openrouter-response-reports-2026-11-17)
+distinguishes these reports from request intent.
 
 ##### Hosted MiniCPM Chat
 
@@ -588,6 +591,14 @@ Responses preserves `commentary` and `final_answer` labels. Targets without phas
 #### Lifecycle settings and service reports
 
 Responses and Interactions maintain separate opening and terminal reports validated by [`protocol::reports`](../../src/protocol/reports.rs). Cross-phase updates permit only evidenced runtime resolutions (e.g. `summary: auto → detailed` or `service: configured → standard`); conflicting drifts reject fail-closed.
+
+For the selected OpenRouter Luna Responses contract, an opening `reasoning:null`
+with no effort may be followed by the complete terminal
+`effort:medium`, `summary:detailed`, `context:all_turns`, `mode:standard` report.
+Both native observations remain intact; null is not filled, erased or reinterpreted
+as the terminal value. Other effort additions, partial reports, explicit effort
+conflicts, unrelated setting changes and same-phase drift still reject. This
+does not inject request defaults, change thinking, or qualify another target.
 
 Standard Responses permits opening `service_tier:auto` to resolve to terminal `default`, independently of Provider-specific reasoning-report rules. Preserve both observations; a changed same-phase report still rejects. The [official service-tier contract](https://developers.openai.com/api/reference/resources/responses/methods/create) distinguishes configured processing from the tier actually used.
 

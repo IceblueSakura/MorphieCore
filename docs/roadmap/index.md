@@ -30,32 +30,27 @@ This page owns current scope, planned execution sequence, stage priorities, and 
 
 Stateful upstream/downstream APIs remain [experimental and disabled](../architecture/history-and-replay.md#stateful-history). Their acceptance is excluded from current model adaptation and repairs until explicit user activation; no other work package enables them implicitly.
 
-Current work prioritizes the selected
-[OpenRouter Luna Responses SSE intake issue](unscheduled-issues.md#content-and-client-qualification)
-before Stage 4 resumes.
+Stage 4 remains at per-operation contract selection; existing static carriers do
+not activate new public APIs.
 
-Other limitations and prerequisites share the [issue register](unscheduled-issues.md#unscheduled-issues); R09 real-account failover, remaining model-service qualification and Agent session storage retain separate scheduling decisions and remain outside that entry gate.
+Other limitations and prerequisites share the [issue register](unscheduled-issues.md#unscheduled-issues); R09 real-account failover, remaining model-service qualification and Agent session storage retain separate scheduling decisions and are not implicit Stage-4 prerequisites.
 
-[Development](../development.md#overall-acceptance-status) owns overall acceptance, and the [cleanup plan](../convergence-cleanup-plan.md) owns remaining production observability, reliability and privacy gates.
+[Development](../development.md#overall-acceptance-status) owns overall acceptance.
 
 No deployment or new API activation is implied.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
-| Current focus / before Stage 4 | Resolve [OpenRouter Luna Responses SSE intake](unscheduled-issues.md#content-and-client-qualification) | First failing event/error localized, independent regression and corrected native-to-IR-to-downstream stream acceptance |
 | Conditional tool follow-ups | [Conditional Stage-3 follow-ups](unscheduled-issues.md#conditional-stage-3-follow-ups) | Separate policy selection and affected-loop acceptance; not default Stage-4 prerequisites |
 | API expansion | Select and implement Stage-4 operation contracts | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Opt-in [per-Agent JSONL session storage](../architecture/history-and-replay.md#agent-session-files); unscheduled and not a Stage-4 prerequisite | Select isolation and lifetime bounds before implementation |
-| Production preparation | Extend beyond the selected loopback Collector/file receiver only on concrete operational need | Indexed storage, stronger durability and cluster aggregation retain separate selection and acceptance |
 
 ## Planned order
 
-Before resuming Stage 4, close the explicitly selected
-[OpenRouter Luna Responses SSE intake issue](unscheduled-issues.md#content-and-client-qualification).
+Stage-4 families retain equal priority and advance as contracts are selected.
 Other [unscheduled issues](unscheduled-issues.md#unscheduled-issues), including R09,
-do not become implicit prerequisites. Once this entry gate closes, Stage-4 families
-retain equal priority and advance as contracts are selected. Conditional tool
-packages keep their own policy gates; Stage 5 remains unscheduled.
+do not become implicit prerequisites. Conditional tool packages keep their own
+policy gates; Stage 5 remains unscheduled.
 
 | Stage | Goal | Exit evidence |
 |---|---|---|
@@ -132,9 +127,9 @@ The test strategy uses pinned upstream assets and standard SDK consumers rather 
 
 ### Observability follow-up
 
-The selected loopback Collector/file receiver and Generation Text log timelines are described in [Usage](../usage/gateway-configuration.md#failure-diagnostics). Indexed backends, centralized cluster topology, public diagnostic schema stabilization and metrics aggregation remain deferred.
+Current diagnostic reports/logger and the loopback receiver are temporary; [Usage](../usage/gateway-configuration.md#failure-diagnostics) describes their configuration. Future tracing, metrics and backend changes follow concrete needs, not a fixed production-readiness gate.
 
-Safe-to-ignore diagnostic extensions may be added without dedicated extension tests. That exception does not waive the selected logger/capture replacement's behavior, redaction, bounds, cancellation and exporter checks. Further aggregation remains deferred; existing standard Agent-loop and authoritative evidence checks remain required.
+Safe-to-ignore diagnostic extensions may be added without dedicated extension tests. Changes to logging or capture still require applicable redaction, bounds, cancellation and exporter checks. Execution and acceptance evidence remain independent of optional instrumentation.
 
 ### Agent authorization and diagnostics follow-up
 

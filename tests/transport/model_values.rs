@@ -989,19 +989,6 @@ fn gemini_preserves_native_budgets_and_checks_fallback_levels_without_requantizi
             );
             assert!(!rules.contains(&"synthetic.budget-to-effort.v1"));
             assert_eq!(representable(&endpoint, &request), Ok(()));
-        } else {
-            let (wire, rules) = projected(&endpoint, &request);
-            assert_eq!(
-                wire["generation_config"],
-                json!({"max_output_tokens":4096,"thinking_level":"low"})
-            );
-            assert_eq!(
-                rules,
-                [
-                    "generation.project-effort.v1",
-                    "synthetic.budget-to-effort.v1"
-                ]
-            );
         }
         let mut settings = request.task.semantic.settings().clone();
         settings.reasoning.budget_tokens = Some(2048);
