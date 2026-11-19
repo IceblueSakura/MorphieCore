@@ -129,6 +129,15 @@ pub const MODELS: &[ModelDefinition] = &[
         released_at: 1_792_022_400,
         developer: "NVIDIA",
     },
+    // Source: https://build.nvidia.com/nvidia/nemotron-3.5-lightning-30b-a3b/modelcard (2026-08-11).
+    ModelDefinition {
+        id: "nemotron-3.5-lightning-30b-a3b",
+        images: false,
+        files: false,
+        strict_tools: false,
+        released_at: 1_786_406_400,
+        developer: "NVIDIA",
+    },
     // Source: https://www.alibabacloud.com/en/press-room/alibaba-unveils-qwen3-8-max (2026-08-03).
     ModelDefinition {
         id: "qwen3.8-max",

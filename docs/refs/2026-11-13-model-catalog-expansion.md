@@ -53,6 +53,8 @@ Follow-up, 2026-11-19: the NVIDIA account's model directory lists `nvidia/nemotr
 
 The [hosted Chat schema](https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3_5-super-vl-120b-a12b-infer.md) permits ordered system and developer messages, so the retired model's single initial system-message restriction does not transfer. This replacement does not activate new media carriers, strict tool guarantees, reasoning controls or service capacity declarations.
 
+`nemotron-3.5-lightning-30b-a3b` uses its own Chat-only binding, `nvidia-lightning-chat`, and the same NVIDIA credential namespace. The [hosted reference](https://build.nvidia.com/nvidia/nemotron-3.5-lightning-30b-a3b/apireference) documents Chat, and the [model card](https://build.nvidia.com/nvidia/nemotron-3.5-lightning-30b-a3b/modelcard) dates the release to 2026-08-11. The configured account completes native Chat text but returns 404 on native Responses. Installed full-extension pi completes a stateless tool loop through the existing downstream Responses-to-Chat adaptation. No native Responses binding or model-specific control expansion is selected.
+
 ## Google Gemini 4
 
 Sources: [release changelog](https://ai.google.dev/gemini-api/docs/changelog), [Argon](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon), [Hydrogen](https://ai.google.dev/gemini-api/docs/models/gemini-4-hydrogen), [Carbon](https://ai.google.dev/gemini-api/docs/models/gemini-4-carbon) and [thinking controls](https://ai.google.dev/gemini-api/docs/thinking).
