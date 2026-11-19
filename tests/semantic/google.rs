@@ -1211,10 +1211,10 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     let (body, _) = encode_generation_request(&history, &tail.fidelity, &target(), None).unwrap();
     assert_eq!(
         body["contents"][1]["parts"],
-        json!([{"text":"A","thoughtSignature":"U0lH"}])
+        json!([{"text":"A"},{"text":"","thoughtSignature":"U0lH"}])
     );
     let mut edited = history.items().to_vec();
-    let Item::Message(message) = &mut edited[1].1 else {
+    let Item::Message(message) = &mut edited[2].1 else {
         panic!("signed text")
     };
     message.parts[0].content = ContentPart::Text(Text::new("B", "edited", 64).unwrap().into());

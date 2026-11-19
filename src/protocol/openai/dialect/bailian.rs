@@ -4,7 +4,10 @@ use crate::{
     protocol::{
         GenerationRequestEnvelope as Request,
         failure::CarrierReason,
-        openai::{CodecError, GenerationApi, function_tools, reasoning, shape::object},
+        openai::{
+            CodecError, GenerationApi, dialect::adaptation::WireRules, function_tools, reasoning,
+            shape::object,
+        },
     },
     semantic::{task::generation::*, value::Presence},
 };
@@ -412,20 +415,25 @@ pub(in crate::protocol::openai) fn check_native_effort(
     }
     Ok(())
 }
-pub(crate) fn responses_reasoning_carrier(reasoning: &ReasoningItem) -> bool {
-    reasoning.replay.is_none()
-        && reasoning
-            .parts
-            .iter()
-            .all(|(_, part)| matches!(part, ReasoningContent::Summary(_)))
+pub(crate) fn responses_reasoning_carrier(reasoning: &ReasoningItem, rules: &WireRules) -> bool {
+    reasoning.replay.as_ref().is_none_or(|replay| {
+        rules.qwen4_responses_reasoning
+            && reasoning.status == ItemLifecycle::Completed
+            && replay.format() == ReplayFormat::ResponsesEncrypted
+            && replay.replay_token().is_some()
+    }) && reasoning
+        .parts
+        .iter()
+        .all(|(_, part)| matches!(part, ReasoningContent::Summary(_)))
 }
 
 pub(in crate::protocol::openai) fn check(
     request: &Request,
     profile: GenerationApi,
     model: &str,
+    rules: &WireRules,
 ) -> Result<(), CodecError> {
-    check_semantic(&request.task.semantic, profile, model)?;
+    check_semantic(&request.task.semantic, profile, model, rules)?;
     check_context(&request.context, &request.service_policy, profile)
 }
 pub(in crate::protocol::openai) fn check_context(
@@ -453,6 +461,7 @@ pub(in crate::protocol::openai) fn check_semantic(
     semantic: &GenerationRequest,
     profile: GenerationApi,
     model: &str,
+    rules: &WireRules,
 ) -> Result<(), CodecError> {
     let s = semantic.settings();
     let r = &s.reasoning;
@@ -501,7 +510,7 @@ pub(in crate::protocol::openai) fn check_semantic(
         return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
     if r.replay_mismatch.is_some()
-        || !r.presentation.is_absent()
+        || !r.presentation.is_absent() && !rules.qwen4_auto_summary(r)
         || !r.context.is_absent()
         || !r.mode.is_absent() && r.mode != Presence::Value(ReasoningMode::Budgeted)
     {
@@ -583,7 +592,7 @@ pub(in crate::protocol::openai) fn check_semantic(
                 Item::Message(m) if m.phase.is_some() => {
                     return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
-                Item::Reasoning(r) if !responses_reasoning_carrier(r) => {
+                Item::Reasoning(r) if !responses_reasoning_carrier(r, rules) => {
                     return Err(CodecError::Unsupported(CarrierReason::UnknownField));
                 }
                 Item::CustomCall(_)

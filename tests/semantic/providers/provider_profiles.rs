@@ -47,6 +47,34 @@ fn deepseek_chat_preserves_the_native_cap_and_standard_thinking_off_control() {
 }
 
 #[test]
+fn deepseek_responses_omits_unsupported_summary_and_encrypted_output_controls() {
+    use morphiecore::topology::{GenerationProtocol, catalog::API_KEY_BINDINGS};
+    let client = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+    let input = br#"{"model":"public","input":"go","reasoning":{"effort":"high","summary":"auto"},
+        "include":["reasoning.encrypted_content"]}"#;
+    let source = client.decode_client_request(input).unwrap();
+    let endpoint = API_KEY_BINDINGS
+        .iter()
+        .find(|b| b.endpoint_prefix == "deepseek")
+        .unwrap()
+        .endpoint(GenerationProtocol::OpenAiResponses)
+        .unwrap();
+    let (wire, rules) = endpoint.encode_request_with_rules(&source).unwrap();
+    assert_eq!(wire["reasoning"], json!({"effort":"high"}));
+    assert!(wire.get("include").is_none());
+    assert!(rules.contains(&"generation.omit-reasoning-summary.v1"));
+    assert!(rules.contains(&"generation.omit-encrypted-reasoning-include.v1"));
+    let standard = client
+        .encode_request(&source, "fixture-model", &Contract::full())
+        .unwrap();
+    assert_eq!(
+        standard["reasoning"],
+        json!({"effort":"high","summary":"auto"})
+    );
+    assert_eq!(standard["include"], json!(["reasoning.encrypted_content"]));
+}
+
+#[test]
 fn go_standard_effort_controls_survive_model_scoped_projection() {
     use morphiecore::{
         semantic::context::ConversationContext,

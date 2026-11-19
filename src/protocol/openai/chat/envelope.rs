@@ -195,6 +195,7 @@ pub fn encode_request(
             target.semantic(),
             crate::protocol::openai::GenerationApi::Chat,
             &context.model,
+            &target.adaptation.rules,
         )?;
         crate::protocol::openai::dialect::bailian::check_native_effort(
             target.semantic().settings(),

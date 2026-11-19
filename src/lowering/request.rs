@@ -933,7 +933,7 @@ impl<'a> Target<'a> {
                         Item::ToolResult(result) if !result.output.is_text_only() => {
                             table.set(Feature::Tools, Disposition::Reject("the selected function-output carrier is text-only; omitting feedback would change the tool result"));
                         }
-                        Item::Reasoning(reasoning) if !crate::protocol::openai::dialect::bailian::responses_reasoning_carrier(reasoning) => {
+                        Item::Reasoning(reasoning) if !crate::protocol::openai::dialect::bailian::responses_reasoning_carrier(reasoning, &contract.adaptation.rules) => {
                             table.set(Feature::ReasoningHistory, Disposition::Reject("the selected history carrier cannot preserve the retained reasoning owner"));
                         }
                         Item::CustomCall(_) | Item::CustomResult(_) | Item::Program(_) | Item::ProgramOutput(_) => {
@@ -954,6 +954,17 @@ impl<'a> Target<'a> {
         }
     }
     fn presentation_rows(self, settings: &GenerationSettings, table: &mut Dispositions) {
+        if let Self::OpenAi(GenerationApi::Responses, contract) = self
+            && let Some(rows) = contract
+                .adaptation
+                .rules
+                .responses_reasoning_presentation(&settings.reasoning)
+        {
+            for (feature, disposition) in rows {
+                table.set(feature, disposition);
+            }
+            return;
+        }
         let presentation = &settings.reasoning.presentation;
         let auto = presentation.summary.as_ref() == Some(&ReasoningSummary::Auto);
         let summary_carrier = matches!(self, Self::OpenAi(GenerationApi::Responses, c)
@@ -2221,6 +2232,7 @@ pub(crate) fn project<'a>(
                     if contract.adaptation.rules.bailian_requests {
                         crate::protocol::openai::dialect::bailian::responses_reasoning_carrier(
                             reasoning,
+                            &contract.adaptation.rules,
                         )
                     } else {
                         reasoning

@@ -169,13 +169,16 @@ impl ApiKeyBinding {
         {
             adapter.adaptation.rules.reasoning_alias = false;
         }
-        // This binding emits reasoning_text in reasoning.content, unlike the
-        // Qwen summary alias. Keep the event and final snapshot domains equal.
+        // These bindings emit an explicit reasoning.content part rather than the
+        // legacy summary shorthand. Keep the event and snapshot domains equal.
+        let qwen4_responses =
+            self.upstream == "qwen4-max" && provider.id.as_str() == "aliyun-tokenplan-cn";
         if self.dialect == Dialect::Bailian
             && family == crate::protocol::openai::GenerationApi::Responses
-            && self.upstream == "deepseek-v4.1-flash-1017"
+            && (self.upstream == "deepseek-v4.1-flash-1017" || qwen4_responses)
         {
             adapter.adaptation.rules.responses_summary_text_alias = false;
+            adapter.adaptation.rules.qwen4_responses_reasoning = qwen4_responses;
         }
         // This hosted model's published Chat contract permits one initial string
         // system message. Do not extend it to Responses or other NVIDIA models.

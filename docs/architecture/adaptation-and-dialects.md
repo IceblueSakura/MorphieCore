@@ -77,7 +77,12 @@ Encode: IR + Eligible Fidelity → Target Baseline + Declared Extensions → Dia
 - **Dialect:** Target-specific normalization (e.g. Aliyun Bailian, Grok Responses, SIWC).
 - Codecs remain pure: dialect transformations operate on in-memory representations without network I/O.
 
-Bailian Responses reasoning event aliases are binding-qualified. Qwen's `reasoning_text` events describe summary text; the selected `deepseek-v4.1-flash-1017` binding uses the native reasoning-content domain instead. Event accumulation and item snapshots must agree on that domain. Item-done mismatches retain exact rejection; existing typed snapshot reasons classify the difference without granting terminal replay-refresh permission.
+Bailian Responses reasoning event aliases are binding-qualified. Legacy shorthand binds `reasoning_text` to summaries, but hosted `deepseek-v4.1-flash-1017` and TokenPlan `qwen4-max` bind it to reasoning content. Event accumulation and item snapshots must agree on that domain. Item-done mismatches retain exact rejection without granting terminal replay-refresh permission.
+
+- **TokenPlan Qwen4-Max Responses:** retains explicit `summary:"auto"` without manufacturing it from omission. This mode requests summary plus ciphertext without a separate `include`. A concrete response-summary echo takes precedence over its null legacy placeholder, not a different concrete value. Empty ciphertext is a placeholder only on the reasoning item's opening event; completion remains strict. Completed summary/ciphertext replays only to the original bound target. [Source contract](../refs/2026-11-13-model-catalog-expansion.md#tokenplan)
+- **Native DeepSeek Responses:** summary and encrypted-output preferences have no effective carrier and use the named omissions; reasoning effort is retained. This does not change the Bailian-hosted DeepSeek dialect. [Native contract](https://api-docs.deepseek.com/guides/responses_api)
+- **OpenRouter Responses:** a validated empty first-frame `response.failed` is a classified stream error, not a start event or a successful response. A first-frame success, malformed failure, or frames after the terminal still reject. [Streaming contract](https://openrouter.ai/docs/api_reference/streaming#handling-errors-during-streaming)
+- **Google GenerateContent:** a signed wire Part begins its own replay owner even when it is the first Part of a frame and its text is empty. It cannot absorb preceding unsigned text. This does not create a standard stateless downstream carrier for ordinary signatures or qualify a deployment. [Signature contract](https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures)
 
 #### Standard request boundary
 

@@ -71,6 +71,7 @@ impl Dialect {
                 "deepseek-v1",
                 WireRules {
                     deepseek_chat_requests: profile == GenerationApi::Chat,
+                    deepseek_responses_reasoning: profile == GenerationApi::Responses,
                     legacy_max_tokens: profile == GenerationApi::Chat,
                     chat_finish_reasons: &[
                         (
@@ -104,6 +105,7 @@ impl Dialect {
                     responses_reasoning_format: true,
                     responses_access_programs: true,
                     responses_done_marker: true,
+                    responses_initial_failed: profile == GenerationApi::Responses,
                     accept_reasoning_alias: true,
                     reasoning_alias: true,
                     structured_chat_reasoning: true,

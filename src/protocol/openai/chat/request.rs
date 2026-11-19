@@ -282,6 +282,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
             &target.semantic,
             GenerationApi::Chat,
             "",
+            &target.adaptation.rules,
         )?;
     }
     let mut messages = encode_items_with(

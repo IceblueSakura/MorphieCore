@@ -39,6 +39,9 @@ pub struct WireRules {
     /// A completed stream may carry an empty terminal output summary after all
     /// item.done snapshots. Only those fully closed items supply the output.
     pub responses_event_owned_output: bool,
+    /// An empty, fully validated failed snapshot may be the first Responses event.
+    /// This is a stream error, not evidence that generation started.
+    pub responses_initial_failed: bool,
     /// A fixed SSE-only backend may omit Content-Type. This does not permit
     /// conflicting explicit media or bypass framing/terminal/EOF validation.
     pub responses_sse_without_content_type: bool,
@@ -70,6 +73,11 @@ pub struct WireRules {
     pub bailian_requests: bool,
     /// Native DeepSeek Chat's output-format and reasoning-sensitive tool subset.
     pub deepseek_chat_requests: bool,
+    /// Native DeepSeek Responses does not generate summaries or accept `include`.
+    pub deepseek_responses_reasoning: bool,
+    /// Qwen4 Responses supports explicit auto summaries with same-target opaque
+    /// replay, and reports a null legacy summary alias alongside the concrete echo.
+    pub qwen4_responses_reasoning: bool,
     /// Preserve reasoning items while rejecting unverified active request controls.
     /// A readable history carrier does not establish reasoning-effort admission.
     pub reject_reasoning_controls: bool,
@@ -179,6 +187,71 @@ pub struct WireRules {
     /// User video as `{"type":"input_video","video_url":…}`, URL or data URL; no
     /// tool-result carrier. Source: OpenRouter OpenAPI `InputVideo` (2026-10-13).
     pub responses_input_video: bool,
+}
+
+impl WireRules {
+    pub(crate) fn qwen4_auto_summary(
+        &self,
+        reasoning: &crate::semantic::task::generation::ReasoningRequest,
+    ) -> bool {
+        use crate::semantic::task::generation::{ReasoningDisplay, ReasoningSummary};
+        self.qwen4_responses_reasoning
+            && reasoning.presentation.summary == Some(ReasoningSummary::Auto)
+            && matches!(
+                reasoning.presentation.visibility.as_ref(),
+                None | Some(ReasoningDisplay::Summary)
+            )
+    }
+
+    /// Responses presentation exceptions belong to the trusted target dialect.
+    pub(crate) fn responses_reasoning_presentation(
+        &self,
+        reasoning: &crate::semantic::task::generation::ReasoningRequest,
+    ) -> Option<
+        [(
+            crate::semantic::task::generation::Feature,
+            crate::lowering::disposition::Disposition,
+        ); 3],
+    > {
+        use crate::{
+            lowering::disposition::{
+                Disposition as D, OMIT_REASONING_INCLUDE, OMIT_REASONING_SUMMARY,
+            },
+            semantic::task::generation::{Feature as F, ReasoningActivation, ReasoningDisplay},
+        };
+        let disabled = reasoning.activation == Some(ReasoningActivation::Disabled);
+        let unsupported = D::Omit(OMIT_REASONING_SUMMARY);
+        let (mut display, summary, encrypted) = if self.qwen4_responses_reasoning {
+            if self.qwen4_auto_summary(reasoning) {
+                // Explicit auto summaries request ciphertext on this wire without `include`.
+                (D::Native, D::Native, D::Equivalent)
+            } else {
+                let presentation = if reasoning.presentation.is_absent() {
+                    D::Native
+                } else {
+                    D::Reject(
+                        "Qwen4 Responses only supports explicit automatic reasoning summaries",
+                    )
+                };
+                (presentation, presentation, D::Omit(OMIT_REASONING_INCLUDE))
+            }
+        } else if self.deepseek_responses_reasoning {
+            (unsupported, unsupported, D::Omit(OMIT_REASONING_INCLUDE))
+        } else {
+            return None;
+        };
+        if reasoning.presentation.visibility.as_ref() == Some(&ReasoningDisplay::Omitted) {
+            display = D::Reject("the selected carrier cannot guarantee hidden reasoning display");
+        }
+        Some([
+            (F::ReasoningDisplay, display),
+            (F::ReasoningSummary, summary),
+            (
+                F::EncryptedReasoning,
+                if disabled { D::Equivalent } else { encrypted },
+            ),
+        ])
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

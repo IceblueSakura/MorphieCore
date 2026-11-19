@@ -293,6 +293,7 @@ pub(crate) fn decode<'a>(
         && !adaptation.rules.accept_reasoning_alias
         && !adaptation.rules.responses_reasoning_format
         && !adaptation.rules.responses_reasoning_text_shorthand
+        && !adaptation.rules.qwen4_responses_reasoning
         && !adaptation.rules.chat_stop_diagnostics
         && !adaptation.rules.reported_request_id
         && !adaptation.rules.chat_inference_response_shape
@@ -311,6 +312,19 @@ pub(crate) fn decode<'a>(
     let o = value
         .as_object_mut()
         .ok_or(CodecError::Invalid(ShapeReason::Object))?;
+    if profile == GenerationApi::Responses
+        && matches!(direction, DecodeDirection::Upstream)
+        && adaptation.rules.qwen4_responses_reasoning
+        && let Some(reasoning) = o.get_mut("reasoning").and_then(Value::as_object_mut)
+        && reasoning
+            .get("summary")
+            .is_some_and(|summary| !summary.is_null())
+        && reasoning.get("generate_summary") == Some(&Value::Null)
+    {
+        // The legacy null is an inactive response echo, not a second setting.
+        // The standard reader still validates the concrete value and conflicts.
+        reasoning.shift_remove("generate_summary");
+    }
     if profile == GenerationApi::Responses
         && adaptation.rules.responses_reported_schema_alias
         && let Some(format) = o

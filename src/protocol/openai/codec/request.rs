@@ -236,7 +236,12 @@ impl GenerationCodec {
             request.task.semantic = request.task.semantic.with_settings(settings)?;
         }
         if self.adaptation.rules.bailian_requests {
-            openai::dialect::bailian::check(&request, self.protocol, &request.model)?;
+            openai::dialect::bailian::check(
+                &request,
+                self.protocol,
+                &request.model,
+                &self.adaptation.rules,
+            )?;
         }
         request.delivery.validate()?;
         let retained = history.map_or(0, |(input, output)| {

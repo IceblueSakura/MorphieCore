@@ -145,6 +145,7 @@ pub fn encode_request(
             target.semantic(),
             GenerationApi::Responses,
             &context.model,
+            &target.adaptation.rules,
         )?;
         crate::protocol::openai::dialect::bailian::check_native_effort(
             target.semantic().settings(),

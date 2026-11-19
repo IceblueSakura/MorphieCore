@@ -129,6 +129,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
                 .effort_mapping
                 .map(|mapping| mapping.canonical_model)
                 .unwrap_or(""),
+            &target.adaptation.rules,
         )?;
     }
     check_item_carriers(target.semantic.items())?;

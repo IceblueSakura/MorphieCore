@@ -51,6 +51,67 @@ fn consume_all(d: &mut ResponsesSseDecoder, bytes: &[u8], chunk_len: usize) -> u
 }
 
 #[test]
+fn openrouter_failed_only_stream_is_a_classified_error_not_a_started_response() {
+    use morphiecore::{
+        protocol::{
+            failure::FailureCode,
+            openai::{Dialect, GenerationCodec},
+        },
+        semantic::task::generation::StreamTerminal,
+    };
+    let router = GenerationCodec::new(GenerationApi::Responses, Dialect::OpenRouter, None);
+    let decoder_for = || {
+        ResponsesSseDecoder::with_decoder(
+            200,
+            "text/event-stream",
+            SseLimits::default(),
+            router.event_decoder(),
+        )
+        .unwrap()
+    };
+    let event = json!({"type":"response.failed","sequence_number":0,"response":{
+        "object":"response","id":"resp","created_at":1,"model":"fixture-model","status":"failed","output":[],
+        "error_type":"provider_unavailable","error":{"code":"server_error","message":"synthetic unavailable"}
+    }});
+    let frame = |event: &Value| encode_frame(event, SseLimits::default().max_event_bytes).unwrap();
+    let mut source = decoder_for();
+    let (_, events) = source.consume(&frame(&event)).unwrap();
+    assert!(matches!(
+        events.as_slice(),
+        [StreamEvent::Terminal {
+            terminal: StreamTerminal::Error,
+            ..
+        }]
+    ));
+    assert!(source.materialize().is_err());
+    source.finish().unwrap();
+    assert!(source.materialize().is_err());
+    assert_eq!(
+        source.metadata().unwrap().source_failure.unwrap().canonical,
+        Some(FailureCode::RouterProviderUnavailable)
+    );
+
+    assert!(
+        decoder(SseLimits::default())
+            .consume(&frame(&event))
+            .is_err()
+    );
+    let mut invalid = event.clone();
+    invalid["type"] = json!("response.completed");
+    invalid["response"]["status"] = json!("completed");
+    invalid["response"]["error"] = Value::Null;
+    invalid["response"]
+        .as_object_mut()
+        .unwrap()
+        .remove("error_type");
+    assert!(decoder_for().consume(&frame(&invalid)).is_err());
+    let mut trailing = decoder_for();
+    trailing.consume(&frame(&event)).unwrap();
+    assert!(trailing.consume(&frame(&event)).is_err());
+    assert!(trailing.finish().is_err());
+}
+
+#[test]
 fn unresolved_file_citation_positions_reject_events_and_final_part_snapshots() {
     use morphiecore::protocol::{CodecError, stream::SseError};
     let annotation =

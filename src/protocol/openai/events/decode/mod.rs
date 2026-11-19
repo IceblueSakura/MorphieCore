@@ -102,6 +102,7 @@ impl EventDecoder {
                         || self.adaptation.rules.responses_usage_attribution
                         || self.adaptation.rules.responses_context_accounting
                         || self.adaptation.rules.responses_inactive_state
+                        || self.adaptation.rules.qwen4_responses_reasoning
                         || self.adaptation.rules.responses_reasoning_text_shorthand)
                 {
                     let (snapshot, extras) =
@@ -114,6 +115,20 @@ impl EventDecoder {
                     let mut mapped = payload.clone();
                     mapped["response"] = snapshot.into_owned();
                     (std::borrow::Cow::Owned(mapped), extras)
+                } else if self.adaptation.rules.qwen4_responses_reasoning
+                    && payload.get("type").and_then(Value::as_str)
+                        == Some("response.output_item.added")
+                    && payload.pointer("/item/type").and_then(Value::as_str) == Some("reasoning")
+                    && payload
+                        .pointer("/item/encrypted_content")
+                        .and_then(Value::as_str)
+                        == Some("")
+                {
+                    // Qwen4 starts a summary owner with an empty placeholder. Only the
+                    // item opener can lack a value in this form; completion stays strict.
+                    let mut mapped = payload.clone();
+                    mapped["item"]["encrypted_content"] = Value::Null;
+                    (std::borrow::Cow::Owned(mapped), Default::default())
                 } else if (self.adaptation.rules.responses_reasoning_format
                     || self.adaptation.rules.responses_reasoning_text_shorthand)
                     && payload.get("item").is_some()

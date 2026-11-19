@@ -1268,6 +1268,23 @@ impl EventDecoder {
         if let Some(usage) = decoded.semantic.usage() {
             self.emit(StreamEvent::Usage(usage), out)?;
         }
+        // OpenRouter can send one failed snapshot without ever opening a response.
+        // Use the existing stream-error transition after normal snapshot validation
+        // rather than inventing response.created or relaxing the semantic reducer.
+        if self.adaptation.rules.responses_initial_failed
+            && self.events == 1
+            && terminal == StreamTerminal::Failed
+        {
+            self.event_failure = decoded.metadata.source_failure;
+            self.evidence.extend(decoded.evidence);
+            return self.emit(
+                StreamEvent::Terminal {
+                    terminal: StreamTerminal::Error,
+                    details: decoded.semantic.details().clone(),
+                },
+                out,
+            );
+        }
         self.emit(
             StreamEvent::Terminal {
                 terminal,

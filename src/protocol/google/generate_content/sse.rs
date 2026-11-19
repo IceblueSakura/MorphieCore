@@ -440,7 +440,13 @@ impl GenerationSseDecoder {
             Some(Value::Bool(b)) => *b,
             Some(_) => return Err(invalid(ShapeReason::InvalidValue)),
         };
-        match (string(p, "text")?, p.get("functionCall")) {
+        let fragment = string(p, "text")?;
+        // A signed text Part is its own replay owner, including an empty Part
+        // in the last frame. Only unsigned text may extend an unsigned Part.
+        if fragment.is_some() && signature.is_some() {
+            self.close(out)?;
+        }
+        match (fragment, p.get("functionCall")) {
             (Some(fragment), None) if thought => {
                 if !matches!(
                     self.open,

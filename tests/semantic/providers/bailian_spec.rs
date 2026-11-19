@@ -1308,6 +1308,176 @@ fn qwen4_max_preserves_high_and_uses_the_documented_medium_alias() {
         assert_eq!(rules, expected_rules);
     }
 }
+
+#[test]
+fn qwen4_default_reasoning_deltas_close_the_explicit_content_part() {
+    use morphiecore::protocol::failure::ShapeReason;
+    let adapter = endpoint("tokenplan-qwen4", GenerationProtocol::OpenAiResponses)
+        .adapter()
+        .unwrap();
+    let codec = adapter.openai().unwrap();
+    let part = json!({"type":"reasoning_text","text":"synthetic reasoning"});
+    let item =
+        json!({"type":"reasoning","id":"rs","status":"completed","summary":[],"content":[part]});
+    let mut events = crate::wire::response_events(json!({
+        "object":"response","id":"resp","model":"qwen4-max","created_at":1,
+        "status":"completed","output":[item]
+    }));
+    events.insert(
+        2,
+        json!({"type":"response.content_part.added","output_index":0,
+        "item_id":"rs","content_index":0,"part":{"type":"reasoning_text","text":""}}),
+    );
+    events.insert(
+        5,
+        json!({"type":"response.content_part.done","output_index":0,
+        "item_id":"rs","content_index":0,"part":part}),
+    );
+
+    let mut decoder = codec.event_decoder();
+    for event in &events {
+        decoder.push(event).unwrap();
+    }
+    let observed = decoder.materialize().unwrap();
+    assert_eq!(observed.semantic.outcome(), Outcome::Completed);
+    assert!(matches!(&observed.semantic.items()[0].1, Item::Reasoning(r)
+        if matches!(r.parts.as_slice(), [(_, ReasoningContent::Text(t))] if t.as_str() == "synthetic reasoning")));
+
+    let mut mismatched = codec.event_decoder();
+    for event in &events[..5] {
+        mismatched.push(event).unwrap();
+    }
+    let mut wrong = events[5].clone();
+    wrong["part"]["text"] = json!("conflicting snapshot");
+    assert!(matches!(
+        mismatched.push(&wrong),
+        Err(CodecError::Invalid(ShapeReason::ValueSnapshot))
+    ));
+}
+
+#[test]
+fn qwen4_explicit_summary_and_ciphertext_round_trip_only_to_the_source_target() {
+    use morphiecore::{
+        execution::replay::{open_from_client, seal_for_client},
+        protocol::replay_envelope::CLIENT_ORIGIN,
+        semantic::value::ReplayOrigin,
+    };
+    let endpoint = endpoint("tokenplan-qwen4", GenerationProtocol::OpenAiResponses);
+    let adapter = endpoint.adapter().unwrap();
+    let provider = adapter.openai().unwrap();
+    let reasoning = json!({"type":"reasoning","id":"rs","status":"completed",
+        "summary":[{"type":"summary_text","text":"Use read."}],"encrypted_content":"synthetic-qwen4-ciphertext"});
+    let call = json!({"type":"function_call","id":"fc","status":"completed",
+        "call_id":"call_read","name":"read","arguments":"{\"path\":\"probe.txt\"}"});
+    let result =
+        json!({"type":"function_call_output","call_id":"call_read","output":"synthetic result"});
+    let mut events = crate::wire::response_events(json!({
+        "object":"response","id":"resp","model":"qwen4-max","created_at":1,
+        "status":"completed","reasoning":{"effort":"high","summary":"auto","generate_summary":null},
+        "output":[reasoning,call]
+    }));
+    // The source owns the encrypted value at item.done; the opener is a placeholder.
+    assert_eq!(events[1]["type"], "response.output_item.added");
+    events[1]["item"]["encrypted_content"] = json!("");
+    let mut invalid = provider.event_decoder();
+    let mut empty_completion_rejected = false;
+    for mut event in events.iter().cloned() {
+        if event["type"] == "response.output_item.done" && event["item"]["type"] == "reasoning" {
+            event["item"]["encrypted_content"] = json!("");
+            empty_completion_rejected = invalid.push(&event).is_err();
+            break;
+        }
+        invalid.push(&event).unwrap();
+    }
+    assert!(empty_completion_rejected);
+    let mut decoder = provider.event_decoder();
+    for event in &events {
+        decoder.push(event).unwrap();
+    }
+    let mut observed = decoder.materialize().unwrap();
+    assert_eq!(observed.semantic.outcome(), Outcome::Completed);
+    seal_for_client(&mut observed, &CLIENT_ORIGIN).unwrap();
+    let client = GenerationCodec::new(
+        GenerationApi::Responses,
+        Dialect::Standard,
+        Some(CLIENT_ORIGIN.clone()),
+    );
+    let delivered = client
+        .encode_response(
+            &observed,
+            &TargetContract {
+                replay_origin: Some(CLIENT_ORIGIN.clone()),
+                ..TargetContract::full()
+            },
+        )
+        .unwrap();
+    assert_eq!(delivered["reasoning"]["summary"], "auto");
+    assert_ne!(
+        delivered["output"][0]["encrypted_content"],
+        reasoning["encrypted_content"]
+    );
+    let mut input = vec![json!({"role":"user","content":"Read the file."})];
+    input.extend(delivered["output"].as_array().unwrap().iter().cloned());
+    input.push(result.clone());
+    let mut request = client
+        .decode_client_request(
+            json!({
+                "model":"qwen4-max","input":input,"reasoning":{"effort":"high","summary":"auto"},
+                "include":["reasoning.encrypted_content"]
+            })
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+    open_from_client(&mut request).unwrap();
+    let own = endpoint.encode_request(&request).unwrap();
+    assert_eq!(own["reasoning"], json!({"effort":"high","summary":"auto"}));
+    assert!(own.get("include").is_none());
+    assert_eq!(
+        own["input"][1],
+        json!({"type":"reasoning","id":"rs",
+        "summary":[{"type":"summary_text","text":"Use read."}],"encrypted_content":"synthetic-qwen4-ciphertext"})
+    );
+    assert_eq!(
+        own["input"][2],
+        json!({"type":"function_call","id":"fc",
+        "call_id":"call_read","name":"read","arguments":"{\"path\":\"probe.txt\"}"})
+    );
+    assert_eq!(own["input"][3], result);
+
+    let mut foreign = endpoint.clone();
+    foreign.bound_replay_scope = Some(ReplayOrigin::new("other-tokenplan-account").unwrap());
+    let projected = foreign.encode_request(&request).unwrap();
+    let history = projected["input"].as_array().unwrap();
+    assert!(history.iter().all(|item| item["type"] != "reasoning"));
+    assert_eq!(history.last(), Some(&result));
+
+    assert!(client.event_decoder().push(&events[0]).is_err());
+    events[0]["response"]["reasoning"]["generate_summary"] = json!("detailed");
+    assert!(provider.event_decoder().push(&events[0]).is_err());
+}
+
+#[test]
+fn qwen4_does_not_enable_summary_mode_when_the_client_omits_it() {
+    let client = client(GenerationApi::Responses);
+    let endpoint = endpoint("tokenplan-qwen4", GenerationProtocol::OpenAiResponses);
+    let request = client
+        .decode_client_request(
+            br#"{"model":"qwen4-max","input":"go",
+        "reasoning":{"effort":"high"},"include":["reasoning.encrypted_content"]}"#,
+        )
+        .unwrap();
+    let projected = endpoint.encode_request(&request).unwrap();
+    assert_eq!(projected["reasoning"], json!({"effort":"high"}));
+    assert!(projected.get("include").is_none());
+    let unsupported = client
+        .decode_client_request(
+            br#"{"model":"qwen4-max","input":"go",
+        "reasoning":{"effort":"high","summary":"detailed"}}"#,
+        )
+        .unwrap();
+    assert!(endpoint.encode_request(&unsupported).is_err());
+}
 #[test]
 fn kimi_fixed_sampling_is_projected_without_mutating_source_or_ignoring_thinking_off() {
     for effort in ["none", "medium"] {
