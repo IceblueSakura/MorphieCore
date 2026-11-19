@@ -31,6 +31,8 @@ Exit evidence: independent request/result oracles cover upstream preference and 
 
 The sample-centered text/scoped-token IR, native Google integration, immutable preparation and explicit ancillary/numeric delivery rules are implemented. Their authoritative contract is [Independent Embedding path](../architecture/index.md#independent-embedding-path), not a pending proposal. This section retains only extension boundaries.
 
+The [NVIDIA expansion research](../refs/2026-11-19-nvidia-embedding-expansion.md) compares purpose carriers, hosted and self-managed profiles, and account-scoped text evidence for a possible first slice. It selects no binding or public API.
+
 ### Embedding chain and ownership
 
 Preserve the independent single-target chain, source/delivery separation and one immutable prepared plan. Future operations must establish their own admission and response expectations before activation; no generic provider-options bag, hidden fan-out or Generation failover is proposed. Native error-body inspection is not selected: status and Retry-After remain authoritative even if a body stalls.

@@ -133,6 +133,7 @@ Keep dated evidence that is not better owned by a current source guide, accepted
 |---|---|
 | [Multimodal carriers, 2026-10-12 onward](refs/2026-10-12-multimodal-carriers.md) | User/tool-result placement, credential-bound files and generated-media carriers |
 | [Embedding and Images, 2026-10-22/23](refs/2026-10-22-embedding-image-contracts.md) | REST/SDK/protobuf discrepancies, numeric encoding, bounded Embedding characterization and unresolved Generate/Edit/SSE contracts; not blanket SDK/live acceptance |
+| [NVIDIA Embedding expansion, 2026-11-19](refs/2026-11-19-nvidia-embedding-expansion.md) | Hosted versus NIM contracts, purpose and vector representation, account-scoped text evidence, cross-provider discriminators and a proposed first Stage-4 slice |
 | [Grok Imagine, 2026-10-22](refs/2026-10-22-grok-imagine.md) | Image-quality/schema differences, video polling and unverified entitlement |
 | [MiniMax H3 video, 2026-10-22](refs/2026-10-22-minimax-h3-video.md) | v2 task/content/error/callback protocol versus incompatible v1 file-ID envelope |
 | [Decision APIs, 2026-10-23](refs/2026-10-23-decision-contracts.md) | OpenAI/TypeSafe and alternative API differences, confidence/grouping/media and discovery/compression gaps |
