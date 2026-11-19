@@ -43,7 +43,7 @@ def main():
         "MiniCPM-V-4.7-35B-A3B": ["modelbest-minicpm-v-4.7-35b-a3b-chat"],
         "gemini-3.8-flash": ["google-gemini-3.8-flash-interactions"],
         "gemini-4-hydrogen": ["google-gemini-4-hydrogen-interactions"],
-        "qwen4-max-preview": ["tokenplan-qwen4-responses"],
+        "qwen4-max": ["tokenplan-qwen4-responses"],
         "kimi-k3.1-pro": ["dashscope-kimi-chat"],
         # A known native capacity must not fill an unknown subscription candidate.
         "qwen3.8-flash": ["dashscope-flash-responses", "aliyun-tokenplan-cn-responses"],

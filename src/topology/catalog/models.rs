@@ -219,13 +219,13 @@ pub const MODELS: &[ModelDefinition] = &[
         released_at: 1792972800,
         developer: "OpenAI",
     },
-    // https://help.aliyun.com/zh/model-studio/qwen4-max-preview (2026-11-11).
+    // https://help.aliyun.com/en/model-studio/newly-released-models (2026-11-16).
     ModelDefinition {
-        id: "qwen4-max-preview",
+        id: "qwen4-max",
         images: true,
         files: false,
         strict_tools: true,
-        released_at: 1794355200,
+        released_at: 1794787200,
         developer: "Alibaba",
     },
     // https://www.stepfun.com/news/step-5-preview (2026-09-20).
@@ -280,7 +280,7 @@ pub fn contract(id: &str) -> Dispositions {
                     | "minimax-m3.1-flash"
                     | "step-5-preview"
                     | "muse-ember"
-                    | "qwen4-max-preview"
+                    | "qwen4-max"
             ),
         )
         .with_native(
@@ -346,7 +346,7 @@ pub(super) fn model_limits(
         ("mimo-v2.6-flash" | "mimo-v2.6-pro", "opencode-go") => Some(131_072),
         ("gpt-6-luna", "openrouter") => Some(128_000),
         ("kimi-k3.1-pro", "aliyun-dashscope-cn") => Some(1_048_576),
-        ("qwen4-max-preview", "aliyun-tokenplan-cn") => Some(393_216),
+        ("qwen4-max", "aliyun-tokenplan-cn") => Some(262_144),
         _ => None,
     };
     use crate::semantic::task::generation::EffortLevel as E;

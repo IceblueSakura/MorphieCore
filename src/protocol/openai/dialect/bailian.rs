@@ -47,7 +47,7 @@ const UNOWNED: &[&str] = &[
 
 /// Whether the documented ceiling includes thinking as well as visible output.
 pub(crate) fn total_output_ceiling(model: &str, profile: GenerationApi) -> bool {
-    model == "qwen4-max-preview"
+    model == "qwen4-max"
         || match profile {
             GenerationApi::Chat => matches!(model, "glm-5.3" | "glm-5.3-prime"),
             GenerationApi::Responses => matches!(model, "qwen3.8-flash" | "qwen3.8-max"),
@@ -347,9 +347,23 @@ const KIMI_CHAT: ReasoningEffortMapping = ReasoningEffortMapping {
     ],
 };
 const QWEN4_MAX: ReasoningEffortMapping = ReasoningEffortMapping {
-    canonical_model: "qwen4-max-preview",
-    rule: "bailian.qwen4-max-preview.effort.v1",
-    ..QWEN_FLASH
+    canonical_model: "qwen4-max",
+    rule: "bailian.qwen4-max.effort.v1",
+    scope: EffortScope::Reasoning,
+    native_levels: &[EffortLevel::Low, EffortLevel::High, EffortLevel::XHigh],
+    encode: &[
+        (EffortLevel::Minimal, EffortLevel::Low),
+        (EffortLevel::Low, EffortLevel::Low),
+        (EffortLevel::Medium, EffortLevel::High),
+        (EffortLevel::High, EffortLevel::High),
+        (EffortLevel::XHigh, EffortLevel::XHigh),
+        (EffortLevel::Max, EffortLevel::XHigh),
+    ],
+    decode: &[
+        (EffortLevel::Low, EffortLevel::Low),
+        (EffortLevel::High, EffortLevel::High),
+        (EffortLevel::XHigh, EffortLevel::XHigh),
+    ],
 };
 // Native low/high/max controls qualified on both Bailian APIs, 2026-11-07.
 const DEEPSEEK: ReasoningEffortMapping = ReasoningEffortMapping {
@@ -376,7 +390,7 @@ pub(crate) fn effort_mapping(
     match (model, profile) {
         ("qwen3.8-flash", _) => Some(&QWEN_FLASH),
         ("qwen3.8-max", _) => Some(&QWEN_MAX),
-        ("qwen4-max-preview", _) => Some(&QWEN4_MAX),
+        ("qwen4-max", _) => Some(&QWEN4_MAX),
         ("glm-5.3" | "glm-5.3-prime", GenerationApi::Chat) => Some(&GLM_CHAT),
         ("glm-5.3" | "glm-5.3-prime", GenerationApi::Responses) => Some(&GLM_RESPONSES),
         ("kimi-k3.1-pro", GenerationApi::Chat) => Some(&KIMI_CHAT),

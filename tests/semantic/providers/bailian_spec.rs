@@ -1233,11 +1233,11 @@ fn responses_associate_grouped_results_by_call_id_without_reordering() {
 fn qwen4_native_output_caps_include_thinking_without_changing_older_chat_caps() {
     for profile in [GenerationApi::Chat, GenerationApi::Responses] {
         let wire = if profile == GenerationApi::Chat {
-            json!({"model":"qwen4-max-preview","messages":[{"role":"user","content":"go"}],
-                "reasoning_effort":"medium","max_tokens":512})
+            json!({"model":"qwen4-max","messages":[{"role":"user","content":"go"}],
+                "reasoning_effort":"high","max_tokens":512})
         } else {
-            json!({"model":"qwen4-max-preview","input":[{"role":"user","content":"go"}],
-                "reasoning":{"effort":"medium"},"max_output_tokens":512})
+            json!({"model":"qwen4-max","input":[{"role":"user","content":"go"}],
+                "reasoning":{"effort":"high"},"max_output_tokens":512})
         };
         let source = native(profile)
             .decode_request(wire.to_string().as_bytes())
@@ -1257,6 +1257,7 @@ fn qwen4_native_output_caps_include_thinking_without_changing_older_chat_caps() 
             "max_output_tokens"
         };
         assert_eq!(projected[cap], 512);
+        assert_eq!(projected["model"], "qwen4-max");
         assert!(!rules.iter().any(|rule| rule.contains("reply-only")));
         assert_eq!(
             native(profile)
@@ -1286,6 +1287,26 @@ fn qwen4_native_output_caps_include_thinking_without_changing_older_chat_caps() 
         .encode_request_with_rules(&source)
         .unwrap();
     assert_eq!(projected["reasoning_effort"], "medium");
+}
+
+#[test]
+fn qwen4_max_preserves_high_and_uses_the_documented_medium_alias() {
+    let protocol = GenerationProtocol::OpenAiResponses;
+    let codec = client(GenerationApi::Responses);
+    for (effort, expected_rules) in [
+        ("high", &[] as &[&str]),
+        ("medium", &["bailian.qwen4-max.effort.v1"] as &[&str]),
+    ] {
+        let wire = json!({"model":"qwen4-max","input":"go","reasoning":{"effort":effort}});
+        let source = codec
+            .decode_client_request(wire.to_string().as_bytes())
+            .unwrap();
+        let (projected, rules) = endpoint("tokenplan-qwen4", protocol)
+            .encode_request_with_rules(&source)
+            .unwrap();
+        assert_eq!(projected["reasoning"]["effort"], "high");
+        assert_eq!(rules, expected_rules);
+    }
 }
 #[test]
 fn kimi_fixed_sampling_is_projected_without_mutating_source_or_ignoring_thinking_off() {
