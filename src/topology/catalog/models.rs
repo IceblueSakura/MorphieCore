@@ -13,9 +13,10 @@ pub struct ModelDefinition {
 }
 // Official publication dates normalized to UTC midnight, not router listing timestamps.
 pub const MODELS: &[ModelDefinition] = &[
+    // Retain the predecessor's catalog timestamp; publication source:
     // https://openai.com/index/safety-overview-gpt-6-astra/ (2026-09-03).
     ModelDefinition {
-        id: "gpt-6-astra",
+        id: "gpt-6.2-astra",
         images: true,
         files: true,
         strict_tools: true,
@@ -58,9 +59,10 @@ pub const MODELS: &[ModelDefinition] = &[
         released_at: 1794182400,
         developer: "Meta",
     },
-    // Source: https://openai.com/index/introducing-gpt-6-1-sol/ (2026-09-29).
+    // Retain the predecessor's catalog timestamp; publication source:
+    // https://openai.com/index/introducing-gpt-6-1-sol/ (2026-09-29).
     ModelDefinition {
-        id: "gpt-6.1-sol",
+        id: "gpt-6.2-sol",
         images: true,
         files: false,
         strict_tools: true,
@@ -251,7 +253,7 @@ pub fn contract(id: &str) -> Dispositions {
             crate::semantic::task::generation::Feature::CustomTools,
             matches!(
                 id,
-                "gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna" | "gpt-6.1-terra"
+                "gpt-6.2-astra" | "gpt-6.2-sol" | "gpt-6-luna" | "gpt-6.1-terra"
             ),
         )
         .with_native(
@@ -309,9 +311,10 @@ pub(super) fn model_limits(
     // Service-qualified declarations; see docs/refs/2026-11-13-model-catalog-expansion.md.
     let context_window_tokens = match (model, provider) {
         // Operator-selected SIWC planning windows match the official API.
-        ("gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna" | "gpt-6.1-terra", "openai" | "chatgpt") => {
-            Some(1_050_000)
-        }
+        (
+            "gpt-6.2-astra" | "gpt-6.2-sol" | "gpt-6-luna" | "gpt-6.1-terra",
+            "openai" | "chatgpt",
+        ) => Some(1_050_000),
         ("gpt-6-luna", "openrouter") => Some(1_050_000),
         ("muse-ember", "openrouter") => Some(1_048_576),
         ("grok-4.7", "grok") => Some(500_000),
@@ -326,7 +329,9 @@ pub(super) fn model_limits(
         _ => None,
     };
     let maximum_input_tokens = match (model, provider) {
-        ("gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna" | "gpt-6.1-terra", "openai") => Some(922_000),
+        ("gpt-6.2-astra" | "gpt-6.2-sol" | "gpt-6-luna" | "gpt-6.1-terra", "openai") => {
+            Some(922_000)
+        }
         ("glm-5.3" | "glm-5.3-prime" | "kimi-k3.1-pro", "aliyun-dashscope-cn") => Some(1_048_576),
         ("hy4", "opencode-go") => Some(983_010),
         ("step-5-preview", "opencode-go") => Some(1_000_000),
@@ -355,7 +360,7 @@ pub(super) fn model_limits(
             Some(vec![E::Minimal, E::Low, E::Medium, E::High, E::XHigh, E::Max].into())
         }
         ("grok-4.7", _) => Some(vec![E::Low, E::Medium, E::High, E::XHigh].into()),
-        ("gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna" | "gpt-6.1-terra", _) => {
+        ("gpt-6.2-astra" | "gpt-6.2-sol" | "gpt-6-luna" | "gpt-6.1-terra", _) => {
             Some(vec![E::Low, E::Medium, E::High, E::XHigh, E::Max].into())
         }
         _ => None,
@@ -364,8 +369,8 @@ pub(super) fn model_limits(
         reject_disabled_reasoning: matches!(
             model,
             "grok-4.7"
-                | "gpt-6-astra"
-                | "gpt-6.1-sol"
+                | "gpt-6.2-astra"
+                | "gpt-6.2-sol"
                 | "minimax-m3.1-flash"
                 | "muse-ember"
                 | "step-5-preview"

@@ -235,7 +235,7 @@ morphiecore-upstream probe google \
   --accounts "$ROOT/accounts.json" --store "$ROOT/credentials"
 
 morphiecore-upstream probe openai \
-  --model gpt-6-astra --protocol openai-responses --account primary \
+  --model gpt-6.2-astra --protocol openai-responses --account primary \
   --accounts "$ROOT/accounts.json" --store "$ROOT/credentials"
 ```
 

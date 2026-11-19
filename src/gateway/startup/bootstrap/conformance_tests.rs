@@ -179,7 +179,7 @@ async fn siwc_quota_event_keeps_its_failure_class_before_response_created() {
         }));
         let mut boot = Fixture::with_oauth(
             service(),
-            json!({"models":{"gpt-6.1-sol":{"candidates":[{"binding":"chatgpt-responses"}]}}}),
+            json!({"models":{"gpt-6.2-sol":{"candidates":[{"binding":"chatgpt-responses"}]}}}),
             "chatgpt",
             "synthetic",
         )
@@ -189,7 +189,7 @@ async fn siwc_quota_event_keeps_its_failure_class_before_response_created() {
         let (status, bytes, failed) = send(
             &boot,
             Api::Responses,
-            json!({"model":"gpt-6.1-sol","input":"go","stream":stream}),
+            json!({"model":"gpt-6.2-sol","input":"go","stream":stream}),
             &[],
         )
         .await;

@@ -308,7 +308,7 @@ fn gpt_strict_namespaced_tools_reach_native_subscription_and_router_writers() {
         .filter(|b| {
             matches!(
                 b.canonical_model,
-                "gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna" | "gpt-6.1-terra"
+                "gpt-6.2-astra" | "gpt-6.2-sol" | "gpt-6-luna" | "gpt-6.1-terra"
             )
         })
         .map(|b| b.endpoint(GenerationProtocol::OpenAiResponses).unwrap())
@@ -318,7 +318,7 @@ fn gpt_strict_namespaced_tools_reach_native_subscription_and_router_writers() {
                 .filter(|b| {
                     matches!(
                         b.model,
-                        "gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-luna" | "gpt-6.1-terra"
+                        "gpt-6.2-astra" | "gpt-6.2-sol" | "gpt-6-luna" | "gpt-6.1-terra"
                     )
                 })
                 .map(|b| b.endpoint()),

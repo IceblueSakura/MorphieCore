@@ -470,7 +470,7 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
     // Foreign opaque values are dropped; readable reasoning without this target's
     // signature becomes assistant text in every turn.
     let foreign = crate::protocol::replay_envelope::seal(
-        &crate::protocol::replay_envelope::issuer("openai", "gpt-6.1-sol"),
+        &crate::protocol::replay_envelope::issuer("openai", "gpt-6.2-sol"),
         crate::semantic::task::generation::ReplayFormat::ResponsesEncrypted,
         "synthetic-foreign-token",
     )

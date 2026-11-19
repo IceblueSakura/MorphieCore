@@ -12,7 +12,8 @@ class ProtocolDefaultOracles(unittest.TestCase):
     def responses_body(self, pi):
         tool = {"type": "function", "name": "read", "parameters": {
             "type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}
-        body = {"model": "gpt-6.1-sol", "stream": True, "max_output_tokens": 2048,
+        body = {"model": "gpt-6-luna" if pi else "gpt-6.2-sol",
+                "stream": True, "max_output_tokens": 2048,
                 "store": False, "include": ["reasoning.encrypted_content"],
                 "input": [{"role": "user", "content": defaults.READ}]}
         if pi:

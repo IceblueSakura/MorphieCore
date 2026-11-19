@@ -21,8 +21,14 @@ PROVIDER = "opencode-go"
 PROFILES = {
     "messages": (MODEL, PROVIDER, "opencode-go-haiku-messages", "anthropic-messages"),
     "chat": ("deepseek-v4.1-flash-1017", "deepseek", "deepseek-chat", "openai-completions"),
-    "responses": ("gpt-6.1-sol", "opencode", "openai-sol-responses", "openai-responses"),
+    "responses": ("gpt-6.2-sol", "openai", "openai-sol-responses", "openai-responses"),
 }
+# Use a shipped Pi model for the implicit Responses serialization profile.
+PI_RESPONSES = ("gpt-6-luna", "opencode", "openai-luna-responses", "openai-responses")
+
+
+def client_profile(protocol, *, pi):
+    return PI_RESPONSES if pi and protocol == "responses" else PROFILES[protocol]
 
 
 class DefaultState(RecoveryState):
@@ -201,11 +207,11 @@ def response_items(phase, path):
     return items
 
 
-def responses_events(phase, path, *, items=None):
+def responses_events(phase, path, model, *, items=None):
     # Same finite source-derived event contract as tests/support/responses_profile.rs.
     items = response_items(phase, path) if items is None else items
     response = {"id": f"resp_default_{phase}", "object": "response", "created_at": 1,
-                "model": PROFILES["responses"][0], "status": "in_progress", "output": []}
+                "model": model, "status": "in_progress", "output": []}
     events = [{"type": "response.created", "response": response}]
     for index, item in enumerate(items):
         kind = item["type"]
@@ -263,7 +269,7 @@ def responses_stage(body):
 
 
 def assert_responses_profile(body, pi):
-    check(body["model"] == PROFILES["responses"][0] and body["stream"] is True,
+    check(body["model"] == client_profile("responses", pi=pi)[0] and body["stream"] is True,
           "default_responses_model")
     check(body["max_output_tokens"] == 2048 and body.get("store") is False,
           "default_responses_bounds_and_storage")
@@ -363,7 +369,7 @@ class ResponsesState(DefaultState):
             self.attempts.append(phase)
             check(len(self.attempts) <= 3 and self.attempts == [1, 2, 3][:len(self.attempts)],
                   "default_extra_or_reordered_upstream_attempt")
-        return 200, responses_events(phase, self.path), "text/event-stream"
+        return 200, responses_events(phase, self.path, body["model"]), "text/event-stream"
 
     def finish(self):
         check(not self.errors, "default_authority_errors:" + ",".join(self.errors))
@@ -373,7 +379,7 @@ class ResponsesState(DefaultState):
 
 
 def run_pi(binary, env, root, work, origin, path, protocol, *, gateway_profile=False):
-    model_id, provider, _, api = PROFILES[protocol]
+    model_id, provider, _, api = client_profile(protocol, pi=True)
     agent = root / "pi-agent"
     agent.mkdir(mode=0o700)
     override = {"maxTokens": 2048}
@@ -433,8 +439,6 @@ def run_pi(binary, env, root, work, origin, path, protocol, *, gateway_profile=F
 
 def run_opencode(binary, env, root, work, origin, path, protocol):
     model_id, provider, _, _ = PROFILES[protocol]
-    if protocol == "responses":
-        provider = "openai"
     config = opencode_configuration(root, origin)
     value = json.loads(config.read_text())
     cap = "max_output_tokens" if protocol == "responses" else "max_tokens"
@@ -487,7 +491,7 @@ def main():
     gateway_profile = case == "pi-chat-gateway-profile"
     rejected = protocol == "chat" and not gateway_profile
     count = 1 if rejected else 3
-    model_id, provider, binding, _ = PROFILES[protocol]
+    model_id, provider, binding, _ = client_profile(protocol, pi=pi)
     state = (ChatState(path, pi=pi, gateway_profile=gateway_profile) if protocol == "chat" else
              {"messages": MessagesState, "responses": ResponsesState}[protocol](path, pi=pi))
     env = environment(root)
@@ -497,7 +501,7 @@ def main():
     with ExitStack() as stack:
         origin = stack.enter_context(server(state, False))
         gateway_configuration(root, protocol == "messages", origin,
-                              model=model_id, provider="openai" if protocol == "responses" else provider,
+                              model=model_id, provider="openai" if pi and protocol == "responses" else provider,
                               binding=binding, api_root="/beta" if protocol == "chat" else "/v1")
         gateway = stack.enter_context(Child([gateway_binary, "--config", str(root / "gateway.json"),
             "--credentials-dir", str(root / "credentials")], env, work))

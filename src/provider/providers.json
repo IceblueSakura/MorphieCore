@@ -263,8 +263,8 @@
     },
     "sources": [
       "https://developers.openai.com/api/reference/resources/responses/methods/create",
-      "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
-      "https://developers.openai.com/api/docs/models/gpt-6-astra",
+      "https://developers.openai.com/api/docs/models/gpt-6.2-sol",
+      "https://developers.openai.com/api/docs/models/gpt-6.2-astra",
       "https://developers.openai.com/api/docs/models/gpt-6-luna"
     ]
   },

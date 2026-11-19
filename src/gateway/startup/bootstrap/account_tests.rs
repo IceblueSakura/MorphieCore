@@ -521,7 +521,7 @@ fn model_switch_keeps_reasoning_but_not_compaction_or_cache_identity() {
     let boot = Fixture::new(
         service(),
         json!({"models":{
-            "gpt-6-astra":{"candidates":[{"binding":"openai-astra-responses"}]},
+            "gpt-6.2-astra":{"candidates":[{"binding":"openai-astra-responses"}]},
             "gpt-6-luna":{"candidates":[{"binding":"openai-luna-responses"}]}
         }}),
         &[
@@ -530,7 +530,7 @@ fn model_switch_keeps_reasoning_but_not_compaction_or_cache_identity() {
         ],
     )
     .unwrap();
-    let source = &boot.gateway.state.entries[&(ClientProtocol::Responses, "gpt-6-astra".into())]
+    let source = &boot.gateway.state.entries[&(ClientProtocol::Responses, "gpt-6.2-astra".into())]
         .candidates[0];
     let target = &boot.gateway.state.entries[&(ClientProtocol::Responses, "gpt-6-luna".into())]
         .candidates[0];
@@ -562,7 +562,7 @@ fn model_switch_keeps_reasoning_but_not_compaction_or_cache_identity() {
                 );
             }
             let wire = json!({
-                "id":"response","object":"response","created_at":1,"model":"gpt-6-astra",
+                "id":"response","object":"response","created_at":1,"model":"gpt-6.2-astra",
                 "status":"completed","output":output
             });
             let mut response = if stream {

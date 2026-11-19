@@ -19,7 +19,7 @@ from drivers import (TEXT, Child, Pi, check, check_client_version, environment,
                      gateway_configuration, opencode_configuration, opencode_prompt, pi_configuration,
                      private_json)
 from recovery import OwnedServer
-from protocol_defaults import PROFILES, responses_events
+from protocol_defaults import PI_RESPONSES, responses_events
 
 FIRST = "synthetic-client-first-content"
 CANCEL = "synthetic-hold-and-cancel"
@@ -118,7 +118,7 @@ class ToolState(State):
     def frames(self, ordinal):
         if ordinal == 1:
             response = {"id": "resp_cancelled", "object": "response", "created_at": 1,
-                        "model": PROFILES["responses"][0], "status": "in_progress", "output": []}
+                        "model": PI_RESPONSES[0], "status": "in_progress", "output": []}
             events = [
                 {"type": "response.created", "response": response},
                 {"type": "response.output_item.added", "output_index": 0, "item": {
@@ -136,7 +136,7 @@ class ToolState(State):
                  [{"id": "msg_recovered", "type": "message", "role": "assistant",
                    "status": "completed", "content": [{"type": "output_text", "text": TEXT,
                                                        "annotations": [], "logprobs": []}]}])
-        return responses_events(ordinal, self.path, items=items)
+        return responses_events(ordinal, self.path, PI_RESPONSES[0], items=items)
 
 
 def observed_held_content(state):
@@ -216,7 +216,7 @@ def authority(state):
 def pi_case(binary, env, root, work, origin, state):
     tools = isinstance(state, ToolState)
     if tools:
-        model, provider, _, _ = PROFILES["responses"]
+        model, provider, _, _ = PI_RESPONSES
         directory = root / "pi-agent"
         directory.mkdir(mode=0o700)
         private_json(directory / "models.json", {"providers": {provider: {
@@ -547,8 +547,8 @@ def main():
                               exchange_timeout_ms=30000, concurrency=1,
                               accounts=("primary", "secondary"),
                               recovery={"recovery_timeout_ms": 2500},
-                              **({"model": PROFILES["responses"][0], "provider": "openai",
-                                  "binding": PROFILES["responses"][2]} if tools else {}))
+                              **({"model": PI_RESPONSES[0], "provider": "openai",
+                                  "binding": PI_RESPONSES[2]} if tools else {}))
         gateway = stack.enter_context(Child([gateway_binary, "--config", str(root / "gateway.json"),
             "--credentials-dir", str(root / "credentials")], env, work))
         try:

@@ -382,15 +382,15 @@ const DEEPSEEK_FLASH_EFFORT: ReasoningEffortMapping = ReasoningEffortMapping {
 pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
     // Official API-key contracts are independent of SIWC. Responses is selected
     // for tool/reasoning execution; Chat has model-specific tool restrictions.
-    // https://developers.openai.com/api/docs/models/gpt-6.1-sol
+    // https://developers.openai.com/api/docs/models/gpt-6.2-sol
     ApiKeyBinding {
         provider: catalog::openai,
         dialect: Dialect::Standard,
         endpoint_prefix: "openai-sol",
         effort_mappings: &[],
-        model: "gpt-6.1-sol",
-        canonical_model: "gpt-6.1-sol",
-        upstream: "gpt-6.1-sol",
+        model: "gpt-6.2-sol",
+        canonical_model: "gpt-6.2-sol",
+        upstream: "gpt-6.2-sol",
         protocols: RESPONSES,
         reasoning_history: ACCEPTED_HISTORY,
         public_slice: RequestSlice::Canonical,
@@ -401,9 +401,9 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         dialect: Dialect::Standard,
         endpoint_prefix: "openai-astra",
         effort_mappings: &[],
-        model: "gpt-6-astra",
-        canonical_model: "gpt-6-astra",
-        upstream: "gpt-6-astra",
+        model: "gpt-6.2-astra",
+        canonical_model: "gpt-6.2-astra",
+        upstream: "gpt-6.2-astra",
         protocols: RESPONSES,
         reasoning_history: ACCEPTED_HISTORY,
         public_slice: RequestSlice::Canonical,
