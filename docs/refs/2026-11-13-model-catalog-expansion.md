@@ -7,6 +7,7 @@ Sources reviewed on 2026-11-13. The compiled catalog owns model availability and
 - [OpenAI Terra and SIWC](#openai-terra-and-siwc)
 - [OpenCode Go](#opencode-go)
 - [OpenRouter](#openrouter)
+- [NVIDIA hosted Nemotron](#nvidia-hosted-nemotron)
 - [Google Gemini 4](#google-gemini-4)
 - [Aliyun plans](#aliyun-plans)
   - [Kimi K3.1 Pro](#kimi-k31-pro)
@@ -45,6 +46,12 @@ Sources: [model directory](https://openrouter.ai/api/v1/models), [Muse Ember end
 - `stepfun/step-5-preview` shares canonical/public `step-5-preview` with Go, but keeps its own replay issuer, wire model and limits. OpenRouter endpoint contexts differ (262,144 versus 1,000,000), as do output maxima (32,768 versus 64,000). Those unpinned route-wide capacities stay unknown. Image/video, structured output and low/medium/high thinking are declared; thinking cannot be disabled. The selected Chat/Responses bindings do not inherit Go's input/output ceilings or StepFun native Responses strictness.
 
 OpenRouter's fixed `require_parameters` policy remains responsible for endpoint parameter selection. The separately scheduled Luna SSE intake issue remains in the [issue register](../roadmap/unscheduled-issues.md#content-and-client-qualification).
+
+## NVIDIA hosted Nemotron
+
+Follow-up, 2026-11-19: the NVIDIA account's model directory lists `nvidia/nemotron-3.5-super-vl-120b-a12b` but omits `nvidia/nemotron-3-super-120b-a12b`. The [NVIDIA announcement](https://developer.nvidia.com/blog/nvidia-nemotron-3-5-super-vl-powers-specialized-agents-with-multimodal-reasoning/) is dated 2026-10-15. The existing Chat and Responses bindings select the new ID, exposed without its `nvidia/` prefix; no alias remains. Both native endpoints complete a minimal text request. The Responses binding also completes an installed full-extension pi tool loop on an isolated gateway, with real tool execution and untouched history.
+
+The [hosted Chat schema](https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3_5-super-vl-120b-a12b-infer.md) permits ordered system and developer messages, so the retired model's single initial system-message restriction does not transfer. This replacement does not activate new media carriers, strict tool guarantees, reasoning controls or service capacity declarations.
 
 ## Google Gemini 4
 

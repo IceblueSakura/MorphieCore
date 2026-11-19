@@ -120,13 +120,13 @@ pub const MODELS: &[ModelDefinition] = &[
         released_at: 1_790_035_200,
         developer: "OpenAI",
     },
-    // Source: https://blogs.nvidia.com/blog/nemotron-3-super-agentic-ai/ (2026-03-11).
+    // Source: https://developer.nvidia.com/blog/nvidia-nemotron-3-5-super-vl-powers-specialized-agents-with-multimodal-reasoning/ (2026-10-15).
     ModelDefinition {
-        id: "nemotron-3-super",
+        id: "nemotron-3.5-super-vl-120b-a12b",
         images: false,
         files: false,
         strict_tools: false,
-        released_at: 1_773_187_200,
+        released_at: 1_792_022_400,
         developer: "NVIDIA",
     },
     // Source: https://www.alibabacloud.com/en/press-room/alibaba-unveils-qwen3-8-max (2026-08-03).

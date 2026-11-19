@@ -180,17 +180,6 @@ impl ApiKeyBinding {
             adapter.adaptation.rules.responses_summary_text_alias = false;
             adapter.adaptation.rules.qwen4_responses_reasoning = qwen4_responses;
         }
-        // This hosted model's published Chat contract permits one initial string
-        // system message. Do not extend it to Responses or other NVIDIA models.
-        // https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3-super-120b-a12b-infer
-        if self.dialect == Dialect::Nvidia
-            && family == crate::protocol::openai::GenerationApi::Chat
-            && self.upstream == "nvidia/nemotron-3-super-120b-a12b"
-        {
-            adapter.adaptation.rules.system_instruction_messages = true;
-            adapter.adaptation.rules.chat_string_instructions = true;
-            adapter.adaptation.rules.chat_initial_instruction_only = true;
-        }
         adapter.adaptation.rules.responses_lifecycle_reports = self.dialect == Dialect::OpenRouter
             && family == crate::protocol::openai::GenerationApi::Responses
             && self.canonical_model == "gpt-6-luna";
@@ -653,9 +642,9 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         dialect: Dialect::Nvidia,
         endpoint_prefix: "nvidia",
         effort_mappings: &[],
-        model: "nemotron-3-super",
-        canonical_model: "nemotron-3-super",
-        upstream: "nvidia/nemotron-3-super-120b-a12b",
+        model: "nemotron-3.5-super-vl-120b-a12b",
+        canonical_model: "nemotron-3.5-super-vl-120b-a12b",
+        upstream: "nvidia/nemotron-3.5-super-vl-120b-a12b",
         protocols: BOTH,
         reasoning_history: &[],
         public_slice: RequestSlice::Canonical,

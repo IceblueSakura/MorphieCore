@@ -134,8 +134,6 @@ pub struct WireRules {
     pub system_instruction_messages: bool,
     /// Chat instructions have a string-only carrier; do not join typed parts implicitly.
     pub chat_string_instructions: bool,
-    /// Model-specific Chat contract: one initial instruction, with no extra fields.
-    pub chat_initial_instruction_only: bool,
     /// Responses has no OpenAI shorthand for message items.
     pub responses_typed_messages: bool,
     /// DeepSeek Responses accepts developer spelling with effective user meaning.

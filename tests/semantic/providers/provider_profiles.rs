@@ -18,6 +18,46 @@ fn body() -> Value {
 }
 
 #[test]
+fn nvidia_replacement_sends_the_hosted_model_and_retains_ordered_chat_instructions() {
+    use morphiecore::topology::{GenerationProtocol, catalog::API_KEY_BINDINGS};
+    let binding = API_KEY_BINDINGS
+        .iter()
+        .find(|binding| binding.endpoint_prefix == "nvidia")
+        .unwrap();
+    let messages = json!([
+        {"role":"system","content":"Answer briefly."},
+        {"role":"user","content":"Is it ready?"},
+        {"role":"assistant","content":"Yes."},
+        {"role":"developer","content":"Use one word."},
+        {"role":"user","content":"Confirm."}
+    ]);
+    let source = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
+        .decode_client_request(
+            &serde_json::to_vec(&json!({"model":"nemotron-3.5-super-vl-120b-a12b",
+                "messages":messages}))
+            .unwrap(),
+        )
+        .unwrap();
+    let mut expected_chat = messages;
+    // Both client spellings carry application instructions in the IR.
+    expected_chat[0]["role"] = json!("developer");
+    for protocol in [
+        GenerationProtocol::OpenAiChat,
+        GenerationProtocol::OpenAiResponses,
+    ] {
+        let wire = binding
+            .endpoint(protocol)
+            .unwrap()
+            .encode_request(&source)
+            .unwrap();
+        assert_eq!(wire["model"], "nvidia/nemotron-3.5-super-vl-120b-a12b");
+        if protocol == GenerationProtocol::OpenAiChat {
+            assert_eq!(wire["messages"], expected_chat);
+        }
+    }
+}
+
+#[test]
 fn deepseek_chat_preserves_the_native_cap_and_standard_thinking_off_control() {
     use morphiecore::topology::{GenerationProtocol, catalog::API_KEY_BINDINGS};
     let source = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
