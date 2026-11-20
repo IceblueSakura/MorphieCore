@@ -57,7 +57,7 @@
               toolchain
               cargoLlvmCov
               llvmTools
-              # aws-lc-sys and ring compile native code.
+              # aws-lc-sys compiles native code.
               cmake
               pkg-config
             ];

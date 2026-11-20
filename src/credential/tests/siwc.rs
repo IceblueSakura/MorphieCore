@@ -11,6 +11,7 @@ use crate::credential::{
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, net::SocketAddr, sync::Mutex, time::Duration};
 use tokio::time::timeout;
 
@@ -25,7 +26,7 @@ fn claims(nonce: &str) -> Value {
         "exp":model::now().unwrap()+3600,"nonce":nonce})
 }
 fn sign(header: Value, claims: Value) -> String {
-    let pair = ring::signature::RsaKeyPair::from_pkcs8(include_bytes!(
+    let pair = aws_lc_rs::signature::RsaKeyPair::from_pkcs8(include_bytes!(
         "../../../testdata/auth/codex-test-rsa.pk8"
     ))
     .unwrap();
@@ -34,10 +35,10 @@ fn sign(header: Value, claims: Value) -> String {
         B64.encode(serde_json::to_vec(&header).unwrap()),
         B64.encode(serde_json::to_vec(&claims).unwrap())
     );
-    let mut signature = vec![0; pair.public().modulus_len()];
+    let mut signature = vec![0; pair.public_modulus_len()];
     pair.sign(
-        &ring::signature::RSA_PKCS1_SHA256,
-        &ring::rand::SystemRandom::new(),
+        &aws_lc_rs::signature::RSA_PKCS1_SHA256,
+        &aws_lc_rs::rand::SystemRandom::new(),
         message.as_bytes(),
         &mut signature,
     )
@@ -143,13 +144,7 @@ async fn login(
         assert_eq!(call.fields["resource"], "https://api.openai.com/v1");
         assert_eq!(call.fields["redirect_uri"], prompt.redirect_uri);
         assert_eq!(
-            B64.encode(
-                ring::digest::digest(
-                    &ring::digest::SHA256,
-                    call.fields["code_verifier"].as_bytes()
-                )
-                .as_ref()
-            ),
+            B64.encode(Sha256::digest(call.fields["code_verifier"].as_bytes())),
             fields["code_challenge"]
         );
     }

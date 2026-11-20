@@ -23,7 +23,6 @@ multer = { version = "=3.1.0", default-features = false }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = { version = "=1.0.154", features = ["preserve_order", "arbitrary_precision", "raw_value"] }
 sha2 = "=0.11.1"
-ring = "=0.17.14"
 thiserror = "=2.0.21"
 strum = { version = "=0.28.0", features = ["derive"] }
 fs-mistrust = { version = "=0.16.0", default-features = false }
@@ -53,6 +52,7 @@ windows-permissions = "=0.2.4"
 libc = "=0.2.191"
 
 [dev-dependencies]
+aws-lc-rs = "=1.19.0"
 opentelemetry_sdk = { version = "=0.33.1", default-features = false, features = ["testing"] }
 proptest = { version = "=1.12.0", default-features = false, features = ["std"] }
 tempfile = "=3.27.0"

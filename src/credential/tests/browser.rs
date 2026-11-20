@@ -12,6 +12,7 @@ use crate::credential::{
 use axum::http::StatusCode;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     net::SocketAddr,
@@ -36,11 +37,10 @@ fn claims(nonce: &str) -> Value {
     json!({"iss":"https://auth.x.ai","aud":CLIENT,"sub":"person-a","exp":timestamp+3600,"nonce":nonce})
 }
 fn sign(header: Value, claims: Value) -> String {
-    let random = ring::rand::SystemRandom::new();
-    let pair = ring::signature::EcdsaKeyPair::from_pkcs8(
-        &ring::signature::ECDSA_P256_SHA256_FIXED_SIGNING,
+    let random = aws_lc_rs::rand::SystemRandom::new();
+    let pair = aws_lc_rs::signature::EcdsaKeyPair::from_pkcs8(
+        &aws_lc_rs::signature::ECDSA_P256_SHA256_FIXED_SIGNING,
         include_bytes!("../../../testdata/auth/grok-test-p256.pk8"),
-        &random,
     )
     .unwrap();
     let message = format!(
@@ -146,7 +146,7 @@ async fn run_browser(
         assert_eq!(exchange.fields.len(), 5);
         let verifier = &exchange.fields["code_verifier"];
         assert_eq!(
-            B64.encode(ring::digest::digest(&ring::digest::SHA256, verifier.as_bytes()).as_ref()),
+            B64.encode(Sha256::digest(verifier.as_bytes())),
             fields["code_challenge"]
         );
         assert!(!authorization.contains(verifier));

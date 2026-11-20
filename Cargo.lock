@@ -1325,6 +1325,7 @@ name = "morphiecore"
 version = "0.1.0"
 dependencies = [
  "atomicwrites",
+ "aws-lc-rs",
  "axum",
  "base64 0.23.1",
  "bytes",
@@ -1346,7 +1347,6 @@ dependencies = [
  "opentelemetry_sdk",
  "proptest",
  "reqwest",
- "ring",
  "rustls",
  "secrecy",
  "serde",
