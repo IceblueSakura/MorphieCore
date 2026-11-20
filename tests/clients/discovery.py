@@ -36,7 +36,6 @@ def main():
         "mimo-v2.6-flash": ["opencode-go-mimo-flash-chat"],
         "mimo-v2.6-pro": ["opencode-go-mimo-pro-chat", "xiaomi-responses"],
         "gpt-6-luna": ["openrouter-responses"],
-        "muse-ember": ["openrouter-ember-chat"],
         "minicpm5-1b": ["modelbest-minicpm5-1b-chat"],
         "minicpm5-2b": ["modelbest-minicpm5-2b-chat"],
         "MiniCPM-V-4.7-1B": ["modelbest-minicpm-v-4.7-1b-chat"],

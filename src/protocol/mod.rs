@@ -5,7 +5,6 @@
 // Generation wire boundaries.
 pub mod anthropic;
 pub mod google;
-pub mod grok;
 pub mod openai;
 
 // Shared decoded values, fidelity and projection policies.

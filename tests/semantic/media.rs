@@ -645,6 +645,14 @@ mod image_generation {
             let r = images::decode_response(&serde_json::to_vec(&v).unwrap()).unwrap();
             assert_eq!(images::encode_response(&r).unwrap(), v);
         }
+        let mut incomplete = images::decode_response(
+            br#"{"created":123,"data":[{"b64_json":"AQID"}],"usage":{"input_tokens":3,"input_tokens_details":{"text_tokens":2,"image_tokens":1},"output_tokens":5,"total_tokens":8}}"#,
+        )
+        .unwrap();
+        if let Presence::Value(usage) = &mut incomplete.usage {
+            usage.total = Presence::Absent;
+        }
+        assert!(images::encode_response(&incomplete).is_err());
     }
 }
 mod openrouter_images {

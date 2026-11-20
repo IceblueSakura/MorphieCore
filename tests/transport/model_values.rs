@@ -60,12 +60,6 @@ fn service_output_ceilings_bound_prepared_requests_without_filling_unknown_servi
             65536,
         ),
         (
-            "opencode-go-step",
-            GenerationProtocol::OpenAiChat,
-            "max_tokens",
-            65536,
-        ),
-        (
             "opencode-go-mimo-pro",
             GenerationProtocol::OpenAiChat,
             "max_tokens",

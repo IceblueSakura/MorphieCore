@@ -50,15 +50,6 @@ pub const MODELS: &[ModelDefinition] = &[
         released_at: 1792800000,
         developer: "Moonshot AI",
     },
-    // https://research.meta.ai/blog/muse-ember (2026-11-09).
-    ModelDefinition {
-        id: "muse-ember",
-        images: true,
-        files: true,
-        strict_tools: false,
-        released_at: 1794182400,
-        developer: "Meta",
-    },
     // Retain the predecessor's catalog timestamp; publication source:
     // https://openai.com/index/introducing-gpt-6-1-sol/ (2026-09-29).
     ModelDefinition {
@@ -273,10 +264,6 @@ pub fn contract(id: &str) -> Dispositions {
             crate::semantic::task::generation::Feature::FileInput,
             definition.files,
         )
-        .with_native(
-            crate::semantic::task::generation::Feature::AudioInput,
-            id == "muse-ember",
-        )
         // Sources: MiniCPM-V docs/api.md and the Zhipu Chat reference.
         // Media policy: docs/architecture/adaptation-and-dialects.md#media.
         .with_native(
@@ -288,7 +275,6 @@ pub fn contract(id: &str) -> Dispositions {
                     | "glm-5.3-flash"
                     | "minimax-m3.1-flash"
                     | "step-5-preview"
-                    | "muse-ember"
                     | "qwen4-max"
             ),
         )
@@ -325,12 +311,11 @@ pub(super) fn model_limits(
             "openai" | "chatgpt",
         ) => Some(1_050_000),
         ("gpt-6-luna", "openrouter") => Some(1_050_000),
-        ("muse-ember", "openrouter") => Some(1_048_576),
         ("grok-4.7", "grok") => Some(500_000),
         ("deepseek-flash", "deepseek") => Some(1_048_576),
         ("claude-haiku-5-5", "opencode-go") => Some(1_000_000),
         ("mimo-v2.6-flash" | "mimo-v2.6-pro" | "hy4", "opencode-go") => Some(1_048_576),
-        ("minimax-m3.1-flash" | "step-5-preview", "opencode-go") => Some(1_000_000),
+        ("minimax-m3.1-flash", "opencode-go") => Some(1_000_000),
         ("minicpm5-1b" | "minicpm5-2b", "modelbest") => Some(128_000),
         ("MiniCPM-V-4.7-1B" | "MiniCPM-V-4.7-35B-A3B", "modelbest") => Some(256_000),
         ("qwen3.8-max" | "qwen3.8-flash", "aliyun-dashscope-cn") => Some(1_000_000),
@@ -343,14 +328,13 @@ pub(super) fn model_limits(
         }
         ("glm-5.3" | "glm-5.3-prime" | "kimi-k3.1-pro", "aliyun-dashscope-cn") => Some(1_048_576),
         ("hy4", "opencode-go") => Some(983_010),
-        ("step-5-preview", "opencode-go") => Some(1_000_000),
         _ => None,
     };
     let maximum_output_tokens = match (model, provider) {
         ("gpt-6.1-terra", "openai") => Some(128_000),
         ("deepseek-flash", "deepseek") => Some(393_216),
         ("claude-haiku-5-5", "opencode-go") => Some(128_000),
-        ("hy4" | "step-5-preview", "opencode-go") => Some(65_536),
+        ("hy4", "opencode-go") => Some(65_536),
         ("minimax-m3.1-flash", "opencode-go") => Some(512_000),
         ("mimo-v2.6-flash" | "mimo-v2.6-pro", "opencode-go") => Some(131_072),
         ("gpt-6-luna", "openrouter") => Some(128_000),
@@ -365,9 +349,6 @@ pub(super) fn model_limits(
         ("minimax-m3.1-flash", "opencode-go") => {
             Some(vec![E::Low, E::Medium, E::High, E::XHigh, E::Max].into())
         }
-        ("muse-ember", "openrouter") => {
-            Some(vec![E::Minimal, E::Low, E::Medium, E::High, E::XHigh, E::Max].into())
-        }
         ("grok-4.7", _) => Some(vec![E::Low, E::Medium, E::High, E::XHigh].into()),
         ("gpt-6.2-astra" | "gpt-6.2-sol" | "gpt-6-luna" | "gpt-6.1-terra", _) => {
             Some(vec![E::Low, E::Medium, E::High, E::XHigh, E::Max].into())
@@ -377,12 +358,7 @@ pub(super) fn model_limits(
     crate::protocol::model_limits::ModelLimits {
         reject_disabled_reasoning: matches!(
             model,
-            "grok-4.7"
-                | "gpt-6.2-astra"
-                | "gpt-6.2-sol"
-                | "minimax-m3.1-flash"
-                | "muse-ember"
-                | "step-5-preview"
+            "grok-4.7" | "gpt-6.2-astra" | "gpt-6.2-sol" | "minimax-m3.1-flash" | "step-5-preview"
         ),
         allowed_effort,
         context_window_tokens,

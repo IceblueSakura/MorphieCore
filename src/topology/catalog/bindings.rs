@@ -144,21 +144,12 @@ impl ApiKeyBinding {
             adapter.adaptation.rules.reject_reasoning_controls = false;
         }
         if self.dialect == Dialect::OpenCodeGo {
-            adapter.adaptation.rules.chat_video_url = matches!(
-                self.canonical_model,
-                "minimax-m3.1-flash" | "step-5-preview"
-            );
+            adapter.adaptation.rules.chat_video_url = self.canonical_model == "minimax-m3.1-flash";
             adapter.adaptation.rules.auto_tool_choice_only =
                 self.canonical_model == "minimax-m3.1-flash";
-            if matches!(
-                self.canonical_model,
-                "hy4" | "minimax-m3.1-flash" | "step-5-preview"
-            ) {
+            if matches!(self.canonical_model, "hy4" | "minimax-m3.1-flash") {
                 adapter.adaptation.rules.reasoning_alias = false;
             }
-        }
-        if self.dialect == Dialect::OpenRouter && self.canonical_model == "muse-ember" {
-            adapter.adaptation.rules.auto_tool_choice_only = true;
         }
         if self.dialect == Dialect::Standard && self.canonical_model == "gpt-6.1-terra" {
             adapter.adaptation.rules.sampling_requires_reasoning_off = true;
@@ -548,20 +539,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         public_slice: RequestSlice::Canonical,
         endpoint_slice: RequestSlice::Canonical,
     },
-    // https://openrouter.ai/api/v1/models/meta/muse-ember/endpoints
-    ApiKeyBinding {
-        provider: catalog::openrouter,
-        dialect: Dialect::OpenRouter,
-        endpoint_prefix: "openrouter-ember",
-        effort_mappings: &[],
-        model: "muse-ember",
-        canonical_model: "muse-ember",
-        upstream: "meta/muse-ember",
-        protocols: BOTH,
-        reasoning_history: ACCEPTED_HISTORY,
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
     ApiKeyBinding {
         provider: catalog::deepseek,
         dialect: Dialect::DeepSeek,
@@ -824,19 +801,6 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "gpt-6.1-terra",
         upstream: "gpt-6.1-terra",
         protocols: RESPONSES,
-        reasoning_history: ACCEPTED_HISTORY,
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::opencode_go,
-        dialect: Dialect::OpenCodeGo,
-        endpoint_prefix: "opencode-go-step",
-        effort_mappings: &[],
-        model: "step-5-preview",
-        canonical_model: "step-5-preview",
-        upstream: "step-5-preview",
-        protocols: CHAT,
         reasoning_history: ACCEPTED_HISTORY,
         public_slice: RequestSlice::Canonical,
         endpoint_slice: RequestSlice::Canonical,

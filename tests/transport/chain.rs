@@ -789,26 +789,23 @@ fn opencode_go_projects_neutral_conversations_independently_of_cache_groups() {
             .find(|(name, _)| name == "x-opencode-session")
             .map(|(_, value)| value.as_str());
         assert_eq!(projected, Some(expected));
-        for (id, model) in [
-            ("opencode-go-haiku-messages", "claude-haiku-5-5"),
-            ("opencode-go-step-chat", "step-5-preview"),
-        ] {
-            let mut next = request.clone();
-            next.model = model.into();
-            let target = topology.endpoint(&EndpointId::new(id).unwrap()).unwrap();
-            let prepared = prepare(target, &provider, &secret, &next).unwrap();
-            assert!(
-                prepared
-                    .safe_headers
-                    .contains(&("x-opencode-session".into(), expected.into()))
-            );
-            assert!(
-                serde_json::from_slice::<Value>(&prepared.body)
-                    .unwrap()
-                    .get("session_id")
-                    .is_none()
-            );
-        }
+        let target = topology
+            .endpoint(&EndpointId::new("opencode-go-haiku-messages").unwrap())
+            .unwrap();
+        let mut next = request.clone();
+        next.model = "claude-haiku-5-5".into();
+        let prepared = prepare(target, &provider, &secret, &next).unwrap();
+        assert!(
+            prepared
+                .safe_headers
+                .contains(&("x-opencode-session".into(), expected.into()))
+        );
+        assert!(
+            serde_json::from_slice::<Value>(&prepared.body)
+                .unwrap()
+                .get("session_id")
+                .is_none()
+        );
         assert_eq!(request, original);
         assert!(!format!("{prepared:?}").contains("synthetic-conversation"));
         let plan = morphiecore::execution::ExecutionPlan::for_request(&topology, &request).unwrap();
@@ -983,33 +980,30 @@ fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
 fn auto_only_targets_reject_forced_tool_selection_instead_of_ignoring_it() {
     use morphiecore::semantic::context::ConversationContext;
     let topology = catalog::default_topology().unwrap();
-    for id in [
-        "opencode-go-minimax-chat",
-        "openrouter-ember-chat",
-        "openrouter-ember-responses",
-    ] {
-        let endpoint = topology.endpoint(&EndpointId::new(id).unwrap()).unwrap();
-        let mut request = standard(GenerationApi::Responses).decode_request(
+    let id = "opencode-go-minimax-chat";
+    let endpoint = topology.endpoint(&EndpointId::new(id).unwrap()).unwrap();
+    let mut request = standard(GenerationApi::Responses)
+        .decode_request(
             br#"{"model":"m","input":"go","tools":[{"type":"function","name":"read",
                 "description":"Read a synthetic marker","parameters":{"type":"object","properties":{}},
-                "strict":false}],"tool_choice":"required"}"#).unwrap();
-        request.conversation =
-            Some(ConversationContext::conversation("synthetic-auto-only").unwrap());
-        assert_eq!(
-            morphiecore::execution::plan::representable(endpoint, &request)
-                .unwrap_err()
-                .code(),
-            "admission.tool_choice"
-        );
-        let mut settings = request.task.semantic.settings().clone();
-        settings.tool_choice = Some(morphiecore::semantic::task::generation::ToolChoice::Auto);
-        request.task.semantic = request
-            .task
-            .semantic
-            .clone()
-            .with_settings(settings)
-            .unwrap();
-        let wire = endpoint.encode_request(&request).unwrap();
-        assert_eq!(wire["tool_choice"], "auto");
-    }
+                "strict":false}],"tool_choice":"required"}"#,
+        )
+        .unwrap();
+    request.conversation = Some(ConversationContext::conversation("synthetic-auto-only").unwrap());
+    assert_eq!(
+        morphiecore::execution::plan::representable(endpoint, &request)
+            .unwrap_err()
+            .code(),
+        "admission.tool_choice"
+    );
+    let mut settings = request.task.semantic.settings().clone();
+    settings.tool_choice = Some(morphiecore::semantic::task::generation::ToolChoice::Auto);
+    request.task.semantic = request
+        .task
+        .semantic
+        .clone()
+        .with_settings(settings)
+        .unwrap();
+    let wire = endpoint.encode_request(&request).unwrap();
+    assert_eq!(wire["tool_choice"], "auto");
 }

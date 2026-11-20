@@ -5,7 +5,6 @@ use crate::protocol::image::Request;
 pub enum UpstreamAdapter {
     GptImage,
     OpenRouterFlare,
-    GrokImagineImage2,
 }
 impl UpstreamAdapter {
     pub fn encode_request(
@@ -17,9 +16,6 @@ impl UpstreamAdapter {
             Self::GptImage => crate::protocol::openai::images::encode_request(request, model),
             Self::OpenRouterFlare => {
                 crate::protocol::openrouter_images::encode_request(request, model)
-            }
-            Self::GrokImagineImage2 => {
-                crate::protocol::grok::images::encode_request(request, model)
             }
         }
     }
@@ -33,7 +29,6 @@ impl UpstreamAdapter {
         match self {
             Self::GptImage => crate::protocol::openai::images::decode_response(bytes),
             Self::OpenRouterFlare => crate::protocol::openrouter_images::decode_response(bytes),
-            Self::GrokImagineImage2 => crate::protocol::grok::images::decode_response(bytes),
         }
     }
 }

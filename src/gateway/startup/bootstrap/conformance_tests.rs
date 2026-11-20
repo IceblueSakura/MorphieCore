@@ -852,7 +852,6 @@ async fn representative_dialects_preserve_text_and_tool_workflows() {
         "deepseek",
         "dashscope-flash",
         "openrouter",
-        "openrouter-ember",
         "nvidia",
         "modelbest-minicpm5-1b",
         "modelbest-minicpm-v-4.7-1b",
