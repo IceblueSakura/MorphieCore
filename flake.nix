@@ -67,6 +67,14 @@
         in
         {
           inherit rust;
+          docs = pkgs.mkShell {
+            name = "morphiecore-docs";
+            packages = with pkgs; [
+              git
+              pandoc
+              python313
+            ];
+          };
           default = pkgs.mkShell {
             name = "morphiecore-dev";
             inputsFrom = [ rust ];

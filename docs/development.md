@@ -86,7 +86,7 @@ Use focused checks while iterating and the required baseline before publishing a
 
 ### Offline baseline
 
-The baseline includes Rust tests, strict all-target linting, formatting, production library/binary compilation, pinned-asset integrity, upstream extraction tests and whitespace checks. Use locked dependencies and offline execution in the project environment. Discover the SDK-oracle, client-oracle and OpenAPI Python suites separately when affected.
+The baseline includes Rust tests, strict all-target linting, formatting, production library/binary compilation, pinned-asset integrity, upstream extraction tests and the [documentation gate](#documentation-checks). Use locked dependencies and offline execution in the project environment. Discover the SDK-oracle, client-oracle and OpenAPI Python suites separately when affected.
 
 All baseline inputs and authorities are synthetic. Credential/auth isolation, trusted origins, strict JSON, resource bounds, cancellation/release, replay isolation and honest terminal reporting remain required assertions.
 
@@ -126,7 +126,16 @@ The selected [proxy contract](architecture/runtime-and-routing.md#reverse-proxy-
 
 ### Documentation checks
 
-Check local paths, heading anchors and whitespace; update incoming links when moving sections. Preserve accepted contracts and approval boundaries, and retain source dates in research notes. OpenAPI changes also need schema checks against actual routes, authentication and error envelopes. Documentation-only edits do not require Rust or SDK runs.
+From the repository root, run the offline documentation gate:
+
+```sh
+nix develop .#docs --offline --command python3 tests/check_docs.py
+git diff --check
+```
+
+The check uses flake-pinned Pandoc to render GitHub-flavored Markdown. It checks tracked local paths, Markdown anchors, links to public templates in the configuration guide and the dated-notes inventory in the research index. Add new files to Git's index before checking. External links are not fetched. Update incoming links when moving sections or sources; retain accepted contracts, approval boundaries and dates in research notes.
+
+OpenAPI changes also need schema checks against actual routes, authentication and error envelopes. Documentation-only edits do not require Rust or SDK runs.
 
 ## Test selection and pruning
 

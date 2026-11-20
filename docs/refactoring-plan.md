@@ -10,7 +10,7 @@ This plan tracks the code-first refactor: enforce layer boundaries, move model p
 | 1. Dependency boundaries | Landed | No blocker for Phase 2 |
 | 2. Projection and catalog | Complete for the selected scope; offline baseline and stateless SDK loopbacks passed | Installed-client and real-Provider qualification remain separate |
 | 3. Tests and observability | Complete on synthetic development evidence | No deployment or new API activation |
-| 4. Documentation | Public contract and document ownership reconciled | Add the offline documentation gate |
+| 4. Documentation | Complete | No deployment or new API activation |
 
 ## Phase 0 — Cleanup (landed)
 
@@ -95,9 +95,7 @@ The completion criteria cover instrumentation of existing operations only. [Arch
 
 ### Task 4.3 — Add a lightweight documentation gate
 
-- **Current:** [Manual documentation checks](development.md#documentation-checks) already apply; no tracked automated hygiene gate exists. Default Workspace membership already covers all packages.
-- **Remaining:** Add an offline check for local Markdown links, heading anchors, template coverage, and the research index. Reuse an established checker if it meets the repository's offline requirements. Update `AGENTS.md` and `README.md` for final source locations and the check command. Do not require repeating routine model or dialect changes in architecture decisions.
-- **Exit:** Check the full doc set with the new gate and include it in the documented baseline.
+- The [offline documentation gate](development.md#documentation-checks) uses Pandoc to check tracked Markdown links and anchors, public template coverage and the research index. It is part of the documented baseline.
 
 ## Verification boundaries
 

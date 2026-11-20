@@ -47,5 +47,6 @@ See [Usage](docs/usage/index.md) for full configuration and startup details.
 - **Architecture layers:** See [Architecture's layer map](docs/architecture/index.md#layers-and-data-flow).
 - **Providers and topology:** [Shared Provider metadata](docs/architecture/index.md#shared-provider-metadata) links the embedded data, compilation and startup binding.
 - **Test suites:** Mapped in [Development](docs/development.md#test-layout).
+- **Documentation gate:** Run `nix develop .#docs --offline --command python3 tests/check_docs.py`; see [documentation checks](docs/development.md#documentation-checks).
 
 MorphieCore is licensed under the [MIT License](LICENSE). External references preserve their original licenses.

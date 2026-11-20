@@ -2,7 +2,7 @@
 
 ## Project and sources of truth
 
-- MorphieCore hides Provider differences behind one typed IR (`src/semantic`). `pi` and OpenCode are the primary clients. Routing is request-boundary cache-affine selection with at most one pre-publication same-target retry (no post-dispatch target switching or load balancing).
+- MorphieCore hides Provider differences behind one typed IR (`crates/morphiecore-semantic`). `pi` and OpenCode are the primary clients. Routing is request-boundary cache-affine selection with at most one pre-publication same-target retry (no post-dispatch target switching or load balancing).
 - [README](README.md#documentation-map) is the single documentation map. Code and tests describe current behavior, not authority over official protocols; see [trusted catalog inputs](docs/architecture/index.md#shared-provider-metadata) for current Providers, models, and bindings.
 
 ## Security
@@ -33,7 +33,7 @@
 ## Engineering
 
 - **Gateway/runtime boundary:** Apply [system boundaries](docs/architecture/index.md#system-boundaries) — reject target limitations requiring execution-strategy changes rather than silently disabling thinking or repairing a session.
-- **Layer purity:** `src/semantic` is the official-protocol semantic union (one owner per fact) with zero protocol, Provider, target, credential, retry, or I/O dependencies. `src/protocol`, `src/lowering`, and `src/adapter` are pure in-memory transformations (no I/O, credentials, or adaptation-publication state); protocol spelling and raw wire stay in codecs, never vendor bags or duplicate semantic containers.
+- **Layer purity:** Follow the [Workspace layer map](docs/architecture/index.md#layers-and-data-flow). `morphiecore-semantic` owns the official-protocol union with no protocol, Provider, target, credential, retry, or I/O dependencies. `morphiecore-lowering` and `morphiecore-protocol` (including its adapters) are pure in-memory transformations; wire spelling stays in codecs, never vendor bags or duplicate semantic containers.
 - **Field handling & conversion ladder:** Keep known fields strict and discard unknown client extension fields without IR retention or Provider passthrough ([field handling](docs/architecture/adaptation-and-dialects.md#field-handling)).
 
   Follow the [conversion ladder](docs/architecture/adaptation-and-dialects.md#conversion-ladder): admit by default without requiring prior equivalence evidence, delegate unknown upstream behavior to upstream validation instead of pre-rejecting, and reject only when omitting an inexpressible field would let the client mistake the response for satisfying its request.
@@ -65,6 +65,7 @@
   cargo test --locked --offline
   python3 tests/upstream/assets.py
   python3 -m unittest discover -s tests/upstream
+  nix develop .#docs --offline --command python3 tests/check_docs.py
   git diff --check
   ```
   *(When affected, also run `tests/sdk/.venv/bin/python -m unittest discover -s tests/gateway`, `tests/sdk/.venv/bin/python -m unittest discover -s tests/sdk`, and `python3 -m unittest discover -s tests/clients`.)*
@@ -73,4 +74,4 @@
 
 - **Single authoritative home:** Follow [README](README.md#documentation-map) and keep one authoritative owner per topic; link instead of duplicating specs or maintaining parallel plans. Separate proposed design, accepted decisions, implementation status, and acceptance evidence (a structural edit grants no approval).
 - **No ephemeral archives:** Keep [Development](docs/development.md) as a concise overall acceptance summary without run archives, historical run classifications, execution dates, tested-version inventories, acceptance commands, or per-run evidence catalogs. Do not retain phase-specific review pages or add run reports/history pages.
-- **Lifecycle & domain organization:** Organize each document by domain with shared rules above specialized branches. Keep unresolved issues in [Unscheduled issues](docs/roadmap/unscheduled-issues.md#unscheduled-issues), accepted adaptations in [Architecture](docs/architecture/index.md), and dated research notes indexed in [References](docs/references.md#research-notes). Remove finished slices from [Roadmap](docs/roadmap/index.md) and record meaningful decisions in [Settled decisions](docs/architecture/decisions.md).
+- **Lifecycle & domain organization:** Organize each document by domain with shared rules above specialized branches. Keep unresolved issues in [Unscheduled issues](docs/roadmap/unscheduled-issues.md#unscheduled-issues), accepted adaptations in [Architecture](docs/architecture/index.md), and dated research notes indexed in [References](docs/references.md#research-notes). Remove finished slices from [Roadmap](docs/roadmap/index.md); record consequential trade-offs in [Settled decisions](docs/architecture/decisions.md), not routine model or dialect changes.
