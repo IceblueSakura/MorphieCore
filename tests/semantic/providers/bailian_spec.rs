@@ -1479,40 +1479,98 @@ fn qwen4_does_not_enable_summary_mode_when_the_client_omits_it() {
     assert!(endpoint.encode_request(&unsupported).is_err());
 }
 #[test]
-fn kimi_fixed_sampling_is_projected_without_mutating_source_or_ignoring_thinking_off() {
-    for effort in ["none", "medium"] {
-        for (temperature, top_p, penalty, omitted) in
-            [(0.5, 0.8, 0.2, true), (1.0, 0.95, 0.0, false)]
-        {
-            let wire = json!({"model":"kimi-k3.1-pro","messages":[{"role":"user","content":"go"}],
-                "reasoning_effort":effort,"temperature":temperature,"top_p":top_p,"presence_penalty":penalty});
-            assert_eq!(
-                native(GenerationApi::Chat)
-                    .decode_request(wire.to_string().as_bytes())
-                    .is_err(),
-                omitted
-            );
-            let request = client(GenerationApi::Chat)
-                .decode_client_request(wire.to_string().as_bytes())
-                .unwrap();
-            let original = request.clone();
-            let (projected, rules) = endpoint("dashscope-kimi", GenerationProtocol::OpenAiChat)
-                .encode_request_with_rules(&request)
-                .unwrap();
-            for key in ["temperature", "top_p", "presence_penalty"] {
-                if omitted {
-                    assert!(projected.get(key).is_none(), "{key}");
-                } else {
-                    assert!(projected.get(key).is_none_or(|value| value == &wire[key]));
-                }
-            }
-            for rule in ["generation.omit-temperature.v1", "generation.omit-top-p.v1"] {
-                assert_eq!(rules.contains(&rule), omitted);
-            }
-            if omitted {
-                assert!(rules.contains(&"generation.omit-presence-penalty.v1"));
-            }
-            assert_eq!(request, original);
-        }
+fn kimi_native_input_rejects_each_incompatible_sampling_value() {
+    use morphiecore::protocol::failure::CarrierReason;
+
+    let codec = native(GenerationApi::Chat);
+    // Native acceptance validates explicit defaults; it never substitutes them.
+    let defaults = json!({"model":"kimi-k3.1-pro","messages":[{"role":"user","content":"go"}],
+        "reasoning_effort":"none","temperature":1.0,"top_p":0.95,"presence_penalty":-0.0});
+    let decoded = codec
+        .decode_request(defaults.to_string().as_bytes())
+        .unwrap();
+    let controls = decoded.task.semantic.controls();
+    assert_eq!(controls.temperature(), Some(1.0));
+    assert_eq!(controls.top_p(), Some(0.95));
+    assert_eq!(controls.presence_penalty(), Some(0.0));
+
+    for (field, invalid) in [
+        ("temperature", 0.5),
+        ("top_p", 0.8),
+        ("presence_penalty", 0.2),
+    ] {
+        let mut wire = defaults.clone();
+        wire[field] = json!(invalid);
+        assert!(
+            matches!(
+                codec.decode_request(wire.to_string().as_bytes()),
+                Err(CodecError::Unsupported(CarrierReason::Unavailable))
+            ),
+            "{field}"
+        );
     }
+}
+
+#[test]
+fn kimi_target_projects_only_incompatible_sampling_without_mutating_source() {
+    let direct = native(GenerationApi::Chat);
+    let bound = endpoint("dashscope-kimi", GenerationProtocol::OpenAiChat);
+    for effort in ["none", "medium"] {
+        let wire = json!({"model":"public-alias","messages":[{"role":"user","content":"go"}],
+            "reasoning_effort":effort,"temperature":0.5,"top_p":0.95,"presence_penalty":0.2});
+        let request = client(GenerationApi::Chat)
+            .decode_client_request(wire.to_string().as_bytes())
+            .unwrap();
+        let original = request.clone();
+        // The trusted target is selected separately from the incoming model label.
+        for (projected, rules) in [
+            bound.encode_request_with_rules(&request).unwrap(),
+            direct
+                .encode_request_with_rules(&request, "kimi-k3.1-pro", &TargetContract::full())
+                .unwrap(),
+        ] {
+            assert_eq!(projected["model"], "kimi-k3.1-pro");
+            assert!(projected.get("temperature").is_none());
+            assert_eq!(projected["top_p"], 0.95);
+            assert!(projected.get("presence_penalty").is_none());
+            assert!(rules.contains(&"generation.omit-temperature.v1"));
+            assert!(!rules.contains(&"generation.omit-top-p.v1"));
+            assert!(rules.contains(&"generation.omit-presence-penalty.v1"));
+        }
+        assert_eq!(request, original);
+    }
+}
+
+#[test]
+fn bailian_sampling_uses_the_configured_upstream_model_not_the_template_model() {
+    let mut target = endpoint("dashscope-kimi", GenerationProtocol::OpenAiChat);
+    target.upstream_model = "fixture-unrestricted-model".into();
+    let request = client(GenerationApi::Chat)
+        .decode_client_request(
+            br#"{"model":"kimi-k3.1-pro","messages":[{"role":"user","content":"go"}],
+            "temperature":0.5,"top_p":0.8}"#,
+        )
+        .unwrap();
+    let (wire, rules) = target.encode_request_with_rules(&request).unwrap();
+    assert_eq!(wire["model"], "fixture-unrestricted-model");
+    assert_eq!(wire["temperature"], 0.5);
+    assert_eq!(wire["top_p"], 0.8);
+    assert!(rules.is_empty());
+}
+
+#[test]
+fn qwen_native_temperature_floor_only_applies_when_thinking_is_not_disabled() {
+    use morphiecore::protocol::failure::CarrierReason;
+
+    let codec = native(GenerationApi::Chat);
+    let mut wire = chat();
+    wire["temperature"] = json!(0.5);
+    assert!(matches!(
+        codec.decode_request(wire.to_string().as_bytes()),
+        Err(CodecError::Unsupported(CarrierReason::Unavailable))
+    ));
+
+    wire["enable_thinking"] = json!(false);
+    let decoded = codec.decode_request(wire.to_string().as_bytes()).unwrap();
+    assert_eq!(decoded.task.semantic.controls().temperature(), Some(0.5));
 }

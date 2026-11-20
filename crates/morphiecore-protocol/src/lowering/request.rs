@@ -304,18 +304,6 @@ impl<'a> Target<'a> {
                     }
                 }
                 if rules.bailian_requests {
-                    for (feature, value) in [
-                        (Temperature, controls.temperature()),
-                        (TopP, controls.top_p()),
-                        (PresencePenalty, controls.presence_penalty()),
-                    ] {
-                        if crate::openai::dialect::bailian::fixed_sampling_value(model, feature)
-                            .zip(value)
-                            .is_some_and(|(expected, value)| expected != value)
-                        {
-                            omit(&mut table, feature);
-                        }
-                    }
                     table.set(
                         StrictTools,
                         crate::openai::dialect::bailian::function_strictness(model, api),
@@ -350,13 +338,10 @@ impl<'a> Target<'a> {
                     for feature in [Metadata, ServicePolicy, Verbosity] {
                         omit(&mut table, feature);
                     }
-                    if controls.temperature().is_some_and(|v| {
-                        !(0.0..2.0).contains(&v)
-                            || matches!(model, "qwen3.8-flash" | "qwen3.8-max")
-                                && source.reasoning().activation.as_ref()
-                                    != Some(&crate::semantic::task::generation::ReasoningActivation::Disabled)
-                                && v < 0.6
-                    }) {
+                    if controls
+                        .temperature()
+                        .is_some_and(|v| !(0.0..2.0).contains(&v))
+                    {
                         omit(&mut table, Temperature);
                     }
                     if controls.top_p().is_some_and(|v| v <= 0.0) {

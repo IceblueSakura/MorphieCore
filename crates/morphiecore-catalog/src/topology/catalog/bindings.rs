@@ -199,9 +199,10 @@ impl ApiKeyBinding {
         }
         let mut contract = TargetContract {
             reasoning_history,
-            sampling: match (self.dialect, self.canonical_model) {
-                (Dialect::Standard, "gpt-6.1-terra") => SamplingConstraints::RequiresReasoningOff,
-                _ => SamplingConstraints::default(),
+            sampling: SamplingConstraints {
+                requires_reasoning_off: self.dialect == Dialect::Standard
+                    && self.canonical_model == "gpt-6.1-terra",
+                ..Default::default()
             },
             dispositions: self
                 .endpoint_slice

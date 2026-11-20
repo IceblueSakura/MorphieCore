@@ -1,6 +1,9 @@
 //! OpenAI target capabilities; independent of endpoint execution and credentials.
 mod request;
-use crate::lowering::{capabilities::SamplingConstraints, disposition::Dispositions};
+use crate::lowering::{
+    capabilities::{SamplingConstraints, SamplingValues},
+    disposition::Dispositions,
+};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TargetContract {
     pub adaptation: crate::openai::dialect::adaptation::Adaptation,
@@ -19,6 +22,17 @@ pub struct TargetContract {
     pub cache: crate::cache::CacheTargetPolicy,
 }
 impl TargetContract {
+    /// Resolve native value restrictions after deployment selects the final
+    /// upstream spelling. A catalog template can be retargeted by its operator.
+    pub(in crate::openai) fn with_model_sampling(mut self, model: &str) -> Self {
+        if self.adaptation.rules.bailian_requests
+            && self.sampling.values == SamplingValues::default()
+        {
+            self.sampling.values = super::dialect::bailian::sampling_values(model);
+        }
+        self
+    }
+
     pub fn replay_origin(&self) -> Option<&crate::semantic::value::ReplayOrigin> {
         self.replay_origin
             .as_ref()

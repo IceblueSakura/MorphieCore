@@ -3,6 +3,7 @@
 use crate::{
     GenerationRequestEnvelope as Request,
     failure::CarrierReason,
+    lowering::capabilities::SamplingValues,
     openai::{
         CodecError, GenerationApi, dialect::adaptation::WireRules, function_tools, reasoning,
         shape::object,
@@ -55,16 +56,16 @@ pub fn total_output_ceiling(model: &str, profile: GenerationApi) -> bool {
         }
 }
 
-/// Kimi's hosted API only accepts these exact sampling defaults, including with thinking off.
-pub fn fixed_sampling_value(model: &str, feature: Feature) -> Option<f64> {
-    if model != "kimi-k3.1-pro" {
-        return None;
-    }
-    match feature {
-        Feature::Temperature => Some(1.0),
-        Feature::TopP => Some(0.95),
-        Feature::PresencePenalty => Some(0.0),
-        _ => None,
+/// Exact Bailian model spellings, shared by native intake and target binding.
+pub(crate) fn sampling_values(model: &str) -> SamplingValues {
+    const KIMI: SamplingValues =
+        SamplingValues::fixed(1.0, 0.95, 0.0).expect("valid fixed sampling");
+    const QWEN: SamplingValues =
+        SamplingValues::minimum_temperature_while_thinking(0.6).expect("valid minimum temperature");
+    match model {
+        "kimi-k3.1-pro" => KIMI,
+        "qwen3.8-flash" | "qwen3.8-max" => QWEN,
+        _ => SamplingValues::default(),
     }
 }
 
@@ -471,22 +472,14 @@ pub(in crate::openai) fn check_semantic(
     }
     let qwen = matches!(model, "qwen3.8-flash" | "qwen3.8-max");
     let glm = matches!(model, "glm-5.3" | "glm-5.3-prime");
-    for (feature, value) in [
-        (Feature::Temperature, c.temperature()),
-        (Feature::TopP, c.top_p()),
-        (Feature::PresencePenalty, c.presence_penalty()),
-    ] {
-        if fixed_sampling_value(model, feature)
-            .zip(value)
-            .is_some_and(|(expected, value)| expected != value)
-        {
-            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-        }
-    }
-    let disabled = r.activation.as_ref() == Some(&ReasoningActivation::Disabled);
-    if qwen && !disabled && c.temperature().is_some_and(|v| v < 0.6) {
+    if sampling_values(model)
+        .incompatible(semantic)
+        .next()
+        .is_some()
+    {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
+    let disabled = r.activation.as_ref() == Some(&ReasoningActivation::Disabled);
     if glm && disabled {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }

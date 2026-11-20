@@ -85,7 +85,7 @@ impl GenerationCodec {
                 bound.adaptation.effort_mapping = Some(mapping);
                 return bound.encode_request_with_evidence(request, model, contract);
             }
-            let contract = self.contract(contract);
+            let contract = self.contract(contract).with_model_sampling(model);
             let request_projection = crate::lowering::request::project(
                 request,
                 crate::lowering::request::Target::OpenAi(self.protocol, &contract),

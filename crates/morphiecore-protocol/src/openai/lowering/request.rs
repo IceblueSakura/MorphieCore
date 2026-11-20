@@ -20,6 +20,7 @@ pub fn lower_request<'a>(
         .effort_mapping
         .map(|mapping| mapping.canonical_model)
         .unwrap_or("");
+    let contract = contract.with_model_sampling(model);
     let projection = crate::lowering::request::project_semantic(
         request,
         crate::lowering::request::Target::OpenAi(profile, &contract),

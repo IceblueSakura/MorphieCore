@@ -8,7 +8,7 @@ This plan tracks the code-first refactor: enforce layer boundaries, move model p
 | --- | --- | --- |
 | 0. Cleanup | Landed, with the scope corrections below | No blocker for Phase 2 |
 | 1. Dependency boundaries | Landed | No blocker for Phase 2 |
-| 2. Projection and catalog | Tasks 2.1–2.2 in progress: shared disposition table and first sampling policy landed | Migrate the next model-specific control out of the request projector, preserving source admission and named losses |
+| 2. Projection and catalog | Tasks 2.1–2.2 in progress: shared disposition table and model-qualified sampling policies landed | Move model-qualified reasoning controls out of the request projector while preserving native admission and named losses |
 | 3. Tests and observability | No task complete; existing checks cover parts of the gate | Reuse those checks and fill the evidence gaps below |
 | 4. Documentation | No task complete; routes already match by inspection | Add independent gates and consolidate documentation after code boundaries settle |
 
@@ -38,13 +38,13 @@ Operators who explicitly set `resources.history_entries`, `resources.history_byt
 
 ### Task 2.1 — Share request and delivery disposition rules
 
-- **Current:** [Lowering's `DispositionTable`](../crates/morphiecore-lowering/src/disposition.rs) uses an explicit const length and typed request and delivery keys. [Downstream projection](../crates/morphiecore-protocol/src/adapter/downstream/projection.rs) and public capability discovery use the same delivery rows and named effects. The first [sampling policy](../crates/morphiecore-lowering/src/capabilities.rs) is part of the trusted OpenAI target contract rather than `WireRules`.
+- **Current:** [Lowering's `DispositionTable`](../crates/morphiecore-lowering/src/disposition.rs) uses an explicit const length and typed request and delivery keys. [Downstream projection](../crates/morphiecore-protocol/src/adapter/downstream/projection.rs) and public capability discovery use the same delivery rows and named effects. [Sampling constraints](../crates/morphiecore-lowering/src/capabilities.rs) are part of the trusted OpenAI target contract rather than `WireRules`.
 - **Remaining:** Grow the neutral `TargetCapabilities` contract from actual migrated controls: dispositions, limits, reasoning, sampling, tool and output constraints, and service/history policies. Keep native support, admissibility, and loss reporting distinct. Leave protocol-specific cache, replay and citation encoding at the protocol boundary. Schema admission must preserve the existing distinction between tool and structured-output rejection.
 - **Exit:** Focused lowering and protocol checks show unchanged acceptance, rejection and named loss reports for the migrated path.
 
 ### Task 2.2 — Move protocol-neutral request projection into `lowering`
 
-- **Current:** The Terra binding supplies `SamplingConstraints::RequiresReasoningOff`; lowering uses the effective semantic configuration to select the existing omissions without changing history or source controls. [The shared request projector](../crates/morphiecore-protocol/src/lowering/request.rs) is still in `protocol` and branches on model IDs and Bailian helpers. OpenAI, Anthropic, and both Google Generation APIs call it through their target contracts.
+- **Current:** Lowering evaluates Terra's effective reasoning-off gate, Kimi's fixed sampling values, and the Qwen thinking temperature floor without branching on model names. The Bailian codec shares the numeric restrictions with native input validation, and resolves target values from the final upstream spelling after any configured override. The [transitional request projector](../crates/morphiecore-protocol/src/lowering/request.rs) still owns the orchestration and model-qualified reasoning, tool and output-ceiling checks.
 - **Remaining:** Move control, tool and history projection in behavior-sized slices. Move the next model-dependent checks from the projector into trusted target declarations; Task 2.4 can later relocate those declarations without changing behavior. The lowering API takes semantic input and protocol-neutral policy, **not** `protocol::GenerationRequestEnvelope`. Keep envelope handling, native source admission and wire-specific validation in the protocol callers. Remove duplicate encoder checks only once the corresponding shared check preserves strict admission and the same failure boundary. Remove the transitional projector when no caller needs it.
 - **Exit:** Independent wire → IR and IR → wire checks cover affected targets, including negative cases, tool order, history replay and conversion reporting. A test count alone does not establish equivalence.
 
