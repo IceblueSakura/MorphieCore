@@ -31,7 +31,7 @@ The Generation baseline has met the selected [partial-delivery exit](roadmap/ind
 | Generation and protocol integration | Standard Chat, Responses and Messages cover JSON/SSE, tools and native reasoning/history. Independent directional fixtures and connected SDKs verify stateless continuation. Google is upstream-only; ordinary signatures without a standard carrier reject explicitly. |
 | Agent workflows and discovery | Isolated pi/OpenCode tool, recall, summary and recovery workflows are accepted. Gateway discovery reaches Pi model storage and session planning. Client and binding qualifications remain separately scoped. |
 | Runtime and credentials | Synthetic checks cover bounded retry, delivery and cancellation, credential isolation, OAuth renewal and pending verification. |
-| Diagnostics | The [observability gate](refactoring-plan.md#task-33-verify-the-eight-observability-criteria) passed with synthetic traffic, including indexed queries, privacy and queue-loss isolation. This does not qualify a production backend. |
+| Diagnostics | Synthetic checks cover indexed log-to-trace queries, request/attempt and OAuth lifetimes, final export privacy, queue-loss isolation and behavior with diagnostics on or off. See the [observability contract](architecture/runtime-and-routing.md#observability). This does not qualify a production backend. |
 | Standalone tasks | Independent Embeddings accepts text, selected scoped tokens and float/Base64 output. Static image/audio paths do not establish expanded modality or resource lifecycles. |
 | Real services and deployment | Real evidence applies only to the qualified bindings and workflows. Compatible-account failover remains unscheduled; deployment requires separate authorization. |
 

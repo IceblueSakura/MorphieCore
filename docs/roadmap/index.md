@@ -29,7 +29,7 @@ This page owns current scope, planned execution sequence, stage priorities, and 
 
 Stateful upstream/downstream APIs remain [experimental and disabled](../architecture/history-and-replay.md#stateful-history). Their acceptance is excluded from current model adaptation and repairs until explicit user activation; no other work package enables them implicitly.
 
-The [observability prerequisite](../refactoring-plan.md#task-33-verify-the-eight-observability-criteria) is complete on synthetic development evidence. Existing static carriers do not activate new public APIs.
+Existing static carriers do not activate new public APIs.
 
 Other limitations and prerequisites share the [issue register](unscheduled-issues.md#unscheduled-issues); R09 real-account failover, remaining model-service qualification and Agent session storage retain separate scheduling decisions and are not implicit Stage-4 prerequisites.
 
