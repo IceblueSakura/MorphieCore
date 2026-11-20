@@ -162,48 +162,98 @@ async fn fresh_account_setup_live_runner_and_diagnostics_share_the_production_lo
         serde_json::from_slice::<Value>(&valid.stdout).unwrap()["accounts_checked"],
         2
     );
-    // The Python constructor must reach the actual CLI, not a mocked Popen or __new__.
     let run = root.join("run");
     std::fs::DirBuilder::new().mode(0o700).create(&run).unwrap();
-    let mut command = tokio::process::Command::new("python3");
-    command
+    let write_run = |name: &str, value: Value| {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(run.join(name))
+            .unwrap()
+            .write_all(&serde_json::to_vec(&value).unwrap())
+            .unwrap();
+    };
+    let client_key = "synthetic-bootstrap-client-key-0001";
+    write_run(
+        "auth.json",
+        json!({"version":1,"agents":[{"agent_id":"fixture-agent","key":client_key}]}),
+    );
+    write_run(
+        "models.json",
+        json!({"version":1,"models":{"claude-haiku-5-5":{
+            "total_timeout_ms":120000,
+            "candidates":[{"binding":"opencode-go-haiku-messages","maximum_output_tokens":2048,"default_output_tokens":null}]
+        }}}),
+    );
+    write_run(
+        "gateway.json",
+        json!({
+            "version":1,
+            "accounts_file":accounts,
+            "credentials_dir":store,
+            "auth_file":"auth.json",
+            "bind":"127.0.0.1:0",
+            "models_file":"models.json",
+            "delivery":{"exchange_timeout_ms":120000},
+            "diagnostics":{"endpoint":collector.endpoint}
+        }),
+    );
+    let mut process = tokio::process::Command::new(env!("CARGO_BIN_EXE_morphiecore"))
+        .args(["--config", run.join("gateway.json").to_str().unwrap()])
         .env_clear()
-        .env("HOME", root)
-        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .args([
-            "-c",
-            r#"
-import json, sys
-from pathlib import Path
-sys.path.insert(0, "tests/sdk")
-from messages_inputs_live import Gateway, GateError, MODEL, CAP
-root, accounts, store = map(Path, sys.argv[2:5])
-gateway = Gateway(Path(sys.argv[1]), root, 1, accounts=accounts, store=store, diagnostics=sys.argv[5])
-try:
-    try:
-        gateway.generate({"model":MODEL,"messages":[{"role":"user","content":"synthetic"}],
-                          "max_tokens":CAP,"stream":False})
-    except GateError as error:
-        assert str(error) == "http_529"
-    else:
-        raise AssertionError("synthetic failure was hidden")
-finally:
-    gateway.close()
-"#,
-        ])
-        .arg(env!("CARGO_BIN_EXE_morphiecore"))
-        .arg(&run)
-        .arg(&accounts)
-        .arg(&store)
-        .arg(&collector.endpoint);
-    let result = child_process::run(&mut command, b"", Duration::from_secs(15), 16 << 10)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut output = tokio::io::BufReader::new(process.stdout.take().unwrap());
+    let ready = match child_line::read_line(&mut output, Duration::from_secs(10), 128).await {
+        Ok(line) => line,
+        Err(error) => {
+            let _ = process.kill().await;
+            let _ = process.wait().await;
+            panic!("{error}");
+        }
+    };
+    let gateway_origin = ready
+        .trim()
+        .strip_prefix("MorphieCore listening on ")
+        .expect("bounded readiness line");
+    assert!(gateway_origin.starts_with("http://127.0.0.1:"));
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .unwrap();
+    let reply = client
+        .post(format!("{gateway_origin}/v1/messages"))
+        .bearer_auth(client_key)
+        .header("anthropic-version", "2026-10-21")
+        .header("x-morphiecore-conversation-id", "messages-input-acceptance")
+        .json(&json!({
+            "model":"claude-haiku-5-5",
+            "messages":[{"role":"user","content":"synthetic"}],
+            "max_tokens":2048,
+            "stream":false
+        }))
+        .send()
         .await
         .unwrap();
+    assert_eq!(reply.status().as_u16(), 529);
+    assert_eq!(
+        unsafe { libc::kill(process.id().unwrap() as libc::pid_t, libc::SIGINT) },
+        0
+    );
+    let exited = tokio::time::timeout(Duration::from_secs(5), process.wait_with_output())
+        .await
+        .unwrap()
+        .unwrap();
     assert!(
-        result.status.success(),
+        exited.status.success(),
         "{}",
-        String::from_utf8_lossy(&result.stderr)
+        String::from_utf8_lossy(&exited.stderr)
     );
     assert_eq!(calls.lock().unwrap().len(), 1);
     assert_eq!(calls.lock().unwrap()[0].0, "synthetic-primary");
