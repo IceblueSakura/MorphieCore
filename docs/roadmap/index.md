@@ -97,7 +97,7 @@ Selected direction: Dual-SDK support (TypeSafe and OpenAI) backed by a unified D
 |---|---|---|
 | Decision | Dual-SDK direction selected; IR drafts under review | Finalize contract selection and implement codecs |
 | Embedding extensions | Existing independent path implemented; additional extensions unselected | Select a concrete extension contract |
-| Images Generate | Grok static codec implemented; public contracts under review | Select standard versus explicit native-output delivery, encoding defaults separately from Base64/URL carriage, and required result metadata |
+| Images Generate | Existing static carriers; Grok codec and binding absent | Select standard versus explicit native-output delivery, encoding defaults separately from Base64/URL carriage, and required result metadata |
 | Images Edit & Stream | Research complete; mask boundaries and stream formats unselected | Await static Generate closure |
 | Audio (Speech/ASR) | Static speech/transcription and bounded client multipart intake exist; Aliyun speech consumes upstream SSE. Native multipart upstream preparation and downstream SSE profiles remain unselected | Select bounded single-operation profile |
 | Files & Uploads | Safety requirements defined; storage authority unselected | Select storage authority and ID authorization |
@@ -154,7 +154,7 @@ The [stable routing baseline](../architecture/runtime-and-routing.md#failover) r
 
 ## Integration handoff
 
-Carrier availability in codecs does not imply public route admission. Route admission is controlled by explicit target binding policy in [topology compilation](../../src/topology/compile.rs).
+Carrier availability in codecs does not imply public route admission. Route admission is controlled by explicit target binding policy in [topology compilation](../../crates/morphiecore-catalog/src/topology/compile.rs).
 
 ### Partial-delivery exit
 

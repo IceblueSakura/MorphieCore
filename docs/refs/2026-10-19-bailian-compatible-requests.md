@@ -61,7 +61,7 @@ The compatibility section also describes an approximately 80% input allowance an
 
 No TokenPlan equivalence, array activation, phase omission, reordering or budget policy follows automatically.
 
-The [Bailian dialect](../../src/protocol/openai/dialect/bailian.rs) owns native checks and writers; current binding admission belongs to the catalog and Architecture. Directional offline tests do not establish effective temperature, hard token enforcement, replay validity or live plan acceptance. This source subset does not claim every cache/`x_details` report, hosted/citation/OCR output, standalone modality or native RPC stream. [Development](../development.md#verification-gates) owns verification, not a second field-support inventory.
+The [Bailian dialect](../../crates/morphiecore-protocol/src/openai/dialect/bailian.rs) owns native checks and writers; current binding admission belongs to the catalog and Architecture. Directional offline tests do not establish effective temperature, hard token enforcement, replay validity or live plan acceptance. This source subset does not claim every cache/`x_details` report, hosted/citation/OCR output, standalone modality or native RPC stream. [Development](../development.md#verification-gates) owns verification, not a second field-support inventory.
 
 ## Responses output-format refresh, 2026-11-08
 

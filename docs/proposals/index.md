@@ -54,7 +54,7 @@ Server-side compaction, Batch and Realtime join complete citations/discovery/hos
 
 Detailed operation designs remain proposals; stage-4/5 work is not an exit condition for earlier stages.
 
-Code and tests describe current behavior, not authority over official contracts. The accepted [standards reset and Generation redesign](../architecture/decisions.md#scope-and-activation-decisions) governs further modality implementation and supersedes conflicting legacy mapping assumptions here. This document records unselected operation/resource designs, not a catalog or conformance claim. Provider and binding availability belongs to [the catalog](../../src/topology/catalog.rs) and [startup](../../src/gateway/startup/bootstrap.rs).
+Code and tests describe current behavior, not authority over official contracts. The accepted [standards reset and Generation redesign](../architecture/decisions.md#scope-and-activation-decisions) governs further modality implementation and supersedes conflicting legacy mapping assumptions here. This document records unselected operation/resource designs, not a catalog or conformance claim. Provider and binding availability belongs to [the catalog](../../crates/morphiecore-catalog/src/topology/catalog.rs) and [startup](../../crates/morphiecore-gateway/src/startup/bootstrap.rs).
 
 Under the [stage-4 scheduling decision](../roadmap/index.md#stage-4-scope), Decision, Embedding, Audio, Images, Files/Uploads and Video have equal priority; only their own contract selection and actual dependencies constrain a slice. The proposals below do not approve new IR layouts, delivery dialects, comprehensive coverage or bindings.
 
@@ -145,7 +145,7 @@ Accepted production decisions live in Architecture: [tool examples/document cont
 
 #### Retain legitimate conversation semantics
 
-The existing [Generation request](../../src/semantic/task/generation/request/mod.rs) owns conversation content and settings. Independent [Embedding](../../src/semantic/task/embedding.rs), [SpeechSynthesis](../../src/semantic/task/speech_synthesis.rs), [SpeechRecognition](../../src/semantic/task/speech_recognition.rs) and [ImageGeneration](../../src/semantic/task/image_generation.rs) contracts already exist. They are not standalone operations incorrectly hidden inside Generation.
+The existing [Generation request](../../crates/morphiecore-semantic/src/task/generation/request/mod.rs) owns conversation content and settings. Independent [Embedding](../../crates/morphiecore-semantic/src/task/embedding.rs), [SpeechSynthesis](../../crates/morphiecore-semantic/src/task/speech_synthesis.rs), [SpeechRecognition](../../crates/morphiecore-semantic/src/task/speech_recognition.rs) and [ImageGeneration](../../crates/morphiecore-semantic/src/task/image_generation.rs) contracts already exist. They are not standalone operations incorrectly hidden inside Generation.
 
 Keep these concepts in conversation semantics:
 
@@ -210,26 +210,26 @@ Prefer those local additions over a new generic report store. Existing `TopLogpr
 
 | Evidence entry point | Existing coupling | Proposed treatment |
 |---|---|---|
-| [Shared context](../../src/semantic/context.rs) | `ExecutionHints` mixes cache/identity metadata, `max_tool_calls`, storage/background controls and unit-valued unsupported-field placeholders | Separate Generation execution constraints, service intent and codec admission. Do not extend this envelope into file/job management |
-| [Generation resources](../../src/semantic/task/generation/resources/mod.rs) | Reusable media locations depend on Generation errors, visibility and budgets | Extract only genuinely shared inert source/reference values; retain conversation resource tables and use-site interpretation |
-| [Replay](../../src/semantic/task/generation/history/replay.rs) | Semantic validation names protocol-specific replay formats and carries origin compatibility data | Review carrier/provenance ownership when sharing compaction machinery; retain semantic purpose, owner linkage and all isolation checks |
-| [Attempt preparation](../../src/execution/attempt.rs) | Independent tasks reuse prepared-request/error types located beside Generation-specific intake | Move necessary neutral execution values to an appropriate shared owner, without a framework rewrite |
+| [Shared context](../../crates/morphiecore-semantic/src/context.rs) | `ExecutionHints` mixes cache/identity metadata, `max_tool_calls`, storage/background controls and unit-valued unsupported-field placeholders | Separate Generation execution constraints, service intent and codec admission. Do not extend this envelope into file/job management |
+| [Generation resources](../../crates/morphiecore-semantic/src/task/generation/resources/mod.rs) | Reusable media locations depend on Generation errors, visibility and budgets | Extract only genuinely shared inert source/reference values; retain conversation resource tables and use-site interpretation |
+| [Replay](../../crates/morphiecore-semantic/src/task/generation/history/replay.rs) | Semantic validation names protocol-specific replay formats and carries origin compatibility data | Review carrier/provenance ownership when sharing compaction machinery; retain semantic purpose, owner linkage and all isolation checks |
+| [Attempt preparation](../../crates/morphiecore-runtime/src/execution/attempt.rs) | Independent tasks reuse prepared-request/error types located beside Generation-specific intake | Move necessary neutral execution values to an appropriate shared owner, without a framework rewrite |
 
-These are boundary issues, not evidence that Generation already implements a scheduler. Actual Responses storage is outside the task IR; the shared context currently rejects active unsupported stateful execution. [Gateway history](../architecture/history-and-replay.md#stateful-history) remains experimental and disabled; its dormant process-local store is not durable execution storage.
+These are boundary issues, not evidence that Generation implements a scheduler or durable execution state. Responses resource storage is outside the task IR and [remains disabled](../architecture/history-and-replay.md#stateful-history).
 
 Do not remove opaque replay provenance to simplify types. Any reorganization must preserve carrier compatibility, completeness and deployment isolation. A protocol-specific representation is not a new semantic task.
 
-The conversation [GeneratedAudio](../../src/semantic/task/generation/content/audio.rs) shape requires transcript/reference information that a standalone speech result need not have. Keep conversational replay requirements local; use suitable [shared audio artifacts](../../src/semantic/value/audio.rs) rather than fabricating those facts.
+The conversation [GeneratedAudio](../../crates/morphiecore-semantic/src/task/generation/content/audio.rs) shape requires transcript/reference information that a standalone speech result need not have. Keep conversational replay requirements local; use suitable [shared audio artifacts](../../crates/morphiecore-semantic/src/value/audio.rs) rather than fabricating those facts.
 
 Existing cache options do not establish a complete cache-only operation. Preserve current handling and the separate [deferred prewarming decision](../roadmap/backlog-and-frozen.md#deferred-cache-prewarming); counting and compaction must not reopen it implicitly.
 
 #### Integration constraints to revisit
 
-The [transcription adapter](../../src/adapter/transcription.rs) and [preparation](../../src/execution/transcription.rs) show that a standard downstream transcription endpoint does not establish an OpenAI multipart upstream implementation. Include native upstream preparation, response decoding and stream intake in the audio plan.
+The [transcription adapter](../../crates/morphiecore-protocol/src/adapter/transcription.rs) and [preparation](../../crates/morphiecore-runtime/src/execution/transcription.rs) show that a standard downstream transcription endpoint does not establish an OpenAI multipart upstream implementation. Include native upstream preparation, response decoding and stream intake in the audio plan.
 
-Standalone topology has narrow operation and execution restrictions; see [image routes](../../src/topology/images.rs). Review model identity across operations, task-specific streaming admission and operation bindings during scheduled integration. Do not fabricate separate model identities to bypass a one-operation restriction.
+Standalone topology has narrow operation and execution restrictions; see [image routes](../../crates/morphiecore-catalog/src/topology/images.rs). Review model identity across operations, task-specific streaming admission and operation bindings during scheduled integration. Do not fabricate separate model identities to bypass a one-operation restriction.
 
-Upstream response parsing must remain strict on known fields and ignore unknown fields. Review the shared closed-object helper in [OpenAI image/embedding codecs](../../src/protocol/openai/images.rs) when reopening those contracts; current rejection of unknown response fields is not the intended forward-compatibility policy.
+Upstream response parsing must remain strict on known fields and ignore unknown fields. Review the shared closed-object helper in [OpenAI image/embedding codecs](../../crates/morphiecore-protocol/src/openai/images.rs) when reopening those contracts; current rejection of unknown response fields is not the intended forward-compatibility policy.
 
 ### Three-protocol tool conversion design
 

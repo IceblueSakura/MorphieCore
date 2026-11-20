@@ -20,10 +20,10 @@ See [Architecture Overview](index.md) for system boundaries and core IR semantic
 
 ### Reasoning replay
 
-Upstream opaque tokens and signatures are delivered in tagged [`mc1.`](../../src/protocol/replay_envelope.rs) envelopes via [`protocol::replay_envelope`](../../src/protocol/replay_envelope.rs):
-- **Isolation:** [Startup binding](../../src/gateway/startup/bind.rs) gives native OpenAI reasoning a service-source fingerprint: deployment namespace, credential provenance, Provider, upstream protocol and trusted origin/path. Public and upstream model labels are excluded. Compaction, other native signatures and route/cache identity retain the strict model-specific target fingerprint. Unbound codec callers retain their explicitly supplied origins.
+Upstream opaque tokens and signatures are delivered in tagged [`mc1.`](../../crates/morphiecore-protocol/src/replay_envelope.rs) envelopes via [`protocol::replay_envelope`](../../crates/morphiecore-protocol/src/replay_envelope.rs):
+- **Isolation:** [Startup binding](../../crates/morphiecore-gateway/src/startup/bind.rs) gives native OpenAI reasoning a service-source fingerprint: deployment namespace, credential provenance, Provider, upstream protocol and trusted origin/path. Public and upstream model labels are excluded. Compaction, other native signatures and route/cache identity retain the strict model-specific target fingerprint. Unbound codec callers retain their explicitly supplied origins.
 - **Origin ownership:** Request projection, final JSON checks and event checks share one effective strict target origin. An explicit library origin takes precedence over the bound codec scope; native reasoning then uses its separately bound service-source scope when present. A reasoning-only scope cannot authorize an unbound target. Native carrier checks and assessed history requirements stay separate from identity; catalog replay switches do not gate same-source carriage.
-- **Candidate history transfer:** Incompatible reasoning is omitted on candidate copies under target-specific `chat`, `responses`, `messages`, `gemini` and `interactions` `.transfer-visible-history.v1` rules by the [request projection](../../src/protocol/request.rs), preserving visible messages and semantic tool links. Issuer isolation and assessed carrier availability are separate selectors.
+- **Candidate history transfer:** Incompatible reasoning is omitted on candidate copies under target-specific `chat`, `responses`, `messages`, `gemini` and `interactions` `.transfer-visible-history.v1` rules by the [request projection](../../crates/morphiecore-protocol/src/request.rs), preserving visible messages and semantic tool links. Issuer isolation and assessed carrier availability are separate selectors.
 - **Supported replay carriers:** Anthropic thinking signatures and `redacted_thinking`, Responses `encrypted_content`, Google `thoughtSignature`, Interactions `function_call.signature`. Standard Chat has no reasoning replay carrier.
 - **Responses stream authority:** `response.output_item.done` binds completed reasoning replay once, following the official [streaming contract](https://developers.openai.com/api/reference/resources/responses/streaming-events).
 
@@ -116,7 +116,7 @@ Provider-specific `reasoning_content`, `reasoning_details` and `preserve_thinkin
 
 ### Stateless API boundaries
 
-Chat and Messages callers submit complete message history. Responses callers submit complete `input`; omitted, null or false `store` is stateless, and every nonnull `previous_response_id` rejects. Explicit `store:false` is recommended for standard clients. The caller retains standard returned owners, call IDs, arguments, results and native reasoning carriers unchanged. No gateway conversation memory is used for this path.
+Chat and Messages callers submit complete message history. Responses callers submit complete `input`; see [stateful history](#stateful-history) for the request controls and disabled resource routes. The caller retains standard returned owners, call IDs, arguments, results and native reasoning carriers unchanged. No gateway conversation memory is used for this path.
 
 Responses `reasoning.encrypted_content`, Messages `thinking.signature` and `redacted_thinking.data` retain their native opaque purpose through the tagged envelope. Replay still requires compatible target and credential provenance; a process restart with the same binding preserves that identity. Advisory route affinity is not a replay store and does not promise target retention across restart.
 
@@ -129,7 +129,7 @@ The following ordinary attachments lack a lawful standard stateless carrier:
 | Interactions `step.start.step.signature` or terminal `interaction.steps[].signature` on `type:"function_call"` | The existing scoped decoder represents call-owned continuation | The same call-carrier gap requires rejection if observed. Official ordinary-call field authority and real issuance remain qualified separately; do not infer them from thought signatures |
 | Google thought/reasoning signatures | A genuine reasoning owner, distinct from the ordinary attachments above | Use the existing standard reasoning projection where representable; do not reject the whole Provider family or manufacture a reasoning owner for ordinary attachments |
 
-Removing an ordinary signature would lose continuation state; moving it into reasoning, content, call IDs or diagnostics changes its meaning. No private replay extension supplies a substitute. Experimental managed storage does not provide an active escape hatch while the [stateful freeze](#stateful-history) applies.
+Removing an ordinary signature would lose continuation state; moving it into reasoning, content, call IDs or diagnostics changes its meaning. Neither a private replay extension nor storage supplies a substitute.
 
 Reject before dispatch when the selected request/target contract establishes an impossible guarantee. If an actual response first reveals the attachment, JSON fails before successful delivery; an already-published SSE response ends with the standard error mechanism or abort, never a successful terminal or another attempt. The payload-free internal cause is `codec.unsupported.replay`; the public error uses the protocol's upstream-error envelope (OpenAI `upstream_error`, Messages `api_error`). Do not expose signature bytes in errors.
 
@@ -141,12 +141,10 @@ Compacted conversation summaries are preserved as distinct `Compaction` items wi
 
 Upstream and downstream stateful APIs are experimental test features, disabled until the user explicitly enables them. Model adaptation and issue repairs exclude their functional acceptance. No configuration setting or codec capability activates them.
 
-- **Admission:** Responses `store:true` and every nonnull `previous_response_id` return HTTP 400 with `stateful_api_disabled` before history access or upstream dispatch. Omitted/null/false `store` and a null/omitted predecessor are stateless. Other recognized active stateful controls retain their existing rejection.
-- **Resources:** authenticated Responses retrieval, deletion and input listing return the same disabled error without consulting or mutating snapshots; missing authentication still returns 401 first.
+- **Admission:** Valid Responses `store:true` or a nonnull predecessor reference returns HTTP 400 with `stateful_api_disabled` before dispatch. Malformed known fields still fail validation. Omitted/null/false `store` and a null/omitted predecessor are stateless; explicit `store:false` is recommended. Other recognized active stateful controls retain their existing rejection.
+- **Resources:** authenticated Responses retrieval, deletion and input listing return the same disabled error; missing authentication returns 401 first.
 - **Upstream execution:** send complete history, with Responses and Interactions storage explicitly false and no Provider-held continuation reference. Advisory cache/session grouping remains independent of conversation storage.
-- **Tests:** preserve isolated codec, replay, snapshot-lifetime and cancellation invariants. Stateful acceptance scenarios are explicitly ignored as experimental; current SDK/client and real-Provider gates select stateless workflows only.
-
-The dormant [`managed`](../../src/protocol/openai/responses/managed.rs) codec and process-local TTL store retain typed composition and hidden-signature machinery for experimental work. Their existence grants neither public activation nor current acceptance. Google ordinary text/call signatures without a lawful stateless carrier continue to reject; storage cannot silently rescue them.
+- **Verification:** current SDK/client and real-Provider gates select stateless workflows. Cache-only successors are transient projection state, not an addressable store or a continuation API.
 
 ### Agent session files
 

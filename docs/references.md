@@ -219,4 +219,4 @@ Endpoints, session requirements and terms of use.
 - [RFC 7009 revocation](https://www.rfc-editor.org/rfc/rfc7009.html)
 - [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html)
 
-Product-specific clients, scopes, endpoints and terms (Grok, ChatGPT SIWC) are cited in the driver comments under `src/credential/`. Confirm OpenAI's terms before any remote or persistent SIWC deployment.
+Product-specific clients, scopes, endpoints and terms (Grok, ChatGPT SIWC) are cited in the [credential drivers](../crates/morphiecore-runtime/src/credential/drivers/). Confirm OpenAI's terms before any remote or persistent SIWC deployment.

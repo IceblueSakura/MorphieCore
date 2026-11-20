@@ -89,7 +89,7 @@ Account affinity groups trusted Agent identity, public model and an explicit con
 
 `routing.max_wait_ms` (default 10000) bounds one pre-dispatch wait for a conversation's cooling bound target. Zero disables waiting. New conversations never wait for an unbound candidate; after waiting, lifecycle and cooldowns are checked again within the original request deadline.
 
-Each Provider declaration accepts an optional `recovery` object with the timing fields in [`RecoveryPolicy`](../../src/provider/recovery.rs). Omitted fields use the [defaults below](#recovery-defaults). Settings do not change failure classes, health scopes or the fixed two-send ceiling. `recovery_timeout_ms` bounds the one same-target retry through readiness for deliverable content; zero disables that retry. The original request deadline still bounds all work.
+Each Provider declaration accepts an optional `recovery` object with the timing fields in [`RecoveryPolicy`](../../crates/morphiecore-catalog/src/provider/recovery.rs). Omitted fields use the [defaults below](#recovery-defaults). Settings do not change failure classes, health scopes or the fixed two-send ceiling. `recovery_timeout_ms` bounds the one same-target retry through readiness for deliverable content; zero disables that retry. The original request deadline still bounds all work.
 
 An API-key account may set `base_url` to a complete trusted API root. The catalog appends an explicit operation-relative suffix: `https://relay.example/custom/v1` plus `responses` becomes `/custom/v1/responses`. Omission retains each operation's original catalog target. HTTPS is required except for literal loopback HTTP; userinfo, queries, fragments and unsafe paths reject. OAuth overrides reject before credential borrowing.
 

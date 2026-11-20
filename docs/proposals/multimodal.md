@@ -66,7 +66,7 @@ Separate downstream API, task meaning and upstream carrier:
 
 Neither path needs `GenerationRequest`, `GenerationResponse` or the Generation reducer. A documented TTS carrier placing supplied text in an `assistant` field is wire encoding, not a fabricated conversation turn in IR.
 
-The existing [MiMo audio codec](../../src/protocol/xiaomi_audio.rs), [speech adapter](../../src/adapter/speech.rs) and [transcription adapter](../../src/adapter/transcription.rs) already demonstrate this separation. Preserve and evolve that path; catalog registration does not establish activation or live acceptance.
+The existing [MiMo audio codec](../../crates/morphiecore-protocol/src/xiaomi_audio.rs), [speech adapter](../../crates/morphiecore-protocol/src/adapter/speech.rs) and [transcription adapter](../../crates/morphiecore-protocol/src/adapter/transcription.rs) already demonstrate this separation. Preserve and evolve that path; catalog registration does not establish activation or live acceptance.
 
 Retain exact task intent and explicit target capabilities. Map supported media/control carriers, reject unsupported voice, speed, format, timing or speaker requirements, and preserve available accounting under the selected reporting policy. Do not reinterpret ASR as translation or substitute a nearby voice silently.
 
@@ -76,7 +76,7 @@ Treat this as a separate optional audio slice: migrate existing static mappings 
 
 ## Image production and editing
 
-The current task and execution path implement bounded static Generate, not Edit or streaming. The selected Grok codec does not establish a downstream contract or gateway binding. [Dated OpenAI evidence](../refs/2026-10-22-embedding-image-contracts.md#images) and [Grok observations](../refs/2026-10-22-grok-imagine.md#images) distinguish the official schema, model-effective controls and unresolved source discrepancies.
+The current task and execution path implement bounded static Generate, not Edit or streaming. There is no current Grok codec or binding. [Dated OpenAI evidence](../refs/2026-10-22-embedding-image-contracts.md#images) and [Grok observations](../refs/2026-10-22-grok-imagine.md#images) distinguish the official schema, model-effective controls and unresolved source discrepancies.
 
 ### Image requests and target admission
 
@@ -190,7 +190,7 @@ Before implementation, review isolated directional examples: native `data` witho
 
 One existing boundary repair also belongs in the selected static slice: OpenAI/OpenRouter upstream image parsing currently shares closed-object helpers and rejects unknown members, unlike the strict-known/ignore-unknown rule. Separate upstream tolerance from downstream admission; retain strict known fields, duplicate-key rejection and resource bounds. Do not accidentally admit unsupported client controls while fixing upstream extensibility.
 
-Grok OAuth support and entitlement are subsequent independent integration questions. The API-key-only image topology/gateway checks need responsible-layer changes under the selected contract, not a weakened Provider check or a duplicate model identity. The existing pure codec remains disconnected until those gates pass.
+Grok OAuth support and entitlement are subsequent independent integration questions. The API-key-only image topology/gateway checks need responsible-layer changes under the selected contract, not a weakened Provider check or a duplicate model identity.
 
 ### Image streaming lifecycle
 
@@ -224,7 +224,7 @@ Buffered static images split into chunks do not establish upstream progressive d
 | Decision | Recommendation and alternative | Blocks |
 |---|---|---|
 | Operation/source ownership | Generate/Edit family, ordered neutral sources and explicit source-zero mask. Start with immutable byte-owned inputs and a total materialization budget; a later spool-backed part plan is a separate choice | Edit IR and multipart execution, not existing Generate maintenance |
-| Static Generate public contract | [Explicit native-output profile proposal](#static-generate-review-proposal), separate native surface or disconnected Grok. Select defaults, report shape and client opt-in together; native ratio/tier exposure is independently selectable | Grok public admission, defaults and binding, not its existing pure codec or later Edit/stream review |
+| Static Generate public contract | [Explicit native-output profile proposal](#static-generate-review-proposal), separate native surface or no Grok integration. Select defaults, report shape and client opt-in together; native ratio/tier exposure is independently selectable | Grok codec and binding, public admission and defaults; not Edit or streaming |
 | Mask profile and validation | Conservative PNG-declared source/mask and byte subset, retaining native pixel/alpha validation. Local metadata inspection instead needs an explicit inert-media policy exception | Masked Edit admission, not unmasked direct-input design |
 | Stream association and reports | Initially one final output; task-local preview/final lifecycle and separate settings/event-time owners. Select omission/null behavior without inventing a preview default | Streaming, not static Generate/Edit |
 

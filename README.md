@@ -27,7 +27,7 @@ MorphieCore is a local gateway that hides LLM Provider differences behind a sing
 
 ## Quick start
 
-Configuration templates live in [`config/`](config/). Copy them to private deployment storage and set valid API keys before starting:
+Follow [configuration templates](docs/usage/gateway-configuration.md#configuration-templates) to select a private directory, copy the public examples and provision credentials before starting:
 
 ```sh
 # Run the gateway
@@ -45,7 +45,7 @@ See [Usage](docs/usage/index.md) for full configuration and startup details.
 ## Source navigation
 
 - **Architecture layers:** See [Architecture's layer map](docs/architecture/index.md#layers-and-data-flow).
-- **Providers and topology:** Defined in [providers.json](src/provider/providers.json), [catalog loader](src/provider/catalog.rs), [topology catalog](src/topology/catalog.rs), and [bootstrap](src/gateway/startup/bootstrap.rs).
+- **Providers and topology:** [Shared Provider metadata](docs/architecture/index.md#shared-provider-metadata) links the embedded data, compilation and startup binding.
 - **Test suites:** Mapped in [Development](docs/development.md#test-layout).
 
 MorphieCore is licensed under the [MIT License](LICENSE). External references preserve their original licenses.

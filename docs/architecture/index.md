@@ -108,18 +108,16 @@ Downstream HTTP intake (authenticate and bound body collection)
   → Acknowledged body delivery
 ```
 
-| Module | Core Responsibility | Invariant Boundary |
+Production crates depend only toward earlier rows; direct dependencies on lower layers are allowed. The root package owns binaries and integration tests. The two test crates provide protocol fixtures and loopback harnesses without entering the normal production graph.
+
+| Crate | Core Responsibility | Invariant Boundary |
 |---|---|---|
-| `semantic` | Task definitions, validation, invariants, and stream reduction | No protocol, Provider, or network dependencies |
-| `protocol` | Wire codecs, dialects, envelope preparation, and carrier-specific admission | No I/O, credential, or runtime execution dependencies |
-| `lowering` | Typed dispositions and candidate-local semantic transformations | No model lookup, envelope or wire grammar in semantic projection |
-| `adapter` | Protocol codec dispatch based on target binding rules | Pure transformations; no I/O or publication state |
-| `topology` | Model routing table: public model → route → endpoints | Endpoints define fixed origins, paths, and credential scopes |
-| `execution` | Candidate attempt planning, lifecycle, and delivery state | No agent loop, tool execution, or prompt planning |
-| `transport` | HTTP client execution and body I/O | Executes prepared trusted requests only |
-| `account` | Named account declarations and effective target/credential binding | No secret duplication or caller-controlled target selection |
-| `credential` | Credential store, API keys and managed OAuth registrations | Credentials never enter semantic IR |
-| `gateway` | Ingress listener, startup, budgets, routing, and cancellation | Ingress binds loopback only |
+| [`semantic`](../../crates/morphiecore-semantic/) | Typed task union, invariant checks and event reduction | No protocol, Provider, target or I/O dependencies |
+| [`lowering`](../../crates/morphiecore-lowering/) | Typed dispositions and candidate-local semantic transformations | No model lookup, envelope or wire grammar |
+| [`protocol`](../../crates/morphiecore-protocol/) | Codecs, dialects, adapters and carrier admission | Pure transformations; no credentials, I/O or publication state |
+| [`catalog`](../../crates/morphiecore-catalog/) | Embed Provider metadata and compile model bindings into topology | Trusted origins, paths and allowed authentication derive from catalog and operator configuration, never request content |
+| [`runtime`](../../crates/morphiecore-runtime/) | Account binding, credentials, HTTP transport, execution and delivery state | Execute trusted prepared exchanges; no Agent loop or tool execution |
+| [`gateway`](../../crates/morphiecore-gateway/) | Startup and loopback ingress, request orchestration, routing and handoff | Owns cancellation and publication independently of telemetry |
 
 #### Domain vocabulary and failure contracts
 
@@ -261,7 +259,7 @@ Retained projections must fit root declaration capacity (namespace containers an
 
 Responses input accepts only developer batches.
 
-Native output preserves every declared role without creating an instruction; manual and managed replay reject non-developer batches.
+Native output preserves every declared role without creating an instruction; stateless replay rejects non-developer batches.
 
 Added snapshots may be empty; the bounded `ToolBatchSnapshot` event installs the final definitions before observed item completion.
 

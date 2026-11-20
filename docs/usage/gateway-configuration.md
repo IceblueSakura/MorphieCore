@@ -36,12 +36,14 @@ The repository's [`config/`](../../config/) directory contains public templates,
 | [`models.tasks.example.json`](../../config/models.tasks.example.json) | Optional existing Embedding, Images, Speech and explicit Transcription binding selection, without Generation overrides |
 | [`pi-deepseek.example.json`](../../config/pi-deepseek.example.json) | Optional pi client model declaration for DeepSeek through the gateway; merge into pi's `models.json`, not gateway model configuration. See [Chat Completions](client-requests.md#chat-completions) |
 | [`nginx.example.conf`](../../config/nginx.example.conf) | Optional TLS virtual host, gzip SSE, proxy safety controls and example pre-authentication connection/upload limits; include from `http {}` |
+| [`otelcol.example.yaml`](../../config/otelcol.example.yaml), [`otelcol.example.service`](../../config/otelcol.example.service) | Optional loopback diagnostics receiver and user unit; see [setup and retention](#loopback-file-receiver) |
 
 Choose one model template as `models.json`, or deliberately combine selected entries under one `models` object. The loader does not merge files, expand placeholders or discover templates. The advanced Messages candidate clears its output default, so uncapped requests require an explicit cap. Account targets remain independently configured.
 
 For a **new** Unix installation, run from the repository root. This refuses to overwrite existing files or symlinks:
 
 ```sh
+ROOT="${ROOT:-$HOME/.local/share/morphiecore}"  # Or set ROOT to a fresh private directory.
 (
     set -eu
     config="$ROOT"
@@ -99,8 +101,8 @@ Keep edited copies, credentials, certificates and captures outside the repositor
 | `routing` | Global affinity, pre-dispatch wait and downstream retry-hint policy |
 | `oauth` | Global credential-maintenance timing |
 | `delivery` | Total request deadline and text batching |
-| `resources` | Concurrent exchanges, body budgets and Responses history retention |
-| `diagnostics` | Optional trusted OTLP Logs destination and bounded private-body policy; see [Failure diagnostics](#failure-diagnostics) |
+| `resources` | Concurrent exchanges, request/response body budgets and upload deadline |
+| `diagnostics` | Optional trusted OTLP Logs/Traces destination and bounded private-body policy; see [Failure diagnostics](#failure-diagnostics) |
 
 Paths in the service file resolve relative to that file, not the process working directory. CLI paths remain explicit process-relative or absolute paths.
 
@@ -115,11 +117,10 @@ The configuration uses **version 1**. Policy fields belong to the following obje
 | `resources` | `concurrency: 16` | 1–256; body collection occupies a permit |
 | `resources` | `request_bytes: 33554432`, `response_bytes: 67108864` | Each 1–67108864 bytes; intersect with endpoint/task limits. A budget too small to publish discovery rejects startup |
 | `resources` | `body_timeout_ms: 60000` | 1–60000 ms; additional upload ceiling within the total request budget; whichever deadline expires first ends collection |
-| `resources` | `history_entries: 1024`, `history_bytes: 268435456`, `history_ttl_ms: 1800000` | Dormant experimental storage bounds: entries 1–4096, bytes 1–1073741824, TTL 1–86400000 ms. These settings do not activate stateful APIs |
 
 These are deployment budgets, not new protocol capabilities. Transcription retains its independent multipart upload ceiling; image/audio/event and internal queue ceilings remain code-owned. Compiled Generation attempts retain a one-hour ceiling and standalone task operations retain their own ceilings (currently 120 seconds). OAuth HTTP operations retain a 30-second ceiling and a 10-second connection timeout. Raising an outer deadline does not enlarge these inner ceilings.
 
-Responses storage remains [experimental and disabled](../architecture/history-and-replay.md#stateful-history). Its existing bounds apply only to dormant test machinery; no deployment setting enables storage or reference continuation.
+Decoded static images default to 2 MiB per image and 2 MiB in aggregate at the gateway, below the semantic 8 MiB ceilings. Binary Speech defaults to 8 MiB below its 16 MiB semantic ceiling. Effective limits also respect tighter endpoint and response bounds. These media budgets are not fields in `gateway.json`. See [stateful history](../architecture/history-and-replay.md#stateful-history) for the separate Responses admission boundary.
 
 Inspect available bindings without configuration or credentials, then validate or explain an explicit setup without starting a listener, renewal, diagnostics:
 
@@ -185,29 +186,11 @@ Diagnostics are opt-in. Set `diagnostics` to an explicit trusted OTLP/HTTP base 
 
 Omit `diagnostics` or set it to `null` to disable both exporters. Export disables proxy inheritance and redirects; ambient `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_LOGS_HEADERS` and `OTEL_EXPORTER_OTLP_TRACES_HEADERS` are rejected rather than used as another authentication path. Resources and initial all-on sampling are explicit rather than ambient Resource/Sampler enrichment. Use an existing trusted local Collector if backend authentication or persistent queuing is needed. This configuration does not deploy a receiver.
 
-HTTP lifecycle events use the official `tracing` Logs bridge and correlate with a `gateway.request` server span. The span follows response-body completion, error or consumer closure, not just handler return. Authentication rejection emits body-free `gateway.auth.rejected` before any private capture. `gateway.http.started` and `gateway.http.finished` are INFO; their fields use `morphiecore.*`, and OTLP carries native trace/span IDs. An unobserved body EOF is `consumer_closed`, not proof of inference cancellation or remote receipt.
+Use the [observability contract](../architecture/runtime-and-routing.md#observability) to interpret span lifetimes, milestones, severity and failure attribution. For failure queries, start at WARN/ERROR and filter the available `request_id`, `agent_id`, `operation`, `provider`, `account`, `model`, `upstream_model`, `attempt`, `stage`, `error.type` and `retry.planned` fields. Follow native trace/span IDs rather than caller/session headers.
 
-The HTTP span contains internal `gateway.operation` and `gateway.attempt` spans. An attempt covers preparation through its local result/delivery, not network-only latency. Generation's SDK events locate `gateway.upstream.sent`, `.headers`, `.terminal`, `.eof`, and `gateway.client.published`, `.first_handoff`, `.final_handoff`. Common send/head/handoff hooks also cover activated standalone tasks; semantic terminal events are not invented for carriers without them. Candidate rejection is a bounded `gateway.candidate.rejected` event on the operation span. These events do not generate per-stage/per-token log records and do not depend on DEBUG logging.
-
-`gateway.operation.finished` is the bridged INFO summary, with `morphiecore.*` fields including `operation`, `outcome`, `model`, `send_attempts`, `response.outcome` and delivery/validation observations. A failed attempt retains its own status without marking a successfully recovered operation failed. Existing failure events remain `gateway.failure`, optional `gateway.failure.response`, and background `gateway.credential.failure`; their structured bodies use the same SDK Logs provider/exporter. The primary failure references the responsible attempt or operation; delayed client-response capture references the HTTP request, even after that span ends or another context becomes current. Raising verbosity never enables private bodies.
-
-`gateway.upstream.http` is the attempt's HTTP client span; it closes on body EOF, transport failure or an undrained exit, not at headers. `gateway.client.first_projected_content` marks the first actual projected Generation content, not a lifecycle frame or completed delivery. OAuth renewal traces contain `credential.http` and `credential.storage` spans. The renewal caller's `gateway.credential.caller_finished` event can precede a durable storage publication; it is not a commit receipt.
-
-Query severity WARN/ERROR, then `request_id`, `agent_id`, `operation`, `provider`, `account`, `model`, `upstream_model`, `attempt`, `stage`, `error.type` and `retry.planned` when present.
-
-Request IDs are gateway-generated runtime nonces/sequences, never caller identity/session/trace headers. Local trace roots also ignore incoming trace/baggage headers.
-
-In existing adaptation failure logs, `http.response.status_code` is the observed upstream head and `gateway.error.status_code` is the selected local error presentation. On the HTTP server span/lifecycle logs, `http.response.status_code` is the downstream response status.
-
-`client.handoff_complete:true` describes acknowledged final-frame local delivery, not remote receipt or successful inference. `response.outcome` separately records the decoded Generation result when available.
-
-At WARN, normal successful requests have no log entry but still produce server spans. The default INFO adds metadata-only starts and summaries, not successful exchange archives. A failed attempt selected for recovery is WARN, not proof of recovery. Source failures inside HTTP 200 remain failures; ordinary disconnect/shutdown alone does not create an ERROR. HTTP server status and body observations do not replace Generation semantic results. Closed categories and source boundaries remain useful without bodies. [Architecture](../architecture/runtime-and-routing.md#observability) owns classification.
-
-Use native trace/span IDs, SDK span start/end and event timestamps to query timing; the application no longer maintains separate diagnostic elapsed clocks or log sequence counters. `send_attempts` counts actual transport send invocations, not preflight candidates or proven upstream execution. `attempt`/`morphiecore.attempt` identify the preparation/send slot, which can fail before dispatch. First handoff may carry only lifecycle frames and is not TTFT. Terminal validation, EOF validation, publication and final handoff remain independent observations. The operation summary's `morphiecore.outcome:complete` means local processing completed; inspect `morphiecore.response.outcome` for incomplete or failed generation. Native `source.last_event.sequence` remains source decode context, not a gateway-generated log counter.
-
-Decode failures include `conversion.boundary` and `decode.operation` (`push` or `finish`). Responses SSE also reports `source.last_event.type`, `.ordinal` and, when representable, `.sequence`. The last complete frame is context, not necessarily the cause of a subsequent framing/EOF failure. A prior source failure keeps primary attribution; `handling.error.type` and decode context separately identify a later handling failure. Unrecognized names become `unknown`; no raw payload or arbitrary event name is retained. Google strict-tool rejection includes `tool.declaration_index` and a closed `tool.constraint`, without tool/property names or schema values. Preflight logs carry the trusted public model before any upstream is selected.
-
-Each SDK signal queue holds 2048 records/spans and schedules a 100 ms flush. Logs batch at most four records so maximum private captures fit the export-size bound; traces batch at most 128 spans. Span attributes/events use SDK limits. HTTP export has a two-second timeout, no retries and a 1 MiB request bound. Saturation/export/flush failures issue one fixed body-free stderr warning per telemetry owner; inference does not wait or change behavior. Queue saturation can lose failures; private capture increases serialized record sizes. The binary waits for request workers and required credential commits before explicitly shutting down both providers off async workers, sharing a five-second telemetry deadline. Early post-bootstrap exits also close providers. Embedded owners stop producers before `shutdown_diagnostics`; `flush_diagnostics` only requests a flush. Last-owner drop does not wait for export.
+- `http.response.status_code` describes the observed head on that side of the exchange, whereas `gateway.error.status_code` is the chosen local error presentation. For a completed operation, inspect `morphiecore.response.outcome` separately for incomplete or failed Generation.
+- Decode failures can include `conversion.boundary` and `decode.operation` (`push` or `finish`). Responses SSE can also include `source.last_event.type`, `.ordinal` and `.sequence`; a last complete frame is context, not proof that it caused the failure. `handling.error.type` separates a later handling error from the retained original source failure. Google strict-tool rejection exposes a declaration index and closed constraint, not tool/property names or values.
+- The two SDK queues hold up to 2,048 signals each, scheduled on a 100 ms flush. Batches hold up to four log records or 128 spans. HTTP export has a two-second timeout and a 1 MiB request bound; the two providers share a five-second shutdown budget. These are fixed safeguards, not configuration knobs. Private capture is never enabled by raising log verbosity. Embedded owners stop producers before calling `shutdown_diagnostics`; `flush_diagnostics` only requests a flush.
 
 The receiver owns retention, access and durability. The application owns no diagnostic files, rotation, tail recovery or metrics pipeline. Set `MORPHIECORE_REVISION` when building a release to populate `morphiecore.build.revision`; otherwise it is `unknown`.
 
@@ -267,7 +250,7 @@ With the [pinned development backend](../references.md#telemetry-dependency-sele
 
 `models.json` owns explicit public-model selection and ordered upstream candidates. Start with [`models.example.json`](../../config/models.example.json); the separate [advanced](../../config/models.advanced.example.json) and [standalone-task](../../config/models.tasks.example.json) templates demonstrate optional configuration shapes without expanding the default activation.
 
-Use `morphiecore --catalog` to select a registered public label and its catalog endpoint IDs. Each candidate expands that Provider's enabled accounts in declaration order; account names, targets and credential references belong only in [accounts.json](credentials-and-diagnostics.md#configure-accounts). Binding definitions are in [the catalog](../../src/topology/catalog.rs). Omitted model controls inherit the binding's values.
+Use `morphiecore --catalog` to select a registered public label and its catalog endpoint IDs. Each candidate expands that Provider's enabled accounts in declaration order; account names, targets and credential references belong only in [accounts.json](credentials-and-diagnostics.md#configure-accounts). Binding definitions are in [the catalog](../../crates/morphiecore-catalog/src/topology/catalog.rs). Omitted model controls inherit the binding's values.
 
 `deepseek-v4.1-flash-1017` is the public DeepSeek ID. Native upstream requests use `deepseek-flash`; DashScope uses its exact dated upstream name. Select Provider `deepseek` with `deepseek-chat` or `deepseek-responses`: their default paths are `/beta/chat/completions` and `/beta/responses`, using the same account domain. Non-strict requests stay non-strict. A complete account API-root override supplies its own prefix; use `https://api.deepseek.com/beta` to retain the default beta paths. The public label does not pin the native service's moving alias to an immutable revision.
 
@@ -403,7 +386,7 @@ Select `dashscope-qwen-asr` for metered DashScope or `tokenplan-qwen-asr` for To
 
 Model optional fields reject explicit null except the named Messages default-clearing field. Standalone tasks reject Generation-only fields even when an array is empty. Candidate controls are validated for disabled accounts as well as enabled ones; enablement only selects routing participation.
 
-The file supports at most 64 models and 64 candidates per model, with at most 64 expanded account targets per public-model/client entry. Unknown bindings, mismatched model identities, duplicate deployments and invalid account references fail startup. See [service loading](../../src/gateway/startup/bootstrap.rs) and [model assembly](../../src/gateway/startup/models.rs).
+The file supports at most 64 models and 64 candidates per model, with at most 64 expanded account targets per public-model/client entry. Unknown bindings, mismatched model identities, duplicate deployments and invalid account references fail startup. See [service loading](../../crates/morphiecore-gateway/src/startup/bootstrap.rs) and [model assembly](../../crates/morphiecore-gateway/src/startup/models.rs).
 
 ### Delta coalescing
 
@@ -470,7 +453,7 @@ All three executables (`morphiecore`, `morphiecore-auth`, `morphiecore-upstream`
 
 Ctrl-C shuts down the listener and cancels in-flight upstream work.
 
-For Rust embedding, `Gateway::new` takes a compiled topology and one `TaskEntries` value with separate Generation, Images, Speech, Transcription and Embeddings lists. Empty lists activate nothing. Credentials and limits remain explicit; the embedded constructor does not opt into environment proxies. Each Generation entry names one client protocol (Chat, Responses or Messages); file-configured models expose all three. See [task entries](../../src/gateway/startup/entries.rs) and [binding](../../src/gateway/startup/bind.rs).
+For Rust embedding, `Gateway::new` takes a compiled topology and one `TaskEntries` value with separate Generation, Images, Speech, Transcription and Embeddings lists. Empty lists activate nothing. Credentials and limits remain explicit; the embedded constructor does not opt into environment proxies. Each Generation entry names one client protocol (Chat, Responses or Messages); file-configured models expose all three. See [task entries](../../crates/morphiecore-gateway/src/startup/entries.rs) and [binding](../../crates/morphiecore-gateway/src/startup/bind.rs).
 
 ### Binary-only SSH releases
 
@@ -482,7 +465,7 @@ nix develop .#release --command cargo build --release --bins --locked --offline
 
 The Linux-only `release` shell uses the pinned Rust toolchain and musl compiler. On x86_64, outputs are in `target/x86_64-unknown-linux-musl/release/`; on aarch64, use `target/aarch64-unknown-linux-musl/release/`. These static executables need no remote Nix store, Cargo, compiler or source checkout. Ordinary `target/release/` binaries built in the development shell retain Nix runtime dependencies and are not standalone deployment artifacts. Nix may fetch the pinned build environment before the offline Cargo build.
 
-Keep private configuration and credentials outside release directories. For an existing user service, inspect `systemctl --user show morphiecore.service -p ExecStart -p WorkingDirectory -p DropInPaths` before changing paths. Preserve its configuration path, credential overrides, proxy settings and lifecycle controls. The `llmapi` deployment uses this final override at `~/.config/systemd/user/morphiecore.service.d/30-binary-release.conf`:
+Keep private configuration and credentials outside release directories. For an existing user service, inspect `systemctl --user show morphiecore.service -p ExecStart -p WorkingDirectory -p DropInPaths` before changing paths. Preserve its configuration path, credential overrides, proxy settings and lifecycle controls. For example, put a final override at `~/.config/systemd/user/morphiecore.service.d/30-binary-release.conf`:
 
 ```ini
 [Service]
@@ -499,7 +482,7 @@ From the local repository root, use Bash to upload only the three executables in
 
 ```bash
 set -euo pipefail
-HOST=llmapi
+: "${HOST:?Set HOST to the target SSH host or alias}"
 OUT=target/x86_64-unknown-linux-musl/release
 RELEASE="$(git rev-parse --short=12 HEAD)-$(date -u +%Y%m%dT%H%M%SZ)"
 REMOTE_DIR=".local/lib/morphiecore/releases/$RELEASE"

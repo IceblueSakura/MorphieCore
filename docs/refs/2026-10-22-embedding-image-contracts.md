@@ -162,27 +162,7 @@ The pinned Edit parameters and current completed-event schema include safety-ide
 
 ### Grok and current code boundaries
 
-Grok's guide warns that its JSON Edit contract differs from the OpenAI SDK's multipart call. Its URL/data-URL inputs can be passed to its native carrier without a gateway downloader. No equivalent OpenAI mask/input-fidelity or progressive preview grammar is established by the inspected Grok pages.
-
-Grok's generation guide returns temporary URLs by default and admits explicit Base64.
-
-This chooses transport representation, not a guaranteed PNG encoding.
-
-Native aspect ratio/resolution tiers are not exact pixels.
-
-The guide describes automatic quality as currently low for generation and medium for editing; keep explicit Auto delegated rather than freezing that behavior.
-
-Creation time is not required in the inspected native result; model/moderation reports and sparse native accounting need their own carriers.
-
-The [earlier note](2026-10-22-grok-imagine.md#images) retains REST/guide discrepancies.
-
-The [current image task](../../src/semantic/task/image_generation.rs) is static Generate with bounded Base64 artifacts and an 8-MiB aggregate decoded final budget. Edit inputs, masks and stream events do not exist there. Optional creation/model/usage facts do exist; they must not be synthesized at delivery.
-
-The current [prepared upstream request](../../src/execution/attempt.rs) owns materialized bytes; [image preparation](../../src/execution/images.rs) builds JSON. There is no existing image multipart/spool ownership contract to inherit. Architecture's [inert-media policy](../architecture/adaptation-and-dialects.md#media) also leaves actual image validity and pixel dimensions upstream; local mask inspection would require a separately selected exception, not merely a new upload parser.
-
-The [standard encoder](../../src/protocol/openai/images.rs) requires `created`, forbids a reported model, requires compatible top-level artifact reports and rejects streaming. The [Grok codec](../../src/protocol/grok/images.rs) can honestly preserve absent creation time/model/native accounting, but no public binding is active. Existing [accounting projection](../../src/protocol/image/projection.rs) does not fix missing timestamps, serving-model carriage or default-PNG incompatibility. Adding a binding alone therefore cannot establish faithful OpenAI delivery.
-
-The static image topology currently assumes an API key and one operation. Those restrictions require selected integration changes, not duplicate public model identities or weakened trusted-Provider checks. Video deferral, Files authorization and stage-5 hosted image tools are unchanged.
+The [Grok note](2026-10-22-grok-imagine.md#images) owns the native guide and REST observations, including JSON Edit versus OpenAI multipart, temporary URLs, native aspect/tier controls and missing mask/preview equivalence. The dated comparison below retains the consequences for standard Generate.
 
 ### Static Generate source recheck (2026-10-23)
 
@@ -201,11 +181,6 @@ This was public-source and local-code inspection only, with no credentials, SDK 
 | Unresolved model/schema differences | REST still lists `1.5k` and omits quality; the Image 2.0 guide lists `1k`/`2k` and low/medium/auto quality. Guide SDK examples expose model/moderation, but the inspected synchronous REST response describes `data`/`usage` without those fields or `created`. SDK convenience properties are not an established REST wire shape |
 | Native accounting | REST describes exact USD ticks and nullable token aggregates with cached/reasoning detail. The standard result's optional usage object has required counters/details when present. Neither money nor absent counts can be silently converted into that shape |
 
-Local-code review identifies the responsible seams:
-
-- [OpenAI ingress](../../src/protocol/openai/images.rs) retains omitted output format; [Grok preparation](../../src/protocol/grok/images.rs) accepts that absence without promising PNG. [Artifact validation](../../src/semantic/task/image_generation.rs) compares formats only when both expectation and report exist. Thus code permits a synthetic omitted-format→JPEG path; this is not an observed Provider response. Effective-default admission belongs before dispatch, not in invented artifact reports.
-- [Standard delivery](../../src/protocol/openai/images.rs) rejects absent creation time, any reported model and incompatible shared artifact reports. [Existing Grok assertions](../../src/protocol/grok/images/tests.rs) already demonstrate that accounting omission does not repair native completion into standard delivery.
-- [Image execution](../../src/gateway/tasks/images.rs) buffers bounded static output through EOF before validation/projection/publication. Reuse that boundary. [Topology](../../src/topology/images.rs) and gateway execution remain API-key-specific; catalog wiring alone cannot integrate Grok OAuth or prove entitlement.
-- Standard/OpenRouter upstream parsing currently reuses closed-object validation. An otherwise valid response with an unknown member can fail before any semantic issue; tolerate unknown upstream members without relaxing known fields or client admission.
+The historical local-code review found a synthetic omitted-format → JPEG counterexample: omitted format carried no PNG guarantee, and artifact validation compared encoding only when both expectation and report existed. Neither account wiring nor accounting projection can repair absent creation time, format or an incompatible serving-model report. The now-removed Grok codec was not live Provider evidence. The current [static Generate proposal](../proposals/multimodal.md#static-generate-review-proposal) owns implementation boundaries; no new URL-fetching or transcoding was evaluated.
 
 These findings support the [static Generate review proposal](../proposals/multimodal.md#static-generate-review-proposal), not approval of its new public profile. Native controls, Edit, preview streaming, Files and deferred video remain separate. No local image decoder/transcoder or new URL-fetching authority was evaluated or selected.

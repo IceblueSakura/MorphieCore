@@ -10,7 +10,7 @@ This plan tracks the code-first refactor: enforce layer boundaries, move model p
 | 1. Dependency boundaries | Landed | No blocker for Phase 2 |
 | 2. Projection and catalog | Complete for the selected scope; offline baseline and stateless SDK loopbacks passed | Installed-client and real-Provider qualification remain separate |
 | 3. Tests and observability | Complete on synthetic development evidence | No deployment or new API activation |
-| 4. Documentation | Public contract reconciled | Consolidate documentation and add the offline documentation gate |
+| 4. Documentation | Public contract and document ownership reconciled | Add the offline documentation gate |
 
 ## Phase 0 — Cleanup (landed)
 
@@ -90,10 +90,8 @@ The completion criteria cover instrumentation of existing operations only. [Arch
 
 ### Task 4.2 — Consolidate the document set
 
-- Update architecture, usage, development and roadmap references to the implemented Workspace and catalog. Replace duplicated adapter prose with contract tables or links; keep structural decisions and their trade-offs, not per-model or per-PR changelogs.
-- Give stateful rejection and observability one authoritative home each. Distinguish semantic maxima from gateway defaults, remove stale history options, and keep setup paths portable. The configuration guide already links the example templates and describes Logs and Traces; update what has drifted rather than rewriting those sections from scratch.
-- Consolidate superseded research only after migrating useful pinned-source evidence and retargeting incoming links. The original reduction target is roughly half of the old document set; preserve authoritative constraints and evidence rather than meeting a line quota.
-- **Exit:** Local links, heading anchors and whitespace pass; the docs describe current behavior and keep proposals distinct from accepted work.
+- [Architecture](architecture/index.md#layers-and-data-flow) owns the Workspace map. Stateful rejection and observability retain separate contract owners; Usage owns setup and query procedures, not protocol or execution policy. Deployment defaults are distinct from semantic limits.
+- Duplicate research prose links to the native source notes; pinned comparisons and unresolved differences remain indexed. Local paths, anchors and whitespace pass without changing proposal status or activation.
 
 ### Task 4.3 — Add a lightweight documentation gate
 

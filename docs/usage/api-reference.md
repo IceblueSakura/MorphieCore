@@ -227,7 +227,7 @@ Pre-response auth/admission errors, discovery, history operations and other stan
 
 Generation may additionally attach optional body diagnostics to existing JSON/SSE envelopes, never new receipt-only events.
 
-Missing/truncated notices do not establish losslessness, and JSON/SSE/retrieval parity or SDK retention is not promised.
+Missing or truncated notices do not establish losslessness, and JSON/SSE parity or SDK retention of notices is not promised.
 
 Native replay/phase carriers retain their independent [contract](../architecture/history-and-replay.md#reasoning-replay).
 
@@ -244,7 +244,7 @@ When Standard Chat planning is blocked by required thinking history, HTTP 400 us
 | 404 / 405 | Unknown model or route / unsupported method |
 | 400 / `stateful_api_disabled` | Responses storage, reference continuation or stored-resource operation is experimental and disabled |
 | 408 / 413 / 415 | Body timeout / body too large / unsupported media type |
-| 429 | Gateway busy, history capacity exhausted, upstream rate limit or exhausted quota |
+| 429 | Gateway busy, upstream rate limit or exhausted quota |
 | 502 / 504 | Upstream or projection failure / upstream timeout |
 | 503 / 500 | Shutdown, unavailable credentials/targets or upstream overload / local fault |
 
@@ -254,4 +254,4 @@ A Responses stream with gateway-classified context overflow or exhausted quota m
 
 Failure diagnostics carry the bounded `generation` execution report: checked conversion boundaries, typed failures, attempt observations and final request outcome. Public error classification is distinct from the actual upstream response head; failed attempts do not become successful-request errors. Private payloads and arbitrary error strings are excluded. See [typed failures](../architecture/adaptation-and-dialects.md#typed-conversion-failures); recording never changes routing or completion behavior.
 
-Resource defaults and bounds are in [Limits](../../src/gateway/startup/limits.rs). Configuration fields above do not expose every embedded-library limit.
+Resource defaults and bounds are in [Limits](../../crates/morphiecore-gateway/src/startup/limits.rs). Configuration fields above do not expose every embedded-library limit.

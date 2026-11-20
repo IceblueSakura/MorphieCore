@@ -92,7 +92,7 @@ Stage-5 future work, currently unscheduled. Existing Generation compaction-item 
 
 Use a distinct request and result. The result contains returned ordered context, resources, reported accounting and operation metadata. It is not a normal assistant response.
 
-The official compact response can retain user messages followed by a compaction item. [Generation response validation](../../src/semantic/task/generation/validate.rs) excludes user/instruction messages from ordinary output. Do not weaken that validation to reuse `GenerationResponse`.
+The official compact response can retain user messages followed by a compaction item. [Generation response validation](../../crates/morphiecore-semantic/src/task/generation/validate.rs) excludes user/instruction messages from ordinary output. Do not weaken that validation to reuse `GenerationResponse`.
 
 Reuse typed conversation content and [compacted-history replay](../architecture/history-and-replay.md#compacted-history). Preserve the opaque result's compatible deployment/model scope; incompatible replay rejects rather than strips required history.
 
@@ -145,7 +145,7 @@ A trusted, evidence-backed binding declaration must associate an alias with the 
 
 A different model version, quantization or context contract is not automatically a tier of the same model.
 
-The current [endpoint contract](../../src/topology/endpoint.rs) fixes the upstream model at binding time; choosing predeclared variants during preparation is an integration design question, not a codec-only string rewrite.
+The current [endpoint contract](../../crates/morphiecore-catalog/src/topology/endpoint.rs) fixes the upstream model at binding time; choosing predeclared variants during preparation is an integration design question, not a codec-only string rewrite.
 
 When scheduled, add an independent alias-carrier oracle and an incompatible-policy rejection. Preparation must agree with preflight on the effective deployment, and cache/replay identity must follow the selected wire model. A selected alias proves request projection, not delivered service; record a reported tier only from an authoritative report.
 

@@ -28,20 +28,12 @@ The Generation baseline has met the selected [partial-delivery exit](roadmap/ind
 
 | Area | Overall status |
 |---|---|
-| Generation protocols | Standard Chat, Responses and Messages request, JSON/SSE, tools and native reasoning/history paths are supported, including stateless Responses across a fresh runtime. Google remains upstream-only; ordinary signatures without a standard stateless carrier reject explicitly |
-| Agent workflows | Principal pi/OpenCode tool, coding/repair, recall, summary, session and cancellation/recovery workflows are accepted. Required-history Standard Chat tools need runtime-selected thinking off; active/default thinking rejects with an actionable error. Client-specific and Provider-specific qualifications remain in the roadmap |
-| Protocol integration | Independent directional checks, pinned upstream fixtures, strict SDK consumers and complete continuation histories are integrated |
-| Generation binding repairs | Production-constructed SIWC flat-tool carriage, GPT strict/image and reasoning constraints, native opaque replay continuation, ModelBest thinking controls/readable-history spelling, Go effort controls, service-qualified output maxima, Luna verbosity and DeepSeek Chat admission are covered offline. Current Pi discovery preserves output budgets and Go native thinking choices through storage and session selection. MiniCPM thinking/tool-result/off paths are qualified against the hosted service. Connected SDK consumers and current installed pi/OpenCode tool/history loops remain accepted; real endpoint prerequisites stay in the [issue register](roadmap/unscheduled-issues.md#content-and-client-qualification) |
-| Context discovery | Service-qualified total/input capacities reach current Pi through authenticated gateway discovery, native model storage, selected-session accounting and offline RPC restoration. Unknown multi-candidate capacities retain client fallbacks; explicit per-model planning caps remain effective |
-| Model catalog | Current upstream IDs, model-specific controls and service-scoped limits are registered. Real stateless text/tool samples complete for Terra, Go MiniMax/Hy4, OpenRouter Step Chat and DashScope Kimi. Go Haiku Messages-backed Responses text, tool-result continuation and full-history recall complete in JSON/SSE; protected output remains separately qualified. Google ordinary-signature rejection, remaining service failures and endpoint prerequisites live in the roadmap |
-| Google Interactions | Selected Gemini Interactions-only bindings qualify stateless Responses request/result conversion, protected reasoning replay, non-strict text/image tool loops and explicit-auto images in JSON/SSE with cross-mode full-history continuation. Current Pi preserves their image and planning metadata through native storage and session restoration. Ordinary signed text/call attachments retain the standard stateless carrier boundary |
-| Runtime and credentials | Ordered routing with advisory cooldowns/preferences, bounded retry/publication, credential isolation, OAuth renewal and pending-verification recovery are covered; API-key updates use one transaction and Unix binaries handle SIGINT/SIGTERM |
-| Upstream cache sessions | SIWC derives a stable `session-id` from the effective cache key; Go preserves independent session grouping across its three protocols; OpenRouter derives body sessions only from declared conversations. Native OpenCode affinity headers are admitted with explicit precedence. SIWC and Luna Responses cache-count delivery are qualified. Luna source-bound access-program reports and selected lifecycle resolutions pass native SSE intake and standard JSON/SSE SDK consumption; broader router/Go workflows retain separate qualification |
-| Diagnostics | The [observability gate](refactoring-plan.md#task-33-verify-the-eight-observability-criteria) is verified on synthetic traffic, including indexed log-to-trace queries, request and renewal lifetimes, queue loss, final-export privacy and behavior with diagnostics on/off. This does not qualify a production backend |
-| Embeddings | Independent text Embedding execution and selected float/Base64 and accounting conversions are accepted |
-| Stage 4 | Static image/audio paths provide a starting point; per-operation contracts, resource lifecycles and affected acceptance remain to be completed |
-| Real account failover | Replay isolation is accepted for selected profiles; independent compatible-account failover remains unscheduled |
-| Deployment and Stage 5 | Deployment remains separately authorized. Stage-5 APIs are unscheduled |
+| Generation and protocol integration | Standard Chat, Responses and Messages cover JSON/SSE, tools and native reasoning/history. Independent directional fixtures and connected SDKs verify stateless continuation. Google is upstream-only; ordinary signatures without a standard carrier reject explicitly. |
+| Agent workflows and discovery | Isolated pi/OpenCode tool, recall, summary and recovery workflows are accepted. Gateway discovery reaches Pi model storage and session planning. Client and binding qualifications remain separately scoped. |
+| Runtime and credentials | Synthetic checks cover bounded retry, delivery and cancellation, credential isolation, OAuth renewal and pending verification. |
+| Diagnostics | The [observability gate](refactoring-plan.md#task-33-verify-the-eight-observability-criteria) passed with synthetic traffic, including indexed queries, privacy and queue-loss isolation. This does not qualify a production backend. |
+| Standalone tasks | Independent Embeddings accepts text, selected scoped tokens and float/Base64 output. Static image/audio paths do not establish expanded modality or resource lifecycles. |
+| Real services and deployment | Real evidence applies only to the qualified bindings and workflows. Compatible-account failover remains unscheduled; deployment requires separate authorization. |
 
 Accepted losses and service limitations live in [Architecture](architecture/index.md); unresolved qualifications have one home in the [unscheduled issue register](roadmap/unscheduled-issues.md#unscheduled-issues). Do not duplicate those registers here or turn deferred cases into new baseline prerequisites.
 
@@ -57,7 +49,7 @@ Keep application dependencies, protocol/SDK reference pins and installed Agent v
 
 | Entry | Responsibility |
 |---|---|
-| `src/**` unit tests | Owner-local product invariants, credentials, routing, delivery and diagnostics |
+| `crates/*/src/**` unit tests | Owner-local product invariants, credentials, routing, delivery and diagnostics |
 | `src/bin/upstream/tests.rs` | Diagnostic target/wire contracts and synthetic credential refresh |
 | `tests/semantic.rs` → `semantic/` | IR, codecs, lowering, replay and history editing |
 | `tests/transport.rs` → `transport/` | SSE framing, preparation and Attempt/delivery lifecycle |
@@ -69,7 +61,7 @@ Keep application dependencies, protocol/SDK reference pins and installed Agent v
 | `tests/{sdk,clients,gateway}/test_*.py` | SDK/client oracles and OpenAPI schemas |
 | `tests/upstream/` | Source/asset provenance, acquisition and extraction checks |
 
-Top-level Rust files are Cargo integration targets; nested files are registered modules. Shared fixtures live in `tests/support/`, imported directly by their consumers. Keep scenario/API data boundaries in `testdata/`; generated output, reports and runtime state stay in ignored `testdata/{generated,reports,dist,runtime}/`.
+Top-level Rust test files are Cargo integration targets; nested files are registered modules. [Test support](../crates/morphiecore-test-support/) owns generic wire and filesystem fixtures; the [test harness](../crates/morphiecore-test-harness/) owns synthetic gateway composition and workflow fixtures. Keep scenario/API data in `testdata/`; generated output, reports and runtime state stay in ignored `testdata/{generated,reports,dist,runtime}/`.
 
 The synthetic [repair-and-recall corpus](../testdata/repair-and-recall/) supplies coherent multi-turn histories across the selected native APIs. Extend it only for distinct product invariants, using independent expectations rather than encoder dumps.
 
@@ -77,7 +69,7 @@ The synthetic [repair-and-recall corpus](../testdata/repair-and-recall/) supplie
 
 [sources.lock.json](../tests/upstream/sources.lock.json) identifies immutable upstream sources; [assets.lock.json](../tests/upstream/assets.lock.json) identifies the reviewed, vendored subset. Ordinary regression uses local assets without network access. Missing files, digest drift, ambiguous extraction and source/asset disagreement fail visibly.
 
-Preserve imported bytes, licenses, source paths and declared framing adaptations. `tests/support/upstream_assets.rs` owns the thin fixture adapters; the [asset boundary inventory](refs/2026-10-23-stable-protocol-contracts.md#imported-asset-boundaries) records exclusions. Do not regenerate expected output from a MorphieCore encoder or execute downloaded source during acquisition.
+Preserve imported bytes, licenses, source paths and declared framing adaptations. The [fixture adapter](../crates/morphiecore-test-harness/src/upstream_assets.rs) exposes the vendored inputs; the [asset boundary inventory](refs/2026-10-23-stable-protocol-contracts.md#imported-asset-boundaries) records exclusions. Do not regenerate expected output from a MorphieCore encoder or execute downloaded source during acquisition.
 
 Use raw fixtures through MorphieCore codecs and actual SDK consumers receiving gateway output and constructing continuation independently. Keep wire-to-IR and IR-to-wire expectations independent. Distinguish official protocol contracts, Provider dialects, SDK conveniences and gateway policy.
 
@@ -100,7 +92,7 @@ All baseline inputs and authorities are synthetic. Credential/auth isolation, tr
 
 ### SDK loopback gate
 
-Select stateless consumers only while the stateful freeze applies. Ignored tests named `experimental_*` retain dormant stateful scenarios and are not part of the current SDK gate.
+Select stateless consumers only while the [stateful freeze](architecture/history-and-replay.md#stateful-history) applies.
 
 Use the existing SDK integration target and locked Python/TypeScript consumers serially against test-owned loopback authorities. Check actual decoded results, incremental callbacks, complete returned history and independent next-upstream expectations. Keep API-key and subscription startup construction at the production loader boundary, with synthetic credentials and explicit target contracts.
 

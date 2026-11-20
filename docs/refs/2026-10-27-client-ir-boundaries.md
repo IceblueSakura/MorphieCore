@@ -111,7 +111,7 @@ A gateway-owned Response can echo admitted request metadata/configuration in its
 
 Establish field meaning, precedence and original-versus-prepared request authority; never overwrite an explicit upstream value or claim unreported model-effective settings.
 
-At the review baseline, [completion](../../src/execution/delivery/completion.rs) selected only tools/tool-choice/parallelism, and [envelope writing](../../src/protocol/openai/responses/envelope.rs) preserved reports before filling those missing echoes.
+At the review baseline, [completion](../../crates/morphiecore-runtime/src/execution/delivery/completion.rs) selected only tools/tool-choice/parallelism, and [envelope writing](../../crates/morphiecore-protocol/src/openai/responses/envelope.rs) preserved reports before filling those missing echoes.
 
 The selected [schema-completion contract](../architecture/adaptation-and-dialects.md#downstream-schema-completion) adds metadata alone; broader settings echo requires its own field authority.
 

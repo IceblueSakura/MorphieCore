@@ -161,17 +161,17 @@ keep these restrictions distinct from beta function strictness and Bailian.
 
 ##### OpenCode Go controls
 
-HY4, MiniMax M3.1 Flash and Step 5 Preview carry standard effort through native
+HY4 and MiniMax M3.1 Flash carry standard effort through native
 Chat bindings. Their service-native positive level domains constrain
 projection and discovery; other positive inputs use the existing
 `generation.project-effort.v1` nearest-level adaptation. Explicit off keeps its
-standard carrier for HY4. MiniMax and Step's always-thinking contracts reject off
+standard carrier for HY4. MiniMax's always-thinking contract rejects off
 rather than omitting it or inferring a positive level.
 Absent controls keep upstream defaults. Go MiMo controls and optional output
-guarantees retain their existing scope. MiniMax and OpenRouter Muse Ember only
-support automatic tool selection; explicit restrictive choices reject before
+guarantees retain their existing scope. MiniMax only
+supports automatic tool selection; explicit restrictive choices reject before
 dispatch. [Current service contracts](../refs/2026-11-13-model-catalog-expansion.md#opencode-go)
-own the directory evidence and native endpoint paths.
+retain the dated directory evidence, including retired bindings.
 
 Go Messages rejects tool parameter schemas containing top-level `anyOf`, `allOf`
 or `oneOf`, including non-strict tools and explicit no-call requests. Candidate
@@ -253,7 +253,7 @@ Known fields follow the [conversion ladder](#conversion-ladder); this table stat
 #### Candidate-local projection
 
 Transformations are candidate-private:
-- Source IR remains immutable across multiple failover attempts.
+- Source IR remains immutable across pre-dispatch candidate checks. A dispatched retry reuses the same prepared target and request.
 - Native/equivalent history projections preserve earlier turns when new turns are appended. Named lossy projections such as selected tool-history collapse can alter the rendered prefix and lose cache reuse; they must record that consequence rather than promise prefix stability. They never mutate source history or alter routing affinity.
 
 #### Model-effective values
@@ -294,31 +294,14 @@ Unresolved cases may remain limited while independently useful workflows ship un
 
 **Invariants outside the ladder:** credentials, auth, origin and trusted target selection; replay signature, origin and format trust; resource and time bounds; malformed known values and strict JSON; terminal honesty and validated EOF; call identity; no executable claim for incomplete tool input; explicit history-read intent; already-published accounting; candidate-local projection over immutable source IR; the routing freeze. No level invents content, forges signatures or fabricates success.
 
-**Ownership.** The request side has one owner: one feature vocabulary, with each target declaring a disposition per feature (native, equivalent, approximate, omit, delegate or reject), and one pure projection applying it per candidate during planning.
+**Ownership.** Request and delivery use one typed disposition vocabulary, not separate requirement, feature-set and rejection models.
 
-This vocabulary replaces the separate requirement, feature-set, feature-enum, target-contract and published-rejection representations; encoders consume only projected copies, and source-level admission keeps only grammar checks and L5.
-
-The delivery side has one owner in [`ClientAdapter`](../../crates/morphiecore-protocol/src/adapter/downstream.rs): a (fact, client protocol) table drives one projection over the IR event stream; JSON and retained views reduce the projected events to a snapshot and render it, so JSON/SSE agreement holds by construction and encoders only render.
-
-Discovery and `/capabilities` read the same tables.
-
-Safety-assessment omission and its evidence belong to that projection, not a second encoder wrapper. Rendering and replay sealing do not introduce separate adaptation-result channels.
-
-The request implementation lives in [`lowering/request.rs`](../../src/lowering/request.rs) and [`lowering/disposition.rs`](../../src/lowering/disposition.rs).
-
-Source trust validation and visible-history transfer precede candidate feature admission; the final check sees projected semantic fields and envelope controls.
-
-Presentation, summary granularity and encrypted-include decisions use candidate rows, refreshed after allocation conversion where native thinking availability matters; hidden-display guarantees without a carrier reject through those rows.
-
-Parallel permission preserves the binding's disposition, independently of the explicit serial guarantee.
-
-Native grammar and replay-identity assertions remain codec responsibilities.
-
-Ordered Messages effort/tool rewrites consume the same table rather than a second carrier-policy object.
-
-Request-envelope session affinity remains outside semantic IR, with its target disposition resolved by this owner.
-
-The [single delivery projection](#delivery-projection-ownership) and [shared discovery compilation](#generation-text-model-discovery) consume these owners.
+| Boundary | Responsibility |
+|---|---|
+| [Semantic projection and dispositions](../../crates/morphiecore-lowering/src/request.rs) | Apply trusted target capabilities to candidate copies. Resolve ordered effort/tools, presentation, summary, encrypted include and parallel permission without erasing explicit guarantees. Refresh native-thinking facts after allocation conversion. |
+| [Protocol preparation](../../crates/morphiecore-protocol/src/lowering/request.rs) | Validate source trust, transfer compatible history, apply semantic policy and check final carrier grammar and replay identity. Envelope session affinity stays outside IR. |
+| [Delivery](#delivery-projection-ownership) | Project facts and usage views before rendering; no encoder-only omission policy or separate replay-sealing result channel. |
+| [Discovery](#generation-text-model-discovery) | Compile capability claims from the same dispositions; distinguish assessed domains from unqualified combinations. |
 
 **Evidence.** Receipts record only L3 approximations, L4 omissions and schema-completion estimates; L2 normalizations, derivations, defaults and request inferences produce none.
 
@@ -368,7 +351,7 @@ Existing rule families remain valid ladder applications:
 | SIWC failed-response codes | `responses.coarsen-provider-error-code.v1` maps confirmed quota to `rate_limit_exceeded`, unsupported capability to `invalid_prompt`, and service/auth/permission codes to `server_error`; failed outcome and original source evidence remain intact |
 
 - `chat.omit-text-item-status.v1`: Plain-text incomplete message items omit individual item status when overall finish reason is `length`.
-(See [`Rule`](../../src/lowering/disposition.rs) for request rules and the [delivery projection owner](#delivery-projection-ownership) for client dispositions.)
+(See [`Rule`](../../crates/morphiecore-lowering/src/disposition.rs) for request rules and the [delivery projection owner](#delivery-projection-ownership) for client dispositions.)
 
 #### Output-ceiling adaptation
 
@@ -522,11 +505,11 @@ Projection and final wire validation reuse the same subset/budget checker.
 
 Parameterless definitions receive the required empty-object input schema without a loss receipt; equivalent empty schemas may still use an available strict carrier.
 
-Responses retrieval retains the argument string selected by the shared event projection. SSE, JSON and retained snapshots consume those same selected bytes, including incomplete prefixes without JSON parsing. Native structured observations and protected replay dependencies remain unchanged; representation conversion alone needs no loss receipt.
+SSE, JSON and transient projected snapshots consume the same selected argument bytes, including incomplete prefixes without JSON parsing. Native structured observations and protected replay dependencies remain unchanged; representation conversion alone needs no loss receipt.
 
 #### Delivery projection ownership
 
-The adapter module owns `ClientProjection` and its shared fact/disposition table. `ResponseDelivery` retains the incremental projection; snapshot conversion constructs a local projection. It selects native argument carriers, reasoning/refusal substitutions, report omissions, usage views, terminal mappings and grouping before rendering. SSE encodes its selected events; JSON and retained history reduce those events and render the resulting snapshot. Encoders retain protocol grammar, lifecycle and resource checks rather than selecting another conversion policy.
+The [protocol adapter](../../crates/morphiecore-protocol/src/adapter/downstream.rs) applies typed delivery dispositions before rendering. It selects argument carriers, reasoning/refusal substitutions, report omissions, usage views, terminal mappings and grouping. Runtime delivery retains the incremental projection: SSE renders selected events; JSON and transient snapshots reduce them. Encoders own wire grammar and resource checks, not another conversion policy.
 
 Projection operates on private delivery copies. Execution-assigned response/item aliases are merged before materializing JSON or retained views; protected call dependencies keep their execution ownership until the separately scheduled identity migration. Wire-only Messages block/owner closure does not finish an incomplete semantic item.
 
@@ -544,7 +527,7 @@ The [closed dialect terminal maps](../refs/2026-10-17-generation-contracts.md#ch
 
 An unfinished generated argument prefix projects exactly to an OpenAI argument string without parsing, repairing or completing its bytes. Preserve incomplete call lifecycle where carried, the incomplete overall outcome and token-limit termination. Format conversion alone needs no loss receipt; unrelated lifecycle, grouping and protected-replay restrictions remain authoritative. A generated string is not a complete validated invocation. Native Messages complete JSON/history still requires an input object; its partial SSE carrier does not supply that object.
 
-All qualified non-Chat target requests select SSE, including the body flag, transport Accept header and response-media admission. JSON clients aggregate that intake after validated EOF, so native Messages can report incomplete arguments without inventing a native JSON object. Replaced non-Chat JSON dispatch is removed; complete native JSON codecs still provide independent directional protocol coverage.
+Downstream JSON can aggregate [streaming upstream intake](index.md#protocols) after validated EOF. This preserves incomplete Messages arguments without inventing a native JSON object.
 
 Client acceptance must distinguish error-result events from actual execution. Current pi fails all calls on a length-stopped message even when salvaged arguments parse, then supplies error feedback. That observed consumer behavior supports this narrow contract, not every consumer or a signature/dependency rewrite.
 
@@ -558,8 +541,6 @@ Association stays with IR validation; no reordering pass or duplicate associatio
 
 Independent grouped/adjacent input and output expectations preserve IDs, arguments and results, while invalid links still fail semantic validation.
 
-A phase-free production-construction comparison of managed and stateless histories remains experimental and excluded from current acceptance. Active JSON/SSE checks preserve complete ordered stateless upstream history.
-
 String-only result implementation, phase, history-carrier and replay restrictions remain separate.
 
 [Native qualification](../refs/2026-10-27-client-ir-boundaries.md#pre-stage-4-contract-qualification-2026-10-29) covers direct Qwen Flash/Max, TokenPlan Qwen Flash, native MiMo and OpenRouter GPT grouped histories. This is not a Qwen-only semantic rule. It does not attest every model, result ordering, arbitrary interleaving, media-array carrier or billing endpoint; stricter target restrictions require endpoint evidence rather than literal-position inference from one guide. Phase remains a separate semantic/carrier question.
@@ -568,7 +549,7 @@ String-only result implementation, phase, history-carrier and replay restriction
 
 Generation Text returns complete downstream schemas: **Upstream facts → Justified inference → Simple estimates**.
 - `responses.infer-required-settings.v1`: Fills missing `tools`, `tool_choice`, and `parallel_tool_calls` from admitted request settings.
-- `responses.echo-request-metadata.v1`: Echoes original admitted request metadata only when upstream omits metadata entirely ([`Rule::ECHO_REQUEST_METADATA`](../../src/lowering/disposition.rs)); this exact inference produces no loss receipt.
+- `responses.echo-request-metadata.v1`: Echoes original admitted request metadata only when upstream omits metadata entirely ([`Rule::ECHO_REQUEST_METADATA`](../../crates/morphiecore-lowering/src/disposition.rs)); this exact inference produces no loss receipt.
 - `generation.complete-delivery-usage.v1`: Completes missing usage fields using text payload byte estimates (`ceil(bytes / 4)`).
 
 #### Reported text configuration
@@ -595,7 +576,7 @@ Responses preserves `commentary` and `final_answer` labels. Targets without phas
 
 #### Lifecycle settings and service reports
 
-Responses and Interactions maintain separate opening and terminal reports validated by [`protocol::reports`](../../src/protocol/reports.rs). Cross-phase updates permit only evidenced runtime resolutions (e.g. `summary: auto → detailed` or `service: configured → standard`); conflicting drifts reject fail-closed.
+Responses and Interactions maintain separate opening and terminal reports validated by [`protocol::reports`](../../crates/morphiecore-protocol/src/reports.rs). Cross-phase updates permit only evidenced runtime resolutions (e.g. `summary: auto → detailed` or `service: configured → standard`); conflicting drifts reject fail-closed.
 
 For the selected OpenRouter Luna Responses contract, an opening `reasoning:null`
 with no effort may be followed by the complete terminal
@@ -609,7 +590,7 @@ Standard Responses permits opening `service_tier:auto` to resolve to terminal `d
 
 #### End-user attribution
 
-Opaque user attribution projects across protocols via [`protocol::attribution`](../../src/protocol/attribution.rs):
+Opaque user attribution projects across protocols via [`protocol::attribution`](../../crates/morphiecore-protocol/src/attribution.rs):
 - Projects between OpenAI `safety_identifier`, Anthropic `metadata.user_id`, and Google `labels.safety_identifier`.
 - Explicit safety identifiers take precedence over legacy `user` fields.
 - Non-authoritative metadata: never utilized for authentication or cache identity.
@@ -638,7 +619,7 @@ Existing Gemini 3.8 Flash bindings retain their narrower rules:
 
 The IR decouples reasoning activation from effort level and scope:
 - **Activation:** `ReasoningRequest` (enabled vs disabled).
-- **Effort Control:** `EffortControl { scope, level }` with [`EffortScope::Reasoning`](../../src/semantic/task/generation/content/reasoning.rs) (per-thought) or [`EffortScope::Response`](../../src/semantic/task/generation/content/reasoning.rs) (turn-wide).
+- **Effort Control:** `EffortControl { scope, level }` with [`EffortScope::Reasoning`](../../crates/morphiecore-semantic/src/task/generation/content/reasoning.rs) (per-thought) or [`EffortScope::Response`](../../crates/morphiecore-semantic/src/task/generation/content/reasoning.rs) (turn-wide).
 - Explicit `disabled` reasoning takes precedence over response-wide effort settings.
 
 Model-effective constraints independently declare whether disabled activation is unavailable and which positive effort levels are native. Grok 4.7 and GPT Astra/Sol reject explicit off; Luna retains off. Positive non-native levels use the existing nearest-level mapping, while omission remains omission. Discovery and dispatch consume the same constraint; dialect spelling does not create model support. See the [official source review](../refs/2026-11-12-generation-binding-contracts.md).
@@ -711,7 +692,7 @@ No new format, task budget, `clear_at`, thinking mode or weaker content/explicit
 
 ##### Google response-effort projection
 
-The model-qualified `google.<model>.response-effort-to-thinking.v1` rules map response-scoped effort to Gemini thinking effort via [`ReasoningConversion::Scope`](../../src/protocol/reasoning.rs).
+The model-qualified `google.<model>.response-effort-to-thinking.v1` rules map response-scoped effort to Gemini thinking effort via [`ReasoningConversion::Scope`](../../crates/morphiecore-lowering/src/reasoning.rs).
 
 Gemini 3.8 Flash, Gemini 4 Argon and Carbon map low/medium/high; Hydrogen also carries xhigh as native `XHIGH` on GenerateContent and `xhigh` on Interactions.
 
@@ -727,9 +708,9 @@ Explicit hand-authored mappings define canonical model bindings. Under the [conv
 
 ##### Thinking-budget quantization
 
-When targets require discrete qualitative levels, numeric token budgets are quantized to discrete presets defined in [`ThinkingBudgets`](../../src/protocol/reasoning.rs):
-- Canonical presets are maintained in [`SHARED_BUDGETS`](../../src/protocol/reasoning.rs) (6 discrete tiers spanning minimal to max).
-- Selection matches minimal absolute token distance via [`ThinkingBudgets::nearest`](../../src/protocol/reasoning.rs); exact ties resolve upward to the higher effort level.
+When targets require discrete qualitative levels, numeric token budgets are quantized to discrete presets defined in [`ThinkingBudgets`](../../crates/morphiecore-lowering/src/reasoning.rs):
+- Canonical presets are maintained in [`SHARED_BUDGETS`](../../crates/morphiecore-lowering/src/reasoning.rs) (6 discrete tiers spanning minimal to max).
+- Selection matches minimal absolute token distance via [`ThinkingBudgets::nearest`](../../crates/morphiecore-lowering/src/reasoning.rs); exact ties resolve upward to the higher effort level.
 - Current validation rejects requests whose thinking budget exceeds the client-specified maximum output token ceiling.
 
 ##### Bounded token-budget adaptation
@@ -750,15 +731,15 @@ The [budget proposal](../proposals/index.md#independent-output-ceilings-unselect
 
 ##### Binding-level mapping
 
-Bindings declare model-specific qualitative level translation via [`ReasoningEffortMapping`](../../src/protocol/reasoning.rs) and [`ReasoningRequestPolicy`](../../src/protocol/reasoning.rs):
+Bindings declare model-specific qualitative level translation via [`ReasoningEffortMapping`](../../crates/morphiecore-lowering/src/reasoning.rs) and [`ReasoningRequestPolicy`](../../crates/morphiecore-lowering/src/reasoning.rs):
 - Conversions are strictly directional. A level missing from a binding's table resolves to the nearest supported level, ties upward, under the binding's named effort rule. Bindings that expose no effort control omit it under a named rule (L4); explicit history-read intent keeps its own guard.
-- Upstream thinking budgets translate to qualitative effort via [`ReasoningConversion::BudgetToEffort`](../../src/protocol/reasoning.rs), and qualitative effort expands to discrete token budgets via [`ReasoningConversion::EffortToBudget`](../../src/protocol/reasoning.rs).
+- Upstream thinking budgets translate to qualitative effort via [`ReasoningConversion::BudgetToEffort`](../../crates/morphiecore-lowering/src/reasoning.rs), and qualitative effort expands to discrete token budgets via [`ReasoningConversion::EffortToBudget`](../../crates/morphiecore-lowering/src/reasoning.rs).
 
 ##### Implementation owners
 
-- [`semantic::task::generation`](../../src/semantic/task/generation/mod.rs): Activation and scoped effort types.
-- [`protocol::reasoning`](../../src/protocol/reasoning.rs): Quantization presets, nearest-level resolution, and policy projection.
-- [`topology::catalog::bindings`](../../src/topology/catalog/bindings.rs): Binding-level policy selection and limits.
+- [`semantic::task::generation`](../../crates/morphiecore-semantic/src/task/generation/mod.rs): Activation and scoped effort types.
+- [`protocol::reasoning`](../../crates/morphiecore-lowering/src/reasoning.rs): Quantization presets, nearest-level resolution, and policy projection.
+- [`topology::catalog::bindings`](../../crates/morphiecore-catalog/src/topology/catalog/bindings.rs): Binding-level policy selection and limits.
 
 ### Media
 
@@ -776,10 +757,10 @@ Every lossy conversion or field omission generates bounded typed evidence. Inter
 
 #### Domain evidence interface
 
-The conversion pipeline tracks adaptation evidence via [`Conversion<T>`](../../src/protocol/conversion/generation/evidence.rs), pairing transformed payloads with a typed [`EvidenceDelta`](../../src/protocol/conversion/generation/evidence.rs):
-- **Body-free isolation:** Evidence records only structured [`Effect`](../../src/protocol/conversion/generation/evidence.rs) items and rule IDs; user payloads, prompts, and tokens are strictly excluded.
-- **Change categories:** Field modifications classify into canonical [`Change`](../../src/protocol/conversion/generation/evidence.rs) families (`Normalize`, `Derive`, `Default`, `InferFromRequest`, `Omit`, `Approximate`, `Estimate`).
-- **Bounded allowances:** Deltas enforce hard upper bounds of [`MAX_EFFECTS`](../../src/protocol/conversion/generation/evidence.rs) (64 entries) and 16 KiB per delta. When saturated, an explicit truncation count is recorded without modifying business payloads.
+The conversion pipeline tracks adaptation evidence via [`Conversion<T>`](../../crates/morphiecore-lowering/src/conversion/generation/evidence.rs), pairing transformed payloads with a typed [`EvidenceDelta`](../../crates/morphiecore-lowering/src/conversion/generation/evidence.rs):
+- **Body-free isolation:** Evidence records only structured [`Effect`](../../crates/morphiecore-lowering/src/conversion/generation/evidence.rs) items and rule IDs; user payloads, prompts, and tokens are strictly excluded.
+- **Change categories:** Field modifications classify into canonical [`Change`](../../crates/morphiecore-lowering/src/conversion/generation/evidence.rs) families (`Normalize`, `Derive`, `Default`, `InferFromRequest`, `Omit`, `Approximate`, `Estimate`).
+- **Bounded allowances:** Deltas enforce hard upper bounds of [`MAX_EFFECTS`](../../crates/morphiecore-lowering/src/conversion/generation/evidence.rs) (64 entries) and 16 KiB per delta. When saturated, an explicit truncation count is recorded without modifying business payloads.
 
 OpenAI event encoders receive the final `TargetContract` at construction. There is no target-policy setter or publication-time target lock; identity-bound metadata updates and source lifecycle/terminal checks remain independent.
 
@@ -862,9 +843,7 @@ The historical thinking-prefix requirement for manual thinking belongs to an act
 
 ### Missing output ceilings
 
-[`TargetContract.default_output_tokens`](../../src/protocol/anthropic/messages/target.rs) defines optional ceiling insertion:
-- Declared by Go/Haiku Messages (`32000`) to satisfy Anthropic mandatory `max_tokens`.
-- Injected on candidate copies only when client request omits `max_tokens`. Explicit ceilings are preserved.
+Go/Haiku Messages declares a binding default of 32,000 `max_tokens`, not a semantic or service maximum. Configuration can override or clear it. Only an omitted ceiling receives the default; explicit ceilings take the normal [output-ceiling path](#output-ceiling-adaptation).
 
 ### Owner-local cache admission
 

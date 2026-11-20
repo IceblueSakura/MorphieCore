@@ -26,9 +26,8 @@ See [Architecture Overview](index.md) for system boundaries and core IR semantic
     - [OAuth maintenance](#oauth-maintenance)
   - [Agent identity and cluster diagnostics](#agent-identity-and-cluster-diagnostics)
     - [Identity and authentication](#identity-and-authentication)
-    - [Shared history and usage attribution](#shared-history-and-usage-attribution)
+    - [Request and usage attribution](#request-and-usage-attribution)
   - [Observability](#observability)
-    - [Selected logs and traces design](#selected-logs-and-traces-design)
   - [Configurable exchange capture](#configurable-exchange-capture)
 
 ## Runtime and trust
@@ -130,10 +129,10 @@ An explicit conversation/session carrier is the routing unit, scoped by authenti
 
 ### Conversation and cache affinity
 
-Affinity keys and advisory cache policies are defined in [`protocol::cache`](../../src/protocol/cache.rs):
+Affinity keys and advisory cache policies are defined in [`protocol::cache`](../../crates/morphiecore-protocol/src/cache.rs):
 - `X-MorphieCore-Conversation-Id` supplies declared conversation identity for multi-turn route affinity and upstream cache/session projection.
 - Prefix-cache indexing supplies advisory request hints, never an implicit conversation or account-routing key.
-- Target cache capabilities are enforced via [`CacheTargetPolicy`](../../src/protocol/cache.rs), omitting unsupported advisory hints under declared loss rules.
+- Target cache capabilities are enforced via [`CacheTargetPolicy`](../../crates/morphiecore-protocol/src/cache.rs), omitting unsupported advisory hints under declared loss rules.
 
 #### Upstream session projection
 
@@ -169,11 +168,11 @@ Affinity is an advisory, success-updated preference scoped by authenticated Agen
 
 ### Streaming and delivery
 
-Delivery lifecycle and event streaming are coordinated by [`ResponseDelivery`](../../src/execution/delivery.rs) under [`SseLimits`](../../src/protocol/stream.rs):
+Delivery lifecycle and event streaming are coordinated by [`ResponseDelivery`](../../crates/morphiecore-runtime/src/execution/delivery.rs) under [`SseLimits`](../../crates/morphiecore-protocol/src/stream.rs):
 - **Pre-publication holding:** Bounded lifecycle-only frames wait for content while the one same-target retry remains possible.
 - **Publication freeze:** Flushing frames irreversibly prohibits another send; subsequent upstream failures abort the stream with terminal error events.
-- **Honest completion:** Streams require validated upstream EOF before downstream release.
-- **Final handoff:** Final-frame acceptance and cancellation share one fence. Before acceptance, cancellation revokes delivery; afterward only synchronous completion checks, history/health/affinity settlement and diagnostics remain. Acceptance alone never makes a failed or neutral operation successful. Local Responses snapshot reads/deletes release their concurrency permit before returning immutable body bytes.
+- **Honest completion:** Validated upstream EOF gates the successful terminal, not earlier content frames.
+- **Final handoff:** Final-frame acceptance and cancellation share one fence. Before acceptance, cancellation revokes delivery; afterward only synchronous completion checks, health/affinity settlement and diagnostics remain. Acceptance alone never makes a failed or neutral operation successful.
 
 #### Semantic stream normalization
 
@@ -194,9 +193,9 @@ Queued EOF, cancellation and errors cannot fabricate progress or successful comp
 
 Messages downstream delivery uses one active wire block in semantic owner/part declaration order, independently of numeric IDs. The head streams incrementally; successors wait for its actual owner finish, including a delayed thinking signature. Thinking emits one signature immediately before block stop; redacted blocks keep their native shape. Reports retain their existing independent timing and authority.
 
-The codec-local [scheduler](../../src/protocol/anthropic/messages/client/sse/schedule.rs) bounds retained payloads and container overhead, releases drained capacity, and rejects known unsupported content before queueing.
+The codec-local [scheduler](../../crates/morphiecore-protocol/src/anthropic/messages/client/sse/schedule.rs) bounds retained payloads and container overhead, releases drained capacity, and rejects known unsupported content before queueing.
 
-[Frame construction](../../src/protocol/anthropic/messages/client/sse.rs) checks serialized size and cumulative wire/event budgets during drainage.
+[Frame construction](../../crates/morphiecore-protocol/src/anthropic/messages/client/sse.rs) checks serialized size and cumulative wire/event budgets during drainage.
 
 Cancellation or rejection discards pending content.
 
@@ -214,7 +213,7 @@ MorphieCore operates behind a loopback-bound reverse proxy:
 
 #### Optional delta coalescing
 
-Configured via [`DeltaCoalescing`](../../src/execution/delivery/coalescing.rs) (default 50 ms / 16 KiB bounds):
+Configured via [`DeltaCoalescing`](../../crates/morphiecore-runtime/src/execution/delivery/coalescing.rs) (default 50 ms / 16 KiB bounds):
 - Merges consecutive adjacent `PartKind::Text` fragments into larger downstream frames.
 - Flushes immediately upon non-text events, usage reports, or timer expiration.
 
@@ -270,96 +269,27 @@ Profile-specific verification, rotation and terminal-error semantics follow the 
 - `agent_id`: Stable configured agent identity across key rotations.
 - Authentication table maps keys to `agent_id` with constant-time verification.
 
-#### Shared history and usage attribution
+#### Request and usage attribution
 
 - Every request is tagged with an immutable Agent identity and runtime nonce.
 - Usage is attributed to the executing Agent rather than the conversation owner.
 
 ### Observability
 
-Configuration intake reports a domain and fixed safe reason, with a root location for schema/type errors. It does not traverse Serde paths or emit rejected values or private map keys. Semantic validation may retain its schema-owned field/index attribution.
+The gateway uses isolated `tracing` Logs/Traces bridges, bounded OpenTelemetry SDK batch processors and OTLP/HTTP JSON exporters. The library installs no process-global subscriber. INFO is the default log level and does not control traces. Instrument I/O and orchestration owners, not pure semantic, lowering or protocol code. [References](../references.md#telemetry-dependency-selection) owns the pins.
 
-The gateway uses isolated official OpenTelemetry Logs/Traces
-providers, standard batch processors and OTLP/HTTP JSON exporters. A `tracing`
-subscriber with official bridges records request lifecycle logs and server spans;
-no process-global subscriber is installed by the library. Request context follows
-spawned producers and response-body polling. Local roots cover authentication
-rejections without exposing unauthenticated input. INFO is the log default;
-log filtering does not disable spans. Internal `gateway.operation` and
-`gateway.attempt` spans replace manual diagnostic clocks, stage timelines and
-log sequence counters. Standard span events retain bounded milestones; the
-operation summary uses the Logs bridge. Structured adaptation failures and private
-capture retain their native Logs representation. Upstream HTTP-client spans
-are children of the inference attempt. They run from the send invocation
-through observed body EOF, transport failure, or an undrained exit. An
-undrained exit does not establish why the body was dropped.
-The receiver owns retention/durability; the application owns no diagnostic files,
-success-wire archive or diagnostic usage ledger. Execution facts remain
-independent of optional export.
+| Boundary | Observation and limits |
+|---|---|
+| Ingress and request | A local server span covers auth/admission and response body completion, error or drop. Context follows spawned producers and body polls. Rejected authentication is body-free. Configuration errors report a safe domain and location without rejected values or private map keys. |
+| Operation and attempt | An operation owns candidate planning and local outcomes; each attempt covers preparation through its local result or delivery. A slot may fail before any send. A failed attempt retains its own diagnosis even if recovery succeeds. SDK spans and timestamps replace manual timers/counters; telemetry cannot prove upstream execution counts. |
+| Upstream I/O and delivery | An HTTP client child span runs from send through body EOF, transport failure or undrained exit. Headers, first projected content, terminal validation, EOF, publication and handoffs are bounded one-shot observations, not per-chunk logs. First content is not first frame or recovery readiness. Local handoff is neither remote receipt nor inference success. An undrained exit alone does not tell why consumption stopped. |
+| Failures | Recovered attempts and client/upstream 4xx rejection are WARN; unrecovered service, transport, decode and terminal failures are ERROR. HTTP-200 failures use their source classification. Ordinary cancellation/shutdown, length stops, refusal and accepted adaptations are not failures. Closed categories and source boundaries survive cancellation. Responses retains the last complete source event and native sequence on decoder rejection. |
+| OAuth renewal | The scheduled renewal span owns correlated failure logs and HTTP/prepare/commit children, including blocking storage work. A queued commit may publish after the renewal caller cancels. Caller end and durable publication are separate; token replies, grants, locators and raw third-party errors never become diagnostic bodies. |
+| Export and shutdown | Requests enqueue without waiting. SDK queues, all-on sampling, spans, batches and HTTP timeouts are bounded; export does not retry. Queue/export/flush loss emits one body-free local warning per owner without affecting execution or recursively exporting it. Ingress and producers stop and required credential commits drain before bounded provider shutdown off async workers. Embedded owners stop producers before explicit shutdown; last-owner destruction never waits for export. |
 
-- **Population and severity:** recovered attempt failures and client/upstream 4xx rejection are WARN; unrecovered service, transport, decode and terminal failures are ERROR. HTTP-200 failed tasks use their source class. Ordinary cancellation/shutdown is not a default error; independently observed upstream failures survive it. Length stops, refusal, accepted adaptation and ignored fields do not generate warnings.
-- **Attribution:** closed reason codes, original source/conversion boundary, trusted Agent/request identity, operation, selected Provider/account, public/upstream model and attempt. HTTP status alone does not assign blame. `http.response.status_code` is the observed upstream head; `gateway.error.status_code` is the selected local error presentation. `client.handoff_complete:true` records acknowledged local delivery, not remote receipt or inference success.
-- **Lifecycle:** requests enqueue without waiting for export. Bounded SDK queues/batches, explicit all-on sampling/span limits, finite HTTP timeout and no export retries. Queue/export/flush problems produce a fixed body-free warning once per owner without changing inference, routing, replay or credential state. The binary waits for request producers and required storage work before bounded provider shutdown off async workers, including early post-bootstrap exits. Embedded owners explicitly flush/shut down after stopping producers; last-owner destruction never waits for export. Telemetry delivery is best effort.
-- **Operation and attempt observations:** SDK span lifetimes own durations and SDK event timestamps locate send invocations, response headers, first projected content, terminal/EOF validation, publication and local handoffs. First projected content is not the first frame, recovery readiness, or remote receipt. Preparation/delivery are part of the internal attempt, not a claim of network-only latency. No per-chunk stage events, custom elapsed clocks or log sequence counters remain; the last stage still attributes failures. A failed attempt keeps its own status/log context while successful recovery leaves the final operation successful. Client-response capture follow-ups explicitly reference the HTTP request rather than whichever attempt or ambient span is current. Last complete Responses source-event context and its native sequence survive decoder rejection; later cancellation cannot replace them. Protocol owners return pure closed data, not log records. Telemetry does not establish exact upstream execution counts or remote receipt.
-- **Receiver:** the selected single-host Collector writes bounded rotating OTLP JSON batches behind a private directory and loopback listener. It provides neither indexed queries nor zero-loss guarantees. File permissions, retention and operation live in [Usage](../usage/gateway-configuration.md#loopback-file-receiver).
-- **Maintenance:** A scheduled OAuth renewal attempt owns a local span with correlated failure logs, HTTP body lifetime, and blocking prepare/commit spans. The caller ending and a durable publication are separate facts; queued commits can publish after the caller cancels. Token replies, grants, credential locators and raw third-party errors are never diagnostic bodies.
+Allowlist exit fields and Resources: closed reason, operation, trusted Agent/request identity, selected Provider/account/model, attempt and safe transport/delivery observations. Ordinary telemetry excludes credentials, provenance, raw URLs, headers, private paths, session IDs, business content and raw third-party errors. No ambient auth/Resource enrichment, automatic raw exception attributes, incoming baggage, upstream trace injection or required client echo. Private capture remains separate. Delayed client-response capture links to the request, not a stale attempt or ambient span; public adaptation notices and delivery fences are independent of export.
 
-Public adaptation notices retain bounded semantic conversion evidence independently of diagnostic logging. Acknowledgment, delivery commit, publication fences and history reservations remain execution responsibilities. Logs cannot prove upstream execution counts; synthetic authorities and client outcomes are the acceptance oracle.
-
-#### Selected logs and traces design
-
-- **Standard pipeline:** Use `tracing` as the application instrumentation entry,
-  [`tracing-opentelemetry`](https://docs.rs/tracing-opentelemetry/0.34.0/tracing_opentelemetry/)
-  for spans and the official
-  [`opentelemetry-appender-tracing`](https://docs.rs/opentelemetry-appender-tracing/0.33.1/opentelemetry_appender_tracing/)
-  for Logs. Official SDK processors/exporters own bounded buffering and OTLP;
-  Collector facilities own downstream batching, retry and optional persistence.
-  Keep application glue limited to configuration, safe field mapping and
-  lifecycle ownership. Pin compatible releases before integration.
-- **Ownership and coverage:** The binary composition root owns providers and
-  subscriber installation; embedded Gateway users and tests retain isolated
-  subscriber ownership. Request spans cover ingress through response-body end or
-  drop, including body-free authentication/admission rejection. Upstream client
-  spans cover response consumption, not just header receipt. Propagate context
-  across spawned futures, blocking storage work and body polling without holding
-  entered guards across awaits. Instrument orchestration/I/O owners, never pure
-  semantic, codec, adapter or lowering transformations.
-- **Meaning and volume:** Separate logical requests, physical attempt slots and
-  actual send invocations. Use spans for operations and bounded one-shot events
-  for headers, first content, publication, terminal/EOF checks and handoffs,
-  never per-token/chunk spans or logs. Preserve HTTP, semantic and delivery
-  outcomes independently; typed execution facts, not automatic error-event
-  mapping, determine the final result. First frame is not TTFT and local
-  handoff is not remote receipt. No Agent/tool-execution spans are invented.
-- **Logs and traces:** Use separate layer filters so log verbosity cannot disable
-  request spans. Target controlled INFO operation starts/results, WARN recovered
-  failures and relevant rejections, ERROR unrecovered failures, and bounded DEBUG
-  milestones. Preserve the original failure across recovery/cancellation.
-  Application logging replaces the old direct Sink path, while domain facts
-  consumed by public adaptation notices remain independent. Do not serialize
-  entire Reports or retain permanent dual logging.
-- **Data and trust:** Explicitly allowlist final emitted fields and Resource
-  attributes. Prefer standard names and namespace gateway-specific fields under
-  `morphiecore.*`. Exclude credentials, provenance, raw headers/URLs/private paths,
-  session identifiers, business content and third-party error/debug strings.
-  Disable unsafe automatic exception enrichment and implicit ambient
-  authentication/resource enrichment; keep exporter diagnostics safe and local.
-  Generate local trace roots by default, without client baggage, Provider header
-  injection or new client echo requirements. Private capture remains separate
-  opt-in data handling, not ordinary span attributes.
-- **Sampling and query path:** Initially collect bounded coarse-grained spans for
-  all instrumented operations in the development workflow. Business metrics and
-  tail sampling remain deferred rather than prerequisites. Reuse an existing
-  OTLP backend when available; the official
-  [Grafana OTLP development image](https://grafana.com/docs/opentelemetry/docker-lgtm/)
-  is a development/test query option, not an approved production deployment.
-  Do not build an application-owned diagnostic database or promise zero loss.
-- **Shutdown and failure isolation:** Stop ingress and cancel/drain request
-  producers, preserve required credential commits, then close providers with
-  bounded SDK shutdown off async workers. Do not block request/body destructors
-  on export or let a telemetry deadline abandon rotated credentials. Backend
-  outage and queue loss cannot change inference, routing, replay or credential
-  state; safe local warnings must not recursively export themselves.
+The receiver owns retention and durability; no application database, success-wire archive or usage ledger. Use the [loopback file receiver](../usage/gateway-configuration.md#loopback-file-receiver) for bounded JSONL or the [development query](../usage/gateway-configuration.md#indexed-development-query) for indexed synthetic evidence. Business metrics, tail sampling and production deployment are separate.
 
 ### Configurable exchange capture
 

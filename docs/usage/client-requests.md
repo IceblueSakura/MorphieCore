@@ -284,7 +284,7 @@ Explicit presence stays in source IR. Omitted detail remains omitted; only the c
 
 Any approved projection changes only the candidate copy, not the source request.
 
-See [Media](../architecture/adaptation-and-dialects.md#media), [IR resource budgets](../../src/semantic/task/generation/resources/mod.rs) and [Messages media limits](../../src/protocol/anthropic/messages/media.rs).
+See [Media](../architecture/adaptation-and-dialects.md#media), [IR resource budgets](../../crates/morphiecore-semantic/src/task/generation/resources/mod.rs) and [Messages media limits](../../crates/morphiecore-protocol/src/anthropic/messages/media.rs).
 
 ## Stored Responses
 

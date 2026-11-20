@@ -78,7 +78,7 @@ The Python SDK accepts an API-root `base_url`, explicit retry policy and compres
 
 The Python SDK documents warning and skipping unknown answer kinds, and ignoring unknown response fields. A returned response object can therefore conceal a missing typed answer. Acceptance must compare requested question identities with the typed answers actually consumed.
 
-TypeSafe model discovery uses `GET /v1/models` with `models:[{name,description,release_date}]`; all three entry fields are required. OpenAI uses the same suffix with `object:"list",data:[...]`, already implemented by MorphieCore's [model view](../../src/gateway/ingress/models.rs). A shared root cannot serve both contracts without an explicit discriminator. The [namespace proposal](../proposals/decisions-api.md#sdk-surfaces-and-discovery) avoids SDK-specific header sniffing.
+TypeSafe model discovery uses `GET /v1/models` with `models:[{name,description,release_date}]`; all three entry fields are required. OpenAI uses the same suffix with `object:"list",data:[...]`, already implemented by MorphieCore's [model view](../../crates/morphiecore-gateway/src/ingress/models.rs). A shared root cannot serve both contracts without an explicit discriminator. The [namespace proposal](../proposals/decisions-api.md#sdk-surfaces-and-discovery) avoids SDK-specific header sniffing.
 
 Documented errors include validation `422`, rate limiting `429` and overload `529`; image/multipart paths also describe `400` and `413`. SDK default retries and body-inclusive debug logging require care in acceptance: disable retries for bounded Provider runs and do not enable business-payload logging merely to inspect SDK behavior.
 
@@ -138,11 +138,11 @@ Rechecked on 2026-10-23 while designing the IR, against the [OpenAI Node resourc
 
 Existing-code review also constrains reuse.
 
-Generation's [content union](../../src/semantic/task/generation/content/item.rs) lacks a standalone JSON evidence part and includes reasoning/replay/compaction owners inappropriate for Decision.
+Generation's [content union](../../crates/morphiecore-semantic/src/task/generation/content/item.rs) lacks a standalone JSON evidence part and includes reasoning/replay/compaction owners inappropriate for Decision.
 
-Its [structured value](../../src/semantic/task/generation/content/structured.rs), resource traversal and usage reports carry Generation-specific limits and validation.
+Its [structured value](../../crates/morphiecore-semantic/src/task/generation/content/structured.rs), resource traversal and usage reports carry Generation-specific limits and validation.
 
-The [Embedding adapter](../../src/adapter/embeddings.rs) and [lowering expectations](../../src/protocol/embedding/projection.rs) offer a smaller source-report/delivery pattern.
+The [Embedding adapter](../../crates/morphiecore-protocol/src/adapter/embeddings.rs) and [lowering expectations](../../crates/morphiecore-protocol/src/embedding/projection.rs) offer a smaller source-report/delivery pattern.
 
 These observations support neutral leaf reuse and independent Decision owners, not an automatic extraction or refactor.
 
