@@ -1,5 +1,6 @@
 //! Protocol-neutral capability, disposition, reasoning and conversion boundaries.
 
+pub mod capabilities;
 pub mod conversion;
 pub mod disposition;
 pub mod error;

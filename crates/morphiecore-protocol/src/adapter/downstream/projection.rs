@@ -1,6 +1,7 @@
 //! One client delivery projection. Renderers and retained history consume its events.
 use super::*;
 use crate::conversion::generation::{Change, ConversionBoundary, Field, Owner};
+use crate::lowering::disposition::{DeliveryDispositions, DeliveryFact, Disposition, Rule};
 use crate::semantic::task::generation::*;
 use crate::semantic::value::Presence;
 use std::collections::{BTreeMap, BTreeSet};
@@ -8,99 +9,50 @@ use std::collections::{BTreeMap, BTreeSet};
 mod snapshot;
 pub use snapshot::emit;
 
-#[derive(Clone, Copy)]
-pub enum Fact {
-    Reasoning,
-    Phase,
-    ExecutionHints,
-    Settings,
-    Fingerprint,
-    Annotations,
-    Probabilities,
-    TerminalExplanation,
-    Refusal,
-    OpeningService,
-}
-impl Fact {
-    pub const ALL: [Self; 10] = [
-        Self::Reasoning,
-        Self::Phase,
-        Self::ExecutionHints,
-        Self::Settings,
-        Self::Fingerprint,
-        Self::Annotations,
-        Self::Probabilities,
-        Self::TerminalExplanation,
-        Self::Refusal,
-        Self::OpeningService,
-    ];
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Reasoning => "reasoning",
-            Self::Phase => "message_phase",
-            Self::ExecutionHints => "execution_hints",
-            Self::Settings => "reported_settings",
-            Self::Fingerprint => "system_fingerprint",
-            Self::Annotations => "annotations",
-            Self::Probabilities => "probabilities",
-            Self::TerminalExplanation => "terminal_explanation",
-            Self::Refusal => "refusal",
-            Self::OpeningService => "opening_service_report",
-        }
-    }
-}
-#[derive(Clone, Copy)]
-pub enum Disposition {
-    Native,
-    Omit(&'static str),
-    Approximate(&'static str),
-}
 impl ClientAdapter {
-    pub fn disposition(&self, fact: Fact, streaming: bool) -> Disposition {
+    pub fn delivery_dispositions(&self, streaming: bool) -> DeliveryDispositions {
+        use DeliveryFact::*;
         use Disposition::*;
-        use Fact::*;
-        match (self.protocol(), fact) {
+        let protocol = self.protocol();
+        DeliveryDispositions::from_facts(|fact| match (protocol, fact) {
             // A model-authored refusal is not a classifier stop.
-            (ClientProtocol::Messages, Refusal) => Approximate("messages.refusal-as-text.v1"),
-            (ClientProtocol::Chat, OpeningService) => Omit("chat.omit-opening-service-report.v1"),
+            (ClientProtocol::Messages, Refusal) => Approximate(Rule::MESSAGES_REFUSAL_AS_TEXT),
+            (ClientProtocol::Chat, OpeningService) => Omit(Rule::OMIT_CHAT_OPENING_SERVICE),
             (ClientProtocol::Chat, Reasoning) if self.omits_readable_reasoning() => {
-                Omit("chat.omit-readable-reasoning.v1")
+                Omit(Rule::OMIT_CHAT_READABLE_REASONING)
             }
             (ClientProtocol::Chat | ClientProtocol::Messages, Phase) => {
-                Omit("generation.omit-delivery-message-phase.v1")
+                Omit(Rule::OMIT_DELIVERY_MESSAGE_PHASE)
             }
-            (ClientProtocol::Messages, ExecutionHints) => {
-                Omit("messages.omit-reported-execution-hints.v1")
-            }
+            (ClientProtocol::Messages, ExecutionHints) => Omit(Rule::OMIT_MESSAGES_EXECUTION_HINTS),
             (ClientProtocol::Chat, ExecutionHints) if streaming => {
-                Omit("chat.omit-stream-execution-hints.v1")
+                Omit(Rule::OMIT_CHAT_STREAM_EXECUTION_HINTS)
             }
             (ClientProtocol::Chat, ExecutionHints) => {
-                Omit("chat.omit-unsupported-execution-hints.v1")
+                Omit(Rule::OMIT_CHAT_UNSUPPORTED_EXECUTION_HINTS)
             }
-            (ClientProtocol::Messages, Settings) => Omit("messages.omit-incidental-settings.v1"),
-            (ClientProtocol::Chat, Settings) => Omit("chat.omit-reported-settings.v1"),
-            (ClientProtocol::Messages, Fingerprint) => Omit("messages.omit-system-fingerprint.v1"),
+            (ClientProtocol::Messages, Settings) => Omit(Rule::OMIT_MESSAGES_INCIDENTAL_SETTINGS),
+            (ClientProtocol::Chat, Settings) => Omit(Rule::OMIT_CHAT_DELIVERED_SETTINGS),
+            (ClientProtocol::Messages, Fingerprint) => Omit(Rule::OMIT_MESSAGES_SYSTEM_FINGERPRINT),
             (ClientProtocol::Responses, Fingerprint) => {
-                Omit("responses.omit-system-fingerprint.v1")
+                Omit(Rule::OMIT_RESPONSES_SYSTEM_FINGERPRINT)
             }
             (ClientProtocol::Chat, Annotations) if streaming => {
-                Omit("chat.omit-stream-annotations.v1")
+                Omit(Rule::OMIT_CHAT_STREAM_ANNOTATIONS)
             }
-            (ClientProtocol::Messages, Annotations) => Omit("messages.omit-annotations.v1"),
-            (ClientProtocol::Messages, Probabilities) => {
-                Omit("messages.omit-probability-reports.v1")
-            }
+            (ClientProtocol::Messages, Annotations) => Omit(Rule::OMIT_MESSAGES_ANNOTATIONS),
+            (ClientProtocol::Messages, Probabilities) => Omit(Rule::OMIT_MESSAGES_PROBABILITIES),
             (ClientProtocol::Messages, TerminalExplanation) => {
-                Omit("messages.omit-terminal-explanation.v1")
+                Omit(Rule::OMIT_MESSAGES_TERMINAL_EXPLANATION)
             }
             _ => Native,
-        }
+        })
     }
 }
 
 pub struct ClientProjection {
     client: ClientAdapter,
+    dispositions: DeliveryDispositions,
     streaming: bool,
     native: bool,
     state: Option<StreamState>,
@@ -137,6 +89,7 @@ impl ClientProjection {
         };
         let messages = (client.protocol() == ClientProtocol::Messages).then(Default::default);
         Self {
+            dispositions: client.delivery_dispositions(streaming),
             client,
             streaming,
             native,
@@ -197,12 +150,8 @@ impl ClientProjection {
         self.terminal_policy = policy;
         self
     }
-    fn loss(&mut self, rule: &'static str, field: Field, owner: Owner) {
-        let effect =
-            Effect::new(rule, field, ConversionBoundary::EventProject, Change::Omit).at(owner);
-        if !self.losses.contains(&effect) {
-            self.losses.push(effect);
-        }
+    fn loss(&mut self, rule: Rule, owner: Owner) {
+        self.reported_loss(rule.effect(ConversionBoundary::EventProject).at(owner));
     }
     pub fn take_evidence(&mut self) -> crate::conversion::generation::EvidenceDelta {
         std::mem::take(&mut self.losses).into_iter().collect()
@@ -235,7 +184,7 @@ impl ClientProjection {
             return Err(CodecError::Unsupported(CarrierReason::Safety));
         }
         let mut metadata = source.clone();
-        if let Disposition::Omit(rule) = self.client.disposition(Fact::Settings, self.streaming) {
+        if let Disposition::Omit(rule) = self.dispositions.get(DeliveryFact::Settings) {
             if metadata
                 .context
                 .reports
@@ -243,12 +192,7 @@ impl ClientProjection {
                 .any(|report| report.settings.is_some())
                 || metadata.context.instruction_messages.is_some()
             {
-                self.reported_loss(Effect::new(
-                    rule,
-                    crate::conversion::generation::Field::ReportedSettings,
-                    ConversionBoundary::EventProject,
-                    Change::Omit,
-                ));
+                self.loss(rule, Owner::Root);
             }
             for report in metadata.context.reports.iter_mut() {
                 report.settings = None;
@@ -256,28 +200,20 @@ impl ClientProjection {
             metadata.context.instruction_messages = None;
             metadata.instruction_fidelity = Default::default();
         }
-        if let Disposition::Omit(rule) = self.client.disposition(Fact::Fingerprint, self.streaming)
-        {
+        if let Disposition::Omit(rule) = self.dispositions.get(DeliveryFact::Fingerprint) {
             if metadata.context.system_fingerprint.as_ref().is_some() {
-                self.loss(
-                    rule,
-                    crate::conversion::generation::Field::SystemFingerprint,
-                    Owner::Root,
-                );
+                self.loss(rule, Owner::Root);
             }
             metadata.context.system_fingerprint = None;
         }
-        if let Disposition::Omit(rule) = self
-            .client
-            .disposition(Fact::ExecutionHints, self.streaming)
-        {
+        if let Disposition::Omit(rule) = self.dispositions.get(DeliveryFact::ExecutionHints) {
             let mut meaningful = metadata.context.execution.clone();
             let keep_metadata = self.client.protocol() == ClientProtocol::Chat && !self.streaming;
             if keep_metadata || meaningful.metadata == Presence::Null {
                 meaningful.metadata = Presence::Absent;
             }
             if meaningful != Default::default() {
-                self.loss(rule, Field::Representation, Owner::Root);
+                self.loss(rule, Owner::Root);
             }
             let association = metadata.context.execution.metadata.clone();
             metadata.context.execution = Default::default();
@@ -293,16 +229,9 @@ impl ClientProjection {
             if opening
                 .as_ref()
                 .is_some_and(|report| report.service_class.is_some())
-                && let Disposition::Omit(rule) = self
-                    .client
-                    .disposition(Fact::OpeningService, self.streaming)
+                && let Disposition::Omit(rule) = self.dispositions.get(DeliveryFact::OpeningService)
             {
-                self.reported_loss(Effect::new(
-                    rule,
-                    Field::OpeningReport,
-                    ConversionBoundary::EventProject,
-                    Change::Omit,
-                ));
+                self.loss(rule, Owner::Root);
             }
             metadata.context.reports = crate::semantic::context::ResponseReports::Single(Box::new(
                 crate::semantic::context::ResponseReport {
@@ -402,14 +331,13 @@ impl ClientProjection {
                     kind: ItemKind::Reasoning,
                     ..
                 } = event
-                    && let Disposition::Omit(rule) =
-                        self.client.disposition(Fact::Reasoning, self.streaming)
+                    && let Disposition::Omit(rule) = self.dispositions.get(DeliveryFact::Reasoning)
                 {
                     if self.omitted.len() >= MAX_ITEMS {
                         return Err(CodecError::Limit);
                     }
                     self.omitted.insert(*item);
-                    self.loss(rule, Field::DeliveredProjection, Owner::item(*item));
+                    self.loss(rule, Owner::item(*item));
                     continue;
                 }
                 if crate::openai::lowering::readable_reasoning::owner(event)
@@ -425,15 +353,13 @@ impl ClientProjection {
                         ..
                     } => {
                         if phase.is_some()
-                            && let Disposition::Omit(_) =
-                                self.client.disposition(Fact::Phase, self.streaming)
+                            && let Disposition::Omit(rule) =
+                                self.dispositions.get(DeliveryFact::Phase)
                         {
                             *phase = None;
                             self.losses.push(
-                                crate::phase::delivery_omission(
-                                    crate::conversion::generation::ConversionBoundary::EventProject,
-                                )
-                                .at(Owner::item(*item)),
+                                rule.effect(ConversionBoundary::EventProject)
+                                    .at(Owner::item(*item)),
                             );
                         }
                     }
@@ -475,33 +401,25 @@ impl ClientProjection {
                         }
                         if !logprobs.is_empty()
                             && let Disposition::Omit(rule) =
-                                self.client.disposition(Fact::Probabilities, self.streaming)
+                                self.dispositions.get(DeliveryFact::Probabilities)
                         {
                             logprobs.clear();
-                            self.loss(rule, Field::Representation, Owner::item(*item));
+                            self.loss(rule, Owner::item(*item));
                         }
                     }
                     StreamEvent::PartStarted { kind, .. } if *kind == PartKind::Refusal => {
                         if let Disposition::Approximate(rule) =
-                            self.client.disposition(Fact::Refusal, self.streaming)
+                            self.dispositions.get(DeliveryFact::Refusal)
                         {
                             *kind = PartKind::Text;
-                            let effect = Effect::new(
-                                rule,
-                                crate::conversion::generation::Field::ContentRefusal,
-                                ConversionBoundary::EventProject,
-                                Change::Approximate,
-                            );
-                            if !self.losses.contains(&effect) {
-                                self.losses.push(effect);
-                            }
+                            self.loss(rule, Owner::Root);
                         }
                     }
                     StreamEvent::AnnotationAdded { item, .. } => {
                         if let Disposition::Omit(rule) =
-                            self.client.disposition(Fact::Annotations, self.streaming)
+                            self.dispositions.get(DeliveryFact::Annotations)
                         {
-                            self.loss(rule, Field::Representation, Owner::item(*item));
+                            self.loss(rule, Owner::item(*item));
                             continue;
                         }
                     }
@@ -513,16 +431,16 @@ impl ClientProjection {
                     } => {
                         if !annotations.is_empty()
                             && let Disposition::Omit(rule) =
-                                self.client.disposition(Fact::Annotations, self.streaming)
+                                self.dispositions.get(DeliveryFact::Annotations)
                         {
                             annotations.clear();
-                            self.loss(rule, Field::Representation, Owner::item(*item));
+                            self.loss(rule, Owner::item(*item));
                         }
                         if let Disposition::Omit(rule) =
-                            self.client.disposition(Fact::Probabilities, self.streaming)
+                            self.dispositions.get(DeliveryFact::Probabilities)
                         {
                             if logprobs.as_ref().is_some_and(|v| !v.is_empty()) {
-                                self.loss(rule, Field::Representation, Owner::item(*item));
+                                self.loss(rule, Owner::item(*item));
                             }
                             *logprobs = None;
                         }
@@ -532,10 +450,10 @@ impl ClientProjection {
                     }
                     StreamEvent::LogprobsSnapshot { item, logprobs, .. } => {
                         if let Disposition::Omit(rule) =
-                            self.client.disposition(Fact::Probabilities, self.streaming)
+                            self.dispositions.get(DeliveryFact::Probabilities)
                         {
                             if !logprobs.is_empty() {
-                                self.loss(rule, Field::Representation, Owner::item(*item));
+                                self.loss(rule, Owner::item(*item));
                             }
                             continue;
                         }
@@ -590,8 +508,7 @@ impl ClientProjection {
                         {
                             details.incomplete = Some(IncompleteReason::Unspecified);
                             self.loss(
-                                "responses.omit-unrepresented-incomplete-reason.v1",
-                                Field::Incomplete,
+                                Rule::OMIT_RESPONSES_UNREPRESENTED_INCOMPLETE_REASON,
                                 Owner::Root,
                             );
                         }
@@ -608,12 +525,11 @@ impl ClientProjection {
                             details.explanation = None;
                         }
                         if details.explanation.as_ref().is_some()
-                            && let Disposition::Omit(rule) = self
-                                .client
-                                .disposition(Fact::TerminalExplanation, self.streaming)
+                            && let Disposition::Omit(rule) =
+                                self.dispositions.get(DeliveryFact::TerminalExplanation)
                         {
                             details.explanation = None;
-                            self.loss(rule, Field::Representation, Owner::Root);
+                            self.loss(rule, Owner::Root);
                         }
                     }
                     _ => {}

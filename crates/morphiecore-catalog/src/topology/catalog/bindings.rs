@@ -1,5 +1,6 @@
 //! Deployment bindings, not model discovery. Aliases and profiles are explicit.
 use crate::{
+    lowering::capabilities::SamplingConstraints,
     protocol::{
         openai::Dialect,
         reasoning::{ReasoningEffortMapping, ReasoningHistory},
@@ -151,9 +152,6 @@ impl ApiKeyBinding {
                 adapter.adaptation.rules.reasoning_alias = false;
             }
         }
-        if self.dialect == Dialect::Standard && self.canonical_model == "gpt-6.1-terra" {
-            adapter.adaptation.rules.sampling_requires_reasoning_off = true;
-        }
         // Hosted MiniCPM5 uses the canonical readable field; V4.7 uses `reasoning`.
         if self.dialect == Dialect::ModelBest
             && matches!(self.canonical_model, "minicpm5-1b" | "minicpm5-2b")
@@ -201,6 +199,10 @@ impl ApiKeyBinding {
         }
         let mut contract = TargetContract {
             reasoning_history,
+            sampling: match (self.dialect, self.canonical_model) {
+                (Dialect::Standard, "gpt-6.1-terra") => SamplingConstraints::RequiresReasoningOff,
+                _ => SamplingConstraints::default(),
+            },
             dispositions: self
                 .endpoint_slice
                 .apply(models::contract(self.canonical_model))

@@ -260,14 +260,7 @@ impl<'a> Target<'a> {
                     table.set_native(feature, c.dispositions.native(feature));
                 }
                 table.set_native(TopK, api == GenerationApi::Chat && rules.thinking_controls);
-                if rules.sampling_requires_reasoning_off
-                    && source.resolved_configuration().active.activation
-                        != Some(crate::semantic::task::generation::ReasoningActivation::Disabled)
-                {
-                    for feature in [Temperature, TopP, Logprobs] {
-                        omit(&mut table, feature);
-                    }
-                }
+                c.sampling.apply(source, &mut table);
                 table.set_native(
                     ToolBudget,
                     api == GenerationApi::Responses

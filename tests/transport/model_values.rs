@@ -1248,18 +1248,24 @@ fn terra_sampling_is_available_only_with_explicit_thinking_off() {
     let endpoint = binding
         .endpoint(GenerationProtocol::OpenAiResponses)
         .unwrap();
-    for effort in ["none", "low"] {
-        let request = source(json!({"model":binding.model,"input":"go",
-            "reasoning":{"effort":effort},"temperature":0.4,"top_p":0.8}));
+    for (effort, keeps_sampling) in [(Some("none"), true), (Some("low"), false), (None, false)] {
+        let mut input = json!({"model":binding.model,"input":"go","temperature":0.4,"top_p":0.8});
+        if let Some(effort) = effort {
+            input["reasoning"] = json!({"effort":effort});
+        }
+        let request = source(input);
         let original = request.clone();
-        let wire = endpoint.encode_request(&request).unwrap();
-        assert_eq!(wire["reasoning"]["effort"], effort);
-        if effort == "none" {
+        let (wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
+        assert_eq!(wire["reasoning"]["effort"].as_str(), effort);
+        if keeps_sampling {
             assert_eq!(wire["temperature"], 0.4);
             assert_eq!(wire["top_p"], 0.8);
         } else {
             assert!(wire.get("temperature").is_none());
             assert!(wire.get("top_p").is_none());
+        }
+        for rule in ["generation.omit-temperature.v1", "generation.omit-top-p.v1"] {
+            assert_eq!(rules.contains(&rule), !keeps_sampling, "{effort:?}: {rule}");
         }
         assert_eq!(request, original);
     }

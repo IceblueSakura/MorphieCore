@@ -126,8 +126,6 @@ pub struct WireRules {
     pub require_parameters: bool,
     /// This target can choose tools automatically but cannot enforce explicit selection.
     pub auto_tool_choice_only: bool,
-    /// Sampling and probabilities have a carrier only when thinking is explicitly disabled.
-    pub sampling_requires_reasoning_off: bool,
     /// Provider request spelling; downstream still uses max_completion_tokens.
     pub legacy_max_tokens: bool,
     /// Native application-instruction carrier, for both root and ordered instructions.

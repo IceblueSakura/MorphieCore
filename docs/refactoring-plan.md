@@ -1,6 +1,6 @@
 # MorphieCore Refactoring Plan
 
-This plan tracks the code-first refactor: enforce layer boundaries, move model policy out of protocol code, then simplify tests and documentation. The status below is checked against source at `29781e2`. A landed change is not a fresh test pass. The [roadmap](roadmap/index.md) owns scope and release gates; [architecture](architecture/index.md) owns accepted contracts; [development](development.md) owns verification policy. This plan does not activate APIs or change [frozen scope](roadmap/backlog-and-frozen.md#frozen-scope).
+This plan tracks the code-first refactor: enforce layer boundaries, move model policy out of protocol code, then simplify tests and documentation. The initial status audit covered source at `29781e2`; Phase 2 also tracks the subsequent implementation. A landed change is not a full acceptance pass. The [roadmap](roadmap/index.md) owns scope and release gates; [architecture](architecture/index.md) owns accepted contracts; [development](development.md) owns verification policy. This plan does not activate APIs or change [frozen scope](roadmap/backlog-and-frozen.md#frozen-scope).
 
 ## Status and next slice
 
@@ -8,7 +8,7 @@ This plan tracks the code-first refactor: enforce layer boundaries, move model p
 | --- | --- | --- |
 | 0. Cleanup | Landed, with the scope corrections below | No blocker for Phase 2 |
 | 1. Dependency boundaries | Landed | No blocker for Phase 2 |
-| 2. Projection and catalog | No task complete; reusable pieces exist | Start Tasks 2.1–2.2 with one request projection path and verify its behavior before moving the rest |
+| 2. Projection and catalog | Tasks 2.1–2.2 in progress: shared disposition table and first sampling policy landed | Migrate the next model-specific control out of the request projector, preserving source admission and named losses |
 | 3. Tests and observability | No task complete; existing checks cover parts of the gate | Reuse those checks and fill the evidence gaps below |
 | 4. Documentation | No task complete; routes already match by inspection | Add independent gates and consolidate documentation after code boundaries settle |
 
@@ -38,19 +38,19 @@ Operators who explicitly set `resources.history_entries`, `resources.history_byt
 
 ### Task 2.1 — Share request and delivery disposition rules
 
-- **Current:** [lowering's disposition module](../crates/morphiecore-lowering/src/disposition.rs) already owns typed `Disposition` and `Rule` for request features. [Downstream projection](../crates/morphiecore-protocol/src/adapter/downstream/projection.rs) still has a separate `Fact` and string rule IDs.
-- **Remaining:** Share a typed table keyed by `Feature` or `DeliveryFact` and register the delivery rules. Use stable Rust storage (for example, an explicit const length), not `[Disposition; K::COUNT]` for a generic key. Keep native support, admissibility, and loss reporting distinct. Use the first consumer in Task 2.2 to establish `TargetCapabilities`: request dispositions, limits, reasoning, sampling, tool and output constraints, and service/history policies. Move only wire-neutral policy; leave protocol-specific cache, replay and citation encoding at the protocol boundary. Schema admission must preserve the existing distinction between tool and structured-output rejection.
+- **Current:** [Lowering's `DispositionTable`](../crates/morphiecore-lowering/src/disposition.rs) uses an explicit const length and typed request and delivery keys. [Downstream projection](../crates/morphiecore-protocol/src/adapter/downstream/projection.rs) and public capability discovery use the same delivery rows and named effects. The first [sampling policy](../crates/morphiecore-lowering/src/capabilities.rs) is part of the trusted OpenAI target contract rather than `WireRules`.
+- **Remaining:** Grow the neutral `TargetCapabilities` contract from actual migrated controls: dispositions, limits, reasoning, sampling, tool and output constraints, and service/history policies. Keep native support, admissibility, and loss reporting distinct. Leave protocol-specific cache, replay and citation encoding at the protocol boundary. Schema admission must preserve the existing distinction between tool and structured-output rejection.
 - **Exit:** Focused lowering and protocol checks show unchanged acceptance, rejection and named loss reports for the migrated path.
 
 ### Task 2.2 — Move protocol-neutral request projection into `lowering`
 
-- **Current:** [The shared request projector](../crates/morphiecore-protocol/src/lowering/request.rs) is still in `protocol` and branches on model IDs and Bailian helpers. OpenAI, Anthropic, and both Google Generation APIs call it through their target contracts.
-- **Remaining:** Move control, tool and history projection in behavior-sized slices. Start with one model-specific control rule, supplying it through trusted target data; Task 2.4 can then relocate those declarations without changing projection behavior. The lowering API takes semantic input and protocol-neutral policy, **not** `protocol::GenerationRequestEnvelope`. Keep envelope handling and wire-specific validation in the protocol callers. Remove duplicate encoder checks only once the corresponding shared check preserves strict admission and the same failure boundary. Remove the transitional projector when no caller needs it.
+- **Current:** The Terra binding supplies `SamplingConstraints::RequiresReasoningOff`; lowering uses the effective semantic configuration to select the existing omissions without changing history or source controls. [The shared request projector](../crates/morphiecore-protocol/src/lowering/request.rs) is still in `protocol` and branches on model IDs and Bailian helpers. OpenAI, Anthropic, and both Google Generation APIs call it through their target contracts.
+- **Remaining:** Move control, tool and history projection in behavior-sized slices. Move the next model-dependent checks from the projector into trusted target declarations; Task 2.4 can later relocate those declarations without changing behavior. The lowering API takes semantic input and protocol-neutral policy, **not** `protocol::GenerationRequestEnvelope`. Keep envelope handling, native source admission and wire-specific validation in the protocol callers. Remove duplicate encoder checks only once the corresponding shared check preserves strict admission and the same failure boundary. Remove the transitional projector when no caller needs it.
 - **Exit:** Independent wire → IR and IR → wire checks cover affected targets, including negative cases, tool order, history replay and conversion reporting. A test count alone does not establish equivalence.
 
 ### Task 2.3 — Group wire rules and share SSE mechanics
 
-- **Current:** [OpenAI `WireRules`](../crates/morphiecore-protocol/src/openai/dialect/adaptation.rs) remains flat (62 booleans and a finish-reason alias slice); [Bailian](../crates/morphiecore-protocol/src/openai/dialect/bailian.rs) still mixes model data, admission and wire hooks. [Shared SSE framing](../crates/morphiecore-protocol/src/sse.rs) and stream limits already exist.
+- **Current:** [OpenAI `WireRules`](../crates/morphiecore-protocol/src/openai/dialect/adaptation.rs) remains a flat set of flags and a finish-reason alias slice; [Bailian](../crates/morphiecore-protocol/src/openai/dialect/bailian.rs) still mixes model data, admission and wire hooks. [Shared SSE framing](../crates/morphiecore-protocol/src/sse.rs) and stream limits already exist.
 - **Remaining:** Group request lowering, dialect hooks, reasoning wire format, response accounting, stream framing and response metadata. Use enums for mutually exclusive modes and preserve existing named dialect defaults. Move model data to trusted declarations without dropping source admission checks or model-independent wire hooks. Share repeated SSE accounting and EOF mechanics across Chat, Responses, Messages, generateContent and Interactions where their contracts agree. Do not let a trailer substitute for a validated terminal event.
 - **Exit:** Directional dialect checks and controlled stream tests preserve request fields, usage, limits and terminal honesty.
 

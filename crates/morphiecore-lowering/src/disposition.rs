@@ -1,9 +1,13 @@
-//! Target-owned request dispositions. No routing, credentials or I/O.
+//! Target-owned request and delivery dispositions. No routing, credentials or I/O.
 use crate::conversion::generation::{Change, ConversionBoundary, Effect, Field};
 use morphiecore_semantic::task::generation::{
     Feature, GenerationRequest, GenerationResponse, GenerationResponseRequirements,
 };
+use std::marker::PhantomData;
 use strum::{EnumCount, IntoEnumIterator};
+
+mod delivery;
+pub use delivery::{DeliveryDispositions, DeliveryFact};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Rule {
@@ -186,14 +190,38 @@ impl Disposition {
     }
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Dispositions {
-    entries: [Disposition; Feature::COUNT],
+pub struct DispositionTable<K, const N: usize> {
+    entries: [Disposition; N],
+    key: PhantomData<K>,
 }
+pub trait DispositionKey {
+    fn index(self) -> usize;
+}
+impl DispositionKey for Feature {
+    fn index(self) -> usize {
+        self as usize
+    }
+}
+impl<K: DispositionKey, const N: usize> DispositionTable<K, N> {
+    fn filled(disposition: Disposition) -> Self {
+        Self {
+            entries: [disposition; N],
+            key: PhantomData,
+        }
+    }
+    pub fn get(&self, key: K) -> Disposition {
+        self.entries[key.index()]
+    }
+    pub fn set(&mut self, key: K, disposition: Disposition) {
+        self.entries[key.index()] = disposition;
+    }
+}
+
+pub type Dispositions = DispositionTable<Feature, { Feature::COUNT }>;
+
 impl Dispositions {
     pub fn full() -> Self {
-        let mut table = Self {
-            entries: [Disposition::Native; Feature::COUNT],
-        };
+        let mut table = Self::filled(Disposition::Native);
         table.set(
             Feature::ProviderObservation,
             Disposition::Reject("hosted execution is not scheduled"),
@@ -231,12 +259,6 @@ impl Dispositions {
             table.set_native(feature, true);
         }
         table
-    }
-    pub fn get(&self, feature: Feature) -> Disposition {
-        self.entries[feature as usize]
-    }
-    pub fn set(&mut self, feature: Feature, disposition: Disposition) {
-        self.entries[feature as usize] = disposition;
     }
     pub fn native(&self, feature: Feature) -> bool {
         self.get(feature) == Disposition::Native

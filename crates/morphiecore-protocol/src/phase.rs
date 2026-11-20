@@ -1,22 +1,10 @@
 //! Selected phase projection. Source history and protected semantic edits stay intact.
-use crate::{conversion::generation::Effect, semantic::task::generation::*};
+use crate::semantic::task::generation::*;
 
 pub fn has_phase(items: &[(ItemId, Item)]) -> bool {
     items
         .iter()
         .any(|(_, item)| matches!(item, Item::Message(m) if m.phase.is_some()))
-}
-
-pub fn delivery_omission(direction: crate::conversion::generation::ConversionBoundary) -> Effect {
-    Effect::Field {
-        rule: crate::conversion::generation::RuleId::new(
-            "generation.omit-delivery-message-phase.v1",
-        ),
-        field: crate::conversion::generation::Field::MessagePhase,
-        boundary: direction,
-        change: crate::conversion::generation::Change::Omit,
-        owner: crate::conversion::generation::Owner::Root,
-    }
 }
 
 /// A target with no phase carrier receives visible history, not equivalent continuation.

@@ -1,6 +1,6 @@
 //! OpenAI target capabilities; independent of endpoint execution and credentials.
 mod request;
-use crate::lowering::disposition::Dispositions;
+use crate::lowering::{capabilities::SamplingConstraints, disposition::Dispositions};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TargetContract {
     pub adaptation: crate::openai::dialect::adaptation::Adaptation,
@@ -12,6 +12,7 @@ pub struct TargetContract {
     /// Caller-supplied clock for checking a reported remote-resource expiry.
     pub resource_time: Option<u64>,
     pub dispositions: Dispositions,
+    pub sampling: SamplingConstraints,
     pub model_limits: crate::model_limits::ModelLimits,
     pub images: crate::image_constraints::ImageConstraints,
     pub files: crate::file_constraints::FileConstraints,
@@ -34,6 +35,7 @@ impl TargetContract {
             replay_origin: None,
             resource_time: None,
             dispositions: Dispositions::full(),
+            sampling: SamplingConstraints::default(),
             model_limits: Default::default(),
             images: crate::image_constraints::ImageConstraints::all(),
             files: crate::file_constraints::FileConstraints::all(),

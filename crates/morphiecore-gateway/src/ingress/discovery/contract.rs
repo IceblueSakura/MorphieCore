@@ -355,22 +355,18 @@ impl Interface {
             .map(|mode| {
                 (
                     *mode,
-                    crate::adapter::DeliveryFact::ALL
-                        .into_iter()
-                        .filter_map(|fact| {
-                            use crate::adapter::DeliveryDisposition;
-                            let rule = match entry.client.disposition(fact, *mode == "sse") {
-                                DeliveryDisposition::Native => return None,
-                                DeliveryDisposition::Omit(rule)
-                                | DeliveryDisposition::Approximate(rule) => rule,
-                            };
-                            Some((
+                    entry
+                        .client
+                        .delivery_dispositions(*mode == "sse")
+                        .rules()
+                        .map(|(fact, rule)| {
+                            (
                                 fact.name(),
                                 Capability {
                                     state: State::ApprovedAdaptation,
-                                    rules: BTreeSet::from([rule]),
+                                    rules: BTreeSet::from([rule.name()]),
                                 },
-                            ))
+                            )
                         })
                         .collect(),
                 )

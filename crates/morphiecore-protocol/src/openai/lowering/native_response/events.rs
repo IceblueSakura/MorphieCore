@@ -144,9 +144,14 @@ impl EventProjection {
                             }
                             ItemKind::Message { phase } if self.profile == GenerationApi::Chat => {
                                 if self.phase_only && phase.take().is_some() {
-                                    self.record(crate::phase::delivery_omission(
-                                        crate::conversion::generation::ConversionBoundary::EventProject,
-                                    ));
+                                    use crate::{
+                                        conversion::generation::ConversionBoundary,
+                                        lowering::disposition::Rule,
+                                    };
+                                    self.record(
+                                        Rule::OMIT_DELIVERY_MESSAGE_PHASE
+                                            .effect(ConversionBoundary::EventProject),
+                                    );
                                 }
                                 if !self.calls.is_empty() {
                                     return Err(CodecError::Unsupported(

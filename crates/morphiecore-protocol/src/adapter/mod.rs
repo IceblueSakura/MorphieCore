@@ -8,7 +8,6 @@ mod upstream;
 pub use downstream::ClientAdapter;
 pub use downstream::projection::ClientProjection;
 pub use downstream::projection::emit as emit_response_events;
-pub use downstream::projection::{Disposition as DeliveryDisposition, Fact as DeliveryFact};
 pub use downstream::{ClientEncoder, SAFETY_ASSESSMENT_RULE};
 pub use upstream::GenerationDecoder;
 pub use upstream::UpstreamAdapter;
