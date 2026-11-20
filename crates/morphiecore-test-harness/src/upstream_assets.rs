@@ -1,15 +1,14 @@
 //! Pinned public inputs. Framing adaptations never rewrite payload fields.
-use morphiecore::{
+use crate::morphiecore::{
     adapter::UpstreamAdapter,
     execution::{Attempt, AttemptError},
     protocol::stream::SseLimits,
 };
 use serde_json::Value;
-use std::path::Path;
 
 pub fn asset(name: &str) -> Vec<u8> {
     std::fs::read(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
+        morphiecore_test_support::workspace_root()
             .join("testdata/upstream")
             .join(name),
     )

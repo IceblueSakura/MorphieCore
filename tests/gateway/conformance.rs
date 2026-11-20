@@ -1,6 +1,5 @@
 //! Production-constructed lanes with pi-shaped requests and independent native session wires.
 //! Public delivery and failure diagnostics use independent upstream observations.
-use super::test_support::{Fixture, service};
 use axum::{
     Json, Router,
     body::Body,
@@ -9,6 +8,7 @@ use axum::{
     routing::post,
 };
 use futures_util::StreamExt;
+use morphiecore::gateway::startup::bootstrap::test_support::{Fixture, service};
 use serde_json::{Value, json};
 use std::{
     sync::{Arc, Mutex},
@@ -16,6 +16,7 @@ use std::{
 };
 use tower::ServiceExt;
 
+#[path = "conformance/wire.rs"]
 mod wire;
 use wire::{Api, Profile, ReasoningShape};
 
@@ -142,7 +143,7 @@ async fn unrepresentable_named_choice_never_dispatches_to_bailian() {
         body,
         &[(
             "anthropic-version",
-            crate::protocol::anthropic::messages::API_VERSION,
+            morphiecore::protocol::anthropic::messages::API_VERSION,
         )],
     )
     .await;
@@ -340,15 +341,15 @@ async fn observe_intake(
         (upstream == Api::Messages && profile == Profile::Reasoning)
             .then_some(ReasoningShape::Signed)
     });
-    let subscription = crate::topology::catalog::SUBSCRIPTION_BINDINGS
+    let subscription = morphiecore::topology::catalog::SUBSCRIPTION_BINDINGS
         .iter()
         .find(|entry| entry.endpoint_id().as_str() == binding);
     let oauth = subscription.map(|entry| entry.profile);
-    let bailian = crate::topology::catalog::API_KEY_BINDINGS
+    let bailian = morphiecore::topology::catalog::API_KEY_BINDINGS
         .iter()
         .any(|entry| {
             entry.model == model
-                && entry.dialect == crate::protocol::openai::Dialect::Bailian
+                && entry.dialect == morphiecore::protocol::openai::Dialect::Bailian
                 && (entry.provider)().id.as_str() == provider
         });
     let parameters = (client == Api::Responses && profile != Profile::Text).then(|| {
@@ -656,8 +657,7 @@ async fn observe_intake(
         wire::append(client, profile, turn, &mut request, value);
     }
     if control == Control::Default {
-        let descriptor: Value =
-            serde_json::from_slice(&boot.gateway.state.text_models.models[model]).unwrap();
+        let descriptor: Value = serde_json::from_slice(boot.text_model_json(model)).unwrap();
         let protocol = match client {
             Api::Chat => "chat_completions",
             Api::Responses => "responses",
@@ -686,8 +686,7 @@ async fn observe_intake(
             !calls.lock().unwrap().is_empty(),
             "{binding}/{protocol}/{profile}/{mode}: published default admission must reach dispatch"
         );
-        let capabilities: Value =
-            serde_json::from_slice(&boot.gateway.state.capabilities.0).unwrap();
+        let capabilities: Value = serde_json::from_slice(boot.capabilities_json()).unwrap();
         let capability = capabilities["data"]
             .as_array()
             .unwrap()
@@ -844,7 +843,7 @@ async fn native_reports_project_without_changing_content_or_terminal_outcome() {
 
 #[tokio::test]
 async fn representative_dialects_preserve_text_and_tool_workflows() {
-    use crate::topology::{GenerationProtocol, catalog::API_KEY_BINDINGS};
+    use morphiecore::topology::{GenerationProtocol, catalog::API_KEY_BINDINGS};
     // Exercise wire dialects and distinct tool/history policies, not catalog membership.
     for prefix in [
         "openai-terra",
@@ -955,7 +954,7 @@ async fn chat_json_only_facts_block_unconditional_streaming_intake() {
 
 #[tokio::test]
 async fn subscription_dialects_preserve_text_tools_and_reasoning() {
-    use crate::topology::catalog::SUBSCRIPTION_BINDINGS;
+    use morphiecore::topology::catalog::SUBSCRIPTION_BINDINGS;
     for identity in ["chatgpt", "grok"] {
         let entry = SUBSCRIPTION_BINDINGS
             .iter()

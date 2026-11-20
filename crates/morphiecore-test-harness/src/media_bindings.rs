@@ -1,14 +1,19 @@
 //! Explicit protocol fixtures; never selected from the product catalog.
-use super::{image_support, speech_support};
-use morphiecore::{
-    adapter::{images::UpstreamAdapter as ImageProfile, speech::UpstreamAdapter as SpeechProfile},
-    protocol::image::projection::AccountingPolicy,
-    provider::{
-        AuthScheme, CredentialBindingId, EndpointPath, ProviderDefinition, ProviderId,
-        TrustedOrigin,
+use crate::{
+    image_generation as image_support,
+    morphiecore::{
+        adapter::{
+            images::UpstreamAdapter as ImageProfile, speech::UpstreamAdapter as SpeechProfile,
+        },
+        protocol::image::projection::AccountingPolicy,
+        provider::{
+            AuthScheme, CredentialBindingId, EndpointPath, ProviderDefinition, ProviderId,
+            TrustedOrigin,
+        },
+        semantic::value::AudioEncoding,
+        topology::{EndpointId, EndpointTarget, ModelId, RouteId, images, speech, transcription},
     },
-    semantic::value::AudioEncoding,
-    topology::{EndpointId, EndpointTarget, ModelId, RouteId, images, speech, transcription},
+    speech as speech_support,
 };
 
 fn provider(origin: &str, id: &str) -> ProviderDefinition {
@@ -137,9 +142,9 @@ pub fn native_transcription(
                 },
                 upstream_model: "private-native-asr".into(),
                 canonical_model: model,
-                profile: morphiecore::adapter::transcription::UpstreamAdapter::AliyunFlash,
+                profile: crate::morphiecore::adapter::transcription::UpstreamAdapter::AliyunFlash,
                 credential: CredentialBindingId::new("native-key").unwrap(),
-                execution: morphiecore::topology::ExecutionContract {
+                execution: crate::morphiecore::topology::ExecutionContract {
                     streaming: false,
                     request_body_limit: 2 << 20,
                     ..speech.endpoint.execution

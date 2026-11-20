@@ -1,0 +1,24 @@
+[package]
+name = "morphiecore-test-harness"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Shared synthetic router and SDK loop integration test harnesses for MorphieCore"
+
+[dependencies]
+morphiecore-semantic.workspace = true
+morphiecore-lowering.workspace = true
+morphiecore-protocol.workspace = true
+morphiecore-catalog.workspace = true
+morphiecore-runtime.workspace = true
+morphiecore-gateway.workspace = true
+morphiecore-test-support.workspace = true
+
+axum.workspace = true
+bytes.workspace = true
+futures-util.workspace = true
+reqwest = { workspace = true, features = ["json"] }
+serde_json.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }

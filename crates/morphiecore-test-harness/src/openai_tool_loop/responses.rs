@@ -1,5 +1,6 @@
 //! OpenRouter Responses wire, phase and stored/stateless effective-history expectations.
 use super::RESULT;
+use morphiecore_test_support::responses_profile as responses_wire;
 use serde_json::{Value, json};
 
 pub fn snapshot(turn: usize) -> Value {
@@ -82,7 +83,7 @@ fn initial_batch() -> Value {
     ]})
 }
 pub fn events(turn: usize) -> Vec<Value> {
-    let mut events = crate::responses_wire::response_events(snapshot(turn));
+    let mut events = responses_wire::response_events(snapshot(turn));
     if turn == 1 {
         // Announce both owners before completing either. Finish the later
         // call first, while preserving each call's independent fragment order.

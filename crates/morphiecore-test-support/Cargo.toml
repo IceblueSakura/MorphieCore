@@ -6,7 +6,13 @@ license.workspace = true
 publish = false
 description = "Shared synthetic test fixtures and filesystem/proxy helpers for MorphieCore"
 
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
 [dependencies]
+axum.workspace = true
+bytes.workspace = true
+futures-util.workspace = true
 proptest.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true

@@ -1,5 +1,5 @@
 //! Small trusted image binding reused by offline topology and HTTP tests.
-use morphiecore::{
+use crate::morphiecore::{
     provider::{CredentialBindingId, CredentialKind, EndpointPath, ProviderId, TrustedOrigin},
     topology::{
         EndpointId, EndpointTarget, ExecutionContract, ModelId, RouteId,
@@ -19,7 +19,7 @@ pub fn binding(origin: &str) -> (ProviderEntry, ImageRoute) {
             id: RouteId::new("image-route").unwrap(),
             model: ModelId::new("public-image").unwrap(),
             canonical_model: canonical.clone(),
-            accounting: morphiecore::protocol::image::projection::AccountingPolicy::Strict,
+            accounting: crate::morphiecore::protocol::image::projection::AccountingPolicy::Strict,
             endpoint: ImageEndpoint {
                 id: EndpointId::new("image-endpoint").unwrap(),
                 provider,
@@ -29,7 +29,7 @@ pub fn binding(origin: &str) -> (ProviderEntry, ImageRoute) {
                 },
                 upstream_model: "private-image".into(),
                 canonical_model: canonical,
-                profile: morphiecore::adapter::images::UpstreamAdapter::GptImage,
+                profile: crate::morphiecore::adapter::images::UpstreamAdapter::GptImage,
                 credential: CredentialBindingId::new("fixture-key").unwrap(),
                 execution: ExecutionContract {
                     streaming: false,

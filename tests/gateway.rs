@@ -1,30 +1,13 @@
 //! HTTP Router integration and shared test-owned upstream lifetime.
 //! Binary bootstrap and feature/failure checks live in focused child modules.
-pub(crate) use morphiecore_test_support::{
-    chat_profile as chat_wire, filesystem, responses_profile as responses_wire,
+pub(crate) use morphiecore_test_harness::{
+    embedding_loop, gateway as support, google_tool_loop as google_tool_fixture,
+    messages_tool_loop as messages_tool_fixture, openai_tool_loop,
 };
-#[path = "support/credential_recovery.rs"]
-mod credential_recovery;
-#[path = "support/embedding_loop.rs"]
-mod embedding_loop;
-#[path = "support/embeddings.rs"]
-mod embedding_support;
-#[path = "support/google_tool_loop.rs"]
-mod google_tool_fixture;
-#[path = "support/messages_stream.rs"]
-mod messages_stream;
-#[path = "support/messages_tool_loop.rs"]
-mod messages_tool_fixture;
-#[path = "support/messages_wire.rs"]
-mod messages_wire;
-#[path = "support/tokenplan_audio.rs"]
-mod native_audio;
-#[path = "support/openai_tool_loop.rs"]
-mod openai_tool_loop;
-#[path = "support/gateway.rs"]
-mod support;
-#[path = "support/telemetry.rs"]
-mod telemetry;
+pub(crate) use morphiecore_test_support::{
+    chat_profile as chat_wire, filesystem, messages_stream, messages_wire,
+    responses_profile as responses_wire, telemetry, tokenplan_audio as native_audio,
+};
 
 #[path = "gateway/anthropic.rs"]
 mod anthropic;
@@ -32,6 +15,8 @@ mod anthropic;
 mod bootstrap;
 #[path = "gateway/chat_tool_history.rs"]
 mod chat_tool_history;
+#[path = "gateway/conformance.rs"]
+mod conformance;
 #[path = "gateway/embeddings.rs"]
 mod embeddings;
 #[path = "gateway/google_tool_loop.rs"]

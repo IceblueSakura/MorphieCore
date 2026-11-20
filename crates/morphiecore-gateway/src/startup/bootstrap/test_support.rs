@@ -114,6 +114,14 @@ impl Fixture {
         self._directory.path()
     }
 
+    pub fn text_model_json(&self, model: &str) -> &[u8] {
+        &self.boot.gateway.state.text_models.models[model]
+    }
+
+    pub fn capabilities_json(&self) -> &[u8] {
+        &self.boot.gateway.state.capabilities.0
+    }
+
     pub fn new(
         service: serde_json::Value,
         models: serde_json::Value,

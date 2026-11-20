@@ -1,11 +1,8 @@
 //! Binary CLI identity and isolated file/bootstrap process behavior.
-#[path = "../support/child_line.rs"]
-mod child_line;
-#[path = "../support/child_process.rs"]
-mod child_process;
 use super::{Guard, support};
 use crate::filesystem;
 use axum::{Router, http::StatusCode};
+use morphiecore_test_support::{child_line, child_process};
 use serde_json::{Value, json};
 use std::{sync::Arc, time::Duration};
 use tokio::net::TcpListener;

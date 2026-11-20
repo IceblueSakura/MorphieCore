@@ -16,6 +16,7 @@ morphiecore-catalog = { path = "crates/morphiecore-catalog" }
 morphiecore-runtime = { path = "crates/morphiecore-runtime" }
 morphiecore-gateway = { path = "crates/morphiecore-gateway" }
 morphiecore-test-support = { path = "crates/morphiecore-test-support" }
+morphiecore-test-harness = { path = "crates/morphiecore-test-harness" }
 
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 futures-util = { version = "=0.3.34", default-features = false, features = ["std"] }
@@ -94,10 +95,12 @@ libc.workspace = true
 [dev-dependencies]
 morphiecore-gateway = { workspace = true, features = ["test-hooks"] }
 morphiecore-runtime = { workspace = true, features = ["test-hooks"] }
+morphiecore-test-harness.workspace = true
 morphiecore-test-support.workspace = true
 aws-lc-rs.workspace = true
 base64.workspace = true
 futures-util.workspace = true
+opentelemetry.workspace = true
 opentelemetry_sdk = { workspace = true, features = ["testing"] }
 proptest.workspace = true
 tempfile.workspace = true

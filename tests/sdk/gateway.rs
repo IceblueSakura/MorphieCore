@@ -1,14 +1,11 @@
 //! Official SDK -> production Router -> synthetic HTTP Provider -> the same Router.
-#[allow(dead_code)]
-#[path = "../support/tokenplan_audio.rs"]
-mod native_audio;
-#[path = "../support/gateway.rs"]
-mod support;
 use super::{ServerGuard, chat_wire, responses_wire as wire};
 use axum::{
     Router, body::Body, extract::State, http::HeaderMap, response::Response, routing::post,
 };
 use morphiecore::gateway::Limits;
+use morphiecore_test_harness::gateway as support;
+use morphiecore_test_support::tokenplan_audio as native_audio;
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,

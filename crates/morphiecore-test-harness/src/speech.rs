@@ -1,5 +1,5 @@
 //! Explicit synthetic speech binding; no product registration or real credentials.
-use morphiecore::{
+use crate::morphiecore::{
     protocol::speech::projection::SpeechCapabilities,
     provider::{
         AuthScheme, CredentialBindingId, CredentialKind, EndpointPath, ProviderDefinition,
@@ -42,7 +42,7 @@ pub fn binding(origin: &str) -> (ProviderEntry, SpeechRoute) {
                 },
                 upstream_model: "private-speech".into(),
                 canonical_model: canonical,
-                profile: morphiecore::adapter::speech::UpstreamAdapter::Standard,
+                profile: crate::morphiecore::adapter::speech::UpstreamAdapter::Standard,
                 capabilities: SpeechCapabilities {
                     voices: vec!["alloy".into(), "coral".into()],
                     formats: vec![AudioEncoding::Mp3, AudioEncoding::Wav],

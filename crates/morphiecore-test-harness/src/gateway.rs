@@ -1,26 +1,22 @@
 //! Trusted synthetic topology shared by Router and explicit SDK gates.
-use crate::embedding_support;
-use morphiecore::{
-    gateway::{Entry, Gateway, Limits},
-    protocol::openai::TargetContract as Contract,
-    provider::{
-        AuthScheme, CredentialBindingId, CredentialKind, EndpointPath, ProviderDefinition,
-        ProviderId, SecretMaterial, TrustedOrigin,
+use crate::{
+    embeddings as embedding_support, image_generation as image_support, media_bindings as media,
+    morphiecore::{
+        gateway::{Entry, Gateway, Limits},
+        protocol::openai::TargetContract as Contract,
+        provider::{
+            AuthScheme, CredentialBindingId, CredentialKind, EndpointPath, ProviderDefinition,
+            ProviderId, SecretMaterial, TrustedOrigin,
+        },
+        semantic::value::ReplayOrigin,
+        topology::{
+            CanonicalModel, Dispositions, Endpoint, EndpointId, EndpointTarget, ExecutionContract,
+            GenerationProtocol, ModelId, PublicModel, Route, RouteId, compile,
+        },
     },
-    semantic::value::ReplayOrigin,
-    topology::{
-        CanonicalModel, Dispositions, Endpoint, EndpointId, EndpointTarget, ExecutionContract,
-        GenerationProtocol, ModelId, PublicModel, Route, RouteId, compile,
-    },
+    speech as speech_support,
 };
 use std::{collections::BTreeMap, sync::Arc};
-#[path = "image_generation.rs"]
-mod image_support;
-#[path = "media_bindings.rs"]
-mod media;
-#[allow(dead_code)]
-#[path = "speech.rs"]
-mod speech_support;
 pub const CLIENT_KEY: &str = "synthetic-gateway-client-token-0001";
 #[allow(dead_code)] // Shared SDK gates use this variant; the Router smoke selects embeddings.
 pub fn gateway(origin: &str, limits: Limits) -> Gateway {
@@ -40,16 +36,16 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
         origin: TrustedOrigin::parse(origin).unwrap(),
         endpoints: [
             (
-                morphiecore::provider::ProviderOperation::ChatCompletions,
-                morphiecore::provider::ProviderEndpoint {
+                crate::morphiecore::provider::ProviderOperation::ChatCompletions,
+                crate::morphiecore::provider::ProviderEndpoint {
                     suffix: EndpointPath::new("/chat/completions").unwrap(),
                     path: EndpointPath::new("/chat/completions").unwrap(),
                     auth: None,
                 },
             ),
             (
-                morphiecore::provider::ProviderOperation::Responses,
-                morphiecore::provider::ProviderEndpoint {
+                crate::morphiecore::provider::ProviderOperation::Responses,
+                crate::morphiecore::provider::ProviderEndpoint {
                     suffix: EndpointPath::new("/responses").unwrap(),
                     path: EndpointPath::new("/responses").unwrap(),
                     auth: None,
@@ -83,12 +79,12 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
         representation: Contract {
             // A synthetic upstream-only carrier must not leak through the
             // independently selected standard downstream adapter.
-            adaptation: morphiecore::protocol::openai::dialect::adaptation::Adaptation {
-                cache: morphiecore::protocol::cache::CacheTargetPolicy {
+            adaptation: crate::morphiecore::protocol::openai::dialect::adaptation::Adaptation {
+                cache: crate::morphiecore::protocol::cache::CacheTargetPolicy {
                     key: true,
                     ..Default::default()
                 },
-                rules: morphiecore::protocol::openai::dialect::adaptation::WireRules {
+                rules: crate::morphiecore::protocol::openai::dialect::adaptation::WireRules {
                     responses_image_usage: protocol == GenerationProtocol::OpenAiResponses,
                     ..Default::default()
                 },
@@ -113,7 +109,7 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
     })
     .collect();
     let route = Route {
-        policy: morphiecore::topology::RoutePolicy::default(),
+        policy: crate::morphiecore::topology::RoutePolicy::default(),
         id: RouteId::new("fixture-route").unwrap(),
         endpoints: vec![
             EndpointId::new("responses").unwrap(),
@@ -127,7 +123,7 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
             canonical_model: ModelId::new("canonical-fixture").unwrap(),
             route: route.id.clone(),
             contract: (Dispositions::full()).with_native(
-                morphiecore::semantic::task::generation::Feature::FileInput,
+                crate::morphiecore::semantic::task::generation::Feature::FileInput,
                 label != "no-files-model",
             ),
         })
@@ -179,57 +175,60 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
     .with_model_metadata([
         (
             ModelId::new("canonical-vector").unwrap(),
-            morphiecore::topology::ModelMetadata::new(14, "Synthetic Vector Developer").unwrap(),
+            crate::morphiecore::topology::ModelMetadata::new(14, "Synthetic Vector Developer")
+                .unwrap(),
         ),
         (
             ModelId::new("canonical-fixture").unwrap(),
-            morphiecore::topology::ModelMetadata::new(7, "Synthetic Developer").unwrap(),
+            crate::morphiecore::topology::ModelMetadata::new(7, "Synthetic Developer").unwrap(),
         ),
         (
             ModelId::new("canonical-image").unwrap(),
-            morphiecore::topology::ModelMetadata::new(8, "Synthetic Image Developer").unwrap(),
+            crate::morphiecore::topology::ModelMetadata::new(8, "Synthetic Image Developer")
+                .unwrap(),
         ),
         (
             ModelId::new("router-image").unwrap(),
-            morphiecore::topology::ModelMetadata::new(10, "Synthetic Router").unwrap(),
+            crate::morphiecore::topology::ModelMetadata::new(10, "Synthetic Router").unwrap(),
         ),
         (
             ModelId::new("canonical-speech").unwrap(),
-            morphiecore::topology::ModelMetadata::new(9, "Synthetic Speech Developer").unwrap(),
+            crate::morphiecore::topology::ModelMetadata::new(9, "Synthetic Speech Developer")
+                .unwrap(),
         ),
         (
             ModelId::new("router-speech").unwrap(),
-            morphiecore::topology::ModelMetadata::new(11, "Synthetic Router").unwrap(),
+            crate::morphiecore::topology::ModelMetadata::new(11, "Synthetic Router").unwrap(),
         ),
         (
             ModelId::new("native-speech").unwrap(),
-            morphiecore::topology::ModelMetadata::new(12, "Synthetic Native").unwrap(),
+            crate::morphiecore::topology::ModelMetadata::new(12, "Synthetic Native").unwrap(),
         ),
         (
             ModelId::new("native-transcription").unwrap(),
-            morphiecore::topology::ModelMetadata::new(13, "Synthetic Native").unwrap(),
+            crate::morphiecore::topology::ModelMetadata::new(13, "Synthetic Native").unwrap(),
         ),
     ])
     .unwrap();
     let entries = vec![
         Entry {
             model: "public-model".into(),
-            protocol: morphiecore::protocol::ClientProtocol::Chat,
+            protocol: crate::morphiecore::protocol::ClientProtocol::Chat,
             endpoint: EndpointId::new("chat").unwrap(),
         },
         Entry {
             model: "public-model".into(),
-            protocol: morphiecore::protocol::ClientProtocol::Responses,
+            protocol: crate::morphiecore::protocol::ClientProtocol::Responses,
             endpoint: EndpointId::new("responses").unwrap(),
         },
         Entry {
             model: "cross-model".into(),
-            protocol: morphiecore::protocol::ClientProtocol::Responses,
+            protocol: crate::morphiecore::protocol::ClientProtocol::Responses,
             endpoint: EndpointId::new("chat").unwrap(),
         },
         Entry {
             model: "cross-model".into(),
-            protocol: morphiecore::protocol::ClientProtocol::Chat,
+            protocol: crate::morphiecore::protocol::ClientProtocol::Chat,
             endpoint: EndpointId::new("responses").unwrap(),
         },
     ];
@@ -238,14 +237,14 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
         for (model, endpoint) in [("public-model", "responses"), ("cross-model", "chat")] {
             entries.push(Entry {
                 model: model.into(),
-                protocol: morphiecore::protocol::ClientProtocol::Messages,
+                protocol: crate::morphiecore::protocol::ClientProtocol::Messages,
                 endpoint: EndpointId::new(endpoint).unwrap(),
             });
         }
     }
     entries.push(Entry {
         model: "no-files-model".into(),
-        protocol: morphiecore::protocol::ClientProtocol::Responses,
+        protocol: crate::morphiecore::protocol::ClientProtocol::Responses,
         endpoint: EndpointId::new("responses").unwrap(),
     });
     let credentials = BTreeMap::from([
@@ -268,33 +267,33 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
     ]);
     Gateway::new(
         topology,
-        morphiecore::gateway::TaskEntries {
+        crate::morphiecore::gateway::TaskEntries {
             generation: entries,
             images: vec![
-                morphiecore::gateway::ImageEntry {
+                crate::morphiecore::gateway::ImageEntry {
                     model: "public-image".into(),
                 },
-                morphiecore::gateway::ImageEntry {
+                crate::morphiecore::gateway::ImageEntry {
                     model: "router-image".into(),
                 },
             ],
             speech: vec![
-                morphiecore::gateway::SpeechEntry {
+                crate::morphiecore::gateway::SpeechEntry {
                     model: "public-speech".into(),
                 },
-                morphiecore::gateway::SpeechEntry {
+                crate::morphiecore::gateway::SpeechEntry {
                     model: "router-speech".into(),
                 },
-                morphiecore::gateway::SpeechEntry {
+                crate::morphiecore::gateway::SpeechEntry {
                     model: "native-speech".into(),
                 },
             ],
-            transcriptions: vec![morphiecore::gateway::TranscriptionEntry {
+            transcriptions: vec![crate::morphiecore::gateway::TranscriptionEntry {
                 model: "native-transcription".into(),
                 binding: None,
             }],
             embeddings: if embeddings {
-                vec![morphiecore::gateway::EmbeddingEntry {
+                vec![crate::morphiecore::gateway::EmbeddingEntry {
                     model: "public-vector".into(),
                 }]
             } else {

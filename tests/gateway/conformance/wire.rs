@@ -1,12 +1,8 @@
 //! Current installed pi shapes; native outputs reuse the repair-and-recall corpus.
 //! pi-ai serializers supply defaults/replay independently of MorphieCore codecs.
 //! Bare API forms remain controls beside the resolved Go/Haiku built-in record.
+use morphiecore_test_support::{messages_stream, messages_wire};
 use serde_json::{Value, json};
-#[path = "../../../../../../tests/support/messages_stream.rs"]
-mod messages_stream;
-#[path = "../../../../../../tests/support/messages_wire.rs"]
-#[allow(dead_code)]
-mod messages_wire;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Api {
@@ -59,7 +55,7 @@ fn corpus(api: Api) -> Value {
 
 pub(super) fn raw_messages_headers() -> (String, String) {
     let corpus: Value = serde_json::from_str(include_str!(
-        "../../../../../../testdata/repair-and-recall/agent-defaults.json"
+        "../../../testdata/repair-and-recall/agent-defaults.json"
     ))
     .unwrap();
     let headers = &corpus["raw_messages_headers"];
@@ -71,7 +67,7 @@ pub(super) fn raw_messages_headers() -> (String, String) {
 
 pub(super) fn resolved_messages_headers(profile: Profile) -> Value {
     let corpus: Value = serde_json::from_str(include_str!(
-        "../../../../../../testdata/repair-and-recall/agent-defaults.json"
+        "../../../testdata/repair-and-recall/agent-defaults.json"
     ))
     .unwrap();
     let profile = match profile {
@@ -85,7 +81,7 @@ pub(super) fn resolved_messages_headers(profile: Profile) -> Value {
 pub(super) fn request(api: Api, profile: Profile, model: &str, stream: bool) -> Value {
     // Keep this thin source adapter independent of production discovery selection.
     let corpus: Value = serde_json::from_str(include_str!(
-        "../../../../../../testdata/repair-and-recall/agent-defaults.json"
+        "../../../testdata/repair-and-recall/agent-defaults.json"
     ))
     .unwrap();
     let profile = match profile {

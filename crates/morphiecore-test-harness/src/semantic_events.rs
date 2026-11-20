@@ -1,5 +1,5 @@
 //! Synthetic offline event builders, not wire or semantic oracles.
-use morphiecore::{
+use crate::morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
         openai::{

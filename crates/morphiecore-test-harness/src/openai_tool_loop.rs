@@ -1,18 +1,15 @@
 //! Catalog-backed Chat/Responses Router fixture; protocol wire oracles stay separate.
-#[path = "openai_tool_loop/chat.rs"]
 mod chat;
-#[path = "openai_tool_loop/ordinary.rs"]
 mod ordinary;
-#[path = "openai_tool_loop/responses.rs"]
 mod responses;
-use axum::{
-    Json, Router, body::Body, extract::State, http::HeaderMap, response::Response, routing::post,
-};
-use morphiecore::{
+use crate::morphiecore::{
     gateway::{Entry, Gateway, Limits, TaskEntries},
     protocol::openai::GenerationApi,
     provider::{SecretMaterial, TrustedOrigin},
     topology::{self, GenerationProtocol, catalog},
+};
+use axum::{
+    Json, Router, body::Body, extract::State, http::HeaderMap, response::Response, routing::post,
 };
 use serde_json::Value;
 use std::{
@@ -319,7 +316,7 @@ async fn start_with_recovery(
             .openai_mut()
             .unwrap()
             .reasoning_history =
-            Some(morphiecore::protocol::reasoning::ReasoningHistory::RequiredWithTools);
+            Some(crate::morphiecore::protocol::reasoning::ReasoningHistory::RequiredWithTools);
     }
     let public = catalog.model(label).unwrap().clone();
     let mut route = catalog.route(&public.route).unwrap().clone();
@@ -328,7 +325,7 @@ async fn start_with_recovery(
         let mut secondary = endpoint.clone();
         secondary.id = topology::EndpointId::new(&format!("{id}-secondary")).unwrap();
         secondary.credential =
-            morphiecore::provider::CredentialBindingId::new(&format!("{id}-secondary-key"))
+            crate::morphiecore::provider::CredentialBindingId::new(&format!("{id}-secondary-key"))
                 .unwrap();
         route.endpoints.push(secondary.id.clone());
         entries.push(Entry {
@@ -353,9 +350,9 @@ async fn start_with_recovery(
     });
     if ordinary.is_some() {
         entries = [
-            morphiecore::protocol::ClientProtocol::Chat,
-            morphiecore::protocol::ClientProtocol::Responses,
-            morphiecore::protocol::ClientProtocol::Messages,
+            crate::morphiecore::protocol::ClientProtocol::Chat,
+            crate::morphiecore::protocol::ClientProtocol::Responses,
+            crate::morphiecore::protocol::ClientProtocol::Messages,
         ]
         .into_iter()
         .map(|protocol| Entry {
@@ -396,7 +393,7 @@ async fn start_with_recovery(
         });
         endpoints.push(secondary);
         (
-            morphiecore::gateway::Credentials::from(&accounts),
+            crate::morphiecore::gateway::Credentials::from(&accounts),
             Some(store),
         )
     } else {

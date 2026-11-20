@@ -1,9 +1,6 @@
 //! One synthetic fixed-target Embedding exchange for raw Router and pinned SDK clients.
-use crate::embedding_support as binding;
-use axum::{
-    Router, body::Body, extract::State, http::HeaderMap, response::Response, routing::post,
-};
-use morphiecore::{
+use crate::embeddings as binding;
+use crate::morphiecore::{
     adapter::embeddings::UpstreamAdapter,
     gateway::{EmbeddingEntry, Gateway, Limits, TaskEntries},
     protocol::embedding::projection::EncodingSupport,
@@ -12,6 +9,9 @@ use morphiecore::{
         TrustedOrigin,
     },
     topology::{self, ModelId, ModelMetadata},
+};
+use axum::{
+    Router, body::Body, extract::State, http::HeaderMap, response::Response, routing::post,
 };
 use serde_json::{Value, json};
 use std::{
@@ -205,18 +205,18 @@ impl Fixture {
         route.endpoint.contract.encodings = encodings;
         route.endpoint.contract.default_dimensions = default_dimensions;
         route.endpoint.contract.dimensions =
-            morphiecore::protocol::embedding::projection::DimensionSupport::UpTo(
+            crate::morphiecore::protocol::embedding::projection::DimensionSupport::UpTo(
                 default_dimensions.max(16),
             );
         route.endpoint.contract.max_inputs = max_inputs;
         route.endpoint.contract.reports =
-            morphiecore::protocol::embedding::projection::ReportPolicy::Compatible;
+            crate::morphiecore::protocol::embedding::projection::ReportPolicy::Compatible;
         route.endpoint.contract.user =
-            morphiecore::protocol::embedding::projection::UserPolicy::Omit;
+            crate::morphiecore::protocol::embedding::projection::UserPolicy::Omit;
         route.endpoint.contract.tokenizer = if google {
             None
         } else {
-            Some(morphiecore::semantic::task::embedding::TokenizerScope::Cl100kBase)
+            Some(crate::morphiecore::semantic::task::embedding::TokenizerScope::Cl100kBase)
         };
         route.endpoint.contract.max_input_tokens = Some(8192);
         route.endpoint.execution.response_body_limit = 1 << 20;

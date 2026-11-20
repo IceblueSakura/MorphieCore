@@ -1,12 +1,12 @@
 //! Selected native Messages route, with independent five-turn upstream wire expectations.
-use crate::messages_wire::native_response;
-use axum::{Json, Router, extract::State, http::HeaderMap, response::Response, routing::post};
-use morphiecore::{
+use crate::morphiecore::{
     gateway::{Entry, Gateway, Limits, TaskEntries},
     protocol::ClientProtocol,
     provider::{SecretMaterial, TrustedOrigin},
     topology::{self, catalog::MESSAGES_BINDINGS},
 };
+use axum::{Json, Router, extract::State, http::HeaderMap, response::Response, routing::post};
+use morphiecore_test_support::messages_wire::native_response;
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
@@ -233,7 +233,7 @@ async fn start_with_recovery(recover: bool) -> Fixture {
         route.endpoints.push(secondary.id.clone());
         endpoints.push(secondary);
         (
-            morphiecore::gateway::Credentials::from(&accounts),
+            crate::morphiecore::gateway::Credentials::from(&accounts),
             Some(store),
         )
     } else {

@@ -1338,7 +1338,9 @@ dependencies = [
  "morphiecore-protocol",
  "morphiecore-runtime",
  "morphiecore-semantic",
+ "morphiecore-test-harness",
  "morphiecore-test-support",
+ "opentelemetry",
  "opentelemetry_sdk",
  "proptest",
  "reqwest",
@@ -1494,9 +1496,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "morphiecore-test-harness"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "bytes",
+ "futures-util",
+ "morphiecore-catalog",
+ "morphiecore-gateway",
+ "morphiecore-lowering",
+ "morphiecore-protocol",
+ "morphiecore-runtime",
+ "morphiecore-semantic",
+ "morphiecore-test-support",
+ "reqwest",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "morphiecore-test-support"
 version = "0.1.0"
 dependencies = [
+ "axum",
+ "bytes",
+ "futures-util",
+ "libc",
  "proptest",
  "serde_json",
  "tempfile",

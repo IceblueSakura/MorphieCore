@@ -1,12 +1,12 @@
 //! Independent v1 step, signature, argument-delta and full-history expectations.
 use super::{ERROR, RESULT, Upstream};
+use crate::morphiecore::protocol::openai::GenerationApi;
 use axum::{
     Json,
     extract::State,
     http::{HeaderMap, Uri},
     response::Response,
 };
-use morphiecore::protocol::openai::GenerationApi;
 use serde_json::{Value, json};
 
 fn expected_input(turn: usize, messages: bool) -> Value {

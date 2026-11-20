@@ -1,5 +1,5 @@
 //! Independent fixed text-vector binding, never derived from the product catalog.
-use morphiecore::{
+use crate::morphiecore::{
     adapter::embeddings::UpstreamAdapter,
     protocol::embedding::projection::{Contract, DimensionSupport},
     provider::{CredentialBindingId, CredentialKind, EndpointPath, ProviderDefinition},
@@ -33,13 +33,15 @@ pub fn binding(provider: &ProviderDefinition) -> (ProviderEntry, EmbeddingRoute)
                 contract: Contract {
                     max_inputs: 4,
                     default_dimensions: 2,
-                    encodings: morphiecore::protocol::embedding::projection::EncodingSupport::Float,
+                    encodings:
+                        crate::morphiecore::protocol::embedding::projection::EncodingSupport::Float,
                     dimensions: DimensionSupport::UpTo(16),
-                    user: morphiecore::protocol::embedding::projection::UserPolicy::Reject,
+                    user: crate::morphiecore::protocol::embedding::projection::UserPolicy::Reject,
                     tokenizer: None,
                     max_input_tokens: None,
                     joint_text: false,
-                    reports: morphiecore::protocol::embedding::projection::ReportPolicy::Strict,
+                    reports:
+                        crate::morphiecore::protocol::embedding::projection::ReportPolicy::Strict,
                 },
                 credential: CredentialBindingId::new("fixture-key").unwrap(),
                 execution: ExecutionContract {

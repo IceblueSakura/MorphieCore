@@ -1,6 +1,7 @@
 //! Independent ordinary-function wire expectations shared by the nine SDK lanes.
+use crate::morphiecore::topology::GenerationProtocol;
 use axum::{body::Body, http::HeaderMap, response::Response};
-use morphiecore::topology::GenerationProtocol;
+use morphiecore_test_support::{messages_wire, responses_profile as responses_wire};
 use serde_json::{Value, json};
 
 fn text(value: &Value) -> &str {
@@ -187,7 +188,7 @@ pub fn answer(target: GenerationProtocol, turn: usize, stream: bool) -> Response
         } else {
             json!([{"type":"text","text":"cedar-71"}])
         };
-        return crate::messages_wire::native_response(
+        return messages_wire::native_response(
             json!({"id":format!("msg-{turn}"),
             "type":"message","role":"assistant","model":"claude-haiku-5-5","content":content,
             "stop_reason":if turn == 1 { "tool_use" } else { "end_turn" },"stop_sequence":null,
@@ -217,7 +218,7 @@ pub fn answer(target: GenerationProtocol, turn: usize, stream: bool) -> Response
             .collect::<String>()
             + "data: [DONE]\n\n"
     } else {
-        crate::responses_wire::response_events(snapshot)
+        responses_wire::response_events(snapshot)
             .iter()
             .map(|e| format!("data: {e}\n\n"))
             .collect()

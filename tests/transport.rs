@@ -1,7 +1,6 @@
 //! Framing, Responses HTTP/SSE and body I/O are separate contracts, not interchangeable evidence.
+pub(crate) use morphiecore_test_harness::upstream_assets;
 pub(crate) use morphiecore_test_support::{chat_profile as chat_wire, responses_profile as wire};
-#[path = "support/upstream_assets.rs"]
-mod upstream_assets;
 
 #[path = "transport/anthropic_sse.rs"]
 mod anthropic_sse;

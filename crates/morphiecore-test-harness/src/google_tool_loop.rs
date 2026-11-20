@@ -1,18 +1,17 @@
 //! One selected Google candidate; independent native tool/error/final-history oracles.
-#[path = "google_tool_loop/interactions.rs"]
 mod interactions;
+use crate::morphiecore::{
+    gateway::{Entry, Gateway, Limits, TaskEntries},
+    protocol::{ClientProtocol, openai::GenerationApi},
+    provider::{SecretMaterial, TrustedOrigin},
+    topology::{self, catalog::GOOGLE_BINDINGS},
+};
 use axum::{
     Json, Router,
     extract::State,
     http::{HeaderMap, Uri},
     response::Response,
     routing::post,
-};
-use morphiecore::{
-    gateway::{Entry, Gateway, Limits, TaskEntries},
-    protocol::{ClientProtocol, openai::GenerationApi},
-    provider::{SecretMaterial, TrustedOrigin},
-    topology::{self, catalog::GOOGLE_BINDINGS},
 };
 use serde_json::{Value, json};
 use std::{

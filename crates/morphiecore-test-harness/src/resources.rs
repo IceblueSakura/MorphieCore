@@ -1,5 +1,5 @@
 //! Synthetic declarations; expected wire values stay in the owning tests.
-use morphiecore::semantic::task::generation::*;
+use crate::morphiecore::semantic::task::generation::*;
 pub fn image(id: u64) -> ResourceUse {
     ResourceUse {
         id: ResourceId::new(id),

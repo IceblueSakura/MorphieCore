@@ -1,9 +1,7 @@
 //! Explicit installed-client gates: CLI loader, synthetic authorities and isolated homes.
 #![cfg(unix)]
-#[path = "support/child_process.rs"]
-mod child_process;
 use morphiecore::credential::{CredentialManager, Secret};
-use morphiecore_test_support::filesystem;
+use morphiecore_test_support::{child_process, filesystem};
 use std::{path::PathBuf, time::Duration};
 
 async fn installed_case(script: &str, case: &str, variable: &str, arguments: &[&str]) {
