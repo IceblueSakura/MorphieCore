@@ -107,9 +107,6 @@ pub(super) struct Resources {
     pub request_bytes: usize,
     pub response_bytes: usize,
     pub body_timeout_ms: u64,
-    pub history_entries: usize,
-    pub history_bytes: usize,
-    pub history_ttl_ms: u64,
 }
 impl Default for Resources {
     fn default() -> Self {
@@ -119,9 +116,6 @@ impl Default for Resources {
             request_bytes: d.request_bytes,
             response_bytes: d.response_bytes,
             body_timeout_ms: d.body_timeout.as_millis() as u64,
-            history_entries: d.history_entries,
-            history_bytes: d.history_bytes,
-            history_ttl_ms: d.history_ttl.as_millis() as u64,
         }
     }
 }
@@ -147,9 +141,6 @@ impl Configuration {
             request_bytes: self.resources.request_bytes,
             response_bytes: self.resources.response_bytes,
             body_timeout: Duration::from_millis(self.resources.body_timeout_ms),
-            history_entries: self.resources.history_entries,
-            history_bytes: self.resources.history_bytes,
-            history_ttl: Duration::from_millis(self.resources.history_ttl_ms),
             ..Limits::default()
         }
     }

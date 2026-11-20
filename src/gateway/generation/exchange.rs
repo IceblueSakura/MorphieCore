@@ -45,7 +45,6 @@ pub(in crate::gateway) enum Upstreams {
     Http {
         runtime: Arc<Runtime>,
         candidates: Vec<crate::gateway::runtime::PlannedCandidate>,
-        history: Option<Box<super::history::Pending>>,
         binding: Option<PreferenceKey>,
     },
     #[cfg(test)]
@@ -253,16 +252,15 @@ pub(in crate::gateway) async fn produce_chain(
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     let state = lane.state;
-    let (runtime, candidates, mut observed, history, binding) = match source {
+    let (runtime, candidates, mut observed, binding) = match source {
         Upstreams::Http {
             runtime,
             candidates,
-            history,
             binding,
         } => {
             let candidates =
                 select_candidates(&runtime, candidates, binding.as_ref(), deadline).await?;
-            (Some(runtime), candidates, None, history, binding)
+            (Some(runtime), candidates, None, binding)
         }
         #[cfg(test)]
         Upstreams::Observed {
@@ -280,7 +278,6 @@ pub(in crate::gateway) async fn produce_chain(
                     projection: None,
                 }],
                 Some(response),
-                None,
                 binding,
             )
         }
@@ -426,7 +423,6 @@ pub(in crate::gateway) async fn produce_chain(
                             && retry_capable
                             && !recovery_budget.is_zero()
                             && runtime.is_some(),
-                        history.as_deref(),
                         trace,
                     )
                     .await?;
@@ -690,7 +686,6 @@ pub(in crate::gateway) async fn run(
     runtime: Arc<Runtime>,
     entry: Arc<BoundEntry>,
     request: Request,
-    history: Option<Box<super::history::Pending>>,
     deadline: Instant,
     permit: OwnedSemaphorePermit,
     mut trace: Trace,
@@ -734,7 +729,6 @@ pub(in crate::gateway) async fn run(
         Upstreams::Http {
             runtime,
             candidates,
-            history,
             binding,
         },
         limits,

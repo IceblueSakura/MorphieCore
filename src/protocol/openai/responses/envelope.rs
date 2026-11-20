@@ -1,6 +1,7 @@
 //! Complete stateless Responses envelopes. Execution hints never become task instructions.
 use crate::{
     protocol::{
+        ResponseStorage,
         failure::{CarrierReason, ShapeReason},
         openai::{
             CodecError, DecodedRequest, GenerationApi, RequestRepresentation, ResponseMetadata,
@@ -173,6 +174,28 @@ pub fn encode_request(
     bounded(&v)?;
     Ok(v)
 }
+
+pub(crate) fn read_storage(o: &Map<String, Value>) -> Result<Option<ResponseStorage>, CodecError> {
+    if !o.contains_key("store") && !o.contains_key("previous_response_id") {
+        return Ok(None);
+    }
+    let storage = ResponseStorage {
+        store: read_presence(o, "store", |v| v.as_bool().ok_or(CodecError::invalid()))?,
+        previous_response_id: read_presence(o, "previous_response_id", |v| {
+            v.as_str().map(str::to_owned).ok_or(CodecError::invalid())
+        })?,
+    };
+    storage.validate()?;
+    Ok(Some(storage))
+}
+
+pub fn is_stateful_request(value: &Value) -> Result<bool, CodecError> {
+    let storage = read_storage(object(value)?)?;
+    Ok(storage.is_some_and(|s| {
+        s.store == Presence::Value(true) || s.previous_response_id.value().is_some()
+    }))
+}
+
 impl ResponseContext {
     pub(in crate::protocol::openai) fn read(
         o: &Map<String, Value>,
@@ -181,7 +204,7 @@ impl ResponseContext {
         check_access_programs(o)?;
         let mut controls = o.clone();
         // Storage facts belong to the API envelope, never upstream execution intent.
-        let storage = super::managed::read_storage(o)?;
+        let storage = read_storage(o)?;
         if matches!(direction, DecodeDirection::Upstream)
             && storage.as_ref().is_some_and(|storage| {
                 storage.store == Presence::Value(true)
@@ -667,5 +690,19 @@ mod tests {
         write_metadata(&source.metadata, &mut wire, false).unwrap();
         assert_eq!(wire["tools"][0].get("parameters"), Some(&Value::Null));
         assert_eq!(wire["tools"][0].get("strict"), Some(&Value::Null));
+    }
+
+    #[test]
+    fn stateless_storage_validation_rejects_stateful_or_malformed_fields() {
+        assert!(!is_stateful_request(&json!({})).unwrap());
+        assert!(
+            !is_stateful_request(&json!({"store": null, "previous_response_id": null})).unwrap()
+        );
+        assert!(!is_stateful_request(&json!({"store": false})).unwrap());
+        assert!(is_stateful_request(&json!({"store": true})).unwrap());
+        assert!(is_stateful_request(&json!({"previous_response_id": "resp_1"})).unwrap());
+        assert!(is_stateful_request(&json!({"store": "true"})).is_err());
+        assert!(is_stateful_request(&json!({"previous_response_id": ""})).is_err());
+        assert!(is_stateful_request(&json!({"previous_response_id": 7})).is_err());
     }
 }

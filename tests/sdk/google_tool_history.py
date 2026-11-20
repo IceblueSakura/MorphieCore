@@ -1,4 +1,4 @@
-"""Pinned SDKs: managed Responses history and stateless Chat/Messages rejection."""
+"""Pinned SDKs: stateless Chat/Messages rejection for unrepresentable Google signatures."""
 import json
 import sys
 
@@ -14,97 +14,13 @@ def check(condition):
         raise ValueError("Google SDK history assertion failed")
 
 
-def responses_completion(client, params, stream):
-    if stream:
-        with client.responses.stream(**params) as events:
-            completed = 0
-            for event in events:
-                check(event.type not in ("error", "response.failed", "response.incomplete"))
-                completed += event.type == "response.completed"
-                if event.type == "response.created":
-                    check(event.response.service_tier is None)
-            value = events.get_final_response()
-        check(completed == 1)
-    else:
-        value = client.responses.create(**params)
-    result = value.model_dump(exclude_unset=True)
-    check(result["status"] == "completed")
-    for item in result["output"]:
-        if item["type"] == "function_call" and "parsed_arguments" in item:
-            parsed = item.pop("parsed_arguments")
-            check(parsed is None or parsed == json.loads(item["arguments"]))
-        if item["type"] == "message":
-            for part in item["content"]:
-                if "parsed" in part:
-                    check(part.pop("parsed") is None)
-    return result
-
-
 def run(base, profile, api):
     check(api in ("generate_content", "interactions"))
     if profile.startswith("messages-"):
         return run_messages_rejection(base, api, profile == "messages-sse")
     if profile.startswith("chat-"):
         return run_chat_rejection(base, api, profile == "chat-sse")
-    check(profile == "responses")
-    function = {"name": "read", "strict": True, "parameters": {
-        "type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"],
-        "additionalProperties": False}}
-    transmissions = []
-    requests = 0
-    with httpx.Client(trust_env=False, event_hooks={"request": [transmissions.append]}) as http, \
-            openai.OpenAI(base_url=base, api_key=KEY, max_retries=0,
-                          timeout=5.0, http_client=http,
-                          _strict_response_validation=True) as client:
-        for stream in (False, True):
-            parameters = function["parameters"]
-            if not stream:
-                parameters = {"$ref": "#/$defs/Args", "$defs": {"Args": parameters}}
-            params = dict(model="gemini-3.8-flash", max_output_tokens=256,
-                              reasoning={"effort": "low", "summary": "auto"},
-                              tools=[{"type": "function", **function, "parameters": parameters}], store=True,
-                              include=["reasoning.encrypted_content"],
-                              input=[{"role": "user", "content": "Read."}])
-            for turn in range(1, 5):
-                if turn == 4:
-                    params["tool_choice"] = "none"
-                    params["parallel_tool_calls"] = False
-                    # NONE must retain even a vocabulary outside validated mode.
-                    constrained = json.loads(json.dumps(parameters))
-                    root = constrained["$defs"]["Args"] if "$defs" in constrained else constrained
-                    root["properties"]["path"]["minLength"] = 5
-                    params["tools"][0]["parameters"] = constrained
-                requests += 1
-                result = responses_completion(client, params, stream)
-                if api == "generate_content":
-                    check(result["usage"]["total_tokens"] == 15)
-                else:
-                    check(result["service_tier"] == "default")
-                    # Preserve 10 input / 5 nonreasoning output; missing thought
-                    # accounting uses six visible UTF-8 bytes in turns 1..3.
-                    output = 7 if turn <= 3 else 5
-                    check(result["usage"]["total_tokens"] == 10 + output)
-                    check(result["usage"]["input_tokens"] == 10)
-                    check(result["usage"]["output_tokens"] == output)
-                output = result["output"]
-                check("mca1." not in json.dumps(result))
-                check(len([item for item in output if item["type"] == "reasoning"]) ==
-                      (1 if api == "interactions" and turn <= 3 else 0))
-                params["previous_response_id"] = result["id"]
-                params["input"] = []
-                if turn <= 2:
-                    call, = [item for item in output if item["type"] == "function_call"]
-                    check(call["call_id"] == f"c{turn}" and call["name"] == "read")
-                    check(json.loads(call["arguments"]) == {"path": "missing" if turn == 1 else "found"})
-                    params["input"].append({"type": "function_call_output", "call_id": call["call_id"],
-                        "output": "missing file" if turn == 1 else "cedar-71"})
-                else:
-                    check(any(item["type"] == "message" and item["content"][0]["text"] ==
-                              ("cedar-71" if turn == 3 else "continued") for item in output))
-                    params["input"].append({"role": "user", "content": "Continue."})
-    check(requests == 8 and len(transmissions) == requests)
-    print(json.dumps({"upstream": api, "requests": requests, "http_requests": len(transmissions),
-                  "deliveries": 2, "tool_correction_and_final_history": True}))
+    raise ValueError(f"unsupported profile: {profile}")
 
 
 

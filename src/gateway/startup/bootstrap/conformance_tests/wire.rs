@@ -228,7 +228,7 @@ pub(super) fn upstream(
     model: &str,
     control: super::Control,
 ) -> String {
-    let incomplete = matches!(control, super::Control::Incomplete { .. }) && turn == 0;
+    let incomplete = matches!(control, super::Control::Incomplete) && turn == 0;
     let reasoning = control.reasoning();
     let mut value = snapshot(api, profile, turn);
     if control == super::Control::JsonOnlyReports {

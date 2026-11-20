@@ -152,46 +152,26 @@ pub(in crate::gateway) fn prepare(
         entry.client.decode_client_request(bytes)
     })
 }
-/// Admit stateless Responses; experimental storage requires explicit activation.
+/// Admit stateless Responses; stateful requests require explicit rejection before dispatch.
 pub(in crate::gateway) fn prepare_responses(
     state: &Runtime,
     bytes: &[u8],
     report: &crate::execution::report::Report,
-) -> Result<
-    (
-        Arc<BoundEntry>,
-        Request,
-        crate::gateway::generation::history::Pending,
-    ),
-    ApiError,
-> {
-    use crate::{gateway::generation::history::Pending, protocol::openai::responses::managed};
+) -> Result<(Arc<BoundEntry>, Request), ApiError> {
+    use crate::protocol::openai::{GenerationApi, responses::envelope};
     let value = crate::protocol::json::decode(bytes).map_err(invalid_request(report))?;
-    let options = managed::Options::read(&value).map_err(invalid_request(report))?;
-    if options.store || options.previous.is_some() {
+    if envelope::is_stateful_request(&value).map_err(invalid_request(report))? {
         return Err(ApiError::stateful_disabled());
     }
-    let previous = options
-        .previous
-        .as_ref()
-        .map(|id| state.history.get(id, tokio::time::Instant::now()))
-        .transpose()?;
-    let mut input = None;
-    let (entry, request) = prepare_in(state, ClientProtocol::Responses, bytes, report, |entry| {
-        let (request, _) = managed::decode(
-            entry.client.as_openai()?.0,
-            bytes,
-            previous.as_ref().map(|old| (&old.input, &old.response)),
+    prepare_in(state, ClientProtocol::Responses, bytes, report, |entry| {
+        let request = entry.client.decode_client_request(bytes)?;
+        request.task.fidelity.check_wire_item_ids(
+            request.task.semantic.items(),
+            false,
+            GenerationApi::Responses,
         )?;
-        if options.store {
-            let mut retained = request.task.clone();
-            retained.evidence = Default::default();
-            input = Some(retained);
-        }
         Ok(request)
-    })?;
-    let pending = Pending::new(options, input, state.history.clone())?;
-    Ok((entry, request, pending))
+    })
 }
 fn prepare_in(
     state: &Runtime,

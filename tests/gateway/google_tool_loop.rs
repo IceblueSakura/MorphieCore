@@ -3,30 +3,6 @@ use crate::google_tool_fixture as fixture;
 use morphiecore::protocol::openai::GenerationApi;
 use serde_json::{Value, json};
 
-async fn complete(client: &reqwest::Client, base: &str, body: &Value) -> Value {
-    let request = client
-        .post(format!("{base}/responses"))
-        .bearer_auth(fixture::KEY);
-    let response = request.json(body).send().await.unwrap();
-    assert_eq!(response.status(), 200);
-    if body["stream"] != true {
-        return response.json().await.unwrap();
-    }
-    let wire = response.text().await.unwrap();
-    let mut terminal = None;
-    for line in wire.lines().filter_map(|l| l.strip_prefix("data: ")) {
-        let event: Value = serde_json::from_str(line).unwrap();
-        assert!(!matches!(
-            event["type"].as_str(),
-            Some("error" | "response.failed" | "response.incomplete")
-        ));
-        if event["type"] == "response.completed" {
-            assert!(terminal.replace(event["response"].clone()).is_none());
-        }
-    }
-    terminal.unwrap()
-}
-
 async fn exercise_rejected(api: fixture::Api, messages: bool) {
     let client = reqwest::Client::builder()
         .no_proxy()
@@ -95,86 +71,7 @@ async fn exercise_rejected(api: fixture::Api, messages: bool) {
             1,
             "unrepresentable call signatures cannot be retried or silently discarded"
         );
-    }
-}
-async fn exercise_stored(api: fixture::Api) {
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap();
-    {
-        let profile = GenerationApi::Responses;
-        for stream in [false, true] {
-            let fixture = fixture::start(profile, api, false).await;
-            let function = json!({"name":"read","strict":false,"parameters":{
-                "type":"object","properties":{"path":{"type":"string"}},"required":["path"]}});
-            let mut body = {
-                let mut tool = function;
-                tool["type"] = json!("function");
-                json!({"model":"gemini-3.8-flash","input":[{"role":"user","content":"Read."}],
-                    "store":true,"max_output_tokens":256,"reasoning":{"effort":"low","summary":"auto"},
-                    "include":["reasoning.encrypted_content"],"tools":[tool],"stream":stream})
-            };
-            for turn in 1..=4 {
-                let response = complete(&client, &fixture.base, &body).await;
-                if api == fixture::Api::GenerateContent {
-                    assert_eq!(response["usage"]["total_tokens"], 15);
-                } else {
-                    // Source accounting stays sparse; the delivery estimates
-                    // six visible reasoning bytes only for the first three turns.
-                    assert_eq!(
-                        response["usage"]["total_tokens"],
-                        if turn <= 3 { 17 } else { 15 }
-                    );
-                }
-                {
-                    assert_eq!(response["status"], "completed");
-                    let output = response["output"].as_array().unwrap();
-                    if turn <= 2 {
-                        let calls: Vec<_> = output
-                            .iter()
-                            .filter(|item| item["type"] == "function_call")
-                            .collect();
-                        assert_eq!(calls.len(), 1);
-                        assert_eq!(calls[0]["call_id"], format!("c{turn}"));
-                        assert_eq!(calls[0]["name"], "read");
-                        let arguments: Value =
-                            serde_json::from_str(calls[0]["arguments"].as_str().unwrap()).unwrap();
-                        assert_eq!(
-                            arguments,
-                            json!({"path":if turn == 1 {"missing"} else {"found"}})
-                        );
-                    } else {
-                        assert!(output.iter().any(|item| item["type"] == "message"
-                            && item["content"][0]["text"]
-                                == if turn == 3 {
-                                    fixture::RESULT
-                                } else {
-                                    "continued"
-                                }));
-                    }
-                    assert!(!response.to_string().contains("mca1."));
-                    assert_eq!(
-                        output
-                            .iter()
-                            .filter(|item| item["type"] == "reasoning")
-                            .count(),
-                        usize::from(api == fixture::Api::Interactions && turn <= 3)
-                    );
-                    let next = if turn <= 2 {
-                        json!({"type":"function_call_output","call_id":format!("c{turn}"),
-                            "output":if turn == 1 {fixture::ERROR} else {fixture::RESULT}})
-                    } else {
-                        json!({"role":"user","content":"Continue."})
-                    };
-                    body["previous_response_id"] = response["id"].clone();
-                    body["input"] = json!([next]);
-                }
-            }
-            assert_eq!(fixture.seen.lock().unwrap().len(), 4);
-            fixture.gateway.flush_diagnostics().await;
-        }
+        fixture.gateway.flush_diagnostics().await;
     }
 }
 
@@ -188,13 +85,6 @@ async fn ordinary_stop_tool_error_correction_and_final_history() {
 async fn interactions_tool_correction_and_signed_final_history() {
     exercise_rejected(fixture::Api::Interactions, true).await;
     exercise_rejected(fixture::Api::Interactions, false).await;
-}
-
-#[tokio::test]
-#[ignore = "experimental stateful API; awaiting explicit activation"]
-async fn experimental_google_stored_tool_correction_and_signed_history() {
-    exercise_stored(fixture::Api::GenerateContent).await;
-    exercise_stored(fixture::Api::Interactions).await;
 }
 
 #[tokio::test]
@@ -253,6 +143,7 @@ async fn stateless_responses_do_not_publish_success_or_store_signed_calls() {
                 1,
                 "no retry after projection failure"
             );
+            fixture.gateway.flush_diagnostics().await;
         }
     }
 }

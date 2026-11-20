@@ -30,10 +30,7 @@
     "concurrency": 16,
     "request_bytes": 33554432,
     "response_bytes": 67108864,
-    "body_timeout_ms": 60000,
-    "history_entries": 1024,
-    "history_bytes": 268435456,
-    "history_ttl_ms": 1800000
+    "body_timeout_ms": 60000
   },
   "diagnostics": null,
   "accounts_file": "accounts.json"

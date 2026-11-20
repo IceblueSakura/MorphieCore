@@ -67,9 +67,6 @@ fn resource_budgets_and_task_shapes_remain_strict() {
     for settings in [
         json!({"routing":null}),
         json!({"resources":{"request_bytes":null}}),
-        json!({"resources":{"history_entries":0}}),
-        json!({"resources":{"history_bytes":0}}),
-        json!({"resources":{"history_ttl_ms":0}}),
         json!({"resources":{"request_bytes":67108865u64}}),
     ] {
         assert!(

@@ -14,7 +14,6 @@ use crate::{
         stream::SseLimits,
     },
 };
-use bytes::Bytes;
 /// Delivery can finish honestly without establishing successful upstream work.
 #[derive(Clone, Copy)]
 pub(in crate::gateway) enum Completion {
@@ -118,7 +117,6 @@ async fn produce(
     stream: bool,
     hold: bool,
     limit: usize,
-    history: Option<&super::history::Pending>,
     trace: &mut Trace,
 ) -> Result<Completion, ApiError> {
     let retry_after = crate::gateway::error::retry_after(upstream.headers());
@@ -384,41 +382,20 @@ async fn produce(
     if stream {
         flush_pending(lane, delivery, trace).await?;
     }
-    let (frames, json_snapshot) = if stream {
+    let frames = if stream {
         let frames = delivery.finish_stream(attempt);
 
-        let frames = frames.map_err(projection_failed(trace, ConversionBoundary::EventEncode))?;
-        (frames, None)
+        frames.map_err(projection_failed(trace, ConversionBoundary::EventEncode))?
     } else {
         let snapshot = delivery.encode_json_snapshot(attempt);
 
-        let (response, batch) =
+        let (_, batch) =
             snapshot.map_err(projection_failed(trace, ConversionBoundary::ResponseEncode))?;
-        let snapshot = history
-            .filter(|h| h.input.is_some())
-            .map(|_| (response, batch.frames()[0].clone()));
-        (batch, snapshot)
+        batch
     };
 
     release_held(&mut held, lane, delivery, trace).await?;
-    let reservation = if let Some(history) = history.filter(|h| h.input.is_some()) {
-        let (response, body) = match json_snapshot {
-            Some(snapshot) => snapshot,
-            None => {
-                let snapshot = delivery.snapshot(attempt);
-
-                let (response, body) = snapshot.map_err(|_| ApiError::upstream())?;
-                (response, Bytes::from(body))
-            }
-        };
-        if body.len() > limit {
-            return Err(ApiError::upstream());
-        }
-        Some(history.stage(response, body)?)
-    } else {
-        None
-    };
-    crate::gateway::body::send_final_frames(lane, delivery, frames, reservation, trace).await?;
+    crate::gateway::body::send_final_frames(lane, delivery, frames, trace).await?;
     delivery
         .complete(attempt)
         .map_err(|_| ApiError::upstream())?;
@@ -485,7 +462,6 @@ pub(in crate::gateway) async fn produce_candidate(
     limits: &Limits,
     lane: &Lane<'_>,
     hold: bool,
-    history: Option<&super::history::Pending>,
     trace: &mut Trace,
 ) -> Result<Produced, ApiError> {
     let status = upstream.status().as_u16();
@@ -643,9 +619,6 @@ pub(in crate::gateway) async fn produce_candidate(
     .with_report(trace.report.clone())
     .with_request(&candidate.endpoint, request, original)
     .with_coalescing(stream.then_some(limits.delta_coalescing).flatten());
-    if let Some(history) = history {
-        delivery = delivery.with_storage(&history.id, history.options.metadata());
-    }
     let result = produce(
         upstream,
         candidate.provider.id.as_str(),
@@ -655,7 +628,6 @@ pub(in crate::gateway) async fn produce_candidate(
         stream,
         hold,
         limit,
-        history,
         trace,
     )
     .await;
@@ -689,6 +661,7 @@ pub(in crate::gateway) async fn produce_candidate(
 mod tests {
     use super::*;
     use crate::protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract};
+    use bytes::Bytes;
     use futures_util::StreamExt;
 
     #[tokio::test]
@@ -746,7 +719,6 @@ mod tests {
             false,
             true,
             1 << 20,
-            None,
             &mut trace,
         )
         .await
@@ -954,7 +926,6 @@ mod tests {
                     false,
                     false,
                     1 << 20,
-                    None,
                     &mut trace,
                 );
                 tokio::pin!(producer);

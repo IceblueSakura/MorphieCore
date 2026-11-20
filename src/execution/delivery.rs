@@ -143,7 +143,6 @@ pub struct ResponseDelivery {
     native_created: Option<serde_json::Number>,
     /// Request-local envelope identity, never stored as upstream metadata or history.
     generated_id: Option<String>,
-    storage: Option<(String, crate::protocol::ResponseStorage)>,
     presentation: Option<Arc<crate::protocol::GenerationDelivery>>,
     input_estimate: u64,
     request_settings_present: [bool; 3],
@@ -184,7 +183,6 @@ impl ResponseDelivery {
                 .ok()
                 .map(|time| time.as_secs().into()),
             generated_id: None,
-            storage: None,
             presentation: None,
             input_estimate: 0,
             request_settings_present: [false; 3],
@@ -316,20 +314,6 @@ impl ResponseDelivery {
         self.report = report;
         self
     }
-    pub(crate) fn with_storage(
-        mut self,
-        id: &str,
-        storage: crate::protocol::ResponseStorage,
-    ) -> Self {
-        self.storage = Some((id.into(), storage));
-        self
-    }
-    fn managed_responses(&self) -> bool {
-        self.client.protocol() == ClientProtocol::Responses
-            && self.storage.as_ref().is_some_and(|(_, storage)| {
-                storage.store == crate::semantic::value::Presence::Value(true)
-            })
-    }
     pub fn lifecycle(&self) -> &Lifecycle {
         &self.lifecycle
     }
@@ -356,7 +340,6 @@ impl ResponseDelivery {
         }
         self.source = Some(attempt.identity().clone());
         if self.generated_id.is_none()
-            && self.storage.is_none()
             && attempt
                 .metadata()
                 .is_some_and(|metadata| metadata.id.is_none())
@@ -371,10 +354,13 @@ impl ResponseDelivery {
         ))?;
         metadata.model = self.public_label.clone();
         metadata.delivery = self.presentation.clone();
-        if let Some((id, storage)) = &self.storage {
-            metadata.id = Some(id.clone());
-            metadata.storage = Some(storage.clone());
-        } else if let Some(id) = &self.generated_id {
+        if self.client.protocol() == ClientProtocol::Responses {
+            metadata.storage = Some(crate::protocol::ResponseStorage {
+                store: crate::semantic::value::Presence::Value(false),
+                previous_response_id: crate::semantic::value::Presence::Null,
+            });
+        }
+        if let Some(id) = &self.generated_id {
             // A later source identity must not replace an already chosen client envelope.
             metadata.id = Some(id.clone());
         }
@@ -556,6 +542,7 @@ impl ResponseDelivery {
         self.prepared_source = None;
         Ok(evidence)
     }
+    #[cfg(test)]
     pub(crate) fn snapshot(
         &mut self,
         attempt: &Attempt,
@@ -572,12 +559,12 @@ impl ResponseDelivery {
         let mut evidence = self.complete_presentation(attempt, view)?;
         let mut response = self.client_response(attempt)?;
         let source = response.clone();
-        let hidden = source
+        if source
             .semantic
             .items()
             .iter()
-            .any(|(_, item)| item.has_replay_attachment());
-        if hidden && !self.managed_responses() {
+            .any(|(_, item)| item.has_replay_attachment())
+        {
             return Err(CodecError::Unsupported(CarrierReason::Replay).into());
         }
         if !self
@@ -624,19 +611,7 @@ impl ResponseDelivery {
                 .expect("projection")
                 .take_evidence(),
         );
-        let (mut decoded, mut value) = self.client.render_projected(response)?;
-        if hidden {
-            decoded.semantic = source
-                .semantic
-                .with_usage_reports(decoded.semantic.usage_reports().clone())
-                .and_then(|view| view.with_details(decoded.semantic.details().clone()))
-                .and_then(|view| view.with_progress(decoded.semantic.progress()))
-                .and_then(|view| {
-                    view.with_safety_reports(decoded.semantic.safety_reports().to_vec())
-                })
-                .map_err(CodecError::from)?;
-            decoded.fidelity = source.fidelity;
-        }
+        let (decoded, mut value) = self.client.render_projected(response)?;
         if let Some(notice) = self.report.preview_notice(view, &evidence) {
             notice.attach(&mut value, self.limits.max_wire_bytes, false);
         }
@@ -700,13 +675,12 @@ impl ResponseDelivery {
                     attempt.response()?,
                 )?;
             }
-            if !self.managed_responses()
-                && attempt
-                    .response()?
-                    .semantic
-                    .items()
-                    .iter()
-                    .any(|(_, item)| item.has_replay_attachment())
+            if attempt
+                .response()?
+                .semantic
+                .items()
+                .iter()
+                .any(|(_, item)| item.has_replay_attachment())
             {
                 return Err(CodecError::Unsupported(CarrierReason::Replay).into());
             }
@@ -788,23 +762,20 @@ impl ResponseDelivery {
                 padding,
             )?);
         }
-        let managed = self.managed_responses();
-        if !managed
-            && events.iter().any(|event| match event {
-                StreamEvent::PartReplay { .. } => true,
-                StreamEvent::ItemStarted {
-                    kind: crate::semantic::task::generation::ItemKind::ToolCall { .. },
-                    replay: Some(_),
-                    ..
-                } => true,
-                StreamEvent::ItemFinished {
-                    item,
-                    replay: Some(_),
-                    ..
-                } => context.fidelity.is_call_replay(*item),
-                _ => false,
-            })
-        {
+        if events.iter().any(|event| match event {
+            StreamEvent::PartReplay { .. } => true,
+            StreamEvent::ItemStarted {
+                kind: crate::semantic::task::generation::ItemKind::ToolCall { .. },
+                replay: Some(_),
+                ..
+            } => true,
+            StreamEvent::ItemFinished {
+                item,
+                replay: Some(_),
+                ..
+            } => context.fidelity.is_call_replay(*item),
+            _ => false,
+        }) {
             return Err(CodecError::Unsupported(CarrierReason::Replay).into());
         }
         let wire_events: Vec<_> = events
@@ -1097,7 +1068,5 @@ impl ResponseDelivery {
 
 #[cfg(test)]
 mod google_messages_tests;
-#[cfg(test)]
-mod responses_history_tests;
 #[cfg(test)]
 mod tests;

@@ -156,7 +156,6 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
                 Upstreams::Http {
                     runtime: gate.state.clone(),
                     candidates,
-                    history: None,
                     binding: None,
                 },
                 &entry,

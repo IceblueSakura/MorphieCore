@@ -6,4 +6,3 @@ pub(in crate::gateway) mod correlation;
 pub(in crate::gateway) mod discovery;
 pub(in crate::gateway) mod http;
 pub(in crate::gateway) mod models;
-pub(in crate::gateway) mod responses;

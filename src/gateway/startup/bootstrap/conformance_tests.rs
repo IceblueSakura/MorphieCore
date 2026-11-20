@@ -3,7 +3,7 @@
 use super::test_support::{Fixture, service};
 use axum::{
     Json, Router,
-    body::{Body, to_bytes},
+    body::Body,
     http::{HeaderMap, Request},
     response::IntoResponse,
     routing::post,
@@ -249,23 +249,22 @@ enum Control {
     Default,
     BareModel,
     JsonOnlyReports,
-    Stored,
     WithoutCache,
     LegacyVersion,
     ThinkingBeta,
     ResolvedHeaders,
     Uncapped,
     SummaryHistory,
-    OpaqueHistory { stored: bool },
+    OpaqueHistory,
     AdaptiveHistory,
-    Incomplete { stored: bool },
-    ReportedFacts { refusal: bool, stored: bool },
+    Incomplete,
+    ReportedFacts { refusal: bool },
 }
 impl Control {
     fn reasoning(self) -> Option<ReasoningShape> {
         match self {
             Self::SummaryHistory => Some(ReasoningShape::Summary),
-            Self::OpaqueHistory { .. } => Some(ReasoningShape::Opaque),
+            Self::OpaqueHistory => Some(ReasoningShape::Opaque),
             Self::AdaptiveHistory => Some(ReasoningShape::Signed),
             _ => None,
         }
@@ -521,17 +520,6 @@ async fn observe_intake(
         request["thinking"] = json!({"type":"adaptive","display":"summarized"});
         request["output_config"] = json!({"effort":"medium"});
     }
-    let stored = matches!(
-        control,
-        Control::Stored
-            | Control::OpaqueHistory { stored: true }
-            | Control::Incomplete { stored: true }
-            | Control::ReportedFacts { stored: true, .. }
-    );
-    if stored {
-        assert_eq!(client, Api::Responses);
-        request["store"] = json!(true);
-    }
     let mut outcomes = Vec::new();
     let mut views = Vec::new();
     let mut reports = Vec::new();
@@ -610,7 +598,7 @@ async fn observe_intake(
                 reasoning,
                 bailian,
             );
-            if matches!(control, Control::Incomplete { .. }) {
+            if matches!(control, Control::Incomplete) {
                 let calls = calls.lock().unwrap();
                 let item = calls[1]["input"]
                     .as_array()
@@ -654,7 +642,7 @@ async fn observe_intake(
                 }
             }
         }
-        if turn == 0 && matches!(control, Control::Incomplete { .. }) {
+        if turn == 0 && matches!(control, Control::Incomplete) {
             assert_eq!(value["status"], "incomplete");
             assert_eq!(value["incomplete_details"]["reason"], "max_output_tokens");
             let item = value["output"]
@@ -664,31 +652,6 @@ async fn observe_intake(
                 .find(|i| i["type"] == "reasoning")
                 .unwrap();
             assert_eq!(item["status"], "incomplete");
-        }
-        if stored {
-            let response = tokio::time::timeout(
-                DEADLINE,
-                boot.gateway.router().oneshot(
-                    Request::builder()
-                        .uri(format!("/v1/responses/{}", value["id"].as_str().unwrap()))
-                        .header("authorization", format!("Bearer {KEY}"))
-                        .body(Body::empty())
-                        .unwrap(),
-                ),
-            )
-            .await
-            .unwrap()
-            .unwrap();
-            assert_eq!(response.status(), 200);
-            let bytes = tokio::time::timeout(DEADLINE, to_bytes(response.into_body(), LIMIT))
-                .await
-                .unwrap()
-                .unwrap();
-            let mut retained: Value = serde_json::from_slice(&bytes).unwrap();
-            let mut delivered = value.clone();
-            retained.as_object_mut().unwrap().remove("morphiecore");
-            delivered.as_object_mut().unwrap().remove("morphiecore");
-            assert_eq!(retained, delivered, "retained/delivered agreement");
         }
         wire::append(client, profile, turn, &mut request, value);
     }
@@ -737,7 +700,7 @@ async fn observe_intake(
     (outcomes, views, reports)
 }
 
-async fn grouped_responses_history(managed: bool) {
+async fn grouped_responses_history() {
     let model = "qwen3.8-flash";
     let output = json!([
         {"type":"function_call","id":"fc_a","call_id":"a","name":"lookup","arguments":"{\"key\":\"A\"}","status":"completed"},
@@ -761,7 +724,7 @@ async fn grouped_responses_history(managed: bool) {
                 let turn = {
                     let mut calls = observed.lock().unwrap();
                     let turn = calls.len();
-                    assert!(turn < 3, "no hidden retries");
+                    assert!(turn < 2, "no hidden retries");
                     calls.push(body.clone());
                     turn
                 };
@@ -818,7 +781,7 @@ async fn grouped_responses_history(managed: bool) {
             }]}}}),
         )
         .unwrap();
-        let mut request = json!({"model":model,"input":"go","max_output_tokens":64,"stream":stream,"store":managed});
+        let mut request = json!({"model":model,"input":"go","max_output_tokens":64,"stream":stream,"store":false});
         request["tools"] = json!([{"type":"function","name":"lookup","description":"Look up a key.",
             "parameters":{"type":"object","properties":{"key":{"type":"string"}}},"strict":false}]);
         if stream {
@@ -835,22 +798,6 @@ async fn grouped_responses_history(managed: bool) {
             {"type":"function_call","id":"fc_b","call_id":"b","name":"lookup","arguments":"{\"key\":\"B\"}"},
             results[0],results[1]
         ]);
-        request["store"] = json!(false);
-        if managed {
-            request["previous_response_id"] = first["id"].clone();
-            request["input"] = results.clone();
-            let (status, bytes, failed) = send(&boot, Api::Responses, request.clone(), &[]).await;
-            assert_eq!(status, 200);
-            assert!(!failed);
-            assert_eq!(
-                wire::delivered(Api::Responses, &bytes, stream)["status"],
-                "completed"
-            );
-        }
-        request
-            .as_object_mut()
-            .unwrap()
-            .remove("previous_response_id");
         request["input"] = expected.clone();
         let (status, bytes, failed) = send(&boot, Api::Responses, request, &[]).await;
         assert_eq!(status, 200);
@@ -860,14 +807,8 @@ async fn grouped_responses_history(managed: bool) {
             "completed"
         );
         let captured = calls.lock().unwrap();
-        assert_eq!(captured.len(), if managed { 3 } else { 2 });
+        assert_eq!(captured.len(), 2);
         assert_eq!(captured[1]["input"], expected, "grouped call-ID history");
-        if managed {
-            assert_eq!(
-                captured[2], captured[1],
-                "stateless and managed upstream requests"
-            );
-        }
         drop(captured);
         boot.gateway.shutdown();
     }
@@ -875,14 +816,7 @@ async fn grouped_responses_history(managed: bool) {
 
 #[tokio::test]
 async fn grouped_stateless_responses_history_preserves_call_id_association() {
-    grouped_responses_history(false).await;
-}
-
-#[tokio::test]
-#[ignore = "experimental stateful API; awaiting explicit activation"]
-async fn experimental_grouped_responses_history_agrees_between_managed_and_stateless_continuation()
-{
-    grouped_responses_history(true).await;
+    grouped_responses_history().await;
 }
 
 #[tokio::test]
@@ -899,10 +833,7 @@ async fn native_reports_project_without_changing_content_or_terminal_outcome() {
                     client,
                     Profile::Text,
                     stream,
-                    Control::ReportedFacts {
-                        refusal,
-                        stored: false,
-                    },
+                    Control::ReportedFacts { refusal },
                 )
                 .await;
                 assert_eq!(actual, ACCEPT, "reports {client:?}/{refusal}/{stream}");
@@ -1089,13 +1020,7 @@ async fn native_reasoning_history_contracts_are_distinct() {
     );
     // Grok may return an opaque reasoning owner even without a reasoning request.
     assert_eq!(
-        transports(
-            &grok,
-            Api::Responses,
-            Profile::Text,
-            Control::OpaqueHistory { stored: false }
-        )
-        .await,
+        transports(&grok, Api::Responses, Profile::Text, Control::OpaqueHistory).await,
         ACCEPT
     );
 }
@@ -1118,24 +1043,6 @@ async fn agent_default_production_lanes() {
                         binding.1
                     );
                 }
-            }
-        }
-    }
-}
-
-#[tokio::test]
-#[ignore = "experimental stateful API; awaiting explicit activation"]
-async fn experimental_stored_production_responses_agree_with_delivered_history() {
-    for binding in BINDINGS {
-        for profile in [Profile::Text, Profile::Tools, Profile::Reasoning] {
-            for stream in [false, true] {
-                let actual = lane(binding, Api::Responses, profile, stream, Control::Stored).await;
-                assert_eq!(
-                    actual,
-                    expected(binding.1, Api::Responses, profile),
-                    "stored {}/{profile:?}/{stream}",
-                    binding.1
-                );
             }
         }
     }
@@ -1206,7 +1113,7 @@ async fn incomplete_responses_reasoning_keeps_its_delivery_and_replay_status() {
             Api::Responses,
             Profile::Reasoning,
             stream,
-            Control::Incomplete { stored: false },
+            Control::Incomplete,
         )
         .await;
         assert_eq!(actual, ["accepted@1", "accepted@1"]);

@@ -8,7 +8,7 @@ use crate::{
 };
 
 #[test]
-fn responses_final_encoding_and_managed_history_cannot_drop_participants() {
+fn responses_final_encoding_cannot_drop_participants() {
     let request = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
         .decode_client_request(br#"{"model":"synthetic","messages":[{"role":"user","name":"alice","content":"hello"}]}"#)
         .unwrap();
@@ -21,10 +21,6 @@ fn responses_final_encoding_and_managed_history_cannot_drop_participants() {
     };
     assert_eq!(
         responses::encode_generation(&forged),
-        Err(CodecError::Unsupported(CarrierReason::Unavailable))
-    );
-    assert_eq!(
-        responses::managed::input_items(&request.task, "synthetic", None),
         Err(CodecError::Unsupported(CarrierReason::Unavailable))
     );
 }

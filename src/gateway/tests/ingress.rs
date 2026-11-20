@@ -102,7 +102,6 @@ async fn source_decode_and_planning_failures_have_separate_boundaries_without_at
         gate.state.clone(),
         entry,
         request,
-        None,
         tokio::time::Instant::now() + Duration::from_secs(1),
         gate.state.permits.clone().acquire_owned().await.unwrap(),
         trace,

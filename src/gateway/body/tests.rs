@@ -1265,7 +1265,6 @@ async fn attempt_wait_attribution_and_hold_deadline_are_explicit() {
             &gate.state.limits,
             &lane,
             true,
-            None,
             &mut trace,
         );
         tokio::pin!(work);

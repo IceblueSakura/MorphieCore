@@ -36,10 +36,6 @@ pub struct Limits {
     pub event_bytes: usize,
     pub max_events: usize,
     pub concurrency: usize,
-    /// Opt-in response snapshots; payload bytes include retained JSON and typed history.
-    pub history_entries: usize,
-    pub history_bytes: usize,
-    pub history_ttl: Duration,
     pub body_timeout: Duration,
     pub exchange_timeout: Duration,
 }
@@ -69,9 +65,6 @@ impl Default for Limits {
             event_bytes: 16 << 20,
             max_events: 1_000_000,
             concurrency: 16,
-            history_entries: 1024,
-            history_bytes: 256 << 20,
-            history_ttl: Duration::from_secs(30 * 60),
             body_timeout: Duration::from_secs(60),
             exchange_timeout: Duration::from_secs(60 * 60),
         }
@@ -124,19 +117,6 @@ impl Limits {
             (
                 "resources.concurrency",
                 (1..=256).contains(&self.concurrency),
-            ),
-            (
-                "resources.history_entries",
-                (1..=4096).contains(&self.history_entries),
-            ),
-            (
-                "resources.history_bytes",
-                (1..=1 << 30).contains(&self.history_bytes),
-            ),
-            (
-                "resources.history_ttl_ms",
-                !self.history_ttl.is_zero()
-                    && self.history_ttl <= Duration::from_secs(24 * 60 * 60),
             ),
             (
                 "resources.body_timeout_ms",

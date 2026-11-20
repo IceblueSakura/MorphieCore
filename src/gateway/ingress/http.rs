@@ -45,14 +45,11 @@ impl Gateway {
             .route("/v1/responses", post(responses))
             .route(
                 "/v1/responses/{response_id}",
-                get(crate::gateway::ingress::responses::retrieve)
-                    .delete(crate::gateway::ingress::responses::delete)
-                    .route_layer(middleware::from_fn(reject_stateful)),
+                get(reject_stateful).delete(reject_stateful),
             )
             .route(
                 "/v1/responses/{response_id}/input_items",
-                get(crate::gateway::ingress::responses::input_items)
-                    .route_layer(middleware::from_fn(reject_stateful)),
+                get(reject_stateful),
             )
             .route("/v1/messages", post(messages))
             .route(
@@ -97,7 +94,6 @@ impl Gateway {
     }
     pub fn shutdown(&self) {
         self.state.shutdown.cancel();
-        self.state.history.clear();
     }
     /// Own one listener and its credential maintenance for this runtime.
     pub async fn serve(
@@ -146,7 +142,7 @@ fn ingress_error(path: &str, error: ApiError) -> Response {
     }
 }
 /// Keep experimental resource handlers unreachable after ingress authentication.
-async fn reject_stateful(_: Request, _: Next) -> Response {
+async fn reject_stateful() -> Response {
     ApiError::stateful_disabled().into_response()
 }
 pub(in crate::gateway) async fn authenticate(
@@ -265,7 +261,6 @@ struct Admitted {
     conversation: crate::semantic::context::ConversationContext,
     entry: Arc<crate::gateway::BoundEntry>,
     request: crate::protocol::GenerationRequestEnvelope,
-    history: Option<Box<crate::gateway::generation::history::Pending>>,
 }
 /// Bounded admission: concurrency, headers, body, then codec and task checks.
 async fn admit(
@@ -289,23 +284,15 @@ async fn admit(
         trace,
     )
     .await?;
-    let (entry, request, history) = match protocol {
-        ClientProtocol::Responses => {
-            let (entry, request, history) =
-                admission::prepare_responses(state, &bytes, &trace.report)?;
-            (entry, request, Some(Box::new(history)))
-        }
-        protocol => {
-            let (entry, request) = admission::prepare(state, protocol, &bytes, &trace.report)?;
-            (entry, request, None)
-        }
+    let (entry, request) = match protocol {
+        ClientProtocol::Responses => admission::prepare_responses(state, &bytes, &trace.report)?,
+        protocol => admission::prepare(state, protocol, &bytes, &trace.report)?,
     };
     Ok(Admitted {
         permit,
         conversation,
         entry,
         request,
-        history,
     })
 }
 /// Collect within the earlier of the upload ceiling and total request deadline.
@@ -366,7 +353,6 @@ pub(in crate::gateway) async fn handle(
         conversation,
         entry,
         request: mut semantic,
-        history,
     } = match admit(&state, protocol, request, service_deadline, &mut trace).await {
         Ok(admitted) => admitted,
         Err(error) => {
@@ -401,7 +387,7 @@ pub(in crate::gateway) async fn handle(
     }
     let failed = (protocol == ClientProtocol::Responses && semantic.delivery.streaming())
         .then(|| entry.clone());
-    match exchange::run(state, entry, semantic, history, deadline, permit, trace).await {
+    match exchange::run(state, entry, semantic, deadline, permit, trace).await {
         Err(error) if error.streams_as_failed() && failed.is_some() => {
             failed_stream(&failed.expect("checked"), &error)
         }

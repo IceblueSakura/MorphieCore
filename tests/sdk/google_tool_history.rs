@@ -3,22 +3,18 @@ use crate::google_tool_fixture as fixture;
 use morphiecore::protocol::openai::GenerationApi;
 use std::time::Duration;
 
-async fn exercise(api: fixture::Api, api_name: &str, stateful: bool) {
+async fn exercise(api: fixture::Api, api_name: &str) {
     for (profile, name, count) in [
         (GenerationApi::Chat, "chat-json", 1),
         (GenerationApi::Chat, "chat-sse", 1),
-        (GenerationApi::Responses, "responses", 8),
         (GenerationApi::Chat, "messages-json", 1),
         (GenerationApi::Chat, "messages-sse", 1),
     ] {
-        if (name == "responses") != stateful {
-            continue;
-        }
         let messages = name.starts_with("messages-");
         let fixture = if messages {
             fixture::start_messages(api).await
         } else {
-            fixture::start(profile, api, profile == GenerationApi::Responses).await
+            fixture::start(profile, api, false).await
         };
         let home = tempfile::tempdir().unwrap();
         let mut command = super::isolated_sdk_python(home.path());
@@ -40,17 +36,7 @@ async fn exercise(api: fixture::Api, api_name: &str, stateful: bool) {
         let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(report["requests"], count);
         assert_eq!(report["http_requests"], count);
-        assert_eq!(
-            report[if name != "responses" {
-                "unrepresentable_signature_rejected"
-            } else {
-                "tool_correction_and_final_history"
-            }],
-            true
-        );
-        if name == "responses" {
-            assert_eq!(report["deliveries"], 2);
-        }
+        assert_eq!(report["unrepresentable_signature_rejected"], true);
         assert_eq!(report["upstream"], api_name);
         assert_eq!(fixture.seen.lock().unwrap().len(), count);
         fixture.gateway.flush_diagnostics().await;
@@ -60,18 +46,11 @@ async fn exercise(api: fixture::Api, api_name: &str, stateful: bool) {
 #[tokio::test]
 #[ignore = "requires pinned SDKs; synthetic generateContent JSON/SSE tool correction"]
 async fn google_tool_correction_and_signed_final_history() {
-    exercise(fixture::Api::GenerateContent, "generate_content", false).await;
+    exercise(fixture::Api::GenerateContent, "generate_content").await;
 }
 
 #[tokio::test]
 #[ignore = "requires pinned SDKs; synthetic Interactions JSON/SSE tool correction"]
 async fn interactions_tool_correction_and_signed_final_history() {
-    exercise(fixture::Api::Interactions, "interactions", false).await;
-}
-
-#[tokio::test]
-#[ignore = "experimental stateful API; awaiting explicit activation"]
-async fn experimental_google_stored_history() {
-    exercise(fixture::Api::GenerateContent, "generate_content", true).await;
-    exercise(fixture::Api::Interactions, "interactions", true).await;
+    exercise(fixture::Api::Interactions, "interactions").await;
 }

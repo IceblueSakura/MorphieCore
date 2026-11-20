@@ -1220,31 +1220,6 @@ fn original_request_metadata_is_attempt_local_and_matches_responses_snapshots() 
             .snapshot(retained.clone())
             .unwrap();
         assert_eq!(again["metadata"], saved["metadata"]);
-        let mut no_echo = retained.clone();
-        Arc::make_mut(no_echo.metadata.delivery.as_mut().unwrap()).request_metadata = None;
-        let stored = crate::protocol::openai::responses::managed::retained_size(
-            &original.task,
-            &retained,
-            body.len(),
-        )
-        .unwrap();
-        let without = crate::protocol::openai::responses::managed::retained_size(
-            &original.task,
-            &no_echo,
-            body.len(),
-        )
-        .unwrap();
-        assert!(stored > without);
-        let (next, _) = crate::protocol::openai::responses::managed::decode(
-            &responses,
-            br#"{"model":"public","input":"next"}"#,
-            Some((&original.task, &retained)),
-        )
-        .unwrap();
-        assert!(
-            next.context.metadata.is_absent(),
-            "history does not inherit request association"
-        );
     }
 }
 

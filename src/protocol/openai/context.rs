@@ -103,7 +103,7 @@ pub(super) fn metadata(
         source_failure: None,
         delivery: None,
         storage: if profile == GenerationApi::Responses {
-            crate::protocol::openai::responses::managed::read_storage(o)?
+            crate::protocol::openai::responses::envelope::read_storage(o)?
         } else {
             None
         },

@@ -376,15 +376,6 @@ fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_recei
                 Obfuscation::Disabled,
             )
             .with_request(&endpoint, &request, &request);
-            if client.protocol() == ClientProtocol::Responses {
-                delivery = delivery.with_storage(
-                    "resp_stored",
-                    crate::protocol::ResponseStorage {
-                        store: Presence::Value(true),
-                        ..Default::default()
-                    },
-                );
-            }
             let mut attempt = Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
             attempt.begin(200, "text/event-stream").unwrap();
             let mut output = feed(&mut attempt, &mut delivery, &frames, stream, false);
@@ -792,4 +783,170 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
     assert!(d.effects().iter().any(|effect| effect.semantic_field()
         == crate::protocol::conversion::generation::Field::InputTokens
         && effect.change() == crate::protocol::conversion::generation::Change::Estimate));
+}
+
+fn stateless_google_responses_setup() -> (Attempt, ResponseDelivery) {
+    let target =
+        crate::protocol::native::ReplayTarget::new("synthetic-google", "synthetic-model").unwrap();
+    let mut attempt = Attempt::new(
+        crate::adapter::UpstreamAdapter::GoogleGenerateContent { target },
+        2 << 20,
+        SseLimits::default(),
+    );
+    attempt.begin(200, "text/event-stream").unwrap();
+    let codec = GenerationCodec::new(
+        GenerationApi::Responses,
+        Dialect::Standard,
+        Some(crate::protocol::replay_envelope::CLIENT_ORIGIN.clone()),
+    );
+    let delivery = ResponseDelivery::new(
+        ClientAdapter::openai(codec.clone(), TargetContract::full()),
+        "public",
+        SseLimits::default(),
+        StreamOptions::default(),
+        Obfuscation::Disabled,
+    );
+    let request = codec
+        .decode_client_request(br#"{"model":"public","input":"go","max_output_tokens":32}"#)
+        .unwrap();
+    let delivery = delivery.with_request(&GOOGLE_BINDINGS[0].endpoint(), &request, &request);
+    (attempt, delivery)
+}
+
+#[test]
+fn missing_and_late_google_ids_keep_delivery_identity_in_json_sse_and_retained_views() {
+    for late in [false, true] {
+        for stream in [false, true] {
+            let (mut attempt, mut delivery) = stateless_google_responses_setup();
+            let mut frames = [
+                json!({"modelVersion":"synthetic-model",
+                    "candidates":[{"content":{"role":"model","parts":[{"text":"O"}]}}]}),
+                json!({"candidates":[{"content":{"role":"model","parts":[{"text":"K"}]},
+                    "finishReason":"STOP"}]}),
+            ];
+            if late {
+                frames[1]["responseId"] = json!("late-upstream");
+            }
+            let mut output = vec![];
+            let mut id = None;
+            for frame in frames {
+                let (_, events) = attempt
+                    .push(format!("data: {frame}\n\n").as_bytes())
+                    .unwrap();
+                if stream {
+                    output.extend(
+                        delivery
+                            .encode_events(&attempt, &events)
+                            .unwrap()
+                            .into_bytes()
+                            .concat(),
+                    );
+                } else {
+                    delivery.observe_events(&attempt, &events).unwrap();
+                }
+                id.get_or_insert_with(|| delivery.generated_id.clone().unwrap());
+            }
+            let id = id.unwrap();
+            assert_ne!(id, "late-upstream");
+            assert!(!String::from_utf8_lossy(&output).contains("response.completed"));
+            attempt.finish().unwrap();
+            assert_eq!(
+                attempt.response().unwrap().metadata.id.as_deref(),
+                late.then_some("late-upstream")
+            );
+            let delivered: Value = if stream {
+                output.extend(
+                    delivery
+                        .finish_stream(&attempt)
+                        .unwrap()
+                        .into_bytes()
+                        .concat(),
+                );
+                let events: Vec<Value> = String::from_utf8(output)
+                    .unwrap()
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("data: "))
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect();
+                for event in &events {
+                    if let Some(response) = event.get("response") {
+                        assert_eq!(response["id"], id);
+                    }
+                }
+                assert_eq!(events.last().unwrap()["type"], "response.completed");
+                events.last().unwrap()["response"].clone()
+            } else {
+                serde_json::from_slice(&delivery.encode_json(&attempt).unwrap()).unwrap()
+            };
+            assert_eq!(delivered["id"], id);
+            assert_eq!(delivered["output"][0]["content"][0]["text"], "OK");
+            let (retained, bytes) = delivery.snapshot(&attempt).unwrap();
+            assert_eq!(retained.metadata.id.as_deref(), Some(id.as_str()));
+            let retained: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(retained["id"], delivered["id"]);
+            assert_eq!(retained["output"], delivered["output"]);
+        }
+    }
+}
+
+#[test]
+fn stateless_responses_reject_hidden_signatures_and_poison_delivery() {
+    let signed_wire = format!(
+        "data: {}\n\n",
+        json!({"responseId":"r","modelVersion":"synthetic-model",
+            "candidates":[{"content":{"role":"model","parts":[
+                {"thought":true,"text":"plan","thoughtSignature":"UjE="},
+                {"text":"OK","thoughtSignature":"UzE="},
+                {"functionCall":{"id":"c","name":"lookup","args":{"n":1}},"thoughtSignature":"UzM="}
+            ]},"finishReason":"MAX_TOKENS"}],
+            "usageMetadata":{"promptTokenCount":10,"cachedContentTokenCount":0,"candidatesTokenCount":5,"thoughtsTokenCount":1,"totalTokenCount":16}})
+    );
+    let (mut attempt, _) = stateless_google_responses_setup();
+    let (n, _) = attempt.push(signed_wire.as_bytes()).unwrap();
+    assert_eq!(n, signed_wire.len());
+    attempt.finish().unwrap();
+    let mut source = attempt.response().unwrap().clone();
+    super::super::replay::seal_for_client(
+        &mut source,
+        &crate::protocol::replay_envelope::CLIENT_ORIGIN,
+    )
+    .unwrap();
+    source.metadata.storage = Some(crate::protocol::ResponseStorage {
+        store: Presence::Value(true),
+        ..Default::default()
+    });
+    let client_codec = GenerationCodec::new(
+        GenerationApi::Responses,
+        Dialect::Standard,
+        Some(crate::protocol::replay_envelope::CLIENT_ORIGIN.clone()),
+    );
+    let client = ClientAdapter::openai(client_codec, TargetContract::full());
+    assert!(
+        matches!(client.snapshot(source),
+        Err(crate::protocol::ConversionFailure { cause: crate::protocol::ConversionCause::Codec(CodecError::Unsupported(reason)), .. })
+            if matches!(reason, CarrierReason::Replay)),
+        "reported storage does not authorize execution-owned retention"
+    );
+    for stream in [false, true] {
+        let (mut attempt, mut delivery) = stateless_google_responses_setup();
+        let (n, events) = attempt.push(signed_wire.as_bytes()).unwrap();
+        assert_eq!(n, signed_wire.len());
+        let result = if stream {
+            delivery
+                .encode_events(&attempt, &events)
+                .map(|batch| batch.into_bytes())
+                .map(|_| ())
+        } else {
+            attempt.finish().unwrap();
+            delivery.encode_json(&attempt).map(|_| ())
+        };
+        assert!(
+            matches!(result, Err(AttemptError::Codec(CodecError::Unsupported(reason)))
+                | Err(AttemptError::Conversion(crate::protocol::ConversionFailure { cause: crate::protocol::ConversionCause::Codec(CodecError::Unsupported(reason)), .. }))
+                if matches!(reason, CarrierReason::Replay)),
+            "{result:?}"
+        );
+        assert!(delivery.commit().is_err());
+        assert!(delivery.encode_json(&attempt).is_err());
+    }
 }

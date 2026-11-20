@@ -32,15 +32,6 @@ pub(super) struct Chunk {
     ack: oneshot::Sender<()>,
     final_frame: bool,
     audio_content_type: Option<&'static str>,
-    history: Option<Arc<Mutex<Option<crate::gateway::generation::history::Reservation>>>>,
-}
-/// The producer can revoke a queued reservation without another consumer poll.
-/// The same lock serializes revocation with final acknowledgment/publication.
-struct HistoryHandoff(Arc<Mutex<Option<crate::gateway::generation::history::Reservation>>>);
-impl Drop for HistoryHandoff {
-    fn drop(&mut self) {
-        self.0.lock().expect("history handoff").take();
-    }
 }
 pub(super) enum ResponseType {
     Json,
@@ -202,10 +193,6 @@ impl Stream for Output {
                     self.ended = true;
                     return Poll::Ready(Some(Err(std::io::Error::other("delivery cancelled"))));
                 }
-                let mut history = chunk
-                    .history
-                    .as_ref()
-                    .map(|h| h.lock().expect("history handoff"));
                 let accepted = chunk.ack.send(()).is_ok();
                 if !accepted {
                     drop(final_handoff);
@@ -214,9 +201,6 @@ impl Stream for Output {
                 } else {
                     if let Some(handoff) = final_handoff.as_deref_mut() {
                         *handoff = FinalHandoff::Accepted;
-                    }
-                    if let Some(reservation) = history.as_mut().and_then(|h| h.take()) {
-                        reservation.publish(Instant::now());
                     }
                     Poll::Ready(Some(Ok(chunk.bytes)))
                 }
@@ -260,7 +244,7 @@ pub(super) async fn send_frames(
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     for bytes in frames {
-        send_chunk(lane, bytes, None, None, false, trace).await?;
+        send_chunk(lane, bytes, None, false, trace).await?;
         delivery.commit().map_err(|_| ApiError::upstream())?;
     }
     Ok(())
@@ -271,7 +255,7 @@ pub(super) async fn send_error_frames(
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     for bytes in frames {
-        send_chunk(lane, bytes, None, None, false, trace).await?;
+        send_chunk(lane, bytes, None, false, trace).await?;
     }
     Ok(())
 }
@@ -280,24 +264,21 @@ pub(super) async fn send_final_frame(
     bytes: Bytes,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
-    send_chunk(lane, bytes, None, None, true, trace).await
+    send_chunk(lane, bytes, None, true, trace).await
 }
 pub(super) async fn send_final_frames(
     lane: &Lane<'_>,
     delivery: &mut ResponseDelivery,
     frames: crate::execution::report::EncodedBatch,
-    history: Option<crate::gateway::generation::history::Reservation>,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     let mut frames = frames.into_iter().peekable();
     if frames.peek().is_none() {
         return Err(ApiError::upstream());
     }
-    let mut history = history;
     while let Some(bytes) = frames.next() {
         let final_frame = frames.peek().is_none();
-        let final_history = if final_frame { history.take() } else { None };
-        send_chunk(lane, bytes, None, final_history, final_frame, trace).await?;
+        send_chunk(lane, bytes, None, final_frame, trace).await?;
         delivery.commit().map_err(|_| ApiError::upstream())?;
     }
     Ok(())
@@ -308,29 +289,18 @@ pub(super) async fn send_final_audio(
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     let content_type = crate::protocol::openai::speech::response_content_type(&audio);
-    send_chunk(
-        lane,
-        audio.into_data(),
-        Some(content_type),
-        None,
-        true,
-        trace,
-    )
-    .await
+    send_chunk(lane, audio.into_data(), Some(content_type), true, trace).await
 }
 async fn send_chunk(
     lane: &Lane<'_>,
     bytes: Bytes,
     audio_content_type: Option<&'static str>,
-    history: Option<crate::gateway::generation::history::Reservation>,
     final_frame: bool,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     trace.stage(Stage::Delivery);
     lane.state.waiting_upstream.store(false, Ordering::Release);
     let (ack, seen) = oneshot::channel();
-    let history =
-        history.map(|reservation| HistoryHandoff(Arc::new(Mutex::new(Some(reservation)))));
     // Publication freezes advancement; acknowledgement alone proves body handoff.
     lane.state.published.store(true, Ordering::Release);
     trace.publishing();
@@ -344,7 +314,6 @@ async fn send_chunk(
             ack,
             final_frame,
             audio_content_type,
-            history: history.as_ref().map(|h| h.0.clone()),
         }))
         .await
         .map_err(|_| {

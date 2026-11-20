@@ -105,7 +105,6 @@ impl Gateway {
                 request_ids: crate::gateway::ingress::correlation::RequestIds::new()
                     .map_err(|_| StartupError::Environment)?,
                 capture: None,
-                history: Arc::new(crate::gateway::generation::history::Store::new(&limits)),
                 affinity: crate::gateway::routing::prefix_cache::Index::new(
                     limits.implicit_cache_affinity,
                 ),
