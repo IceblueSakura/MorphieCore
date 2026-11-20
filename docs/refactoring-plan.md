@@ -9,7 +9,7 @@ This plan tracks the code-first refactor: enforce layer boundaries, move model p
 | 0. Cleanup | Landed, with the scope corrections below | No blocker for Phase 2 |
 | 1. Dependency boundaries | Landed | No blocker for Phase 2 |
 | 2. Projection and catalog | Complete for the selected scope; offline baseline and stateless SDK loopbacks passed | Installed-client and real-Provider qualification remain separate |
-| 3. Tests and observability | No task complete; existing checks cover parts of the gate | Reuse those checks and fill the evidence gaps below |
+| 3. Tests and observability | Test pruning landed; the observability gate remains open | Complete instrumentation and the evidence gaps below |
 | 4. Documentation | No task complete; routes already match by inspection | Add independent gates and consolidate documentation after code boundaries settle |
 
 ## Phase 0 — Cleanup (landed)
@@ -60,9 +60,7 @@ Operators who explicitly set `resources.history_entries`, `resources.history_byt
 
 ### Task 3.1 — Keep independent test oracles
 
-- **Current:** Test support already has a Messages SSE collector. Conformance uses representative dialects but still crosses many catalog bindings with profiles and clients. Model-limit tests mix behavior checks with exact catalog snapshots.
-- **Remaining:** Extend existing SSE helpers where the wire formats agree. Trim catalog and client permutations by distinct risk, not model count. Keep tests for service-specific limits, isolation and no default injection; use synthetic targets when production capabilities are not the subject. Split kitchen-sink tests by behavior, merge fragments into their owning domains, and prefer structured error codes to prose assertions while keeping redaction checks. Remove client mocks only where they assert call order rather than failures, cleanup or time bounds.
-- **Exit:** Affected Rust checks and `python3 -m unittest discover -s tests/clients` preserve the independently testable contracts.
+- The dialect sweep uses native client/target pairs; targeted cross-protocol lanes still exercise dispatch, replay, and carrier-specific behavior. Model-limit tests keep binding-local ceilings, same-model isolation, and synthetic no-default controls. Shared SSE helpers retain independent argument deltas and reject data after the Messages terminal. The SIWC quota case checks the public error code, pre-creation failure and redaction.
 
 ### Task 3.2 — Complete request and maintenance instrumentation
 

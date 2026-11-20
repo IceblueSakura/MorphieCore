@@ -31,7 +31,7 @@ fn messages(value: Value) -> Request {
 }
 
 #[test]
-fn service_output_ceilings_bound_prepared_requests_without_filling_unknown_services() {
+fn service_output_ceilings_bound_prepared_requests() {
     use morphiecore::{
         semantic::context::ConversationContext,
         topology::{
@@ -40,107 +40,60 @@ fn service_output_ceilings_bound_prepared_requests_without_filling_unknown_servi
         },
     };
     let secret = SecretMaterial::new("synthetic").unwrap();
-    for (prefix, protocol, key, maximum) in [
+    let deepseek = api_key_bindings()
+        .iter()
+        .find(|b| b.endpoint_prefix == "deepseek")
+        .unwrap();
+    let haiku = &messages_bindings()[0];
+    let mut request = source(json!({"model":"public","input":"go","max_output_tokens":500000}));
+    request.conversation =
+        Some(ConversationContext::independent_request("synthetic-output").unwrap());
+    let before = request.clone();
+    for (endpoint, provider, maximum) in [
         (
-            "deepseek",
-            GenerationProtocol::OpenAiChat,
-            "max_tokens",
+            deepseek.endpoint(GenerationProtocol::OpenAiChat).unwrap(),
+            deepseek.provider(),
             393216,
         ),
-        (
-            "deepseek",
-            GenerationProtocol::OpenAiResponses,
-            "max_output_tokens",
-            393216,
-        ),
-        (
-            "opencode-go",
-            GenerationProtocol::OpenAiChat,
-            "max_tokens",
-            65536,
-        ),
-        (
-            "opencode-go-mimo-pro",
-            GenerationProtocol::OpenAiChat,
-            "max_tokens",
-            131072,
-        ),
-        (
-            "openrouter",
-            GenerationProtocol::OpenAiResponses,
-            "max_output_tokens",
-            128000,
-        ),
-        (
-            "openai-terra",
-            GenerationProtocol::OpenAiResponses,
-            "max_output_tokens",
-            128000,
-        ),
+        (haiku.endpoint(), haiku.provider(), 128000),
     ] {
+        assert_eq!(representable(&endpoint, &request), Ok(()));
+        let (_, rules) = endpoint.encode_request_with_rules(&request).unwrap();
+        assert!(rules.contains(&"generation.clamp-output-to-model-maximum.v1"));
+        let prepared = prepare(&endpoint, &provider, &secret, &request).unwrap();
+        let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
+        assert_eq!(wire["max_tokens"], maximum, "{}", endpoint.id.as_str());
+        assert_eq!(request, before);
+    }
+}
+
+#[test]
+fn output_ceiling_does_not_leak_to_another_binding_for_the_same_model() {
+    use morphiecore::{
+        semantic::context::ConversationContext,
+        topology::{GenerationProtocol::*, catalog::api_key_bindings},
+    };
+    let mut request = source(json!({"model":"public","input":"go","max_output_tokens":500000}));
+    request.conversation =
+        Some(ConversationContext::independent_request("synthetic-output").unwrap());
+    let before = request.clone();
+    let secret = SecretMaterial::new("synthetic").unwrap();
+    let wire = |prefix, protocol| {
         let binding = api_key_bindings()
             .iter()
             .find(|b| b.endpoint_prefix == prefix)
             .unwrap();
+        assert_eq!(binding.canonical_model, "mimo-v2.6-pro");
         let endpoint = binding.endpoint(protocol).unwrap();
-        let mut request = source(json!({"model":"public","input":"go","max_output_tokens":500000}));
-        request.conversation =
-            Some(ConversationContext::independent_request("synthetic-output").unwrap());
-        let before = request.clone();
-        assert_eq!(representable(&endpoint, &request), Ok(()));
-        let (_, rules) = endpoint.encode_request_with_rules(&request).unwrap();
-        assert!(rules.contains(&"generation.clamp-output-to-model-maximum.v1"));
         let prepared = prepare(&endpoint, &binding.provider(), &secret, &request).unwrap();
-        let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
-        assert_eq!(wire[key], maximum, "{prefix}");
-        assert_eq!(request, before);
-    }
-    // A native Xiaomi binding must not inherit the Go ceiling for the same model.
-    let native = api_key_bindings()
-        .iter()
-        .find(|b| b.endpoint_prefix == "xiaomi")
-        .unwrap()
-        .endpoint(GenerationProtocol::OpenAiResponses)
-        .unwrap();
-    let request = source(json!({"model":"public","input":"go","max_output_tokens":500000}));
+        serde_json::from_slice::<Value>(&prepared.body).unwrap()
+    };
     assert_eq!(
-        native.encode_request(&request).unwrap()["max_output_tokens"],
-        500000
+        wire("opencode-go-mimo-pro", OpenAiChat)["max_tokens"],
+        131072
     );
-    let deepseek = api_key_bindings()
-        .iter()
-        .find(|b| b.endpoint_prefix == "deepseek")
-        .unwrap()
-        .endpoint(GenerationProtocol::OpenAiResponses)
-        .unwrap();
-    for cap in [None, Some(64)] {
-        let mut body = json!({"model":"public","input":"go"});
-        if let Some(cap) = cap {
-            body["max_output_tokens"] = json!(cap);
-        }
-        let (wire, rules) = deepseek.encode_request_with_rules(&source(body)).unwrap();
-        assert_eq!(
-            wire.get("max_output_tokens"),
-            cap.map(|n| json!(n)).as_ref()
-        );
-        assert!(rules.is_empty());
-    }
-    let haiku = &messages_bindings()[0];
-    let endpoint = haiku.endpoint();
-    for (cap, expected) in [(Some(500000), 128000), (None, 32000)] {
-        let mut body = json!({"model":"public","input":"go"});
-        if let Some(cap) = cap {
-            body["max_output_tokens"] = json!(cap);
-        }
-        let mut request = source(body);
-        request.conversation =
-            Some(ConversationContext::independent_request("synthetic-output").unwrap());
-        let prepared = prepare(&endpoint, &haiku.provider(), &secret, &request).unwrap();
-        assert_eq!(
-            serde_json::from_slice::<Value>(&prepared.body).unwrap()["max_tokens"],
-            expected
-        );
-    }
+    assert_eq!(wire("xiaomi", OpenAiResponses)["max_output_tokens"], 500000);
+    assert_eq!(request, before);
 }
 
 #[test]

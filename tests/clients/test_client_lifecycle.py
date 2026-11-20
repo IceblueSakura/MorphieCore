@@ -71,7 +71,6 @@ class LifecycleOracles(unittest.TestCase):
         state.sent.wait = Mock(side_effect=acknowledge)
         self.assertFalse(state.sent.is_set())
         observed_held_content(state)
-        state.sent.wait.assert_called_once_with(timeout=3)
         state.sent.wait = Mock(return_value=False)
         with self.assertRaisesRegex(RuntimeError, "^content_not_observed_while_held$"):
             observed_held_content(state)

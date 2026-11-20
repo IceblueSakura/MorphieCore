@@ -547,19 +547,7 @@ pub(super) fn delivered(api: Api, bytes: &[u8], stream: bool) -> Value {
             );
             response
         }
-        Api::Messages => {
-            assert_eq!(
-                data.iter()
-                    .filter(|s| serde_json::from_str::<Value>(s).unwrap()["type"] == "message_stop")
-                    .count(),
-                1
-            );
-            assert_eq!(
-                serde_json::from_str::<Value>(data.last().unwrap()).unwrap()["type"],
-                "message_stop"
-            );
-            messages_stream::messages_stream_body(wire)
-        }
+        Api::Messages => messages_stream::messages_stream_body(wire),
         Api::Chat => {
             assert_eq!(data.iter().filter(|s| **s == "[DONE]").count(), 1);
             assert_eq!(data.last(), Some(&"[DONE]"));

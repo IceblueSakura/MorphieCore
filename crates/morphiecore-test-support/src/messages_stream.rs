@@ -6,8 +6,9 @@ pub fn messages_stream_body(wire: &str) -> Value {
     let mut message = Value::Null;
     let mut partial = std::collections::BTreeMap::<u64, String>::new();
     let mut open = None;
-    for data in wire.lines().filter_map(|line| line.strip_prefix("data: ")) {
-        let event: Value = serde_json::from_str(data).unwrap();
+    let mut data = wire.lines().filter_map(|line| line.strip_prefix("data: "));
+    while let Some(data_line) = data.next() {
+        let event: Value = serde_json::from_str(data_line).unwrap();
         let index = event["index"].as_u64().unwrap_or(0);
         match event["type"].as_str().unwrap() {
             "message_start" => message = event["message"].clone(),
@@ -68,6 +69,7 @@ pub fn messages_stream_body(wire: &str) -> Value {
             }
             "message_stop" => {
                 assert_eq!(open, None);
+                assert!(data.next().is_none(), "data after message_stop");
                 return message;
             }
             other => panic!("event {other}"),
