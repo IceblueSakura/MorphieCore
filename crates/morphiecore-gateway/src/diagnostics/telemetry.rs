@@ -192,6 +192,13 @@ fn application(metadata: &tracing::Metadata<'_>) -> bool {
 }
 impl Sink {
     pub(crate) fn open(config: &DiagnosticsConfig) -> std::io::Result<Self> {
+        Self::open_with_queue(config, 2048)
+    }
+
+    pub(super) fn open_with_queue(
+        config: &DiagnosticsConfig,
+        queue_size: usize,
+    ) -> std::io::Result<Self> {
         config.validate()?;
         let endpoint = config.endpoint.trim_end_matches('/').to_owned();
         let level = config.level;
@@ -248,7 +255,7 @@ impl Sink {
                         })
                         .with_batch_config(
                             BatchConfigBuilder::default()
-                                .with_max_queue_size(2048)
+                                .with_max_queue_size(queue_size)
                                 // Capture can retain 64 KiB; keep serialized log
                                 // batches below the exporter's 1 MiB wire bound.
                                 .with_max_export_batch_size(4)
@@ -270,7 +277,7 @@ impl Sink {
                         })
                         .with_batch_config(
                             TraceBatchConfigBuilder::default()
-                                .with_max_queue_size(2048)
+                                .with_max_queue_size(queue_size)
                                 .with_max_export_batch_size(128)
                                 .with_scheduled_delay(Duration::from_millis(100))
                                 .build(),
@@ -333,6 +340,10 @@ impl Sink {
     }
     pub(crate) fn dispatch(&self) -> tracing::Dispatch {
         self.0.dispatch.clone()
+    }
+    #[cfg(test)]
+    pub(super) fn loss_reported(&self) -> bool {
+        self.0.warning.0.load(Ordering::Relaxed)
     }
     #[cfg(any(test, feature = "test-hooks"))]
     pub(crate) fn memory() -> (Self, opentelemetry_sdk::logs::InMemoryLogExporter) {

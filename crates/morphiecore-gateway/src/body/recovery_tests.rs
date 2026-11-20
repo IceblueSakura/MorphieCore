@@ -16,6 +16,7 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
         "twice",
         "zero",
         "hint",
+        "cancel-before-retry",
         "longhint",
         "dayhint",
         "datehint",
@@ -26,7 +27,7 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
         "empty",
     ] {
         let retry_after = match mode {
-            "hint" | "inbandhint" => Some("1".to_owned()),
+            "hint" | "inbandhint" | "cancel-before-retry" => Some("1".to_owned()),
             "longhint" | "inbandlonghint" => Some("2".to_owned()),
             "dayhint" => Some("86401".to_owned()),
             "datehint" => Some(httpdate::fmt_http_date(
@@ -110,7 +111,7 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
             crate::provider::RecoveryPolicy {
                 recovery_timeout_ms: match mode {
                     "zero" => 0,
-                    "hint" | "inbandhint" => 2000,
+                    "hint" | "inbandhint" | "cancel-before-retry" => 2000,
                     _ => 1000,
                 },
                 ..Default::default()
@@ -143,7 +144,9 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
         let candidates = entry.eligible(&request, &gate.state.affinity).unwrap();
         let state = Status::default();
         let (tx, mut rx) = mpsc::channel(1);
-        let mut trace = Trace::new(None);
+        let signals = matches!(mode, "content" | "empty" | "cancel-before-retry")
+            .then(|| crate::diagnostics::Sink::memory_signals(crate::LogLevel::Warn));
+        let mut trace = Trace::new(signals.as_ref().map(|(sink, _, _)| sink));
         let deadline =
             Instant::now() + Duration::from_secs(if mode == "deadline" { 1 } else { 120 });
         let result;
@@ -170,7 +173,7 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
                 tokio::select! { result = &mut producer => panic!("early result: {:?}", result.err()), call = calls_rx.recv() => call },
                 Some(1)
             );
-            if !no_retry {
+            if !no_retry && mode != "cancel-before-retry" {
                 assert_eq!(
                     tokio::select! { result = &mut producer => panic!("early result: {:?}", result.err()), call = calls_rx.recv() => call },
                     Some(2)
@@ -183,7 +186,31 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
                     );
                 }
             }
-            if no_retry || matches!(mode, "quota" | "malformed" | "twice") {
+            if mode == "cancel-before-retry" {
+                // Wait for the first attempt to record a scheduled recovery,
+                // then cancel before the positive Retry-After can elapse.
+                tokio::time::pause();
+                let spans = &signals.as_ref().unwrap().2;
+                let started = std::time::Instant::now();
+                while !spans.get_finished_spans().unwrap().iter().any(|span| {
+                    span.name == "gateway.attempt"
+                        && span.attributes.contains(&opentelemetry::KeyValue::new(
+                            "morphiecore.retry.planned",
+                            true,
+                        ))
+                }) {
+                    assert!(
+                        started.elapsed() < Duration::from_secs(3),
+                        "retry not scheduled"
+                    );
+                    tokio::select! {
+                        result = &mut producer => panic!("early result: {:?}", result.err()),
+                        _ = tokio::task::yield_now() => {}
+                    }
+                }
+                result = None;
+                tokio::time::resume();
+            } else if no_retry || matches!(mode, "quota" | "malformed" | "twice") {
                 result = Some(producer.await);
             } else if matches!(mode, "hint" | "inband" | "inbandhint") {
                 // The second send starts after the exact hint, inside the same budget.
@@ -300,10 +327,50 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
         }
         {
             let requests = requests.lock().unwrap();
-            assert_eq!(requests.len(), if no_retry { 1 } else { 2 }, "{mode}");
+            assert_eq!(
+                requests.len(),
+                if no_retry || mode == "cancel-before-retry" {
+                    1
+                } else {
+                    2
+                },
+                "{mode}"
+            );
             if requests.len() == 2 {
                 assert_eq!(requests[0], requests[1], "same credential and exact body");
             }
+        }
+        drop(trace);
+        if mode == "cancel-before-retry" {
+            let (_sink, logs, spans) = signals.unwrap();
+            let spans = spans.get_finished_spans().unwrap();
+            assert_eq!(
+                spans.iter().filter(|s| s.name == "gateway.attempt").count(),
+                1
+            );
+            assert_eq!(
+                spans
+                    .iter()
+                    .filter(|s| s.name == "gateway.upstream.http")
+                    .count(),
+                1
+            );
+            assert_eq!(logs.get_emitted_logs().unwrap().len(), 1);
+        } else if let Some((_sink, _, spans)) = signals {
+            let spans = spans.get_finished_spans().unwrap();
+            let second = spans
+                .iter()
+                .filter(|span| span.name == "gateway.attempt")
+                .nth(1)
+                .expect("second attempt after real recovery");
+            assert_eq!(
+                second
+                    .events
+                    .iter()
+                    .any(|event| event.name == "gateway.client.first_projected_content"),
+                mode == "content",
+                "an accepted empty terminal is not projected content"
+            );
         }
         let candidate = &entry.candidates[0];
         let cooling = gate

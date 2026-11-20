@@ -5,141 +5,191 @@ use serde_json::{Value, json};
 
 #[tokio::test]
 async fn tool_publication_withholds_success_until_eof_and_never_replays() {
-    use std::time::Duration;
     for profile in [GenerationApi::Chat, GenerationApi::Responses] {
-        let chat = profile == GenerationApi::Chat;
         for mode in ["hold", "cut", "cancel", "terminal-cut"] {
-            let fixture = fixture::start(profile, true).await;
-            let client = reqwest::Client::builder()
-                .no_proxy()
-                .timeout(Duration::from_secs(5))
-                .build()
-                .unwrap();
-            let function = json!({"name":"lookup","description":"Synthetic lookup","strict":false,
-                "parameters":{"type":"object","properties":{"key":{"type":"string"}},"required":["key"]}});
-            let body = if chat {
-                json!({"model":"qwen3.8-flash","messages":[{"role":"user","content":mode}],
-                "max_completion_tokens":256,"reasoning_effort":"low","stream":true,
-                "tools":[{"type":"function","function":function}]})
+            publication_case(profile, mode, None).await;
+        }
+    }
+}
+
+#[tokio::test]
+async fn exported_attempt_endings_preserve_publication_and_cancellation() {
+    for mode in ["hold", "terminal-cut", "cancel"] {
+        let collector = crate::telemetry::Collector::start().await;
+        publication_case(GenerationApi::Responses, mode, Some(&collector)).await;
+        let spans = collector.spans();
+        let only = |name: &str| {
+            let found: Vec<_> = spans.iter().filter(|span| span["name"] == name).collect();
+            assert_eq!(found.len(), 1, "{mode}: {name}");
+            found[0]
+        };
+        let attempt = only("gateway.attempt");
+        let io = only("gateway.upstream.http");
+        assert_eq!(io["parentSpanId"], attempt["spanId"]);
+        let finals = attempt["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|event| event["name"] == "gateway.client.final_handoff")
+            .count();
+        assert_eq!(finals, usize::from(mode == "hold"));
+        let export =
+            serde_json::to_string(&(collector.records(), spans, collector.metadata())).unwrap();
+        for canary in [
+            fixture::CLIENT_KEY,
+            "synthetic-tool-history-upstream",
+            "Synthetic lookup",
+            "call-lookup",
+            "private-model",
+        ] {
+            assert!(!export.contains(canary), "{canary}");
+        }
+    }
+}
+
+async fn publication_case(
+    profile: GenerationApi,
+    mode: &str,
+    collector: Option<&crate::telemetry::Collector>,
+) {
+    use std::time::Duration;
+    let chat = profile == GenerationApi::Chat;
+    let mut fixture = if let Some(collector) = collector {
+        fixture::start_with_diagnostics(profile, true, &collector.endpoint).await
+    } else {
+        fixture::start(profile, true).await
+    };
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .unwrap();
+    let function = json!({"name":"lookup","description":"Synthetic lookup","strict":false,
+        "parameters":{"type":"object","properties":{"key":{"type":"string"}},"required":["key"]}});
+    let body = if chat {
+        json!({"model":"qwen3.8-flash","messages":[{"role":"user","content":mode}],
+        "max_completion_tokens":256,"reasoning_effort":"low","stream":true,
+        "tools":[{"type":"function","function":function}]})
+    } else {
+        json!({"model":"gpt-6-luna","input":mode,"max_output_tokens":256,
+            "reasoning":{"effort":"low"},"stream":true,"store":false,
+            "tools":[{"type":"function","name":"lookup","description":"Synthetic lookup","strict":false,
+                "parameters":{"type":"object","properties":{"key":{"type":"string"}},"required":["key"]}}]})
+    };
+    let mut response = client
+        .post(format!(
+            "{}/{}",
+            fixture.base,
+            if chat {
+                "chat/completions"
             } else {
-                json!({"model":"gpt-6-luna","input":mode,"max_output_tokens":256,
-                    "reasoning":{"effort":"low"},"stream":true,"store":false,
-                    "tools":[{"type":"function","name":"lookup","description":"Synthetic lookup","strict":false,
-                        "parameters":{"type":"object","properties":{"key":{"type":"string"}},"required":["key"]}}]})
-            };
-            let mut response = client
-                .post(format!(
-                    "{}/{}",
-                    fixture.base,
-                    if chat {
-                        "chat/completions"
-                    } else {
-                        "responses"
-                    }
-                ))
-                .bearer_auth(fixture::CLIENT_KEY)
-                .json(&body)
-                .send()
-                .await
-                .unwrap();
-            assert_eq!(response.status(), 200);
-            let mut received = Vec::new();
-            while !String::from_utf8_lossy(&received).contains("call-lookup") {
-                let chunk = tokio::time::timeout(Duration::from_secs(3), response.chunk())
-                    .await
-                    .unwrap()
-                    .unwrap()
-                    .unwrap();
-                received.extend_from_slice(&chunk);
+                "responses"
             }
-            let mut response_id = None;
-            if !chat {
-                for line in String::from_utf8_lossy(&received)
-                    .lines()
-                    .filter_map(|l| l.strip_prefix("data: "))
-                {
-                    if let Ok(event) = serde_json::from_str::<Value>(line)
-                        && event["type"] == "response.created"
-                    {
-                        response_id = event["response"]["id"].as_str().map(str::to_owned);
-                    }
-                }
-                assert!(response_id.is_some());
-            }
-            if mode == "cancel" {
-                drop(response);
-            } else {
-                // Drain any remaining nonterminal frames. A protocol terminal alone
-                // cannot release success while the upstream HTTP body remains open.
-                loop {
-                    match tokio::time::timeout(Duration::from_millis(100), response.chunk()).await {
-                        Ok(Ok(Some(chunk))) => received.extend_from_slice(&chunk),
-                        Err(_) => break,
-                        other => panic!("premature body end: {other:?}"),
-                    }
-                }
-                let early = String::from_utf8_lossy(&received);
-                assert!(!early.contains("[DONE]") && !early.contains("response.completed"));
-                // Withholding [DONE] is insufficient if a Chat finish reason escaped.
-                for data in early.lines().filter_map(|l| l.strip_prefix("data: ")) {
-                    if let Ok(event) = serde_json::from_str::<Value>(data)
-                        && let Some(choices) = event["choices"].as_array()
-                    {
-                        assert!(choices.iter().all(|c| c["finish_reason"].is_null()));
-                    }
-                }
-                if let Some(id) = &response_id {
-                    assert_eq!(
-                        client
-                            .get(format!("{}/responses/{id}", fixture.base))
-                            .bearer_auth(fixture::CLIENT_KEY)
-                            .send()
-                            .await
-                            .unwrap()
-                            .status(),
-                        400
-                    );
-                }
-                fixture.control.release.notify_one();
-                let mut failed = false;
-                loop {
-                    match response.chunk().await {
-                        Ok(Some(chunk)) => received.extend_from_slice(&chunk),
-                        Ok(None) => break,
-                        Err(_) => {
-                            failed = true;
-                            break;
-                        }
-                    }
-                }
-                assert_eq!(failed, matches!(mode, "cut" | "terminal-cut"));
-                let body = String::from_utf8_lossy(&received);
-                assert_eq!(
-                    body.contains(if chat { "[DONE]" } else { "response.completed" }),
-                    mode == "hold"
-                );
-            }
-            tokio::time::timeout(Duration::from_secs(3), fixture.control.dropped.notified())
-                .await
-                .unwrap();
-            assert_eq!(
-                fixture.seen.lock().unwrap().len(),
-                1,
-                "an eligible secondary must not receive a replay after publication"
-            );
-            if let Some(id) = response_id {
-                assert_eq!(
-                    client
-                        .get(format!("{}/responses/{id}", fixture.base))
-                        .bearer_auth(fixture::CLIENT_KEY)
-                        .send()
-                        .await
-                        .unwrap()
-                        .status(),
-                    400
-                );
+        ))
+        .bearer_auth(fixture::CLIENT_KEY)
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let mut received = Vec::new();
+    while !String::from_utf8_lossy(&received).contains("call-lookup") {
+        let chunk = tokio::time::timeout(Duration::from_secs(3), response.chunk())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        received.extend_from_slice(&chunk);
+    }
+    let mut response_id = None;
+    if !chat {
+        for line in String::from_utf8_lossy(&received)
+            .lines()
+            .filter_map(|l| l.strip_prefix("data: "))
+        {
+            if let Ok(event) = serde_json::from_str::<Value>(line)
+                && event["type"] == "response.created"
+            {
+                response_id = event["response"]["id"].as_str().map(str::to_owned);
             }
         }
+        assert!(response_id.is_some());
+    }
+    if mode == "cancel" {
+        drop(response);
+    } else {
+        // Drain any remaining nonterminal frames. A protocol terminal alone
+        // cannot release success while the upstream HTTP body remains open.
+        loop {
+            match tokio::time::timeout(Duration::from_millis(100), response.chunk()).await {
+                Ok(Ok(Some(chunk))) => received.extend_from_slice(&chunk),
+                Err(_) => break,
+                other => panic!("premature body end: {other:?}"),
+            }
+        }
+        let early = String::from_utf8_lossy(&received);
+        assert!(!early.contains("[DONE]") && !early.contains("response.completed"));
+        // Withholding [DONE] is insufficient if a Chat finish reason escaped.
+        for data in early.lines().filter_map(|l| l.strip_prefix("data: ")) {
+            if let Ok(event) = serde_json::from_str::<Value>(data)
+                && let Some(choices) = event["choices"].as_array()
+            {
+                assert!(choices.iter().all(|c| c["finish_reason"].is_null()));
+            }
+        }
+        if let Some(id) = &response_id {
+            assert_eq!(
+                client
+                    .get(format!("{}/responses/{id}", fixture.base))
+                    .bearer_auth(fixture::CLIENT_KEY)
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                400
+            );
+        }
+        fixture.control.release.notify_one();
+        let mut failed = false;
+        loop {
+            match response.chunk().await {
+                Ok(Some(chunk)) => received.extend_from_slice(&chunk),
+                Ok(None) => break,
+                Err(_) => {
+                    failed = true;
+                    break;
+                }
+            }
+        }
+        assert_eq!(failed, matches!(mode, "cut" | "terminal-cut"));
+        let body = String::from_utf8_lossy(&received);
+        assert_eq!(
+            body.contains(if chat { "[DONE]" } else { "response.completed" }),
+            mode == "hold"
+        );
+    }
+    tokio::time::timeout(Duration::from_secs(3), fixture.control.dropped.notified())
+        .await
+        .unwrap();
+    assert_eq!(
+        fixture.seen.lock().unwrap().len(),
+        1,
+        "an eligible secondary must not receive a replay after publication"
+    );
+    if let Some(id) = response_id {
+        assert_eq!(
+            client
+                .get(format!("{}/responses/{id}", fixture.base))
+                .bearer_auth(fixture::CLIENT_KEY)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            400
+        );
+    }
+    if collector.is_some() {
+        fixture.stop_and_export().await;
     }
 }
 struct UpstreamDrop(std::sync::Arc<tokio::sync::Notify>);

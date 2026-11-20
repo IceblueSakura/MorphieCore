@@ -74,7 +74,7 @@ impl GrokAuthority {
             surface: device_surface(),
         })
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     pub fn synthetic(origin: &str) -> Result<Self, Error> {
         Ok(Self {
             http: AuthHttp::synthetic(origin, &user_agent())?,

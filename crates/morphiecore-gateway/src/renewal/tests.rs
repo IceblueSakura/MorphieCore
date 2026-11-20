@@ -11,6 +11,7 @@ struct Driver {
     entered: Arc<Notify>,
     release: Arc<Notify>,
     hold: bool,
+    authority: Option<Box<dyn AuthDriver>>,
 }
 fn grant() -> Grant {
     Grant {
@@ -29,7 +30,7 @@ fn grant() -> Grant {
                     .as_secs()
                     + 10,
             ),
-            scopes: None,
+            scopes: Some("openid profile email offline_access grok-cli:access api:access".into()),
         },
     }
 }
@@ -62,10 +63,13 @@ impl AuthDriver for Driver {
     }
     fn renew<'a>(
         &'a self,
-        _: &'a str,
-        _: &'a VerifiedIdentity,
-        _: &'a Credential,
+        client: &'a str,
+        identity: &'a VerifiedIdentity,
+        previous: &'a Credential,
     ) -> DriverFuture<'a, Renewal> {
+        if let Some(authority) = &self.authority {
+            return authority.renew(client, identity, previous);
+        }
         Box::pin(async move {
             self.calls.fetch_add(1, Ordering::SeqCst);
             self.entered.notify_one();
@@ -74,6 +78,17 @@ impl AuthDriver for Driver {
             }
             Ok(Renewal::Verified(grant()))
         })
+    }
+    fn verify_renewal<'a>(
+        &'a self,
+        client: &'a str,
+        identity: &'a VerifiedIdentity,
+        pending: &'a PendingRenewal,
+    ) -> DriverFuture<'a, VerifiedIdentity> {
+        self.authority
+            .as_ref()
+            .expect("wire renewal fixture")
+            .verify_renewal(client, identity, pending)
     }
 }
 async fn setup(
@@ -98,6 +113,7 @@ async fn setup(
             entered: entered.clone(),
             release: release.clone(),
             hold,
+            authority: None,
         })],
     )
     .unwrap();
@@ -430,7 +446,7 @@ async fn renewal_timeout_is_bounded_and_never_retried() {
         },
     )
     .await;
-    let (sink, exporter) = crate::diagnostics::Sink::memory();
+    let (sink, exporter, spans) = crate::diagnostics::Sink::memory_signals(crate::LogLevel::Warn);
     let state = Arc::get_mut(&mut gate.state).unwrap();
     state.diagnostics = Some(sink);
     state.oauth_accounts[0].name = Some("configured-account".into());
@@ -445,6 +461,26 @@ async fn renewal_timeout_is_bounded_and_never_retried() {
     poll_maintenance(&mut maintenance).await;
     let logs = exporter.get_emitted_logs().unwrap();
     assert_eq!(logs.len(), 1);
+    let context = logs[0].record.trace_context().unwrap();
+    let spans = spans.get_finished_spans().unwrap();
+    let renewal = spans
+        .iter()
+        .find(|span| {
+            span.name == "gateway.credential.renewal"
+                && span.span_context.span_id() == context.span_id
+        })
+        .expect("failure must identify its renewal");
+    assert_eq!(context.trace_id, renewal.span_context.trace_id());
+    assert!(renewal.attributes.contains(&opentelemetry::KeyValue::new(
+        "morphiecore.outcome",
+        "timeout"
+    )));
+    let prepare = spans
+        .iter()
+        .find(|span| span.name == "credential.storage")
+        .unwrap();
+    assert_eq!(prepare.parent_span_id, context.span_id);
+    assert_eq!(prepare.span_context.trace_id(), context.trace_id);
     assert_eq!(
         logs[0].record.severity_number(),
         Some(opentelemetry::logs::Severity::Warn)
@@ -475,7 +511,11 @@ fn graceful_shutdown_drains_queued_rotated_material_before_returning() {
         .build()
         .unwrap();
     runtime.block_on(async {
-        let (_dir, gate, manager, _, entered, release) = setup(true, Limits::default()).await;
+        let (_dir, mut gate, manager, _, entered, release) = setup(true, Limits::default()).await;
+        let access = manager.bind_access("synthetic", "one").unwrap();
+        let before = access.material_revision().unwrap();
+        let (sink, _, spans) = crate::diagnostics::Sink::memory_signals(crate::LogLevel::Warn);
+        Arc::get_mut(&mut gate.state).unwrap().diagnostics = Some(sink);
         let owner = gate.clone();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let mut server = Box::pin(gate.serve(listener, std::future::pending()));
@@ -506,6 +546,195 @@ fn graceful_shutdown_drains_queued_rotated_material_before_returning() {
         );
         server.await.unwrap();
         assert_eq!(manager.list(None).unwrap()[0].state, AccountState::Active);
+        assert!(access.material_revision().unwrap() > before);
+        let spans = spans.get_finished_spans().unwrap();
+        let renewal = spans
+            .iter()
+            .find(|span| span.name == "gateway.credential.renewal")
+            .unwrap();
+        let commit = spans
+            .iter()
+            .find(|span| {
+                span.name == "credential.storage"
+                    && span.attributes.contains(&opentelemetry::KeyValue::new(
+                        "morphiecore.storage.phase",
+                        "commit",
+                    ))
+            })
+            .expect("durable commit outlives the listener caller");
+        assert_eq!(commit.parent_span_id, renewal.span_context.span_id());
+        assert_eq!(
+            commit.span_context.trace_id(),
+            renewal.span_context.trace_id()
+        );
+        assert!(commit.attributes.contains(&opentelemetry::KeyValue::new(
+            "morphiecore.storage.published",
+            true
+        )));
+        assert!(renewal.attributes.contains(&opentelemetry::KeyValue::new(
+            "morphiecore.outcome",
+            "cancelled"
+        )));
+        let caller = renewal
+            .events
+            .iter()
+            .find(|event| event.name == "gateway.credential.caller_finished")
+            .unwrap();
+        assert!(commit.start_time <= caller.timestamp && caller.timestamp <= commit.end_time);
         manager.logout("synthetic", "one", false).await.unwrap();
     });
+}
+#[tokio::test]
+async fn oauth_http_and_durable_rotation_share_body_free_exported_context() {
+    use axum::{
+        Json, Router,
+        body::{Body, Bytes},
+        routing::{get, post},
+    };
+    use futures_util::StreamExt;
+    use morphiecore_test_support::telemetry::{Collector, attribute};
+    use std::{convert::Infallible, time::Duration};
+
+    let token_started = Arc::new(Notify::new());
+    let release_token = Arc::new(Notify::new());
+    let calls = Arc::new(AtomicUsize::new(0));
+    let token_calls = calls.clone();
+    let userinfo_calls = calls.clone();
+    let started = token_started.clone();
+    let release = release_token.clone();
+    let authority = Router::new()
+        .route("/oauth2/token", post(move |form: Bytes| {
+            let started = started.clone();
+            let release = release.clone();
+            assert_eq!(token_calls.fetch_add(1, Ordering::SeqCst), 0);
+            assert!(std::str::from_utf8(&form).unwrap().contains("refresh_token=synthetic-refresh"));
+            async move {
+                let body = futures_util::stream::once(async move {
+                    started.notify_one();
+                    Ok::<_, Infallible>(Bytes::from_static(b"{"))
+                }).chain(futures_util::stream::once(async move {
+                    release.notified().await;
+                    Ok(Bytes::from_static(br#""access_token":"synthetic-rotated-access",
+                        "refresh_token":"synthetic-rotated-refresh","token_type":"Bearer","expires_in":900}"#))
+                }));
+                ([("content-type", "application/json")], Body::from_stream(body))
+            }
+        }))
+        .route("/oauth2/userinfo", get(move |headers: axum::http::HeaderMap| {
+            assert_eq!(userinfo_calls.fetch_add(1, Ordering::SeqCst), 1);
+            assert_eq!(headers["authorization"], "Bearer synthetic-rotated-access");
+            async { Json(serde_json::json!({"sub":"synthetic-subject"})) }
+        }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, authority).await.unwrap() });
+    let directory = tempfile::tempdir().unwrap();
+    let manager = CredentialManager::new(
+        directory.path().join("credentials"),
+        vec![Arc::new(Driver {
+            calls: Arc::new(AtomicUsize::new(0)),
+            entered: Arc::new(Notify::new()),
+            release: Arc::new(Notify::new()),
+            hold: false,
+            authority: Some(drivers::synthetic_grok(&origin).unwrap()),
+        })],
+    )
+    .unwrap();
+    manager
+        .login("synthetic", "one", LoginOptions::default(), |_| {})
+        .await
+        .unwrap();
+    let access = manager.bind_access("synthetic", "one").unwrap();
+    let revision = access.material_revision().unwrap();
+    let mut credentials = crate::Credentials::new();
+    credentials.insert_account(
+        crate::provider::CredentialBindingId::new("fixture").unwrap(),
+        access.clone(),
+    );
+    let collector = Collector::start().await;
+    let sink = crate::diagnostics::Sink::open(&crate::DiagnosticsConfig {
+        endpoint: collector.endpoint.clone(),
+        level: crate::LogLevel::Info,
+        private_bodies: false,
+        body_bytes: 1024,
+    })
+    .unwrap();
+    let mut gate = gateway(Limits {
+        oauth_scan_interval: Duration::ZERO,
+        ..Default::default()
+    });
+    let state = Arc::get_mut(&mut gate.state).unwrap();
+    state.oauth_accounts = credentials.oauth_accounts;
+    state.diagnostics = Some(sink.clone());
+    let storage = tokio_util::task::TaskTracker::new();
+    let scanned = gate.state.oauth_scan_complete.notified();
+    tokio::pin!(scanned);
+    scanned.as_mut().enable();
+    let maintenance = {
+        let gate = gate.clone();
+        let storage = storage.clone();
+        tokio::spawn(async move { gate.renew_credentials(&storage).await })
+    };
+    tokio::time::timeout(Duration::from_secs(3), token_started.notified())
+        .await
+        .unwrap();
+    sink.flush().await;
+    assert!(
+        collector
+            .spans()
+            .iter()
+            .all(|span| span["name"] != "credential.http")
+    );
+    release_token.notify_one();
+    tokio::time::timeout(Duration::from_secs(3), scanned)
+        .await
+        .unwrap();
+    gate.shutdown();
+    maintenance.await.unwrap();
+    storage.close();
+    storage.wait().await;
+    gate.shutdown_diagnostics().await;
+    server.abort();
+    let _ = server.await;
+
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert!(access.material_revision().unwrap() > revision);
+    let spans = collector.spans();
+    let renewal = spans
+        .iter()
+        .find(|span| span["name"] == "gateway.credential.renewal")
+        .unwrap();
+    assert_eq!(
+        attribute(renewal, "morphiecore.outcome")["stringValue"],
+        "renewed"
+    );
+    let client: Vec<_> = spans
+        .iter()
+        .filter(|span| span["name"] == "credential.http")
+        .collect();
+    assert_eq!(client.len(), 2);
+    for http in client {
+        assert_eq!(http["kind"], 3);
+        assert_eq!(http["traceId"], renewal["traceId"]);
+        assert_eq!(http["parentSpanId"], renewal["spanId"]);
+        assert_eq!(
+            attribute(http, "morphiecore.io.outcome")["stringValue"],
+            "eof"
+        );
+    }
+    let export =
+        serde_json::to_string(&(collector.records(), spans, collector.metadata())).unwrap();
+    for value in [
+        "synthetic-access",
+        "synthetic-refresh",
+        "synthetic-rotated-access",
+        "synthetic-rotated-refresh",
+        "synthetic-subject",
+        "synthetic-client",
+        "/oauth2/token",
+        "/oauth2/userinfo",
+        &origin,
+    ] {
+        assert!(!export.contains(value), "{value}");
+    }
 }

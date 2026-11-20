@@ -7,6 +7,14 @@ use crate::credential::{
     drivers::{grok::GrokAuthority, siwc::SiwcAuthority},
 };
 use std::sync::Arc;
+
+/// Test-owned OAuth authority; production origins cannot be overridden.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub fn synthetic_grok(origin: &str) -> Result<Box<dyn AuthDriver>, CredentialError> {
+    Ok(Box::new(GrokAuthority::synthetic(origin)?))
+}
+
 pub fn builtin_drivers(proxy: Option<&str>) -> Result<Vec<Arc<dyn AuthDriver>>, CredentialError> {
     builtin_drivers_with_environment(proxy, true)
 }

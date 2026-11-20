@@ -599,12 +599,10 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
         process.wait().await.unwrap();
     }
 }
-#[tokio::test]
-async fn private_failure_context_reaches_otlp_with_trusted_identity_and_redacted_bodies() {
+async fn export_synthetic_failure(endpoint: String, private_bodies: bool) {
     use axum::{Json, routing::post};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tower::ServiceExt;
-    let collector = crate::telemetry::Collector::start().await;
     let calls = Arc::new(AtomicUsize::new(0));
     let observed = calls.clone();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -621,8 +619,8 @@ async fn private_failure_context_reaches_otlp_with_trusted_identity_and_redacted
     let gate = support::gateway(&origin, Default::default())
         .with_diagnostics(morphiecore::gateway::DiagnosticsConfig {
             level: morphiecore::gateway::LogLevel::Warn,
-            endpoint: collector.endpoint.clone(),
-            private_bodies: true,
+            endpoint,
+            private_bodies,
             body_bytes: 4096,
         })
         .unwrap();
@@ -646,7 +644,25 @@ async fn private_failure_context_reaches_otlp_with_trusted_identity_and_redacted
         .await
         .unwrap();
     assert_eq!(calls.load(Ordering::SeqCst), 1);
-    gate.flush_diagnostics().await;
+    gate.shutdown_diagnostics().await;
+}
+
+#[tokio::test]
+#[ignore = "requires an isolated loopback OTLP collector connected to the development query backend"]
+async fn emit_failure_for_indexed_query() {
+    let endpoint =
+        std::env::var("MORPHIECORE_TEST_INDEXED_OTLP").expect("set the test collector endpoint");
+    let uri: axum::http::Uri = endpoint.parse().expect("test collector URI");
+    assert_eq!(uri.scheme_str(), Some("http"));
+    assert_eq!(uri.host(), Some("127.0.0.1"));
+    assert!(uri.port().is_some() && uri.path() == "/" && uri.query().is_none());
+    export_synthetic_failure(endpoint, false).await;
+}
+
+#[tokio::test]
+async fn private_failure_context_reaches_otlp_with_trusted_identity_and_redacted_bodies() {
+    let collector = crate::telemetry::Collector::start().await;
+    export_synthetic_failure(collector.endpoint.clone(), true).await;
     let logs = collector
         .wait(|logs| {
             logs.iter()
@@ -671,9 +687,21 @@ async fn private_failure_context_reaches_otlp_with_trusted_identity_and_redacted
         .iter()
         .find(|span| span["name"] == "gateway.attempt")
         .unwrap();
+    let client_span = spans
+        .iter()
+        .find(|span| span["name"] == "gateway.upstream.http")
+        .unwrap();
     assert_eq!(failure["traceId"], request_span["traceId"]);
     assert_eq!(failure["spanId"], attempt_span["spanId"]);
     assert_eq!(attempt_span["parentSpanId"], operation_span["spanId"]);
+    assert_eq!(client_span["parentSpanId"], attempt_span["spanId"]);
+    assert_eq!(client_span["traceId"], request_span["traceId"]);
+    assert_eq!(client_span["kind"], 3, "OTLP client span");
+    assert_eq!(
+        crate::telemetry::attribute(client_span, "morphiecore.io.outcome")["stringValue"],
+        "eof",
+        "failed status does not imply a transport failure"
+    );
     assert_eq!(operation_span["parentSpanId"], request_span["spanId"]);
     let followup = logs
         .iter()
@@ -704,7 +732,12 @@ async fn private_failure_context_reaches_otlp_with_trusted_identity_and_redacted
             id
         );
     }
-    let text = format!("{} {}", serde_json::to_string(&logs).unwrap(), trace_text);
+    let text = format!(
+        "{} {} {}",
+        serde_json::to_string(&logs).unwrap(),
+        trace_text,
+        serde_json::to_string(&collector.metadata()).unwrap()
+    );
     assert!(text.contains("business-prompt") && text.contains("synthetic business failure"));
     for secret in [
         support::CLIENT_KEY,
@@ -716,6 +749,64 @@ async fn private_failure_context_reaches_otlp_with_trusted_identity_and_redacted
         "forged-agent",
     ] {
         assert!(!text.contains(secret), "{secret}");
+    }
+}
+
+#[tokio::test]
+async fn failure_export_without_capture_contains_only_closed_metadata() {
+    let collector = crate::telemetry::Collector::start().await;
+    export_synthetic_failure(collector.endpoint.clone(), false).await;
+    assert!(
+        collector
+            .records()
+            .iter()
+            .any(|log| log["eventName"] == "gateway.failure")
+    );
+    assert!(
+        collector
+            .records()
+            .iter()
+            .all(|log| log["eventName"] != "gateway.failure.response")
+    );
+    let metadata = collector.metadata();
+    let resource = metadata
+        .iter()
+        .find(|entry| {
+            entry["attributes"]
+                .as_array()
+                .is_some_and(|fields| fields.iter().any(|field| field["key"] == "service.name"))
+        })
+        .expect("an exported resource");
+    let mut keys: Vec<_> = resource["attributes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|field| field["key"].as_str().unwrap())
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "morphiecore.build.revision",
+            "service.name",
+            "service.version"
+        ]
+    );
+    let export =
+        serde_json::to_string(&(collector.records(), collector.spans(), metadata)).unwrap();
+    for canary in [
+        support::CLIENT_KEY,
+        "synthetic-upstream-credential-0001",
+        "business-prompt",
+        "synthetic business failure",
+        "client-secret",
+        "upstream-secret",
+        "query-secret",
+        "private-header",
+        "forged-agent",
+        "/chat/completions",
+    ] {
+        assert!(!export.contains(canary), "{canary}");
     }
 }
 

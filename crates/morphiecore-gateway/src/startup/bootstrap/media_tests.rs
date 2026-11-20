@@ -137,7 +137,7 @@ async fn abandoned_embedding_releases_upstream_and_its_permit_before_and_during_
     let root = format!("http://{}/v1", listener.local_addr().unwrap());
     let mut settings = service();
     settings["resources"] = json!({"concurrency":1});
-    let boot = Fixture::with_accounts(
+    let mut boot = Fixture::with_accounts(
         settings,
         json!({"models":{"text-embedding-3-small":{"account":"fixture"}}}),
         &[("openrouter", "fixture", "synthetic-embedding-key")],
@@ -147,6 +147,7 @@ async fn abandoned_embedding_releases_upstream_and_its_permit_before_and_during_
     )
     .unwrap();
     let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+    let spans = boot.record_spans();
     let router = boot.gateway.router();
     let permits = &boot.gateway.state.permits;
     let request = || {
@@ -168,6 +169,13 @@ async fn abandoned_embedding_releases_upstream_and_its_permit_before_and_during_
         assert!(!pending.is_finished());
         assert!(!upstream.is_closed());
         assert_eq!(permits.available_permits(), 0);
+        assert!(
+            spans
+                .get_finished_spans()
+                .unwrap()
+                .iter()
+                .all(|span| span.name != "gateway.upstream.http")
+        );
         pending.abort();
         assert!(pending.await.unwrap_err().is_cancelled());
         upstream.closed().await;
@@ -189,6 +197,26 @@ async fn abandoned_embedding_releases_upstream_and_its_permit_before_and_during_
     server.abort();
     let _ = server.await;
     checked.expect("standalone exchange did not release its upstream body and permit");
+    let spans = spans.get_finished_spans().unwrap();
+    let clients: Vec<_> = spans
+        .iter()
+        .filter(|span| span.name == "gateway.upstream.http")
+        .collect();
+    assert_eq!(clients.len(), 2);
+    for outcome in ["not_drained", "eof"] {
+        let client = clients
+            .iter()
+            .find(|span| {
+                span.attributes.contains(&opentelemetry::KeyValue::new(
+                    "morphiecore.io.outcome",
+                    outcome,
+                ))
+            })
+            .unwrap();
+        assert!(spans.iter().any(|span| span.name == "gateway.attempt"
+            && span.span_context.span_id() == client.parent_span_id
+            && span.span_context.trace_id() == client.span_context.trace_id()));
+    }
 }
 
 #[test]

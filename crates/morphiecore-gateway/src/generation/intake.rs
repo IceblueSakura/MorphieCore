@@ -2,7 +2,7 @@
 use crate::{
     ApiError, BoundCandidate, BoundEntry, Limits,
     body::{Lane, send_frames},
-    diagnostics::{Stage, Trace},
+    diagnostics::{Stage, Trace, upstream::Response},
     execution::{Attempt, ResponseDelivery},
     protocol::{
         GenerationRequestEnvelope as Request,
@@ -107,7 +107,7 @@ async fn fail_classified(
 }
 #[allow(clippy::too_many_arguments)]
 async fn produce(
-    mut upstream: reqwest::Response,
+    mut upstream: Response,
     provider: &str,
     attempt: &mut Attempt,
     delivery: &mut ResponseDelivery,
@@ -259,6 +259,7 @@ async fn produce(
 
                 let batches =
                     batches.map_err(projection_failed(trace, ConversionBoundary::EventProject))?;
+                trace.projected_content(delivery.content_ready());
                 if delivery.content_ready() {
                     lane.state.ready();
                 }
@@ -293,6 +294,7 @@ async fn produce(
                 delivery
                     .observe_events(attempt, &events)
                     .map_err(projection_failed(trace, ConversionBoundary::EventProject))?;
+                trace.projected_content(delivery.content_ready());
                 if delivery.content_ready() {
                     lane.state.ready();
                 }
@@ -320,6 +322,9 @@ async fn produce(
             return fail_classified(lane, delivery, stream, failure, trace).await;
         }
         return Err(ApiError::malformed());
+    }
+    if attempt.has_terminal() {
+        trace.terminal_validated();
     }
     trace.finish_validated();
     let evidence = attempt.take_evidence();
@@ -392,6 +397,7 @@ async fn produce(
         batch
     };
 
+    trace.projected_content(delivery.content_ready());
     release_held(&mut held, lane, delivery, trace).await?;
     crate::body::send_final_frames(lane, delivery, frames, trace).await?;
     delivery
@@ -401,7 +407,7 @@ async fn produce(
 }
 /// Error bodies are read for classification only, within the attempt deadline.
 async fn error_body(
-    mut upstream: reqwest::Response,
+    mut upstream: Response,
     lane: &Lane<'_>,
     trace: &Trace,
 ) -> (Vec<u8>, Observation) {
@@ -456,7 +462,7 @@ pub(crate) async fn produce_candidate(
     candidate: &BoundCandidate,
     request: &Request,
     original: &Request,
-    upstream: reqwest::Response,
+    upstream: Response,
     limits: &Limits,
     lane: &Lane<'_>,
     hold: bool,
@@ -715,7 +721,7 @@ mod tests {
         );
         trace.report.begin();
         let error = produce(
-            upstream,
+            upstream.into(),
             "chatgpt",
             &mut attempt,
             &mut delivery,
@@ -921,7 +927,7 @@ mod tests {
             );
             {
                 let producer = produce(
-                    upstream,
+                    upstream.into(),
                     "chatgpt",
                     &mut attempt,
                     &mut delivery,

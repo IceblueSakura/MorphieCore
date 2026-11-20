@@ -216,10 +216,11 @@ async fn selected_target_never_changes_after_dispatch() {
             None,
         )
         .unwrap();
-        if status == 503 && !stream {
-            Arc::get_mut(&mut gateway.state).unwrap().diagnostics =
-                Some(crate::diagnostics::Sink::memory().0);
-        }
+        let retry_signals = (status == 503).then(|| {
+            let (sink, logs, spans) = crate::diagnostics::Sink::memory_signals(LogLevel::Warn);
+            Arc::get_mut(&mut gateway.state).unwrap().diagnostics = Some(sink);
+            (logs, spans)
+        });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let owned_gateway = gateway.clone();
@@ -280,6 +281,52 @@ async fn selected_target_never_changes_after_dispatch() {
         assert_eq!(*calls.lock().unwrap(), expected_calls);
         gateway.shutdown();
         serving.await.unwrap();
+        if let Some((logs, spans)) = retry_signals {
+            use opentelemetry::KeyValue;
+            let spans = spans.get_finished_spans().unwrap();
+            let operation = spans
+                .iter()
+                .find(|span| span.name == "gateway.operation")
+                .unwrap();
+            assert!(
+                operation
+                    .attributes
+                    .contains(&KeyValue::new("morphiecore.outcome", "complete"))
+            );
+            assert!(
+                operation
+                    .attributes
+                    .contains(&KeyValue::new("morphiecore.send_attempts", 2i64))
+            );
+            let [first, second] = spans
+                .iter()
+                .filter(|span| span.name == "gateway.attempt")
+                .collect::<Vec<_>>()[..]
+            else {
+                panic!("one attempt per observed send")
+            };
+            let logs = logs.get_emitted_logs().unwrap();
+            assert_eq!(logs.len(), 1);
+            assert_eq!(
+                logs[0].record.trace_context().unwrap().span_id,
+                first.span_context.span_id()
+            );
+            assert!(
+                first
+                    .attributes
+                    .contains(&KeyValue::new("morphiecore.retry.planned", true))
+            );
+            assert!(
+                second
+                    .attributes
+                    .contains(&KeyValue::new("morphiecore.outcome", "complete"))
+            );
+            for attempt in [first, second] {
+                assert_eq!(attempt.parent_span_id, operation.span_context.span_id());
+                assert!(spans.iter().any(|span| span.name == "gateway.upstream.http"
+                    && span.parent_span_id == attempt.span_context.span_id()));
+            }
+        }
         upstream.abort();
         let _ = upstream.await;
     }

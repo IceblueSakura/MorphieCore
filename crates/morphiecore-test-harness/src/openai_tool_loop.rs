@@ -50,6 +50,17 @@ struct StateData {
     control: Arc<Control>,
     recovery: Option<Arc<crate::credential_recovery::Recovery>>,
 }
+impl Fixture {
+    pub async fn stop_and_export(&mut self) {
+        self.gateway.shutdown();
+        tokio::time::timeout(std::time::Duration::from_secs(5), &mut self.tasks[0])
+            .await
+            .expect("test listener drains before telemetry shutdown")
+            .unwrap();
+        self.gateway.shutdown_diagnostics().await;
+    }
+}
+
 impl Drop for Fixture {
     fn drop(&mut self) {
         for task in &self.tasks {
@@ -233,21 +244,29 @@ async fn answer(
         .unwrap()
 }
 pub async fn start(profile: GenerationApi, fallback: bool) -> Fixture {
-    start_with_recovery(profile, fallback, false, false, None).await
+    start_with_recovery(profile, fallback, false, false, None, None).await
+}
+
+pub async fn start_with_diagnostics(
+    profile: GenerationApi,
+    fallback: bool,
+    endpoint: &str,
+) -> Fixture {
+    start_with_recovery(profile, fallback, false, false, None, Some(endpoint)).await
 }
 
 #[allow(dead_code)] // The explicit SDK gate owns the connected nine-direction exit.
 pub async fn start_ordinary(target: GenerationProtocol) -> Fixture {
-    start_with_recovery(GenerationApi::Chat, false, false, false, Some(target)).await
+    start_with_recovery(GenerationApi::Chat, false, false, false, Some(target), None).await
 }
 
 pub async fn start_recovery() -> Fixture {
-    start_with_recovery(GenerationApi::Chat, false, true, false, None).await
+    start_with_recovery(GenerationApi::Chat, false, true, false, None, None).await
 }
 
 #[allow(dead_code)] // Only the Router target exercises required-history rejection.
 pub async fn start_required_history() -> Fixture {
-    start_with_recovery(GenerationApi::Chat, false, false, true, None).await
+    start_with_recovery(GenerationApi::Chat, false, false, true, None, None).await
 }
 
 async fn start_with_recovery(
@@ -256,6 +275,7 @@ async fn start_with_recovery(
     recover: bool,
     required_history: bool,
     ordinary: Option<GenerationProtocol>,
+    diagnostics: Option<&str>,
 ) -> Fixture {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let control = Arc::new(Control::default());
@@ -424,6 +444,18 @@ async fn start_with_recovery(
         None,
     )
     .unwrap();
+    let gateway = if let Some(endpoint) = diagnostics {
+        gateway
+            .with_diagnostics(crate::morphiecore::gateway::DiagnosticsConfig {
+                endpoint: endpoint.to_owned(),
+                level: crate::morphiecore::gateway::LogLevel::Warn,
+                private_bodies: false,
+                body_bytes: 1024,
+            })
+            .unwrap()
+    } else {
+        gateway
+    };
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/v1", listener.local_addr().unwrap());
     let owner = gateway.clone();

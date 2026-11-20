@@ -279,14 +279,7 @@ Profile-specific verification, rotation and terminal-error semantics follow the 
 
 Configuration intake reports a domain and fixed safe reason, with a root location for schema/type errors. It does not traverse Serde paths or emit rejected values or private map keys. Semantic validation may retain its schema-owned field/index attribution.
 
-Current diagnostic reports and logging are temporary instrumentation. The
-[selected logs-and-traces slice](../roadmap/index.md#observability-prerequisite)
-now precedes Stage 4. Its SDK/request foundation is implemented; the full delivery
-gate remains open.
-The following describes current behavior, separately from the selected design
-below.
-
-The current implementation uses isolated official OpenTelemetry Logs/Traces
+The gateway uses isolated official OpenTelemetry Logs/Traces
 providers, standard batch processors and OTLP/HTTP JSON exporters. A `tracing`
 subscriber with official bridges records request lifecycle logs and server spans;
 no process-global subscriber is installed by the library. Request context follows
@@ -296,8 +289,10 @@ log filtering does not disable spans. Internal `gateway.operation` and
 `gateway.attempt` spans replace manual diagnostic clocks, stage timelines and
 log sequence counters. Standard span events retain bounded milestones; the
 operation summary uses the Logs bridge. Structured adaptation failures and private
-capture retain their native Logs representation. Upstream HTTP-client spans,
-maintenance context and an indexed development query backend remain pending.
+capture retain their native Logs representation. Upstream HTTP-client spans
+are children of the inference attempt. They run from the send invocation
+through observed body EOF, transport failure, or an undrained exit. An
+undrained exit does not establish why the body was dropped.
 The receiver owns retention/durability; the application owns no diagnostic files,
 success-wire archive or diagnostic usage ledger. Execution facts remain
 independent of optional export.
@@ -305,17 +300,13 @@ independent of optional export.
 - **Population and severity:** recovered attempt failures and client/upstream 4xx rejection are WARN; unrecovered service, transport, decode and terminal failures are ERROR. HTTP-200 failed tasks use their source class. Ordinary cancellation/shutdown is not a default error; independently observed upstream failures survive it. Length stops, refusal, accepted adaptation and ignored fields do not generate warnings.
 - **Attribution:** closed reason codes, original source/conversion boundary, trusted Agent/request identity, operation, selected Provider/account, public/upstream model and attempt. HTTP status alone does not assign blame. `http.response.status_code` is the observed upstream head; `gateway.error.status_code` is the selected local error presentation. `client.handoff_complete:true` records acknowledged local delivery, not remote receipt or inference success.
 - **Lifecycle:** requests enqueue without waiting for export. Bounded SDK queues/batches, explicit all-on sampling/span limits, finite HTTP timeout and no export retries. Queue/export/flush problems produce a fixed body-free warning once per owner without changing inference, routing, replay or credential state. The binary waits for request producers and required storage work before bounded provider shutdown off async workers, including early post-bootstrap exits. Embedded owners explicitly flush/shut down after stopping producers; last-owner destruction never waits for export. Telemetry delivery is best effort.
-- **Operation and attempt observations:** SDK span lifetimes own durations and SDK event timestamps locate actual sends, response headers, terminal/EOF validation, publication and local handoffs. Preparation/delivery are part of the internal attempt, not a claim of network-only latency. No per-chunk stage events, custom elapsed clocks or log sequence counters remain; the last stage still attributes failures. A failed attempt keeps its own status/log context while successful recovery leaves the final operation successful. Client-response capture follow-ups explicitly reference the HTTP request rather than whichever attempt or ambient span is current. Last complete Responses source-event context and its native sequence survive decoder rejection; later cancellation cannot replace them. Protocol owners return pure closed data, not log records. Telemetry does not establish exact upstream execution counts or remote receipt.
+- **Operation and attempt observations:** SDK span lifetimes own durations and SDK event timestamps locate send invocations, response headers, first projected content, terminal/EOF validation, publication and local handoffs. First projected content is not the first frame, recovery readiness, or remote receipt. Preparation/delivery are part of the internal attempt, not a claim of network-only latency. No per-chunk stage events, custom elapsed clocks or log sequence counters remain; the last stage still attributes failures. A failed attempt keeps its own status/log context while successful recovery leaves the final operation successful. Client-response capture follow-ups explicitly reference the HTTP request rather than whichever attempt or ambient span is current. Last complete Responses source-event context and its native sequence survive decoder rejection; later cancellation cannot replace them. Protocol owners return pure closed data, not log records. Telemetry does not establish exact upstream execution counts or remote receipt.
 - **Receiver:** the selected single-host Collector writes bounded rotating OTLP JSON batches behind a private directory and loopback listener. It provides neither indexed queries nor zero-loss guarantees. File permissions, retention and operation live in [Usage](../usage/gateway-configuration.md#loopback-file-receiver).
-- **Maintenance:** OAuth renewal uses the same logger with trusted account/profile and a closed category. Token replies, grants, credential locators and raw third-party errors are never diagnostic bodies.
+- **Maintenance:** A scheduled OAuth renewal attempt owns a local span with correlated failure logs, HTTP body lifetime, and blocking prepare/commit spans. The caller ending and a durable publication are separate facts; queued commits can publish after the caller cancels. Token replies, grants, credential locators and raw third-party errors are never diagnostic bodies.
 
 Public adaptation notices retain bounded semantic conversion evidence independently of diagnostic logging. Acknowledgment, delivery commit, publication fences and history reservations remain execution responsibilities. Logs cannot prove upstream execution counts; synthetic authorities and client outcomes are the acceptance oracle.
 
 #### Selected logs and traces design
-
-This is the accepted target, not a claim that the current logger has been
-replaced. [Roadmap](../roadmap/index.md#observability-prerequisite) owns delivery
-order and completion criteria.
 
 - **Standard pipeline:** Use `tracing` as the application instrumentation entry,
   [`tracing-opentelemetry`](https://docs.rs/tracing-opentelemetry/0.34.0/tracing_opentelemetry/)

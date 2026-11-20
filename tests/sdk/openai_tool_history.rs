@@ -1,9 +1,14 @@
 //! Pinned OpenAI SDK through catalog-backed Chat/Responses Routers and synthetic origins.
 use crate::openai_tool_loop as fixture;
 use morphiecore::protocol::openai::GenerationApi;
+use morphiecore_test_support::telemetry::Collector;
 use std::time::Duration;
 
-async fn history_case(profile: GenerationApi, recovery_stream: Option<bool>) {
+async fn history_case(
+    profile: GenerationApi,
+    recovery_stream: Option<bool>,
+    collector: Option<&Collector>,
+) {
     let (script, requests) = match profile {
         GenerationApi::Chat => ("tests/sdk/chat_tool_history.py", 6),
         GenerationApi::Responses => ("tests/sdk/responses_history.py", 10),
@@ -13,8 +18,10 @@ async fn history_case(profile: GenerationApi, recovery_stream: Option<bool>) {
     } else {
         requests
     };
-    let fixture = if recovery_stream.is_some() {
+    let mut fixture = if recovery_stream.is_some() {
         fixture::start_recovery().await
+    } else if let Some(collector) = collector {
+        fixture::start_with_diagnostics(profile, false, &collector.endpoint).await
     } else {
         fixture::start(profile, false).await
     };
@@ -49,19 +56,31 @@ async fn history_case(profile: GenerationApi, recovery_stream: Option<bool>) {
     if let Some(recovery) = &fixture.recovery {
         recovery.assert_complete(3, false);
     }
-    fixture.gateway.flush_diagnostics().await;
+    if let Some(collector) = collector {
+        fixture.stop_and_export().await;
+        assert_eq!(
+            collector
+                .spans()
+                .iter()
+                .filter(|span| span["name"] == "gateway.upstream.http")
+                .count(),
+            requests
+        );
+    }
 }
 
 #[tokio::test]
 #[ignore = "requires pinned OpenAI SDK; synthetic DashScope Chat JSON/SSE tool history"]
 async fn chat_tool_result_and_final_history() {
-    history_case(GenerationApi::Chat, None).await;
+    history_case(GenerationApi::Chat, None, None).await;
 }
 
 #[tokio::test]
 #[ignore = "requires pinned OpenAI SDK; synthetic Responses JSON/SSE stateless history"]
 async fn responses_stateless_history() {
-    history_case(GenerationApi::Responses, None).await;
+    history_case(GenerationApi::Responses, None, None).await;
+    let collector = Collector::start().await;
+    history_case(GenerationApi::Responses, None, Some(&collector)).await;
 }
 
 #[tokio::test]
@@ -103,6 +122,6 @@ async fn ordinary_tools_across_all_client_and_target_protocols() {
 #[ignore = "requires pinned OpenAI SDK; synthetic Chat credential migration JSON/SSE"]
 async fn chat_sdk_tool_feedback_retries_with_one_new_http_request() {
     for stream in [false, true] {
-        history_case(GenerationApi::Chat, Some(stream)).await;
+        history_case(GenerationApi::Chat, Some(stream), None).await;
     }
 }

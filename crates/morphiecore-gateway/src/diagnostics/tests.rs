@@ -540,14 +540,26 @@ async fn last_logger_owner_does_not_wait_for_a_stalled_export_on_drop() {
     );
     server.abort();
 }
-#[tokio::test]
-async fn queued_private_records_fit_the_otlp_request_bound_after_a_slow_export() {
+struct HeldLogReceiver {
+    endpoint: String,
+    records: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    entered: std::sync::Arc<tokio::sync::Notify>,
+    release: std::sync::Arc<tokio::sync::Notify>,
+    server: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for HeldLogReceiver {
+    fn drop(&mut self) {
+        self.server.abort();
+    }
+}
+
+async fn hold_first_log_export() -> HeldLogReceiver {
     use axum::{Json, Router, extract::DefaultBodyLimit, routing::post};
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
-    use std::time::Duration;
     let records = Arc::new(AtomicUsize::new(0));
     let entered = Arc::new(tokio::sync::Notify::new());
     let release = Arc::new(tokio::sync::Notify::new());
@@ -572,8 +584,11 @@ async fn queued_private_records_fit_the_otlp_request_bound_after_a_slow_export()
                                 .unwrap()
                                 .iter()
                                 .flat_map(|r| r["scopeLogs"].as_array().unwrap())
-                                .map(|s| s["logRecords"].as_array().unwrap().len())
-                                .sum::<usize>();
+                                .flat_map(|s| s["logRecords"].as_array().unwrap())
+                                .inspect(|record| {
+                                    assert_eq!(record["eventName"], "gateway.failure")
+                                })
+                                .count();
                             if output.fetch_add(count, Ordering::SeqCst) == 0 {
                                 started.notify_one();
                                 resume.notified().await;
@@ -582,43 +597,117 @@ async fn queued_private_records_fit_the_otlp_request_bound_after_a_slow_export()
                         }
                     }),
                 )
+                .route("/v1/traces", post(|| async { Json(serde_json::json!({})) }))
                 .layer(DefaultBodyLimit::max(1 << 20)),
         )
         .await
         .unwrap();
     });
-    let sink = Sink::open(&DiagnosticsConfig {
+    HeldLogReceiver {
         endpoint,
+        records,
+        entered,
+        release,
+        server,
+    }
+}
+
+fn emit_synthetic_failures(sink: &Sink, count: usize, value: &str) {
+    for _ in 0..count {
+        sink.emit(
+            "gateway.failure",
+            Severity::Error,
+            vec![],
+            AnyValue::from(value.to_owned()),
+        );
+    }
+}
+
+#[tokio::test]
+async fn queued_private_records_fit_the_otlp_request_bound_after_a_slow_export() {
+    use std::{sync::atomic::Ordering, time::Duration};
+    let receiver = hold_first_log_export().await;
+    let sink = Sink::open(&DiagnosticsConfig {
+        endpoint: receiver.endpoint.clone(),
         level: LogLevel::Warn,
         private_bodies: true,
         body_bytes: 64 << 10,
     })
     .unwrap();
-    for _ in 0..4 {
-        sink.emit(
-            "gateway.failure",
-            Severity::Error,
-            vec![],
-            AnyValue::from("synthetic"),
-        );
-    }
-    tokio::time::timeout(Duration::from_secs(3), entered.notified())
+    emit_synthetic_failures(&sink, 4, "synthetic");
+    tokio::time::timeout(Duration::from_secs(3), receiver.entered.notified())
         .await
         .unwrap();
-    for _ in 0..24 {
-        sink.emit(
-            "gateway.failure",
-            Severity::Error,
-            vec![],
-            AnyValue::from("x".repeat(64 << 10)),
-        );
-    }
-    release.notify_one();
+    emit_synthetic_failures(&sink, 24, &"x".repeat(64 << 10));
+    receiver.release.notify_one();
     sink.flush().await;
-    let count = records.load(Ordering::SeqCst);
-    server.abort();
     assert_eq!(
-        count, 28,
+        receiver.records.load(Ordering::SeqCst),
+        28,
         "healthy export must not discard an oversized accumulated batch"
     );
+}
+
+#[tokio::test]
+async fn full_log_queue_drops_only_telemetry_and_reports_local_loss() {
+    use std::{
+        sync::{Arc, atomic::Ordering},
+        time::Duration,
+    };
+    use tower::ServiceExt;
+    let receiver = hold_first_log_export().await;
+    let sink = Sink::open_with_queue(
+        &DiagnosticsConfig {
+            endpoint: receiver.endpoint.clone(),
+            level: LogLevel::Warn,
+            private_bodies: false,
+            body_bytes: 1024,
+        },
+        8,
+    )
+    .unwrap();
+    emit_synthetic_failures(&sink, 4, "first batch");
+    tokio::time::timeout(Duration::from_secs(3), receiver.entered.notified())
+        .await
+        .unwrap();
+    let first_batch = receiver.records.load(Ordering::SeqCst);
+    assert!(!sink.loss_reported());
+    emit_synthetic_failures(&sink, 24, "queued batch");
+    assert!(
+        sink.loss_reported(),
+        "the SDK must indicate queue loss before any HTTP failure"
+    );
+
+    let models = |gate: crate::Gateway| async move {
+        let response = gate
+            .router()
+            .oneshot(
+                axum::http::Request::get("/v1/models")
+                    .header(
+                        "authorization",
+                        format!("Bearer {}", crate::tests::support::KEY),
+                    )
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        axum::body::to_bytes(response.into_body(), 64 << 10)
+            .await
+            .unwrap()
+    };
+    let mut gate = crate::tests::support::gateway(Default::default());
+    let expected = models(gate.clone()).await;
+    Arc::get_mut(&mut gate.state).unwrap().diagnostics = Some(sink.clone());
+    let actual = tokio::time::timeout(Duration::from_secs(1), models(gate))
+        .await
+        .unwrap();
+    assert_eq!(actual, expected);
+
+    receiver.release.notify_one();
+    tokio::time::timeout(Duration::from_secs(8), sink.shutdown())
+        .await
+        .unwrap();
+    assert_eq!(receiver.records.load(Ordering::SeqCst), first_batch + 8);
 }

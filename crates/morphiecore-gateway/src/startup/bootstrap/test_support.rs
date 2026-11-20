@@ -87,6 +87,15 @@ impl std::ops::Deref for Fixture {
     }
 }
 impl Fixture {
+    #[cfg(test)]
+    pub(super) fn record_spans(&mut self) -> opentelemetry_sdk::trace::InMemorySpanExporter {
+        let (sink, _, spans) = crate::diagnostics::Sink::memory_signals(crate::LogLevel::Warn);
+        std::sync::Arc::get_mut(&mut self.boot.gateway.state)
+            .unwrap()
+            .diagnostics = Some(sink);
+        spans
+    }
+
     pub fn record_failures(&mut self) -> opentelemetry_sdk::logs::InMemoryLogExporter {
         let (sink, exporter) = crate::diagnostics::Sink::memory();
         std::sync::Arc::get_mut(&mut self.boot.gateway.state)

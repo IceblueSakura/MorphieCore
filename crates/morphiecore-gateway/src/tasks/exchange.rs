@@ -5,7 +5,7 @@ use super::BoundTask;
 use crate::{
     ApiError, Runtime,
     capture::{BodyCapture, Boundary},
-    diagnostics::{Stage, Trace},
+    diagnostics::{Stage, Trace, upstream::Response},
     execution::{AttemptError, attempt::ProtocolReason, task::PreparedTaskRequest},
     protocol::failure::{Observation, Resource, SourceFailureEvidence},
     transport::http::TransportError,
@@ -43,9 +43,12 @@ pub(super) async fn send<R>(
     }
     trace.sent();
 
-    let upstream = runtime
-        .transport
-        .send(prepared, deadline.saturating_duration_since(Instant::now()))
+    let upstream = trace
+        .send_http(
+            &runtime.transport,
+            prepared,
+            deadline.saturating_duration_since(Instant::now()),
+        )
         .await
         .map_err(|error| {
             trace.report.failure(None, &AttemptError::Transport(error));
@@ -56,7 +59,7 @@ pub(super) async fn send<R>(
 
 /// Bounded receive state only: no retries, semantic terminal inference or delivery.
 pub(super) struct Receiver {
-    upstream: reqwest::Response,
+    upstream: Response,
     media_type: String,
     length: Option<u64>,
     limit: usize,
@@ -66,10 +69,11 @@ pub(super) struct Receiver {
 }
 impl Receiver {
     pub(super) fn new(
-        upstream: reqwest::Response,
+        upstream: impl Into<Response>,
         limit: usize,
         trace: &mut Trace,
     ) -> Result<Self, ApiError> {
+        let upstream = upstream.into();
         trace.stage(Stage::ResponseHead);
         let status = upstream.status().as_u16();
         trace.head(status);

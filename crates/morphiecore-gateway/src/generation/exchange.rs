@@ -275,7 +275,7 @@ pub(crate) async fn produce_chain(
                     candidate,
                     projection: None,
                 }],
-                Some(response),
+                Some(response.into()),
                 binding,
             )
         }
@@ -386,9 +386,9 @@ pub(crate) async fn produce_chain(
                         state.waiting_upstream.store(true, Ordering::Release);
                         send_started = true;
                         trace.sent();
-                        let response = runtime
-                            .transport
-                            .send(
+                        let response = trace
+                            .send_http(
+                                &runtime.transport,
                                 ready.wire.clone(),
                                 attempt_deadline.saturating_duration_since(Instant::now()),
                             )

@@ -1,6 +1,7 @@
 //! Execution attribution and standard span milestones, independent of optional export.
 pub(super) mod request;
 mod telemetry;
+pub(crate) mod upstream;
 use crate::execution::AttemptError;
 use opentelemetry::logs::{AnyValue, Severity};
 use opentelemetry::{
@@ -60,34 +61,46 @@ pub(super) enum Outcome {
     Shutdown,
     Complete,
 }
+struct Request {
+    request_id: Option<String>,
+    agent_id: Option<String>,
+    operation: &'static str,
+    public_model: Option<String>,
+    request_context: SpanContext,
+}
+#[derive(Default)]
+struct Attempt {
+    provider: Option<String>,
+    account: Option<String>,
+    upstream_model: Option<String>,
+    stage: Stage,
+    status: Option<u16>,
+    span: Option<Span>,
+    first_content: bool,
+    terminal_validated: bool,
+    finish_validated: bool,
+    response_outcome: Option<&'static str>,
+    failure_logged: bool,
+}
+#[derive(Default)]
+struct Handoff {
+    published: bool,
+    first_handoff: bool,
+    final_handoff: bool,
+}
 pub(super) struct Trace {
     pub(super) tasks: Option<tokio_util::task::TaskTracker>,
     pub(super) report: crate::execution::report::Report,
     pub(super) capture: Option<super::capture::Exchange>,
     pub(super) capture_attempt: usize,
     sink: Option<Sink>,
-    request_id: Option<String>,
-    agent_id: Option<String>,
-    operation: &'static str,
-    provider: Option<String>,
-    account: Option<String>,
-    public_model: Option<String>,
-    upstream_model: Option<String>,
-    stage: Stage,
     outcome: Outcome,
-    status: Option<u16>,
     operation_span: Span,
-    attempt_span: Option<Span>,
-    request_context: SpanContext,
-    failure_logged: bool,
     emitted: Option<Emitted>,
     sends: i64,
-    terminal_validated: bool,
-    finish_validated: bool,
-    published: bool,
-    first_handoff: bool,
-    final_handoff: bool,
-    response_outcome: Option<&'static str>,
+    request: Request,
+    attempt: Attempt,
+    handoff: Handoff,
 }
 impl Trace {
     pub(super) fn for_request(sink: Option<&Sink>, request: &axum::extract::Request) -> Self {
@@ -111,10 +124,10 @@ impl Trace {
             .get::<tokio_util::task::TaskTracker>()
             .cloned();
         trace.emitted = request.extensions().get::<Emitted>().cloned();
-        trace.operation = operation(request.uri().path());
+        trace.request.operation = operation(request.uri().path());
         trace
             .operation_span
-            .set_attribute("morphiecore.operation", trace.operation);
+            .set_attribute("morphiecore.operation", trace.request.operation);
         trace
     }
     #[cfg(test)]
@@ -149,28 +162,19 @@ impl Trace {
             capture: None,
             capture_attempt: 0,
             sink: sink.cloned(),
-            request_id,
-            agent_id,
-            operation: "other",
-            provider: None,
-            account: None,
-            public_model: None,
-            upstream_model: None,
-            stage: Stage::Admission,
-            outcome: Outcome::Interrupted,
-            status: None,
             operation_span,
-            attempt_span: None,
-            request_context,
-            failure_logged: false,
+            outcome: Outcome::Interrupted,
             emitted: None,
             sends: 0,
-            terminal_validated: false,
-            finish_validated: false,
-            published: false,
-            first_handoff: false,
-            final_handoff: false,
-            response_outcome: None,
+            request: Request {
+                request_id,
+                agent_id,
+                operation: "other",
+                public_model: None,
+                request_context,
+            },
+            attempt: Attempt::default(),
+            handoff: Handoff::default(),
         }
     }
     pub(super) fn rejected(
@@ -188,11 +192,11 @@ impl Trace {
             Some(agent.agent_id.to_string()),
         );
         trace.capture = capture;
-        trace.operation = operation;
+        trace.request.operation = operation;
         trace
             .operation_span
             .set_attribute("morphiecore.operation", operation);
-        trace.stage = Stage::HttpResponse;
+        trace.attempt.stage = Stage::HttpResponse;
         trace.report.request_failure(code, status);
     }
     pub(super) fn begin_candidate(&mut self, ordinal: usize) {
@@ -201,24 +205,19 @@ impl Trace {
             capture.begin(ordinal);
         }
         self.capture_attempt = ordinal;
-        self.response_outcome = None;
-        self.status = None;
-        self.stage = Stage::Prepare;
-        self.terminal_validated = false;
-        self.finish_validated = false;
-        self.provider = None;
-        self.account = None;
-        self.upstream_model = None;
-        self.attempt_span = Some(self.sink.as_ref().map_or_else(Span::none, |sink| {
-            tracing::dispatcher::with_default(&sink.dispatch(), || {
-                tracing::info_span!(target: "morphiecore.operation", parent: &self.operation_span,
-                    "gateway.attempt", otel.kind = "internal", morphiecore.attempt = ordinal as i64)
-            })
-        }));
-        self.failure_logged = false;
+        self.attempt = Attempt {
+            stage: Stage::Prepare,
+            span: Some(self.sink.as_ref().map_or_else(Span::none, |sink| {
+                tracing::dispatcher::with_default(&sink.dispatch(), || {
+                    tracing::info_span!(target: "morphiecore.operation", parent: &self.operation_span,
+                        "gateway.attempt", otel.kind = "internal", morphiecore.attempt = ordinal as i64)
+                })
+            })),
+            ..Default::default()
+        };
     }
     pub(super) fn end_candidate(&mut self, fallback: Option<&'static str>, retry: bool) {
-        if self.attempt_span.is_none() {
+        if self.attempt.span.is_none() {
             return;
         }
         let failure = self
@@ -242,13 +241,13 @@ impl Trace {
             self.current_span().set_attribute("error.type", code);
             self.emit_failure(code, retry);
         }
-        let span = self.attempt_span.take().expect("active attempt");
+        let span = self.attempt.span.take().expect("active attempt");
         span.set_attribute("morphiecore.outcome", outcome);
         span.set_attribute("morphiecore.retry.planned", retry);
         self.close_span(span);
     }
     fn current_span(&self) -> &Span {
-        self.attempt_span.as_ref().unwrap_or(&self.operation_span)
+        self.attempt.span.as_ref().unwrap_or(&self.operation_span)
     }
     fn in_scope<T>(&self, action: impl FnOnce() -> T) -> T {
         match &self.sink {
@@ -282,37 +281,37 @@ impl Trace {
             .or_else(|| source.map(|s| crate::execution::failure::source_code(&s.kind)))
     }
     pub(super) fn agent_id(&self) -> Option<&str> {
-        self.agent_id.as_deref()
+        self.request.agent_id.as_deref()
     }
     pub(super) fn executor(&mut self, provider: &str) {
-        self.provider = Some(provider.to_owned());
+        self.attempt.provider = Some(provider.to_owned());
         self.current_span()
             .set_attribute("morphiecore.provider", provider.to_owned());
     }
     pub(super) fn named_account(&mut self, account: Option<&str>) {
-        self.account = account.map(str::to_owned);
+        self.attempt.account = account.map(str::to_owned);
         if let Some(account) = account {
             self.current_span()
                 .set_attribute("morphiecore.account", account.to_owned());
         }
     }
     pub(super) fn models(&mut self, public: &str, upstream: &str) {
-        self.public_model = Some(public.to_owned());
-        self.upstream_model = Some(upstream.to_owned());
+        self.request.public_model = Some(public.to_owned());
+        self.attempt.upstream_model = Some(upstream.to_owned());
         self.operation_span
             .set_attribute("morphiecore.model", public.to_owned());
         self.current_span()
             .set_attribute("morphiecore.upstream_model", upstream.to_owned());
     }
     pub(super) fn generation(&mut self, public: &str, client: crate::protocol::ClientProtocol) {
-        self.public_model = Some(public.to_owned());
-        self.operation = match client {
+        self.request.public_model = Some(public.to_owned());
+        self.request.operation = match client {
             crate::protocol::ClientProtocol::Chat => "chat",
             crate::protocol::ClientProtocol::Responses => "responses",
             crate::protocol::ClientProtocol::Messages => "messages",
         };
         self.operation_span
-            .set_attribute("morphiecore.operation", self.operation);
+            .set_attribute("morphiecore.operation", self.request.operation);
         self.operation_span
             .set_attribute("morphiecore.model", public.to_owned());
     }
@@ -343,13 +342,13 @@ impl Trace {
     }
     pub(super) fn stage(&mut self, stage: Stage) {
         // A failure location, not a duration interval or per-chunk event.
-        self.stage = stage;
+        self.attempt.stage = stage;
     }
     pub(super) fn outcome(&mut self, outcome: Outcome) {
         self.outcome = outcome;
     }
     pub(super) fn head(&mut self, status: u16) {
-        self.status = Some(status);
+        self.attempt.status = Some(status);
         self.current_span()
             .set_attribute("http.response.status_code", status as i64);
         self.current_span()
@@ -361,20 +360,27 @@ impl Trace {
             .add_event("gateway.upstream.sent", vec![]);
     }
     pub(super) fn terminal_validated(&mut self) {
-        if !self.terminal_validated {
-            self.terminal_validated = true;
+        if !self.attempt.terminal_validated {
+            self.attempt.terminal_validated = true;
             self.current_span()
                 .add_event("gateway.upstream.terminal", vec![]);
         }
     }
+    pub(super) fn projected_content(&mut self, ready: bool) {
+        if ready && !self.attempt.first_content {
+            self.attempt.first_content = true;
+            self.current_span()
+                .add_event("gateway.client.first_projected_content", vec![]);
+        }
+    }
     pub(super) fn finish_validated(&mut self) {
-        self.finish_validated = true;
+        self.attempt.finish_validated = true;
         self.current_span()
             .add_event("gateway.upstream.eof", vec![]);
     }
     pub(super) fn response_outcome(&mut self, outcome: crate::semantic::task::generation::Outcome) {
         use crate::semantic::task::generation::Outcome;
-        self.response_outcome = Some(match outcome {
+        self.attempt.response_outcome = Some(match outcome {
             Outcome::Completed => "completed",
             Outcome::Incomplete => "incomplete",
             Outcome::Failed => "failed",
@@ -382,20 +388,20 @@ impl Trace {
         });
     }
     pub(super) fn publishing(&mut self) {
-        if !self.published {
-            self.published = true;
+        if !self.handoff.published {
+            self.handoff.published = true;
             self.current_span()
                 .add_event("gateway.client.published", vec![]);
         }
     }
     pub(super) fn handoff(&mut self, final_frame: bool) {
-        if !self.first_handoff {
-            self.first_handoff = true;
+        if !self.handoff.first_handoff {
+            self.handoff.first_handoff = true;
             self.current_span()
                 .add_event("gateway.client.first_handoff", vec![]);
         }
         if final_frame {
-            self.final_handoff = true;
+            self.handoff.final_handoff = true;
             self.current_span()
                 .add_event("gateway.client.final_handoff", vec![]);
         }
@@ -432,29 +438,32 @@ impl Trace {
     }
     fn attributes(&self) -> Attributes {
         let mut attributes = vec![
-            ("operation".into(), AnyValue::from(self.operation)),
+            ("operation".into(), AnyValue::from(self.request.operation)),
             ("send_attempts".into(), AnyValue::from(self.sends)),
             (
                 "upstream.terminal_validated".into(),
-                AnyValue::from(self.terminal_validated),
+                AnyValue::from(self.attempt.terminal_validated),
             ),
             (
                 "upstream.finish_validated".into(),
-                AnyValue::from(self.finish_validated),
+                AnyValue::from(self.attempt.finish_validated),
             ),
-            ("client.published".into(), AnyValue::from(self.published)),
+            (
+                "client.published".into(),
+                AnyValue::from(self.handoff.published),
+            ),
             (
                 "client.handoff_complete".into(),
-                AnyValue::from(self.final_handoff),
+                AnyValue::from(self.handoff.final_handoff),
             ),
         ];
         for (name, value) in [
-            ("request_id", self.request_id.as_deref()),
-            ("agent_id", self.agent_id.as_deref()),
-            ("provider", self.provider.as_deref()),
-            ("account", self.account.as_deref()),
-            ("model", self.public_model.as_deref()),
-            ("upstream_model", self.upstream_model.as_deref()),
+            ("request_id", self.request.request_id.as_deref()),
+            ("agent_id", self.request.agent_id.as_deref()),
+            ("provider", self.attempt.provider.as_deref()),
+            ("account", self.attempt.account.as_deref()),
+            ("model", self.request.public_model.as_deref()),
+            ("upstream_model", self.attempt.upstream_model.as_deref()),
         ] {
             if let Some(value) = value {
                 attributes.push((name.into(), AnyValue::from(value.to_owned())));
@@ -466,10 +475,10 @@ impl Trace {
                 AnyValue::from(self.capture_attempt as i64),
             ));
         }
-        if let Some(outcome) = self.response_outcome {
+        if let Some(outcome) = self.attempt.response_outcome {
             attributes.push(("response.outcome".into(), AnyValue::from(outcome)));
         }
-        if let Some(status) = self.status {
+        if let Some(status) = self.attempt.status {
             attributes.push((
                 "http.response.status_code".into(),
                 AnyValue::from(status as i64),
@@ -485,7 +494,7 @@ impl Trace {
     }
     fn emit_failure(&mut self, code: &'static str, retry: bool) {
         use crate::protocol::conversion::generation::ConversionBoundary as Boundary;
-        self.failure_logged = true;
+        self.attempt.failure_logged = true;
         let Some(sink) = &self.sink else {
             return;
         };
@@ -509,13 +518,13 @@ impl Trace {
                     | Boundary::EventProject
                     | Boundary::EventEncode,
                 ) => Stage::Projection,
-                None => self.stage,
+                None => self.attempt.stage,
             }
         };
         let status = source
             .and_then(|s| s.status_hint)
             .map(|s| s.get())
-            .or(self.status)
+            .or(self.attempt.status)
             .or(self.report.request_error().map(|(_, s)| s));
         let severity = if retry || status.is_some_and(|s| (400..500).contains(&s)) {
             Severity::Warn
@@ -589,8 +598,8 @@ impl Trace {
         let mut body = vec![("message", AnyValue::from(code))];
         if let Some(capture) = &self.capture {
             body.extend(capture.context());
-            let context = if self.request_context.is_valid() {
-                self.request_context.clone()
+            let context = if self.request.request_context.is_valid() {
+                self.request.request_context.clone()
             } else {
                 self.operation_span.context().span().span_context().clone()
             };
@@ -609,7 +618,7 @@ impl Trace {
 impl Drop for Trace {
     fn drop(&mut self) {
         self.end_candidate(Some("interrupted"), false);
-        if !self.failure_logged
+        if !self.attempt.failure_logged
             && !self.cancelled_only()
             && !matches!(self.outcome, Outcome::Shutdown)
             && let Some(code) = self
@@ -638,7 +647,7 @@ impl Drop for Trace {
             }
         };
         self.operation_span
-            .set_attribute("morphiecore.operation", self.operation);
+            .set_attribute("morphiecore.operation", self.request.operation);
         self.operation_span
             .set_attribute("morphiecore.outcome", outcome);
         self.operation_span
@@ -653,15 +662,15 @@ impl Drop for Trace {
         self.in_scope(|| {
             tracing::info!(name: "gateway.operation.finished", target: "morphiecore.operation",
                 {
-                    morphiecore.operation = self.operation,
+                    morphiecore.operation = self.request.operation,
                     morphiecore.outcome = outcome,
-                    morphiecore.model = self.public_model.as_deref(),
+                    morphiecore.model = self.request.public_model.as_deref(),
                     morphiecore.send_attempts = self.sends,
-                    morphiecore.response.outcome = self.response_outcome,
-                    morphiecore.upstream.terminal_validated = self.terminal_validated,
-                    morphiecore.upstream.finish_validated = self.finish_validated,
-                    morphiecore.client.published = self.published,
-                    morphiecore.client.handoff_complete = self.final_handoff
+                    morphiecore.response.outcome = self.attempt.response_outcome,
+                    morphiecore.upstream.terminal_validated = self.attempt.terminal_validated,
+                    morphiecore.upstream.finish_validated = self.attempt.finish_validated,
+                    morphiecore.client.published = self.handoff.published,
+                    morphiecore.client.handoff_complete = self.handoff.final_handoff
                 },
                 "operation ended"
             );

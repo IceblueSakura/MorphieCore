@@ -76,10 +76,13 @@ impl ResponseDelivery {
             let projection = self.projection.adapter.as_mut().expect("projection");
             projection.update_fidelity(&wire.fidelity)?;
             projection.metadata(&wire.metadata)?;
+            let mut has_content = false;
             crate::adapter::emit_response_events(&wire, |event| {
-                projection.project(&[event]).map(|_| ())
+                has_content |= projection.project(&[event])?.iter().any(content_event);
+                Ok(())
             })?;
             projection.update_fidelity(&wire.fidelity)?;
+            self.projection.content_ready |= has_content;
         } else if !self
             .projection
             .adapter

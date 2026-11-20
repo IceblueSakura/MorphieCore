@@ -191,7 +191,7 @@ The HTTP span contains internal `gateway.operation` and `gateway.attempt` spans.
 
 `gateway.operation.finished` is the bridged INFO summary, with `morphiecore.*` fields including `operation`, `outcome`, `model`, `send_attempts`, `response.outcome` and delivery/validation observations. A failed attempt retains its own status without marking a successfully recovered operation failed. Existing failure events remain `gateway.failure`, optional `gateway.failure.response`, and background `gateway.credential.failure`; their structured bodies use the same SDK Logs provider/exporter. The primary failure references the responsible attempt or operation; delayed client-response capture references the HTTP request, even after that span ends or another context becomes current. Raising verbosity never enables private bodies.
 
-Upstream HTTP-client spans, first-content observations, maintenance tracing and the full [observability gate](../roadmap/index.md#completion-criteria) remain pending.
+`gateway.upstream.http` is the attempt's HTTP client span; it closes on body EOF, transport failure or an undrained exit, not at headers. `gateway.client.first_projected_content` marks the first actual projected Generation content, not a lifecycle frame or completed delivery. OAuth renewal traces contain `credential.http` and `credential.storage` spans. The renewal caller's `gateway.credential.caller_finished` event can precede a durable storage publication; it is not a commit receipt.
 
 Query severity WARN/ERROR, then `request_id`, `agent_id`, `operation`, `provider`, `account`, `model`, `upstream_model`, `attempt`, `stage`, `error.type` and `retry.planned` when present.
 
@@ -248,6 +248,20 @@ for row in rows:
     print(json.dumps(row))
 PY
 ```
+
+#### Indexed development query
+
+Use only synthetic traffic and a disposable trusted backend. In a private scratch copy of the [Collector example](../../config/otelcol.example.yaml), add an `otlp_http` exporter for the local development backend to both pipelines. Keep the Collector and the backend's published ports on loopback. The file-only receiver does not answer indexed queries.
+
+With the Collector validated and running, use the existing gateway failure fixture. It disables private capture and rejects non-loopback export destinations:
+
+```sh
+MORPHIECORE_TEST_INDEXED_OTLP=http://127.0.0.1:4318 \
+  cargo test --locked --offline --test gateway \
+  bootstrap::emit_failure_for_indexed_query -- --ignored --exact
+```
+
+With the [pinned development backend](../references.md#telemetry-dependency-selection), query Loki with `{service_name="morphiecore"} | stage="intake"`, bounded to the fixture's time window and a small row limit. Confirm `error_type=recovery.request`; use the indexed log's `trace_id` to open the Tempo trace and its `span_id` to select `gateway.attempt`. Follow `parentSpanId` to `gateway.operation` and `gateway.request`. When querying the Tempo JSON API directly, normalize base64 IDs to hex before comparison. The test alone sends the fixture; the query verifies indexing and lineage. Stop the test backend and discard its scratch data afterward.
 
 ### Model configuration
 

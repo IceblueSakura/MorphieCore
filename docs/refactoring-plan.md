@@ -9,7 +9,7 @@ This plan tracks the code-first refactor: enforce layer boundaries, move model p
 | 0. Cleanup | Landed, with the scope corrections below | No blocker for Phase 2 |
 | 1. Dependency boundaries | Landed | No blocker for Phase 2 |
 | 2. Projection and catalog | Complete for the selected scope; offline baseline and stateless SDK loopbacks passed | Installed-client and real-Provider qualification remain separate |
-| 3. Tests and observability | Test pruning landed; the observability gate remains open | Complete instrumentation and the evidence gaps below |
+| 3. Tests and observability | Complete on synthetic development evidence | No deployment or new API activation |
 | 4. Documentation | No task complete; routes already match by inspection | Add independent gates and consolidate documentation after code boundaries settle |
 
 ## Phase 0 — Cleanup (landed)
@@ -64,27 +64,22 @@ Operators who explicitly set `resources.history_entries`, `resources.history_byt
 
 ### Task 3.2 — Complete request and maintenance instrumentation
 
-- **Current:** [Gateway diagnostics](../crates/morphiecore-gateway/src/diagnostics.rs) has request, operation and attempt spans but still resets flat attempt state. [HTTP transport](../crates/morphiecore-runtime/src/transport/http.rs) returns at headers without a client span. [Generation intake](../crates/morphiecore-gateway/src/generation/intake.rs) already tracks actual projected-content readiness for recovery, not telemetry. [Credential refresh storage](../crates/morphiecore-runtime/src/credential/manager/refresh.rs) already drains queued commits but does not carry tracing context into blocking work.
-- **Remaining:** Group request identity, attempt and handoff state by lifetime. Parent sanitized client I/O to the active Generation or standalone attempt and keep body-consuming spans alive through actual completion or cancellation. Record the first projected content separately from headers, terminal, EOF and handoff; a controlled test needs separate content and terminal events. Carry renewal context into OAuth HTTP and blocking storage prepare/commit, including delayed commits after cancellation. Capture context before the work begins; a span created after prepare cannot account for a prepare timeout. Avoid empty maintenance traces and never emit credential, URL, path or payload fields.
-- **Constraint:** Keep the pinned OTLP `reqwest-blocking-client` and existing bounded, nonblocking drop behavior. The standard batch workers do not run inside Tokio; switching exporter clients or processors is not part of this slice.
-- **Exit:** Focused gateway/runtime tests exercise parentage, body lifetime, milestone ordering and blocking commit correlation.
+- [Gateway diagnostics](../crates/morphiecore-gateway/src/diagnostics.rs) separates request attribution, attempt facts and handoff state. [Upstream HTTP observation](../crates/morphiecore-gateway/src/diagnostics/upstream.rs) follows the Generation or standalone response through EOF, failure or drop. Generation records actual projected content independently of recovery readiness. [Renewal tracing](../crates/morphiecore-gateway/src/renewal.rs) starts before prepare; HTTP and blocking storage are children, and a queued commit can record durable publication after caller cancellation. The pinned blocking OTLP client and batch processors are unchanged.
 
-### Task 3.3 — Verify the eight observability criteria
+### Task 3.3: Verify the eight observability criteria
 
-The [roadmap gate](roadmap/index.md#completion-criteria) remains open. Reuse the synthetic OTLP receiver, [bootstrap export tests](../tests/gateway/bootstrap.rs), and existing body, retry and renewal scenarios rather than introducing a second harness. Existing assertions are foundations, not closure:
+The completion criteria cover instrumentation of existing operations only. [Architecture](architecture/runtime-and-routing.md#observability) owns signal meaning and isolation; these checks use synthetic traffic and test-owned export destinations.
 
-| # | Existing coverage in source | Evidence still needed |
-| --- | --- | --- |
-| 1 | Synthetic export correlates a failure with its attempt | Navigate from exported log to attempt and request in the development query backend |
-| 2 | Server-span body lifetime and existing milestones | First projected content and attempt-parented client spans through body consumption |
-| 3 | Same-target sends and retained retry diagnosis tested separately | Correlate actual sends with exported attempt outcomes and distinguish planned from executed |
-| 4 | Cancellation and late truncation behavior | Exactly-once observed endings without claiming downstream receipt |
-| 5 | Queued-commit drain and independent persisted state | Timeout/cancel and durable commit observed in the same trace across blocking work |
-| 6 | Stalled/unavailable exporter and nonblocking drop | Actual queue saturation, unchanged business output and a safe, non-recursive loss indication |
-| 7 | Failure-path scan of exported logs and spans | Cross-path canaries for normal, failure, bridge, renewal and transport; include Resource attributes |
-| 8 | Existing wire and lifecycle oracles | Paired diagnostics on/off for output, cancellation, publication fences and replay |
-
-Use the existing Collector examples and verify the query path, not just JSONL output or an in-memory trace. Record uncovered criteria as open. Stage 4 stays gated on all eight.
+| # | Verified criterion |
+| --- | --- |
+| 1 | A [Loki query](usage/gateway-configuration.md#indexed-development-query) found a body-free failure by its closed stage/error fields. Its native IDs resolved the responsible attempt, operation and request in Tempo through the pinned Collector. |
+| 2 | Controlled streaming shows headers, first projected content, terminal validation, EOF and handoff as separate events. Generation and standalone HTTP spans remain open while bodies are held. |
+| 3 | The synthetic authority observes two identical sends for recovery; the failed attempt retains its diagnosis and the final operation completes. Cancellation during a scheduled retry leaves one send and one attempt. |
+| 4 | Success, cancellation and late truncation close observed attempts and client spans once. Only validated success hands off its final frame; nothing claims remote receipt. |
+| 5 | OAuth exchange and UserInfo share renewal context with storage work. Cancellation and late durable commit are separate observations in one trace, consistent with independently read persisted material. |
+| 6 | Stalled/unavailable export and a saturated SDK log queue preserve business behavior. Queue loss is bounded and signaled locally without recursive export. |
+| 7 | Final synthetic exports exercise normal delivery, failure, the Logs bridge, renewal and transport canaries, including Resource metadata. Private failure capture remains opt-in and credential-redacted. |
+| 8 | Paired diagnostic modes preserve independent wire results, cancellation, publication fences, and stateless SDK history replay. |
 
 ## Phase 4 — Documentation and automated checks
 
@@ -97,7 +92,7 @@ Use the existing Collector examples and verify the query path, not just JSONL ou
 ### Task 4.2 — Consolidate the document set
 
 - Update architecture, usage, development and roadmap references to the implemented Workspace and catalog. Replace duplicated adapter prose with contract tables or links; keep structural decisions and their trade-offs, not per-model or per-PR changelogs.
-- Give stateful rejection and observability one authoritative home each. Remove the completed observability roadmap slice only after Task 3.3 closes. Distinguish semantic maxima from gateway defaults, remove stale history options, and keep setup paths portable. The configuration guide already links the example templates and describes Logs and Traces; update what has drifted rather than rewriting those sections from scratch.
+- Give stateful rejection and observability one authoritative home each. Distinguish semantic maxima from gateway defaults, remove stale history options, and keep setup paths portable. The configuration guide already links the example templates and describes Logs and Traces; update what has drifted rather than rewriting those sections from scratch.
 - Consolidate superseded research only after migrating useful pinned-source evidence and retargeting incoming links. The original reduction target is roughly half of the old document set; preserve authoritative constraints and evidence rather than meeting a line quota.
 - **Exit:** Local links, heading anchors and whitespace pass; the docs describe current behavior and keep proposals distinct from accepted work.
 

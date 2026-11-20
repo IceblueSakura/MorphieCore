@@ -43,13 +43,36 @@ impl RefreshStorage {
         phase: impl FnOnce(&mut Option<FileLock>) -> Result<T, Error> + Send + 'static,
     ) -> Result<T, Error> {
         let shared = self.state.clone();
+        let dispatch = tracing::dispatcher::get_default(Clone::clone);
+        let parent = tracing::Span::current();
+        let span = if parent.is_disabled() {
+            tracing::Span::none()
+        } else {
+            tracing::info_span!(target: "morphiecore.credential", parent: &parent,
+                "credential.storage", otel.kind = "internal",
+                morphiecore.storage.phase = if commit { "commit" } else { "prepare" },
+                morphiecore.storage.published = tracing::field::Empty,
+                morphiecore.outcome = tracing::field::Empty)
+        };
         self.tasks
             .spawn_blocking(move || {
-                let mut state = state(&shared);
-                if state.cancelled && !commit {
-                    return Err(Error::Superseded);
-                }
-                phase(&mut state.account_lock)
+                tracing::dispatcher::with_default(&dispatch, || {
+                    let result = span.in_scope(|| {
+                        let mut state = state(&shared);
+                        if state.cancelled && !commit {
+                            span.record("morphiecore.outcome", "skipped");
+                            return Err(Error::Superseded);
+                        }
+                        let result = phase(&mut state.account_lock);
+                        span.record(
+                            "morphiecore.outcome",
+                            if result.is_ok() { "complete" } else { "failed" },
+                        );
+                        result
+                    });
+                    drop(span);
+                    result
+                })
             })
             .await
             .map_err(|_| Error::Storage)?
@@ -129,7 +152,7 @@ impl CredentialManager {
                         manager.check_current(&tx, &account)?;
                         account.pending_renewal = Some(pending);
                         account.advance()?;
-                        tx.publish(account)
+                        publish_renewal(&tx, account)
                     })
                     .await?;
                 return self
@@ -223,7 +246,7 @@ impl CredentialManager {
         account.replace_credential(Some(grant.credential))?;
         account.state = AccountState::Active;
         account.advance()?;
-        let account = tx.publish(account)?;
+        let account = publish_renewal(&tx, account)?;
         self.status(&account, false)
     }
     async fn complete_renewal(
@@ -249,7 +272,7 @@ impl CredentialManager {
                             .ok_or(Error::Storage)?
                             .requires_manual_verification = requires_manual;
                         account.advance()?;
-                        tx.publish(account)
+                        publish_renewal(&tx, account)
                     })
                     .await?;
             }
@@ -265,12 +288,18 @@ impl CredentialManager {
                 account.replace_credential(Some(pending.credential))?;
                 account.state = AccountState::Active;
                 account.advance()?;
-                let account = tx.publish(account)?;
+                let account = publish_renewal(&tx, account)?;
                 manager.status(&account, false)
             })
             .await
     }
 }
+fn publish_renewal(tx: &Transaction<'_>, account: Account) -> Result<Account, Error> {
+    let account = tx.publish(account)?;
+    tracing::Span::current().record("morphiecore.storage.published", true);
+    Ok(account)
+}
+
 async fn verify_pending(driver: &dyn AuthDriver, account: &Account) -> Result<(), Error> {
     let expected = account.identity.as_ref().ok_or(Error::Storage)?;
     let pending = account.pending_renewal.as_ref().ok_or(Error::Storage)?;

@@ -64,11 +64,11 @@ impl AuthHttp {
         let client = builder.build().map_err(|_| Error::Network)?;
         Ok(Self { client, origin })
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     pub fn synthetic(origin: &str, agent: &str) -> Result<Self, Error> {
         Self::synthetic_with_agent(origin, Some(agent))
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     fn synthetic_with_agent(origin: &str, agent: Option<&str>) -> Result<Self, Error> {
         let url = url::Url::parse(origin).map_err(|_| Error::InvalidInput)?;
         if url.scheme() != "http"
@@ -131,10 +131,24 @@ impl AuthHttp {
         request: RequestBuilder,
         deadline: Instant,
     ) -> Result<(u16, SecretBytes), Error> {
+        let parent = tracing::Span::current();
+        let span = if parent.is_disabled() {
+            tracing::Span::none()
+        } else {
+            tracing::info_span!(target: "morphiecore.credential", parent: &parent,
+                "credential.http", otel.kind = "client",
+                http.response.status_code = tracing::field::Empty,
+                morphiecore.io.outcome = tracing::field::Empty)
+        };
+        let mut trace = HttpTrace {
+            span,
+            outcome: "not_drained",
+        };
         let request = request.header("accept", "application/json");
-        tokio::time::timeout_at(deadline, async {
+        let read = async {
             let response = request.send().await.map_err(|_| Error::Network)?;
             let status = response.status().as_u16();
+            trace.span.record("http.response.status_code", status);
             if (300..400).contains(&status) {
                 return Err(Error::Protocol);
             }
@@ -154,11 +168,36 @@ impl AuthHttp {
                 bytes.extend_from_slice(&chunk);
             }
             Ok((status, bytes))
-        })
-        .await
-        .map_err(|_| Error::Timeout)?
+        };
+        let result = tokio::time::timeout_at(deadline, read)
+            .await
+            .unwrap_or(Err(Error::Timeout));
+        trace.outcome = match &result {
+            Ok(_) => "eof",
+            Err(Error::Timeout) => "timeout",
+            Err(Error::Network) => "network_error",
+            Err(_) => "rejected",
+        };
+        result
     }
 }
+
+struct HttpTrace {
+    span: tracing::Span,
+    outcome: &'static str,
+}
+impl Drop for HttpTrace {
+    fn drop(&mut self) {
+        let span = std::mem::replace(&mut self.span, tracing::Span::none());
+        if let Some(dispatch) = span.with_subscriber(|(_, dispatch)| dispatch.clone()) {
+            tracing::dispatcher::with_default(&dispatch, || {
+                span.record("morphiecore.io.outcome", self.outcome);
+                drop(span);
+            });
+        }
+    }
+}
+
 fn bounded_deadline(deadline: Instant) -> Result<Instant, Error> {
     let deadline = deadline.min(Instant::now() + REQUEST_TIMEOUT);
     if deadline <= Instant::now() {

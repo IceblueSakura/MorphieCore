@@ -1256,7 +1256,7 @@ async fn attempt_wait_attribution_and_hold_deadline_are_explicit() {
             candidate,
             &request,
             &request,
-            source,
+            source.into(),
             &gate.state.limits,
             &lane,
             true,
@@ -1277,6 +1277,126 @@ async fn attempt_wait_attribution_and_hold_deadline_are_explicit() {
     }
     tokio::time::resume();
     bounded(dropped).await.unwrap();
+}
+
+#[tokio::test]
+async fn projected_content_and_http_eof_are_separate_from_handoff() {
+    use axum::{Router, routing::post};
+    use opentelemetry::trace::SpanKind;
+    use tower::ServiceExt;
+
+    let (input, rx) = mpsc::channel::<Result<Bytes, std::io::Error>>(2);
+    let rx = Arc::new(std::sync::Mutex::new(Some(rx)));
+    let router = Router::new().route(
+        "/chat/completions",
+        post(move || {
+            let rx = rx.lock().unwrap().take().expect("one upstream send");
+            async move {
+                (
+                    [("content-type", "text/event-stream")],
+                    Body::from_stream(futures_util::stream::unfold(rx, |mut rx| async {
+                        rx.recv().await.map(|chunk| (chunk, rx))
+                    })),
+                )
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let mut gate = gateway(Limits::default());
+    let (sink, _, spans) = crate::diagnostics::Sink::memory_signals(crate::LogLevel::Warn);
+    let state = Arc::get_mut(&mut gate.state).unwrap();
+    state.transport = crate::transport::http::HttpTransport::with_environment_proxy(None, false)
+        .unwrap()
+        .with_loopback_authority(&origin);
+    state.diagnostics = Some(sink);
+
+    let frames = frames();
+    input.send(Ok(frames[0].clone())).await.unwrap();
+    input.send(Ok(frames[1].clone())).await.unwrap();
+    let response = bounded(
+        gate.router().oneshot(
+            axum::http::Request::post("/v1/chat/completions")
+                .header(
+                    "authorization",
+                    format!("Bearer {}", crate::tests::support::KEY),
+                )
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"model":"fixture-model","stream":true,
+                    "messages":[{"role":"user","content":"synthetic"}]}"#,
+                ))
+                .unwrap(),
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.status(), 200);
+    let mut body = response.into_body().into_data_stream();
+    let mut received = Vec::new();
+    while !String::from_utf8_lossy(&received).contains("old ") {
+        received.extend_from_slice(&bounded(body.next()).await.unwrap().unwrap());
+    }
+    assert!(!String::from_utf8_lossy(&received).contains("[DONE]"));
+    assert!(
+        spans
+            .get_finished_spans()
+            .unwrap()
+            .iter()
+            .all(|span| span.span_kind != SpanKind::Client),
+        "the client span must remain open after headers and content"
+    );
+
+    input
+        .send(Ok(Bytes::from(
+            [frames[2..].concat(), b"data: [DONE]\n\n".to_vec()].concat(),
+        )))
+        .await
+        .unwrap();
+    drop(input);
+    while let Some(frame) = bounded(body.next()).await {
+        received.extend_from_slice(&frame.unwrap());
+    }
+    server.abort();
+    let _ = server.await;
+    assert_eq!(
+        String::from_utf8_lossy(&received).matches("[DONE]").count(),
+        1
+    );
+
+    let spans = spans.get_finished_spans().unwrap();
+    let [client] = spans
+        .iter()
+        .filter(|span| span.span_kind == SpanKind::Client)
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one client span per send")
+    };
+    let attempt = spans
+        .iter()
+        .find(|span| span.name == "gateway.attempt")
+        .unwrap();
+    assert_eq!(client.parent_span_id, attempt.span_context.span_id());
+    assert_eq!(
+        client.span_context.trace_id(),
+        attempt.span_context.trace_id()
+    );
+    let event = |name: &str| {
+        let events: Vec<_> = attempt
+            .events
+            .iter()
+            .filter(|event| event.name == name)
+            .collect();
+        assert_eq!(events.len(), 1, "{name}");
+        events[0].timestamp
+    };
+    let content = event("gateway.client.first_projected_content");
+    let terminal = event("gateway.upstream.terminal");
+    let validated_eof = event("gateway.upstream.eof");
+    assert!(event("gateway.upstream.headers") <= content);
+    assert!(content <= terminal && terminal <= client.end_time && client.end_time <= validated_eof);
+    assert!(validated_eof <= event("gateway.client.final_handoff"));
 }
 
 #[tokio::test]

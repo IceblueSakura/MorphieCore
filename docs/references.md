@@ -76,6 +76,8 @@ Receiver selection checked **2026-11-14**: official [OpenTelemetry Collector v0.
 
 Historical revisions remain next to the specific dated observations that need them, not in a second version catalog. SDK consumers use `tests/sdk/uv.lock` and `tests/sdk/pi/package-lock.json`; source pins and execution locks are distinct. Passing old scenarios under a new SDK does not accept new protocol semantics.
 
+Indexed development queries use [Grafana LGTM v0.40.0](https://github.com/grafana/docker-otel-lgtm/releases/tag/v0.40.0), `docker.io/grafana/otel-lgtm@sha256:d0591eb23ae2b7abf7817c012a712e4f4bfff5e69cf6afb5875f97e2be3ce26e`. The [datasource configuration](https://github.com/grafana/docker-otel-lgtm/blob/v0.40.0/docker/grafana-datasources.yaml) maps Loki's native trace metadata to Tempo. This pin is for synthetic development verification, not deployment.
+
 ### Recorded protocol artifacts
 
 The source lock also fingerprints four Google protocol artifacts. Exact URLs, SHA-256 values and source dates remain in [sources.lock.json](../tests/upstream/sources.lock.json), not a second hash catalog.

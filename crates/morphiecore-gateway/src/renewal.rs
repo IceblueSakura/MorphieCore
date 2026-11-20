@@ -5,6 +5,42 @@ use super::Gateway;
 use super::startup::credentials::RenewalAccount;
 use opentelemetry::logs::{AnyValue, Severity};
 use tokio::time::{Instant, MissedTickBehavior};
+use tracing::{Dispatch, Instrument, Span, instrument::WithSubscriber};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+struct RenewalTrace {
+    span: Option<Span>,
+    dispatch: Dispatch,
+}
+
+impl RenewalTrace {
+    fn new(sink: Option<&super::diagnostics::Sink>) -> Self {
+        let dispatch = sink.map_or_else(Dispatch::none, |sink| sink.dispatch());
+        let span = sink.map(|_| {
+            tracing::dispatcher::with_default(&dispatch, || {
+                tracing::info_span!(target: "morphiecore.credential", parent: None,
+                    "gateway.credential.renewal", otel.kind = "internal")
+            })
+        });
+        Self { span, dispatch }
+    }
+
+    fn finish(&mut self, outcome: &'static str) {
+        if let Some(span) = self.span.take() {
+            tracing::dispatcher::with_default(&self.dispatch, || {
+                span.set_attribute("morphiecore.outcome", outcome);
+                span.add_event("gateway.credential.caller_finished", vec![]);
+                drop(span);
+            });
+        }
+    }
+}
+
+impl Drop for RenewalTrace {
+    fn drop(&mut self) {
+        self.finish("cancelled");
+    }
+}
 
 impl Gateway {
     pub(super) async fn renew_credentials(&self, storage_tasks: &tokio_util::task::TaskTracker) {
@@ -37,25 +73,36 @@ impl Gateway {
                 return;
             }
             for (account, next_attempt) in &mut accounts {
+                if self.state.shutdown.is_cancelled() {
+                    return;
+                }
                 if Instant::now() < *next_attempt {
                     continue;
                 }
+                let mut trace = RenewalTrace::new(self.state.diagnostics.as_ref());
+                let refresh = account
+                    .binding
+                    .refresh_if_due(policy.oauth_refresh_ahead_seconds, storage_tasks)
+                    .instrument(trace.span.clone().unwrap_or_else(Span::none))
+                    .with_subscriber(trace.dispatch.clone());
                 let result = tokio::select! {
                     biased;
                     _ = self.state.shutdown.cancelled() => return,
                     result = tokio::time::timeout(
                         policy.oauth_renewal_timeout,
-                        account.binding.refresh_if_due(policy.oauth_refresh_ahead_seconds, storage_tasks),
+                        refresh,
                     ) => result,
                 };
-                match result {
+                let outcome = match result {
                     Ok(Ok(true)) => {
                         // Short-lived replacement grants must not cause a refresh storm.
                         *next_attempt = Instant::now() + policy.oauth_minimum_renewal_interval;
+                        "renewed"
                     }
-                    Ok(Ok(false)) => {}
+                    Ok(Ok(false)) => "skipped",
                     Ok(Err(crate::credential::CredentialError::Busy)) => {
                         *next_attempt = Instant::now() + policy.oauth_failed_renewal_delay;
+                        "busy"
                     }
                     failure @ (Ok(Err(_)) | Err(_)) => {
                         // A delay never restores uncertain material; the credential
@@ -99,19 +146,29 @@ impl Gateway {
                             if let Some(name) = &account.name {
                                 attributes.push(("account".into(), AnyValue::from(name.clone())));
                             }
-                            sink.emit(
-                                "gateway.credential.failure",
-                                severity,
-                                attributes,
-                                AnyValue::from(code),
-                            );
+                            tracing::dispatcher::with_default(&trace.dispatch, || {
+                                trace.span.as_ref().expect("renewal span").in_scope(|| {
+                                    sink.emit(
+                                        "gateway.credential.failure",
+                                        severity,
+                                        attributes,
+                                        AnyValue::from(code),
+                                    );
+                                });
+                            });
                         } else {
                             eprintln!(
                                 "OAuth automatic renewal failed; inspect morphiecore-auth status"
                             );
                         }
+                        if code == "oauth.renewal_timeout" {
+                            "timeout"
+                        } else {
+                            "failed"
+                        }
                     }
-                }
+                };
+                trace.finish(outcome);
             }
             #[cfg(test)]
             self.state.oauth_scan_complete.notify_waiters();
