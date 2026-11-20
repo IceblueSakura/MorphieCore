@@ -6,7 +6,7 @@
 //! on loopback; pure codec layers never read private configuration.
 
 pub mod account;
-pub mod adapter;
+pub use protocol::adapter;
 pub mod configuration;
 pub mod credential;
 pub mod execution;

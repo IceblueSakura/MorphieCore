@@ -176,7 +176,7 @@ async fn prepare_attempt<'r>(
     let mut prepared = conversion.value;
     if let Some(grant) = grant {
         prepared.safe_headers.extend(
-            crate::provider::subscription::headers(candidate.provider.auth, &grant)
+            crate::credential::subscription::headers(candidate.provider.auth, &grant)
                 .map_err(|_| ApiError::upstream())?,
         );
     }

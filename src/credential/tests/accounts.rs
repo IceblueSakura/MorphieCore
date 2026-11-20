@@ -73,7 +73,7 @@ fn named_oauth_accounts_keep_distinct_principals_and_network_free_borrowing() {
     let grant = second.borrow().unwrap();
     assert_eq!(grant.access.expose(), "synthetic-second");
     assert!(
-        crate::provider::subscription::headers(
+        crate::credential::subscription::headers(
             crate::provider::AuthScheme::OAuthBearer("grok"),
             &grant
         )

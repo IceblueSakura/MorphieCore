@@ -3,8 +3,8 @@
 //! Enforces bounded memory and event consumption across upstream and downstream
 //! SSE event streams without socket I/O or protocol wire grammar dependencies.
 use crate::{
-    protocol::CodecError, semantic::task::generation::MAX_TOTAL_BYTES,
-    transport::sse::SseDecodeError,
+    protocol::{CodecError, sse::SseDecodeError},
+    semantic::task::generation::MAX_TOTAL_BYTES,
 };
 
 /// Last complete source frame, not necessarily the frame causing a framing/EOF error.

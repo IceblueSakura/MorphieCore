@@ -678,7 +678,7 @@ fn siwc_inference_headers_do_not_reuse_product_metadata() {
         },
     };
     assert_eq!(
-        crate::provider::subscription::headers(
+        crate::credential::subscription::headers(
             crate::provider::AuthScheme::OAuthBearer("openai"),
             &grant
         )

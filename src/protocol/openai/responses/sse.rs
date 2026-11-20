@@ -10,13 +10,13 @@ use crate::{
             events::{EventDecoder, EventEncoder},
             obfuscation::{Obfuscation, charge_padding, pad_payload},
         },
+        sse::{SseDecoder, SseEvent},
         stream::{SseError, SseLimits, validate_http},
     },
     semantic::{
         task::generation::*,
         value::{ReplayOrigin, json_size},
     },
-    transport::sse::{SseDecoder, SseEvent},
 };
 use bytes::Bytes;
 use serde_json::{Value, json};

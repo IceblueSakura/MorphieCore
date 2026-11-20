@@ -169,24 +169,7 @@ impl std::fmt::Display for DeliveryReason {
     }
 }
 
-#[derive(Clone, Eq, PartialEq)]
-pub struct UpstreamRequest {
-    pub origin: String,
-    pub method: &'static str,
-    pub path: String,
-    pub safe_headers: Vec<(String, String)>,
-    pub auth_header: (String, String),
-    pub body: Vec<u8>,
-}
-impl std::fmt::Debug for UpstreamRequest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("UpstreamRequest")
-            .field("method", &self.method)
-            .field("auth", &"[redacted]")
-            .field("body_bytes", &self.body.len())
-            .finish_non_exhaustive()
-    }
-}
+pub use crate::transport::http::UpstreamRequest;
 
 pub fn admit(public: &PublicModel, request: &Request) -> Result<(), AttemptError> {
     if public.id.as_str() != request.model {

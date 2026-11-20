@@ -3,12 +3,31 @@
 #[cfg(test)]
 #[path = "http_tests.rs"]
 mod tests;
-use crate::execution::UpstreamRequest;
 use reqwest::{
     Client, Response,
     header::{HeaderName, HeaderValue},
 };
 use std::time::Duration;
+/// Prepared trusted upstream request handed to HTTP transport.
+#[derive(Clone, Eq, PartialEq)]
+pub struct UpstreamRequest {
+    pub origin: String,
+    pub method: &'static str,
+    pub path: String,
+    pub safe_headers: Vec<(String, String)>,
+    pub auth_header: (String, String),
+    pub body: Vec<u8>,
+}
+impl std::fmt::Debug for UpstreamRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UpstreamRequest")
+            .field("method", &self.method)
+            .field("auth", &"[redacted]")
+            .field("body_bytes", &self.body.len())
+            .finish_non_exhaustive()
+    }
+}
+
 /// Safe transport facts. No URL, header value or third-party error text is retained.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum TransportError {

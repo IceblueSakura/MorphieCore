@@ -11,6 +11,7 @@ use crate::{
         CodecError, DecodedResponse, ResponseMetadata,
         fidelity::FidelityRecords,
         native::ReplayTarget,
+        sse::SseDecoder,
         stream::{SseError, SseLimits},
     },
     semantic::{
@@ -18,7 +19,6 @@ use crate::{
         task::generation::*,
         value::{JsonLimits, Text, parse_json},
     },
-    transport::sse::SseDecoder,
 };
 use serde_json::{Map, Value};
 

@@ -2,4 +2,4 @@
 //! prepared trusted targets/headers/body and never chooses semantic policy.
 
 pub mod http;
-pub mod sse;
+pub use crate::protocol::sse;

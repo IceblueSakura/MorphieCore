@@ -6,6 +6,7 @@ use crate::protocol::failure::{RecognitionBasis, ShapeReason, SourceFailureEvide
 use crate::{
     protocol::{
         CodecError,
+        sse::{SseDecoder, SseEvent},
         stream::{SseError, SseLimits},
     },
     semantic::{
@@ -14,7 +15,6 @@ use crate::{
         },
         value::{JsonLimits, parse_json},
     },
-    transport::sse::{SseDecoder, SseEvent},
 };
 struct OpenBlock {
     block: Block,

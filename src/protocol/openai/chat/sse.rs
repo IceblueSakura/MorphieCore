@@ -9,13 +9,13 @@ use crate::{
             events::{EventDecoder, EventEncoder},
             obfuscation::{Obfuscation, charge_padding, pad_payload},
         },
+        sse::{SseDecoder, SseEvent},
         stream::{SseError, SseLimits, validate_http},
     },
     semantic::{
         context::StreamOptions,
         task::generation::{EventError, MAX_TOTAL_BYTES, StreamEvent},
     },
-    transport::sse::{SseDecoder, SseEvent},
 };
 use bytes::Bytes;
 

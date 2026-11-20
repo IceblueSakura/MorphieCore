@@ -3,6 +3,7 @@
 //! owner-local fidelity. No module here selects routes or performs network I/O.
 
 // Generation wire boundaries.
+pub mod adapter;
 pub mod anthropic;
 pub mod google;
 pub mod openai;
@@ -35,6 +36,7 @@ pub mod image;
 pub mod image_constraints;
 pub(crate) mod json;
 pub mod speech;
+pub mod sse;
 pub mod stream;
 pub mod transcription;
 

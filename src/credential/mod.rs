@@ -3,6 +3,7 @@ mod api_key;
 pub mod drivers;
 mod oauth;
 mod storage;
+pub mod subscription;
 #[cfg(test)]
 mod tests;
 pub use api_key::{ApiKeyAccess, ApiKeyState, ApiKeyStatus};

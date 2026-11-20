@@ -173,7 +173,7 @@ impl ApiError {
         observed_http: bool,
     ) -> (Self, SourceFailureEvidence) {
         let (recovery, source) =
-            crate::provider::errors::classify_source(provider, status, source, observed_http);
+            crate::execution::failure::classify_source(provider, status, source, observed_http);
         let mut error = Self::classified(status, source.kind, retry_after);
         error.recovery = recovery;
         (error, source)
@@ -185,16 +185,16 @@ impl ApiError {
     pub fn failure(status: u16, body: &[u8], retry_after: Option<u64>) -> Self {
         Self::classified(
             status,
-            crate::provider::classify_failure(status, body),
+            crate::protocol::failure::classify_failure(status, body),
             retry_after,
         )
     }
     pub(super) fn classified(
         status: u16,
-        kind: crate::provider::SourceFailureKind,
+        kind: crate::protocol::failure::SourceFailureKind,
         retry_after: Option<u64>,
     ) -> Self {
-        use crate::provider::SourceFailureKind;
+        use crate::protocol::failure::SourceFailureKind;
         let mut error = match kind {
             SourceFailureKind::ContextOverflow => {
                 Self::new(StatusCode::BAD_REQUEST, ErrorKind::ContextOverflow)
