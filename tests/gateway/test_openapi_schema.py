@@ -23,6 +23,31 @@ DOCUMENT = json.loads(
 SCHEMAS = DOCUMENT["components"]["schemas"]
 
 
+def reference_tokens(pointer):
+    if not pointer.startswith("#/"):
+        raise ValueError(f"expected a local reference: {pointer}")
+    return tuple(part.replace("~1", "/").replace("~0", "~")
+                 for part in pointer[2:].split("/"))
+
+
+def references(value):
+    if isinstance(value, dict):
+        if "$ref" in value:
+            yield reference_tokens(value["$ref"])
+        for child in value.values():
+            yield from references(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from references(child)
+
+
+def resolve_reference(tokens):
+    target = DOCUMENT
+    for part in tokens:
+        target = target[int(part)] if isinstance(target, list) else target[part]
+    return target
+
+
 def validator(name):
     return Draft202012Validator({
         "$ref": f"#/components/schemas/{name}",
@@ -159,20 +184,20 @@ class OpenApiSchemaTests(unittest.TestCase):
     def test_all_component_schemas_and_local_references_are_valid(self):
         for schema in SCHEMAS.values():
             Draft202012Validator.check_schema(schema)
-        def visit(value):
-            if isinstance(value, dict):
-                if "$ref" in value:
-                    self.assertTrue(value["$ref"].startswith("#/"))
-                    target = DOCUMENT
-                    for part in value["$ref"][2:].split("/"):
-                        target = target[part.replace("~1", "/").replace("~0", "~")]
-                    self.assertIsInstance(target, dict)
-                for child in value.values():
-                    visit(child)
-            elif isinstance(value, list):
-                for child in value:
-                    visit(child)
-        visit(DOCUMENT)
+        for tokens in references(DOCUMENT):
+            self.assertIsInstance(resolve_reference(tokens), dict)
+
+    def test_component_schemas_are_reachable_from_public_paths(self):
+        pending = list(references(DOCUMENT["paths"]))
+        visited = set()
+        while pending:
+            tokens = pending.pop()
+            if tokens not in visited:
+                visited.add(tokens)
+                pending.extend(references(resolve_reference(tokens)))
+        reachable = {tokens[2] for tokens in visited
+                     if tokens[:2] == ("components", "schemas") and len(tokens) >= 3}
+        self.assertEqual(set(SCHEMAS) - reachable, set(), "unreachable public schemas")
 
 
 class EmbeddingSchemaTests(unittest.TestCase):

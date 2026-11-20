@@ -68,7 +68,7 @@ The pinned OpenAI Python SDK's strict response model still types `embedding` as 
 
 ### Generation Text model discovery
 
-Use the ordinary gateway Agent key with `GET /v1/morphiecore/models`, or append a public model ID for one descriptor. The enhanced view includes only activated Generation Text interfaces (`chat_completions`, `responses`, `messages`), with assessed image-input domains where applicable. Standard `/v1/models` remains unchanged; Generation capabilities share the same compiled contract. Other-task discovery schemas are defined but not published or wired to Pi.
+Use the ordinary gateway Agent key with `GET /v1/morphiecore/models`, or append a public model ID for one descriptor. The enhanced view includes only activated Generation Text interfaces (`chat_completions`, `responses`, `messages`), with assessed image-input domains where applicable. Standard `/v1/models` remains unchanged; Generation capabilities share the same compiled contract. Other-task discovery is [deferred](../roadmap/backlog-and-frozen.md#models-discovery-interfaces).
 
 List responses use `object: "morphiecore.model_list"` with an array in `data`; retrieval uses `object: "morphiecore.model"` with the same descriptor in `data`.
 
@@ -93,8 +93,6 @@ Do not combine domains into an unsupported cross-product.
 Pi Responses needs inline PNG/JPEG/WebP/GIF with explicit `auto` at both placements; user-image support alone is insufficient.
 
 Audio/video/document inputs and non-text output are not assessed by this runtime view.
-
-OpenAPI's `ModelDiscoveryInterface` is the schema-only task union for future consumers: Embedding, Decision, image generation/editing, speech synthesis, transcription/translation, Video and Realtime. The active `TextModelDescriptor` deliberately does not reference that union. No other-task entries, endpoints, client adapters or "planned" model placeholders are added by those definitions.
 
 Read capability `state`, not just field presence:
 

@@ -10,7 +10,7 @@ This plan tracks the code-first refactor: enforce layer boundaries, move model p
 | 1. Dependency boundaries | Landed | No blocker for Phase 2 |
 | 2. Projection and catalog | Complete for the selected scope; offline baseline and stateless SDK loopbacks passed | Installed-client and real-Provider qualification remain separate |
 | 3. Tests and observability | Complete on synthetic development evidence | No deployment or new API activation |
-| 4. Documentation | No task complete; routes already match by inspection | Add independent gates and consolidate documentation after code boundaries settle |
+| 4. Documentation | Public contract reconciled | Consolidate documentation and add the offline documentation gate |
 
 ## Phase 0 — Cleanup (landed)
 
@@ -85,9 +85,8 @@ The completion criteria cover instrumentation of existing operations only. [Arch
 
 ### Task 4.1 — Reconcile the public contract
 
-- **Current:** [OpenAPI](openapi.json) has 19 of 63 component schemas unreachable from `paths`: 16 future discovery schemas and three stored Responses schemas. Its 14 paths and 16 explicit operations already match [Axum registrations](../crates/morphiecore-gateway/src/ingress/http.rs) by inspection. The [Python schema suite](../tests/gateway/test_openapi_schema.py) checks reference validity but not reachability or exact route parity.
-- **Remaining:** Delete unreachable schemas and update the [API reference](usage/api-reference.md); retain active discovery and explicit stateful denials. Add a transitive-reference check and two-way parity using an inventory tied to actual route registration; do not presume Axum can enumerate a built `Router`, or a probe of only documented routes can detect extras. Count explicit methods, not implicit `HEAD` or fallback behavior. Check the public example against the current schema and resource validation without resolving private credential state. An example can legitimately choose a non-default value.
-- **Exit:** Run the OpenAPI Python checks and affected gateway route/config tests.
+- [OpenAPI](openapi.json) contains only schemas transitively reachable from public operations; the [schema suite](../tests/gateway/test_openapi_schema.py) checks the reference graph. The [Axum registrations](../crates/morphiecore-gateway/src/ingress/http.rs) check explicit method/path parity in both directions. Active discovery and explicit stateful denials remain.
+- The public service example passes the production schema and resource validation in a test-owned directory without resolving credentials.
 
 ### Task 4.2 — Consolidate the document set
 

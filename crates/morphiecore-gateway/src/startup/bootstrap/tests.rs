@@ -6,6 +6,21 @@ use crate::protocol::{
 };
 
 #[test]
+fn gateway_example_passes_service_schema_and_resource_validation() {
+    let directory = morphiecore_test_support::filesystem::private_directory();
+    let path = directory.path().join("gateway.json");
+    write_private(
+        &path,
+        include_bytes!("../../../../../config/gateway.example.json"),
+    );
+    let configuration = read_service_configuration(&path).unwrap();
+    configuration.limits().validate().unwrap();
+    if let Some(diagnostics) = configuration.diagnostics {
+        diagnostics.validate().unwrap();
+    }
+}
+
+#[test]
 fn public_alias_preserves_canonical_identity_and_upstream_model() {
     let boot = Fixture::new(
         service(),

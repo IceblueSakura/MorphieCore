@@ -99,6 +99,22 @@ fn relative(parent: &Path, path: &Path) -> Result<PathBuf, StartupError> {
 }
 use crate::configuration::read as read_configuration;
 
+fn read_service_configuration(path: &Path) -> Result<Configuration, StartupError> {
+    let configuration: Configuration = read_configuration(path, "gateway")?;
+    if configuration.version != 1 {
+        return Err(crate::configuration::ConfigurationError::new(
+            "gateway",
+            "version",
+            "expected schema version 1",
+        )
+        .into());
+    }
+    if !configuration.bind.ip().is_loopback() {
+        return Err(StartupError::Listener);
+    }
+    Ok(configuration)
+}
+
 pub struct Bootstrap {
     pub gateway: Gateway,
     pub listen: SocketAddr,
@@ -146,18 +162,7 @@ impl Bootstrap {
         environment: bool,
         activate: bool,
     ) -> Result<Self, StartupError> {
-        let configuration: Configuration = read_configuration(path, "gateway")?;
-        if configuration.version != 1 {
-            return Err(crate::configuration::ConfigurationError::new(
-                "gateway",
-                "version",
-                "expected schema version 1",
-            )
-            .into());
-        }
-        if !configuration.bind.ip().is_loopback() {
-            return Err(StartupError::Listener);
-        }
+        let configuration = read_service_configuration(path)?;
         let parent = path.parent().unwrap_or(Path::new("."));
         let auth: AuthConfiguration =
             read_configuration(&relative(parent, &configuration.auth_file)?, "auth")?;

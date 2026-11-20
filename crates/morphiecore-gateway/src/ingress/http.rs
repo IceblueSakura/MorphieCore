@@ -9,7 +9,7 @@ use axum::{
     http::StatusCode,
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::MethodRouter,
 };
 use std::{
     future::{Future, IntoFuture},
@@ -17,45 +17,74 @@ use std::{
 };
 use tokio::net::TcpListener;
 use tracing::{Instrument, instrument::WithSubscriber};
+
+// The same declarations register handlers and expose explicit methods to the
+// OpenAPI parity test. Axum's implicit HEAD and fallbacks are not operations.
+macro_rules! public_routes {
+    ($consume:ident) => {
+        $consume! {
+            "/v1/morphiecore/capabilities" => get(crate::ingress::capabilities::retrieve);
+            "/v1/models" => get(crate::ingress::models::list);
+            "/v1/morphiecore/models" => get(crate::ingress::discovery::list);
+            "/v1/morphiecore/models/{model}" => get(crate::ingress::discovery::retrieve);
+            "/v1/models/{model}" => get(crate::ingress::models::retrieve), delete(crate::ingress::models::delete);
+            "/v1/chat/completions" => post(chat);
+            "/v1/responses" => post(responses);
+            "/v1/responses/{response_id}" => get(reject_stateful), delete(reject_stateful);
+            "/v1/responses/{response_id}/input_items" => get(reject_stateful);
+            "/v1/messages" => post(messages);
+            "/v1/embeddings" => post(crate::tasks::embeddings::handle);
+            "/v1/images/generations" => post(crate::tasks::images::handle);
+            "/v1/audio/speech" => post(crate::tasks::speech::handle);
+            "/v1/audio/transcriptions" => post(crate::tasks::transcription::handle);
+        }
+    };
+}
+
+fn routes() -> Router<Arc<Runtime>> {
+    macro_rules! register {
+        ($($path:literal => $($method:ident($handler:path)),+;)+) => {
+            Router::new()$(.route($path, MethodRouter::new()$(.$method($handler))+))+
+        };
+    }
+    public_routes!(register)
+}
+
+#[test]
+fn public_routes_match_openapi_in_both_directions() {
+    use std::collections::BTreeSet;
+
+    macro_rules! explicit_operations {
+        ($($path:literal => $($method:ident($handler:path)),+;)+) => {
+            [$($(($path, stringify!($method)),)+)+]
+        };
+    }
+    let registered = BTreeSet::from(public_routes!(explicit_operations));
+    let doc: serde_json::Value =
+        serde_json::from_str(include_str!("../../../../docs/openapi.json")).unwrap();
+    let mut documented = BTreeSet::new();
+    for (path, item) in doc["paths"].as_object().unwrap() {
+        for method in [
+            "get", "put", "post", "delete", "options", "head", "patch", "trace",
+        ] {
+            if item.get(method).is_some() {
+                documented.insert((path.as_str(), method));
+            }
+        }
+    }
+    assert_eq!(
+        registered,
+        documented,
+        "missing from OpenAPI: {:?}; not registered: {:?}",
+        registered.difference(&documented).collect::<Vec<_>>(),
+        documented.difference(&registered).collect::<Vec<_>>(),
+    );
+}
+
 impl Gateway {
     /// Embedding callers own listener security; `serve` enforces loopback itself.
     pub fn router(&self) -> Router {
-        Router::new()
-            .route(
-                "/v1/morphiecore/capabilities",
-                get(crate::ingress::capabilities::retrieve),
-            )
-            .route("/v1/models", get(crate::ingress::models::list))
-            .route(
-                "/v1/morphiecore/models",
-                get(crate::ingress::discovery::list),
-            )
-            .route(
-                "/v1/morphiecore/models/{model}",
-                get(crate::ingress::discovery::retrieve),
-            )
-            .route(
-                "/v1/models/{model}",
-                get(crate::ingress::models::retrieve).delete(crate::ingress::models::delete),
-            )
-            .route("/v1/chat/completions", post(chat))
-            .route("/v1/responses", post(responses))
-            .route(
-                "/v1/responses/{response_id}",
-                get(reject_stateful).delete(reject_stateful),
-            )
-            .route(
-                "/v1/responses/{response_id}/input_items",
-                get(reject_stateful),
-            )
-            .route("/v1/messages", post(messages))
-            .route("/v1/embeddings", post(crate::tasks::embeddings::handle))
-            .route("/v1/images/generations", post(crate::tasks::images::handle))
-            .route("/v1/audio/speech", post(crate::tasks::speech::handle))
-            .route(
-                "/v1/audio/transcriptions",
-                post(crate::tasks::transcription::handle),
-            )
+        routes()
             .fallback(|uri: axum::http::Uri| async move {
                 ingress_error(
                     uri.path(),
