@@ -57,6 +57,10 @@ impl UpstreamAdapter {
         if self == Self::Xiaomi {
             return !capabilities.speed
                 && capabilities
+                    .voices
+                    .iter()
+                    .all(|voice| crate::xiaomi_audio::VOICES.contains(&voice.as_str()))
+                && capabilities
                     .formats
                     .iter()
                     .all(|f| crate::xiaomi_audio::FORMATS.contains(f));

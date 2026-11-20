@@ -779,7 +779,6 @@
       "profile": "xiaomi",
       "model": "mimo-v2.5-tts",
       "upstream": "mimo-v2.5-tts",
-      "voices": ["mimo_default", "冰糖", "茉莉", "苏打", "白桦", "Mia", "Chloe", "Milo", "Dean"],
       "released_at": 1776902400,
       "developer": "Xiaomi"
     },

@@ -24,6 +24,18 @@ pub struct GoogleBinding {
 }
 
 impl GoogleBinding {
+    pub(super) fn endpoint_ids(&self) -> Result<(EndpointId, EndpointId), TopologyError> {
+        let endpoint = |suffix| {
+            EndpointId::new(&format!("google-{}-{suffix}", self.model))
+                .map_err(|_| TopologyError::InvalidModelBinding)
+        };
+        Ok((endpoint("generate-content")?, endpoint("interactions")?))
+    }
+    pub(super) fn route_id(&self) -> Result<RouteId, TopologyError> {
+        RouteId::new(&format!("google-{}", self.model))
+            .map_err(|_| TopologyError::InvalidModelBinding)
+    }
+
     pub fn credential(&self) -> CredentialBindingId {
         CredentialBindingId::new(self.provider().id.as_str()).expect("catalog Provider identity")
     }
@@ -63,8 +75,7 @@ impl GoogleBinding {
             .expect("static path");
         Endpoint {
             bound_replay_scope: None,
-            id: EndpointId::new(&format!("google-{}-generate-content", self.model))
-                .expect("static id"),
+            id: self.endpoint_ids().expect("validated Google endpoints").0,
             provider: provider.id,
             target: EndpointTarget {
                 origin: provider.origin,
@@ -98,9 +109,11 @@ impl GoogleBinding {
         }
     }
     pub fn route(&'static self) -> Route {
+        let (generate_content, interactions) =
+            self.endpoint_ids().expect("validated Google endpoints");
         Route {
-            id: RouteId::new(&format!("google-{}", self.model)).expect("static route"),
-            endpoints: vec![self.endpoint().id, self.interactions_endpoint().id],
+            id: self.route_id().expect("validated Google route"),
+            endpoints: vec![generate_content, interactions],
             policy: RoutePolicy {
                 candidates: CandidatePolicy::SkipUnrepresentable,
                 ..RoutePolicy::default()
@@ -109,8 +122,7 @@ impl GoogleBinding {
     }
     pub fn interactions_endpoint(&'static self) -> Endpoint {
         let mut endpoint = self.endpoint();
-        endpoint.id =
-            EndpointId::new(&format!("google-{}-interactions", self.model)).expect("static id");
+        endpoint.id = self.endpoint_ids().expect("validated Google endpoints").1;
         endpoint.protocol = GenerationProtocol::GoogleInteractions;
         endpoint.target.path = self
             .provider()
@@ -133,7 +145,7 @@ impl GoogleBinding {
         PublicModel::new(
             model.clone(),
             model,
-            self.route().id,
+            self.route_id().expect("validated Google route"),
             self.accepted_contract(),
         )
     }

@@ -1,16 +1,12 @@
 //! Resolve conditional strictness on a private request without rewriting supplied schemas.
 use super::RepresentationError;
-use crate::{
-    conversion::generation::{Change, ConversionBoundary, Effect, Field},
-    openai::strict_schema,
-    semantic::task::generation::*,
-};
+use crate::{openai::strict_schema, semantic::task::generation::*};
 
 pub fn project(
     request: &GenerationRequest,
     strict_carrier: impl Fn(&SchemaDocument) -> bool,
     fits_request: impl Fn(&GenerationRequest) -> bool,
-) -> Result<Option<(GenerationRequest, Vec<Effect>)>, RepresentationError> {
+) -> Result<Option<(GenerationRequest, bool)>, RepresentationError> {
     if !request.function_tools().any(is_conditional) {
         return Ok(None);
     }
@@ -50,17 +46,7 @@ pub fn project(
         // including inline additions. Explicit guarantees remain unchanged.
         (projected, loss) = resolve_request(true)?;
     }
-    let effects = if loss {
-        vec![Effect::new(
-            "openai.omit-conditional-tool-strictness.v1",
-            Field::Tools,
-            ConversionBoundary::RequestProject,
-            Change::Omit,
-        )]
-    } else {
-        vec![]
-    };
-    Ok(Some((projected, effects)))
+    Ok(Some((projected, loss)))
 }
 
 fn is_conditional(tool: &FunctionTool) -> bool {

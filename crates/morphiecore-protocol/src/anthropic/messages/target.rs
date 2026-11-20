@@ -6,8 +6,44 @@ use crate::{
     cache::CacheTargetPolicy,
     failure::CarrierReason,
     native::{ReplayTarget, normalize_stateless_defaults},
-    semantic::context::ExecutionHints,
+    semantic::{
+        context::ExecutionHints,
+        task::generation::{GenerationRequest, Item, ReplayFormat},
+    },
 };
+
+pub(crate) fn check_signed_configuration_prefix(
+    source: &GenerationRequest,
+    projected: &GenerationRequest,
+) -> Result<(), CodecError> {
+    let mut changed_prefix = false;
+    for (id, item) in source.items() {
+        match item {
+            Item::ConfigurationUpdate(_) => {
+                changed_prefix |= !projected
+                    .items()
+                    .iter()
+                    .any(|(owner, projected)| owner == id && projected == item);
+            }
+            Item::Reasoning(reasoning)
+                if changed_prefix
+                    && reasoning.replay.as_ref().is_some_and(|value| {
+                        matches!(
+                            value.format(),
+                            ReplayFormat::AnthropicMessagesThinking
+                                | ReplayFormat::AnthropicMessagesRedactedThinking
+                        )
+                    }) =>
+            {
+                // A message-local marker belongs to subsequent thinking's prefix.
+                // A root-parameter change alone does not invalidate that prefix.
+                return Err(CodecError::Unsupported(CarrierReason::Reasoning));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
 
 /// Beta names for the carriers present in an encoded request.
 fn betas(body: &serde_json::Value) -> Vec<&'static str> {

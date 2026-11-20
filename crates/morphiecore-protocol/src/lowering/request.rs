@@ -156,7 +156,9 @@ impl<'a> Target<'a> {
             Self::OpenAi(GenerationApi::Responses, c)
                 if c.adaptation.rules.reasoning.qwen4_responses_reasoning =>
             {
-                Presentation::ExplicitAuto
+                Presentation::ExplicitAuto {
+                    unsupported: "Qwen4 Responses only supports explicit automatic reasoning summaries",
+                }
             }
             Self::OpenAi(GenerationApi::Responses, c)
                 if c.adaptation.rules.reasoning.deepseek_responses_reasoning =>
@@ -380,10 +382,7 @@ impl<'a> Target<'a> {
                         MessagePhase,
                         Disposition::Omit(super::disposition::OMIT_PHASE),
                     );
-                    table.set(
-                        ConditionalToolStrictness,
-                        Disposition::Approximate(super::disposition::CONDITIONAL_STRICTNESS),
-                    );
+                    omit(&mut table, ConditionalToolStrictness);
                 } else {
                     table.set(MessagePhase, Disposition::Native);
                 }
@@ -444,10 +443,7 @@ impl<'a> Target<'a> {
                     MessagePhase,
                     Disposition::Omit(super::disposition::OMIT_PHASE),
                 );
-                table.set(
-                    ConditionalToolStrictness,
-                    Disposition::Approximate(super::disposition::CONDITIONAL_STRICTNESS),
-                );
+                omit(&mut table, ConditionalToolStrictness);
                 table.set(
                     ToolChanges,
                     if c.dispositions.native(ToolChanges) {
@@ -547,12 +543,6 @@ impl<'a> Target<'a> {
                 super::disposition::unsupported(Effort)
             },
         );
-        if matches!(table.get(ConditionalToolStrictness), Disposition::Omit(_)) {
-            table.set(
-                ConditionalToolStrictness,
-                Disposition::Approximate(super::disposition::CONDITIONAL_STRICTNESS),
-            );
-        }
         if matches!(self, Target::GenerateContent(_) | Target::Interactions(_))
             && source.tool_choice() == Some(&crate::semantic::task::generation::ToolChoice::None)
         {
@@ -1066,11 +1056,9 @@ fn project_semantic_with_table<'a>(
         semantic = Cow::Owned(crate::native::group_client_history(&semantic, true)?);
     }
     semantic = semantic_projection::relax_tool_strictness(semantic, table, &mut evidence)?;
-    if matches!(
-        table.get(Feature::ConditionalToolStrictness),
-        Disposition::Approximate(_)
-    ) && !(matches!(target, Target::GenerateContent(_) | Target::Interactions(_))
-        && semantic.tool_choice() == Some(&ToolChoice::None))
+    if let Disposition::Omit(rule) = table.get(Feature::ConditionalToolStrictness)
+        && !(matches!(target, Target::GenerateContent(_) | Target::Interactions(_))
+            && semantic.tool_choice() == Some(&ToolChoice::None))
     {
         let resolved = crate::openai::lowering::strictness::project(
             &semantic,
@@ -1095,10 +1083,10 @@ fn project_semantic_with_table<'a>(
                 _ => true,
             },
         )?;
-        if let Some((copy, effects)) = resolved {
+        if let Some((copy, omitted)) = resolved {
             semantic = Cow::Owned(copy);
-            for effect in effects {
-                evidence.push(effect);
+            if omitted {
+                evidence.push(rule.effect(ConversionBoundary::RequestProject));
             }
         }
     }
@@ -1140,8 +1128,11 @@ fn project_semantic_with_table<'a>(
             evidence.push(rule.effect(ConversionBoundary::RequestProject));
         }
     }
-    let semantic =
-        semantic_projection::finish(semantic, source, table, &mut evidence, controls.reasoning)?;
+    let semantic = semantic_projection::project_tool_result_errors(semantic, table, &mut evidence)?;
+    crate::anthropic::messages::check_signed_configuration_prefix(source, &semantic)?;
+    controls
+        .reasoning
+        .record(source, &semantic, &mut evidence)?;
     Ok(Conversion {
         value: semantic,
         evidence,
@@ -1490,6 +1481,38 @@ fn with_schema_name(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn conditional_strictness_projection_reports_its_declared_omission() {
+        use crate::conversion::generation::{Change, Field};
+        let codec = crate::openai::GenerationCodec::new(
+            GenerationApi::Responses,
+            crate::openai::Dialect::Standard,
+            None,
+        );
+        let source = codec
+            .decode_request(
+                br#"{"model":"m","input":"hello","tools":[
+                    {"type":"function","name":"lookup","parameters":{"type":"object"}}]}"#,
+            )
+            .unwrap();
+        let source = &source.task.semantic;
+        let contract = OpenAiContract::full();
+        let target = Target::OpenAi(GenerationApi::Chat, &contract);
+        let disposition = target.table(source).get(Feature::ConditionalToolStrictness);
+        let Disposition::Omit(rule) = disposition else {
+            panic!("conditional strictness should be an omission, got {disposition:?}");
+        };
+        let output = project_semantic(source, target).unwrap();
+        let effect = output
+            .evidence
+            .iter()
+            .find(|effect| effect.rule() == "openai.omit-conditional-tool-strictness.v1")
+            .expect("omission receipt");
+        assert_eq!(effect.change(), Change::Omit);
+        assert_eq!(effect.semantic_field(), Field::Tools);
+        assert_eq!(effect, &rule.effect(ConversionBoundary::RequestProject));
+    }
 
     fn messages(body: serde_json::Value) -> Request {
         crate::adapter::ClientAdapter::Messages

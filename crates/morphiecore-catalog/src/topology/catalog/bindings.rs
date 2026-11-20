@@ -88,7 +88,7 @@ pub struct ApiKeyBinding {
     #[serde(default)]
     pub(super) wire_overrides: Box<[(GenerationProtocol, super::data::WireOverrides)]>,
 }
-use super::{GENERATION_REQUEST_BYTES, GENERATION_RESPONSE_BYTES, GENERATION_TIMEOUT_MS, models};
+use super::{GENERATION_REQUEST_BYTES, GENERATION_RESPONSE_BYTES, GENERATION_TIMEOUT_MS, data};
 use crate::{
     protocol::openai::{GenerationCodec, TargetContract},
     provider::{CredentialBindingId, CredentialKind},
@@ -113,7 +113,7 @@ impl ApiKeyBinding {
                 .expect("static id"),
             contract: self
                 .public_slice
-                .apply(models::contract(self.canonical_model)),
+                .apply(data::openai_model_contract(self.canonical_model)),
         }
     }
     pub fn endpoint(&self, protocol: GenerationProtocol) -> Result<Endpoint, TopologyError> {
@@ -185,7 +185,7 @@ impl ApiKeyBinding {
             },
             dispositions: self
                 .endpoint_slice
-                .apply(models::contract(self.canonical_model))
+                .apply(data::openai_model_contract(self.canonical_model))
                 .with_native(crate::semantic::task::generation::Feature::Identity, false)
                 .with_native(crate::semantic::task::generation::Feature::Metadata, false)
                 .with_native(

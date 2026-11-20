@@ -470,7 +470,7 @@ pub const OMIT_PHASE: Rule = Rule::new(
 pub const CONDITIONAL_STRICTNESS: Rule = Rule::new(
     "openai.omit-conditional-tool-strictness.v1",
     Field::Tools,
-    Change::Approximate,
+    Change::Omit,
 );
 pub const BAILIAN_RELAX_STRICTNESS: Rule = Rule::new(
     "bailian.relax-function-strictness.v1",
@@ -697,11 +697,7 @@ pub fn unsupported(feature: Feature) -> Disposition {
             Field::Sampling,
             Change::Omit,
         )),
-        Feature::ConditionalToolStrictness => Disposition::Omit(Rule::new(
-            "generation.omit-conditional-tool-strictness.v1",
-            Field::Tools,
-            Change::Omit,
-        )),
+        Feature::ConditionalToolStrictness => Disposition::Omit(CONDITIONAL_STRICTNESS),
         Feature::Metadata => Disposition::Omit(Rule::new(
             "generation.omit-metadata.v1",
             Field::ResponseMetadata,

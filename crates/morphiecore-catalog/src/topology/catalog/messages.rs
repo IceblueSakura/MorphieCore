@@ -120,8 +120,7 @@ impl MessagesBinding {
             },
         }
     }
-    pub fn public_model(&self) -> PublicModel {
-        let model = ModelId::new(self.model).expect("static model");
+    pub(super) fn public_contract(&self) -> Dispositions {
         let mut contract = Profile::AdaptiveTextTools.semantic_contract();
         // Accepted cross-protocol projection, not native Messages carriers.
         contract.set_native(
@@ -129,7 +128,16 @@ impl MessagesBinding {
             true,
         );
         contract.set_native(crate::semantic::task::generation::Feature::TopP, true);
-        PublicModel::new(model.clone(), model, self.route().id, contract)
+        contract
+    }
+    pub fn public_model(&self) -> PublicModel {
+        let model = ModelId::new(self.model).expect("static model");
+        PublicModel::new(
+            model.clone(),
+            model,
+            self.route().id,
+            self.public_contract(),
+        )
     }
     pub fn canonical_model(&self) -> CanonicalModel {
         let mut contract = haiku_contract(Profile::AdaptiveTextTools.semantic_contract());

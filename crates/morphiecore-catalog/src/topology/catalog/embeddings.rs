@@ -8,6 +8,7 @@ use crate::{
     semantic::task::embedding::TokenizerScope,
     topology::{
         EndpointId, EndpointTarget, ExecutionContract, ModelId, ModelMetadata, RouteId,
+        TopologyError,
         embeddings::{EmbeddingEndpoint, EmbeddingRoute, ProviderEntry},
     },
 };
@@ -32,6 +33,14 @@ pub struct EmbeddingBinding {
 }
 
 impl EmbeddingBinding {
+    pub(super) fn ids(&self) -> Result<(EndpointId, RouteId), TopologyError> {
+        let id = format!("{}-{}-embeddings", self.provider, self.model);
+        Ok((
+            EndpointId::new(&id).map_err(|_| TopologyError::InvalidModelBinding)?,
+            RouteId::new(&id).map_err(|_| TopologyError::InvalidModelBinding)?,
+        ))
+    }
+
     pub fn provider(&self) -> crate::provider::ProviderDefinition {
         super::data::provider(self.provider).clone()
     }
@@ -57,13 +66,13 @@ impl EmbeddingBinding {
     pub fn route(&self) -> EmbeddingRoute {
         let provider = self.provider();
         let canonical = ModelId::new(self.model).expect("static model");
-        let id = format!("{}-{}-embeddings", provider.id.as_str(), self.model);
+        let (endpoint_id, route_id) = self.ids().expect("validated embedding identity");
         EmbeddingRoute {
-            id: RouteId::new(&id).expect("static route"),
+            id: route_id,
             model: canonical.clone(),
             canonical_model: canonical.clone(),
             endpoint: EmbeddingEndpoint {
-                id: EndpointId::new(&id).expect("static endpoint"),
+                id: endpoint_id,
                 provider: provider.id,
                 target: EndpointTarget {
                     origin: provider.origin,

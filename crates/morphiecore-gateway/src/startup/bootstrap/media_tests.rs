@@ -88,6 +88,109 @@ async fn configured_task_sends_once_to_its_named_account_despite_generation_reco
     let _ = server.await;
 }
 
+#[tokio::test]
+async fn abandoned_embedding_releases_upstream_and_its_permit_before_and_during_handoff() {
+    use axum::{
+        Router,
+        body::{Body, Bytes},
+        http::Request,
+        routing::post,
+    };
+    use futures_util::StreamExt;
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        time::Duration,
+    };
+    use tokio::sync::mpsc;
+    use tower::ServiceExt;
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let observed = calls.clone();
+    let (opened, mut upstream_bodies) = mpsc::channel(2);
+    let upstream = Router::new().route(
+        "/v1/embeddings",
+        post(move || {
+            let opened = opened.clone();
+            observed.fetch_add(1, Ordering::Relaxed);
+            async move {
+                let (tx, mut rx) = mpsc::channel::<Result<Bytes, std::io::Error>>(1);
+                let body = futures_util::stream::once(async move {
+                    opened.send(tx).await.unwrap();
+                    Ok(Bytes::from_static(
+                        br#"{"object":"list","model":"reported",
+                       "data":[{"object":"embedding","index":0,"embedding":[0.5,1]}],
+                       "usage":{"prompt_tokens":1,"total_tokens":1}}"#,
+                    ))
+                })
+                .chain(futures_util::stream::poll_fn(move |cx| rx.poll_recv(cx)));
+                (
+                    [("content-type", "application/json")],
+                    Body::from_stream(body),
+                )
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let root = format!("http://{}/v1", listener.local_addr().unwrap());
+    let mut settings = service();
+    settings["resources"] = json!({"concurrency":1});
+    let boot = Fixture::with_accounts(
+        settings,
+        json!({"models":{"text-embedding-3-small":{"account":"fixture"}}}),
+        &[("openrouter", "fixture", "synthetic-embedding-key")],
+        json!({"version":1,"providers":{"openrouter":{"accounts":[{
+            "name":"fixture","enabled":true,"credential":{"alias":"fixture"},"base_url":root
+        }]}}}),
+    )
+    .unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+    let router = boot.gateway.router();
+    let permits = &boot.gateway.state.permits;
+    let request = || {
+        Request::post("/v1/embeddings")
+            .header(
+                "authorization",
+                format!("Bearer {}", crate::tests::support::KEY),
+            )
+            .header("content-type", "application/json")
+            .body(Body::from(
+                r#"{"model":"text-embedding-3-small","input":"synthetic","dimensions":2}"#,
+            ))
+            .unwrap()
+    };
+    let checked = tokio::time::timeout(Duration::from_secs(5), async {
+        // Keep the first upstream body open so the route cannot publish a result.
+        let pending = tokio::spawn(router.clone().oneshot(request()));
+        let upstream = upstream_bodies.recv().await.unwrap();
+        assert!(!pending.is_finished());
+        assert!(!upstream.is_closed());
+        assert_eq!(permits.available_permits(), 0);
+        pending.abort();
+        assert!(pending.await.unwrap_err().is_cancelled());
+        upstream.closed().await;
+        drop(permits.acquire().await.unwrap());
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+
+        // The next request can complete intake, but headers alone do not
+        // acknowledge the final JSON frame or release its permit.
+        let pending = tokio::spawn(router.oneshot(request()));
+        drop(upstream_bodies.recv().await.unwrap());
+        let response = pending.await.unwrap().unwrap();
+        assert_eq!(response.status(), 200);
+        assert_eq!(permits.available_permits(), 0);
+        drop(response);
+        drop(permits.acquire().await.unwrap());
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
+    })
+    .await;
+    server.abort();
+    let _ = server.await;
+    checked.expect("standalone exchange did not release its upstream body and permit");
+}
+
 #[test]
 fn embeddings_select_one_named_account_and_publish_only_the_selected_task() {
     for binding in catalog::embedding_bindings() {

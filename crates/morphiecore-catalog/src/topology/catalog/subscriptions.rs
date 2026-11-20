@@ -1,5 +1,5 @@
 //! Explicit subscription bindings. Account aliases remain deployment inputs.
-use super::{models, *};
+use super::*;
 use crate::lowering::disposition::Dispositions;
 use crate::protocol::openai::Dialect;
 #[derive(serde::Deserialize)]
@@ -22,7 +22,7 @@ impl SubscriptionBinding {
     }
 
     fn contract(&self) -> Dispositions {
-        let mut contract = models::contract(self.model);
+        let mut contract = data::openai_model_contract(self.model);
         if self.profile == "openai" {
             contract.set_native(
                 crate::semantic::task::generation::Feature::MaxOutputTokens,

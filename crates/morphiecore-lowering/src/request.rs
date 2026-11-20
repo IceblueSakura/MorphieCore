@@ -862,62 +862,43 @@ pub fn relax_tool_strictness<'a>(
     Ok(semantic)
 }
 
-pub fn finish<'a>(
+pub fn project_tool_result_errors<'a>(
     mut semantic: Cow<'a, GenerationRequest>,
-    source: &GenerationRequest,
     table: &Dispositions,
     evidence: &mut EvidenceDelta,
-    receipts: ReasoningReceipts<'_>,
 ) -> Result<Cow<'a, GenerationRequest>, ConversionFailure> {
-    if matches!(
-        table.get(Feature::ToolResultError),
-        Disposition::Approximate(_)
-    ) {
+    if let Disposition::Approximate(rule) = table.get(Feature::ToolResultError) {
         let (copy, changed) = with_tool_error_status(semantic)?;
         semantic = copy;
-        if changed && let Some(rule) = table.get(Feature::ToolResultError).rule() {
+        if changed {
             evidence.push(rule.effect(ConversionBoundary::RequestProject));
         }
     }
-    let mut changed_prefix = false;
-    for (id, item) in source.items() {
-        match item {
-            Item::ConfigurationUpdate(_) => {
-                changed_prefix |= !semantic
-                    .items()
-                    .iter()
-                    .any(|(owner, projected)| owner == id && projected == item);
-            }
-            Item::Reasoning(reasoning)
-                if changed_prefix
-                    && reasoning.replay.as_ref().is_some_and(|value| {
-                        matches!(
-                            value.format(),
-                            ReplayFormat::AnthropicMessagesThinking
-                                | ReplayFormat::AnthropicMessagesRedactedThinking
-                        )
-                    }) =>
-            {
-                // A message-local marker belongs to subsequent thinking's prefix.
-                // A root-parameter change alone does not invalidate that prefix.
-                return Err(CodecError::Unsupported(CarrierReason::Reasoning).into());
-            }
-            _ => {}
-        }
-    }
-    if let Some(policy) = receipts.policy {
-        evidence.push(policy.receipt(source, &semantic)?);
-    }
-    if let Some(rule) = receipts.effort_rule {
-        evidence.push(crate::conversion::generation::Effect::Reasoning {
-            rule: crate::conversion::generation::RuleId::new(rule),
-            input: crate::conversion::generation::ReasoningControls::request(source),
-            output: crate::conversion::generation::ReasoningControls::request(&semantic),
-            preset_tokens: None,
-            owner: crate::conversion::generation::Owner::Root,
-        });
-    }
     Ok(semantic)
+}
+
+impl ReasoningReceipts<'_> {
+    pub fn record(
+        self,
+        source: &GenerationRequest,
+        projected: &GenerationRequest,
+        evidence: &mut EvidenceDelta,
+    ) -> Result<(), ConversionFailure> {
+        if let Some(policy) = self.policy {
+            evidence.push(policy.receipt(source, projected)?);
+        }
+        if let Some(rule) = self.effort_rule {
+            use crate::conversion::generation::{Effect, ReasoningControls, RuleId};
+            evidence.push(Effect::Reasoning {
+                rule: RuleId::new(rule),
+                input: ReasoningControls::request(source),
+                output: ReasoningControls::request(projected),
+                preset_tokens: None,
+                owner: Owner::Root,
+            });
+        }
+        Ok(())
+    }
 }
 
 fn project_cache(

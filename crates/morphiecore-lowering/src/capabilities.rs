@@ -124,7 +124,9 @@ pub enum Presentation {
         rule: Rule,
         only_when_allocated: bool,
     },
-    ExplicitAuto,
+    ExplicitAuto {
+        unsupported: &'static str,
+    },
     Unavailable,
 }
 
@@ -349,7 +351,10 @@ impl<'a> TargetCapabilities<'a> {
         use morphiecore_semantic::task::generation::Feature as F;
         let disabled = reasoning.activation == Some(ReasoningActivation::Disabled);
         let unsupported = D::Omit(OMIT_REASONING_SUMMARY);
-        let (mut display, summary, encrypted) = if self.presentation == Presentation::ExplicitAuto {
+        let (mut display, summary, encrypted) = if let Presentation::ExplicitAuto {
+            unsupported: reason,
+        } = self.presentation
+        {
             if reasoning.presentation.summary == Some(ReasoningSummary::Auto)
                 && matches!(
                     reasoning.presentation.visibility,
@@ -362,9 +367,7 @@ impl<'a> TargetCapabilities<'a> {
                 let presentation = if reasoning.presentation.is_absent() {
                     D::Native
                 } else {
-                    D::Reject(
-                        "Qwen4 Responses only supports explicit automatic reasoning summaries",
-                    )
+                    D::Reject(reason)
                 };
                 (presentation, presentation, D::Omit(OMIT_REASONING_INCLUDE))
             }

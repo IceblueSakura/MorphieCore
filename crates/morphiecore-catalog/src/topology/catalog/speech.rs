@@ -6,6 +6,7 @@ use crate::{
     semantic::value::AudioEncoding,
     topology::{
         EndpointId, EndpointTarget, ExecutionContract, ModelId, ModelMetadata, RouteId,
+        TopologyError,
         speech::{ProviderEntry, SpeechEndpoint, SpeechRoute},
     },
 };
@@ -17,12 +18,22 @@ pub struct SpeechBinding {
     pub profile: UpstreamAdapter,
     pub model: &'static str,
     pub upstream: &'static str,
-    pub voices: Box<[&'static str]>,
+    voices: Option<Box<[&'static str]>>,
     pub released_at: u64,
     pub developer: &'static str,
 }
 
 impl SpeechBinding {
+    pub(super) fn voices(&self) -> Result<&[&str], TopologyError> {
+        match (self.profile, self.voices.as_deref()) {
+            (UpstreamAdapter::Xiaomi, None) => Ok(crate::protocol::xiaomi_audio::VOICES),
+            (UpstreamAdapter::Xiaomi, Some(_)) | (_, None) => {
+                Err(TopologyError::InvalidModelBinding)
+            }
+            (_, Some(voices)) => Ok(voices),
+        }
+    }
+
     pub fn provider(&self) -> crate::provider::ProviderDefinition {
         super::data::provider(self.provider).clone()
     }
@@ -63,7 +74,12 @@ impl SpeechBinding {
                 canonical_model: canonical,
                 profile: self.profile,
                 capabilities: SpeechCapabilities {
-                    voices: self.voices.iter().map(|v| (*v).into()).collect(),
+                    voices: self
+                        .voices()
+                        .expect("validated speech voice source")
+                        .iter()
+                        .map(|v| (*v).into())
+                        .collect(),
                     formats: if self.profile == UpstreamAdapter::Xiaomi {
                         crate::protocol::xiaomi_audio::FORMATS.to_vec()
                     } else {

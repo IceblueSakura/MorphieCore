@@ -8,6 +8,7 @@ pub mod client;
 pub mod sse;
 pub use sse::{GenerationSseDecoder, MessageSseDecoder};
 mod target;
+pub(crate) use target::check_signed_configuration_prefix;
 pub use target::{Dialect, TargetContract};
 mod items;
 mod media;

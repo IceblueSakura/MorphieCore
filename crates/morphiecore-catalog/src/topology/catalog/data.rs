@@ -150,6 +150,13 @@ pub(super) fn provider(id: &str) -> &'static ProviderDefinition {
     catalog::get(id).expect("validated embedded Provider reference")
 }
 
+pub(super) fn openai_model_contract(id: &str) -> Dispositions {
+    checked()
+        .expect("validated embedded topology")
+        .openai_model_contract(id)
+        .expect("validated OpenAI-compatible model reference")
+}
+
 pub(super) fn effort_mapping(rule: &str) -> &'static ReasoningEffortMapping {
     checked()
         .expect("validated embedded topology")
@@ -201,6 +208,18 @@ fn unique<T: PartialEq>(values: &[T]) -> bool {
 }
 
 impl Catalog {
+    // Canonical identity alone does not establish an OpenAI-compatible
+    // contract. Messages contributes its public admission, not native carriage.
+    fn openai_model_contract(&self, id: &str) -> Result<Dispositions, TopologyError> {
+        if let Some(model) = self.models.iter().find(|m| m.id == id) {
+            return Ok(model.contract());
+        }
+        if let Some(model) = self.messages.iter().find(|m| m.model == id) {
+            return Ok(model.public_contract());
+        }
+        Err(TopologyError::UnknownCanonicalModel)
+    }
+
     fn validate(&self) -> Result<(), TopologyError> {
         let mut canonical = BTreeSet::new();
         for (id, released_at, developer) in self
@@ -258,9 +277,7 @@ impl Catalog {
             }
         }
         for b in &self.api_key {
-            if !canonical.contains(b.canonical_model) {
-                return Err(TopologyError::UnknownCanonicalModel);
-            }
+            self.openai_model_contract(b.canonical_model)?;
             ModelId::new(b.model).map_err(|_| TopologyError::InvalidModelBinding)?;
             RouteId::new(&format!("{}-generation", b.endpoint_prefix))
                 .map_err(|_| TopologyError::InvalidModelBinding)?;
@@ -300,9 +317,7 @@ impl Catalog {
                 .map_err(|_| TopologyError::InvalidModelBinding)?;
         }
         for b in &self.subscriptions {
-            if !canonical.contains(b.model) {
-                return Err(TopologyError::UnknownCanonicalModel);
-            }
+            self.openai_model_contract(b.model)?;
             RouteId::new(&format!("{}-generation", b.identity))
                 .map_err(|_| TopologyError::InvalidModelBinding)?;
             EndpointId::new(&format!("{}-responses", b.identity))
@@ -327,6 +342,8 @@ impl Catalog {
                 .map_err(|_| TopologyError::InvalidModelBinding)?;
         }
         for b in &self.google {
+            b.endpoint_ids()?;
+            b.route_id()?;
             for p in [
                 GenerationOperation::GoogleGenerateContent,
                 GenerationOperation::GoogleInteractions,
@@ -366,6 +383,7 @@ impl Catalog {
         for b in &self.speech {
             publication(b.model, b.released_at, b.developer)?;
             EndpointId::new(b.identity).map_err(|_| TopologyError::InvalidModelBinding)?;
+            b.voices()?;
             operation(
                 b.provider,
                 ProviderOperation::Speech,
@@ -393,6 +411,7 @@ impl Catalog {
         }
         for b in &self.embeddings {
             publication(b.model, b.released_at, b.developer)?;
+            b.ids()?;
             operation(
                 b.provider,
                 ProviderOperation::Embeddings,
@@ -491,6 +510,53 @@ mod tests {
             .validate(),
             Err(TopologyError::InvalidModelBinding)
         );
+    }
+
+    #[test]
+    fn openai_bindings_cannot_reference_a_google_only_canonical_model() {
+        let mut catalog = parse(fixture!("deepseek", "fixture", "[]", "")).unwrap();
+        catalog.google = Box::new([serde_json::from_str(
+            r#"{"model":"google-fixture","upstream":"google-fixture",
+                    "provider":"google","released_at":1,"developer":"Fixture"}"#,
+        )
+        .unwrap()]);
+        assert_eq!(catalog.validate(), Ok(()));
+        catalog.api_key[0].canonical_model = "google-fixture";
+        assert_eq!(
+            catalog.validate(),
+            Err(TopologyError::UnknownCanonicalModel)
+        );
+    }
+
+    #[test]
+    fn valid_public_model_label_must_also_form_valid_endpoint_ids() {
+        let mut catalog = parse(fixture!("deepseek", "fixture", "[]", "")).unwrap();
+        catalog.google = Box::new([serde_json::from_str(
+            r#"{"model":"Google-Fixture","upstream":"google-fixture",
+                    "provider":"google","released_at":1,"developer":"Fixture"}"#,
+        )
+        .unwrap()]);
+        assert!(ModelId::new(catalog.google[0].model).is_ok());
+        assert_eq!(catalog.validate(), Err(TopologyError::InvalidModelBinding));
+    }
+
+    #[test]
+    fn fixed_speech_codec_voices_cannot_be_redeclared_in_topology() {
+        let mut catalog = parse(fixture!("deepseek", "fixture", "[]", "")).unwrap();
+        catalog.speech = Box::new([serde_json::from_str(
+            r#"{"provider":"xiaomi","identity":"fixture-speech","profile":"xiaomi",
+                    "model":"fixture-tts","upstream":"fixture-tts",
+                    "released_at":1,"developer":"Fixture"}"#,
+        )
+        .unwrap()]);
+        assert_eq!(catalog.validate(), Ok(()));
+        catalog.speech = Box::new([serde_json::from_str(
+            r#"{"provider":"xiaomi","identity":"fixture-speech","profile":"xiaomi",
+                    "model":"fixture-tts","upstream":"fixture-tts","voices":["fixture-voice"],
+                    "released_at":1,"developer":"Fixture"}"#,
+        )
+        .unwrap()]);
+        assert_eq!(catalog.validate(), Err(TopologyError::InvalidModelBinding));
     }
 
     #[test]
