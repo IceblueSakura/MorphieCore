@@ -84,7 +84,7 @@ impl CredentialManager {
     }
 }
 
-pub(in crate::credential) use crate::test_files::Directory;
+pub(in crate::credential) use morphiecore_test_support::filesystem::Directory;
 
 pub(in crate::credential) fn read_account(
     root: &std::path::Path,

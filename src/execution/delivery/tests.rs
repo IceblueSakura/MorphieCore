@@ -473,7 +473,7 @@ fn finalized_json_still_needs_handoff_and_cannot_resume_after_rejection() {
     let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     let mut attempt = Attempt::new(adapter.clone(), 4096, Default::default());
     attempt.begin(200, "text/event-stream").unwrap();
-    let bytes = crate::test_responses_wire::response_stream(
+    let bytes = morphiecore_test_support::responses_profile::response_stream(
         json!({"id":"r","object":"response","created_at":1,"model":"m","status":"completed","output":[]}),
     );
     let mut remaining = bytes.as_bytes();
@@ -568,7 +568,7 @@ fn messages_end_turn_derivation_uses_original_request_without_mutating_reports()
         } else {
             (
                 "text/event-stream",
-                crate::test_responses_wire::response_stream(wire),
+                morphiecore_test_support::responses_profile::response_stream(wire),
             )
         };
         attempt.begin(200, media).unwrap();
@@ -980,7 +980,8 @@ fn messages_report_omissions_match_json_stream_and_retained_views() {
                 }
             } else {
                 attempt.begin(200, "text/event-stream").unwrap();
-                let body = crate::test_responses_wire::response_stream(response.clone());
+                let body =
+                    morphiecore_test_support::responses_profile::response_stream(response.clone());
                 let mut remaining = body.as_bytes();
                 while !remaining.is_empty() {
                     let (used, events) = attempt.push(remaining).unwrap();
@@ -2036,7 +2037,7 @@ fn responses_snapshot_preserves_wire_identity_and_result_lifecycle() {
         let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
         let mut attempt = Attempt::new(codec.clone(), 65536, Default::default());
         attempt.begin(200, "text/event-stream").unwrap();
-        let bytes = crate::test_responses_wire::response_stream(wire);
+        let bytes = morphiecore_test_support::responses_profile::response_stream(wire);
         let mut remaining = bytes.as_bytes();
         while !remaining.is_empty() {
             let (used, _) = attempt.push(remaining).unwrap();
@@ -2077,7 +2078,7 @@ fn chat_delivery_uses_terminal_service_reports_without_rewriting_opening_facts()
             "status":"completed","service_tier":"default",
             "output":[{"type":"message","id":"msg","role":"assistant","status":"completed",
                 "content":[{"type":"output_text","text":"answer","annotations":[],"logprobs":[]}]}]});
-        let mut frames = crate::test_responses_wire::response_events(response);
+        let mut frames = morphiecore_test_support::responses_profile::response_events(response);
         frames[0]["response"]["service_tier"] = json!("auto");
         let endpoint = crate::topology::catalog::API_KEY_BINDINGS
             .iter()

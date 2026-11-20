@@ -1,16 +1,14 @@
 //! HTTP Router integration and shared test-owned upstream lifetime.
 //! Binary bootstrap and feature/failure checks live in focused child modules.
-#[allow(dead_code)]
-#[path = "support/chat_profile.rs"]
-mod chat_wire;
+pub(crate) use morphiecore_test_support::{
+    chat_profile as chat_wire, filesystem, responses_profile as responses_wire,
+};
 #[path = "support/credential_recovery.rs"]
 mod credential_recovery;
 #[path = "support/embedding_loop.rs"]
 mod embedding_loop;
 #[path = "support/embeddings.rs"]
 mod embedding_support;
-#[path = "support/filesystem.rs"]
-mod filesystem;
 #[path = "support/google_tool_loop.rs"]
 mod google_tool_fixture;
 #[path = "support/messages_stream.rs"]
@@ -23,9 +21,6 @@ mod messages_wire;
 mod native_audio;
 #[path = "support/openai_tool_loop.rs"]
 mod openai_tool_loop;
-#[allow(dead_code)]
-#[path = "support/responses_profile.rs"]
-mod responses_wire;
 #[path = "support/gateway.rs"]
 mod support;
 #[path = "support/telemetry.rs"]

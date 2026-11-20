@@ -1,9 +1,7 @@
 //! Managed-key policy at the source boundary, without constructing a Gateway.
 use super::*;
-use crate::{
-    credential::{CredentialManager, Secret},
-    test_files::Directory,
-};
+use crate::credential::{CredentialManager, Secret};
+use morphiecore_test_support::filesystem::Directory;
 #[test]
 fn managed_keys_enforce_domain_kind_and_epoch_without_network() {
     let dir = Directory::new();

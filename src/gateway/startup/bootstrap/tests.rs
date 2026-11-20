@@ -549,7 +549,7 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
 
 #[test]
 fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
-    let directory = crate::test_files::private_directory();
+    let directory = morphiecore_test_support::filesystem::private_directory();
     let store = directory.path().join("credentials");
     let manager = crate::credential::CredentialManager::new(&store, vec![]).unwrap();
     manager

@@ -14,20 +14,6 @@ pub mod gateway;
 pub mod lowering;
 pub mod protocol;
 pub mod provider;
-pub mod semantic;
+pub use morphiecore_semantic as semantic;
 pub mod topology;
 pub mod transport;
-
-#[cfg(test)]
-#[path = "../tests/support/filesystem.rs"]
-mod test_files;
-#[cfg(test)]
-#[path = "../tests/support/properties.rs"]
-mod test_properties;
-#[cfg(test)]
-#[path = "../tests/support/proxy_environment.rs"]
-mod test_proxy_environment;
-#[cfg(test)]
-#[allow(dead_code)]
-#[path = "../tests/support/responses_profile.rs"]
-mod test_responses_wire;

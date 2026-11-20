@@ -154,7 +154,7 @@ impl Fixture {
         oauth: &[(&str, &str)],
         configured: Option<serde_json::Value>,
     ) -> Result<Self, StartupError> {
-        let directory = crate::test_files::private_directory();
+        let directory = morphiecore_test_support::filesystem::private_directory();
         let root = directory.path().join("credentials");
         let drivers =
             crate::credential::drivers::builtin_drivers_with_environment(None, false).unwrap();

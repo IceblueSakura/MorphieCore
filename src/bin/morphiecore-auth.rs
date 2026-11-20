@@ -499,11 +499,9 @@ async fn main() -> ExitCode {
     }
 }
 #[cfg(test)]
-#[path = "../../tests/support/filesystem.rs"]
-mod test_files;
-#[cfg(test)]
 mod tests {
     use super::*;
+    use morphiecore_test_support::filesystem as test_files;
     #[tokio::test]
     async fn provider_kind_is_checked_before_credential_access() {
         let directory = test_files::private_directory();

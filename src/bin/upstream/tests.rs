@@ -2,12 +2,11 @@ use super::*;
 use morphiecore::credential::{
     AuthDriver, Credential, DriverFuture, Grant, LoginObserver, LoginOptions, VerifiedIdentity,
 };
+use morphiecore_test_support::filesystem;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
-#[path = "../../../tests/support/filesystem.rs"]
-mod filesystem;
 
 fn command(args: &[&str]) -> Command {
     let selected: Vec<_> = if args.contains(&"--account") {

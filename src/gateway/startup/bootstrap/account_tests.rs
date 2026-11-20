@@ -285,7 +285,7 @@ async fn loader_binds_named_accounts_without_switching_after_dispatch() {
                 calls.lock().unwrap().push(if first {"primary"}else{"backup"});
                 if first {return (StatusCode::SERVICE_UNAVAILABLE, [("retry-after","60")]).into_response();}
                 assert_eq!(headers["authorization"],"Bearer synthetic-backup");
-                ([ ("content-type","text/event-stream") ],crate::test_responses_wire::response_stream(json!({
+                ([ ("content-type","text/event-stream") ],morphiecore_test_support::responses_profile::response_stream(json!({
                     "object":"response","id":"synthetic-response","model":"deepseek-flash","created_at":1,
                     "status":"completed","output":[{"type":"message","id":"synthetic-message","role":"assistant","status":"completed",
                         "content":[{"type":"output_text","text":"healthy","annotations":[],"logprobs":[]}]}]

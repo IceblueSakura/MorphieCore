@@ -228,7 +228,7 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
     proptest! {
-        #![proptest_config(crate::test_properties::config())]
+        #![proptest_config(morphiecore_test_support::properties::config())]
         #[test]
         fn property_origin_raw_delimiters_and_controls_cannot_be_normalized_away(
             host in "[a-z]{1,20}", port in 1u16..=65535,

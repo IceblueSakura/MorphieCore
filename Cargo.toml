@@ -1,11 +1,17 @@
-[package]
-name = "morphiecore"
+[workspace]
+resolver = "3"
+members = [".", "crates/*"]
+default-members = [".", "crates/*"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
-description = "Experimental routing gateway for a distributed Agent Runtime"
 license = "MIT"
 
-[dependencies]
+[workspace.dependencies]
+morphiecore-semantic = { path = "crates/morphiecore-semantic" }
+morphiecore-test-support = { path = "crates/morphiecore-test-support" }
+
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 futures-util = { version = "=0.3.34", default-features = false, features = ["std"] }
 getrandom = "=0.4.3"
@@ -44,18 +50,74 @@ opentelemetry = { version = "=0.33.1", default-features = false, features = ["lo
 opentelemetry_sdk = { version = "=0.33.1", default-features = false, features = ["logs", "trace", "internal-logs"] }
 opentelemetry-otlp = { version = "=0.33.1", default-features = false, features = ["logs", "trace", "http-json", "reqwest-blocking-client"] }
 xxhash-rust = { version = "=0.8.19", default-features = false, features = ["xxh3"] }
-
-[target.'cfg(windows)'.dependencies]
 windows-permissions = "=0.2.4"
-
-[target.'cfg(unix)'.dev-dependencies]
 libc = "=0.2.191"
-
-[dev-dependencies]
 aws-lc-rs = "=1.19.0"
-opentelemetry_sdk = { version = "=0.33.1", default-features = false, features = ["testing"] }
 proptest = { version = "=1.12.0", default-features = false, features = ["std"] }
 tempfile = "=3.27.0"
-reqwest = { version = "=0.13.5", default-features = false, features = ["json"] }
 tower = { version = "=0.5.3", features = ["util"] }
-tokio = { version = "=1.54.1", default-features = false, features = ["process", "io-util", "test-util"] }
+
+[package]
+name = "morphiecore"
+version.workspace = true
+edition.workspace = true
+description = "Experimental routing gateway for a distributed Agent Runtime"
+license.workspace = true
+
+[dependencies]
+morphiecore-semantic.workspace = true
+
+axum.workspace = true
+futures-util.workspace = true
+getrandom.workspace = true
+httpdate.workspace = true
+hyper.workspace = true
+rustls.workspace = true
+reqwest.workspace = true
+subtle.workspace = true
+tokio.workspace = true
+bytes.workspace = true
+base64.workspace = true
+url.workspace = true
+mime.workspace = true
+multer.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+strum.workspace = true
+fs-mistrust.workspace = true
+atomicwrites.workspace = true
+clap.workspace = true
+serde_with.workspace = true
+secrecy.workspace = true
+zeroize.workspace = true
+oauth2.workspace = true
+tokio-util.workspace = true
+jsonwebtoken.workspace = true
+httparse.workspace = true
+unicode-general-category.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-opentelemetry.workspace = true
+opentelemetry-appender-tracing.workspace = true
+opentelemetry.workspace = true
+opentelemetry_sdk.workspace = true
+opentelemetry-otlp.workspace = true
+xxhash-rust.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-permissions.workspace = true
+
+[target.'cfg(unix)'.dev-dependencies]
+libc.workspace = true
+
+[dev-dependencies]
+morphiecore-test-support.workspace = true
+aws-lc-rs.workspace = true
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+proptest.workspace = true
+tempfile.workspace = true
+reqwest = { workspace = true, features = ["json"] }
+tower.workspace = true
+tokio = { workspace = true, features = ["process", "io-util", "test-util"] }

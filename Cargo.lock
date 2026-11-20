@@ -1339,6 +1339,8 @@ dependencies = [
  "jsonwebtoken",
  "libc",
  "mime",
+ "morphiecore-semantic",
+ "morphiecore-test-support",
  "multer",
  "oauth2",
  "opentelemetry",
@@ -1368,6 +1370,31 @@ dependencies = [
  "windows-permissions",
  "xxhash-rust",
  "zeroize",
+]
+
+[[package]]
+name = "morphiecore-semantic"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "bytes",
+ "mime",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "strum",
+ "thiserror 2.0.21",
+ "url",
+]
+
+[[package]]
+name = "morphiecore-test-support"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

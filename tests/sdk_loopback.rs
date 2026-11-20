@@ -1,11 +1,12 @@
 //! Explicit, ignored SDK gates: codec fixtures plus the actual gateway Router
 //! against a synthetic HTTP Provider. All listeners and credentials are test-owned.
+pub(crate) use morphiecore_test_support::{
+    chat_profile as chat_wire, filesystem, responses_profile as responses_wire,
+};
 #[path = "sdk/chat_media.rs"]
 mod chat_media_sdk;
 #[path = "sdk/chat.rs"]
 mod chat_sdk;
-#[path = "support/chat_profile.rs"]
-mod chat_wire;
 #[path = "support/child_process.rs"]
 mod child_process;
 #[path = "support/credential_recovery.rs"]
@@ -19,8 +20,6 @@ mod embeddings;
 #[path = "support/semantic_events.rs"]
 #[allow(dead_code)]
 mod events_support;
-#[path = "support/filesystem.rs"]
-mod filesystem;
 #[path = "sdk/gateway.rs"]
 mod gateway_sdk;
 #[path = "support/google_tool_loop.rs"]
@@ -39,8 +38,6 @@ mod messages_wire;
 mod openai_tool_history;
 #[path = "support/openai_tool_loop.rs"]
 mod openai_tool_loop;
-#[path = "support/responses_profile.rs"]
-mod responses_wire;
 #[path = "sdk/standard_requests.rs"]
 mod standard_requests;
 #[path = "sdk/text_loop.rs"]

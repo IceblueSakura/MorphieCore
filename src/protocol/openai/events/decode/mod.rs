@@ -317,8 +317,10 @@ impl EventDecoder {
     }
     pub(super) fn observe_metadata(&mut self, o: &Map<String, Value>) -> Result<(), CodecError> {
         if self.profile == GenerationApi::Responses {
-            let (native, _) =
-                crate::semantic::context::ResponseContext::read(o, DecodeDirection::Upstream)?;
+            let (native, _) = crate::protocol::openai::responses::envelope::read_response_context(
+                o,
+                DecodeDirection::Upstream,
+            )?;
             native.validate()?;
             if let Some(instructions) = native.instruction_messages {
                 if self

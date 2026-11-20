@@ -170,7 +170,7 @@ fn bounded_deadline(deadline: Instant) -> Result<Instant, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_proxy_environment as proxy_environment;
+    use morphiecore_test_support::proxy_environment;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,

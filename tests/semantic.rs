@@ -1,6 +1,7 @@
 //! Offline semantic ownership, codec projection and failure contracts, grouped by domain.
-#[path = "support/chat_profile.rs"]
-mod chat_wire;
+pub(crate) use morphiecore_test_support::{
+    chat_profile as chat_wire, properties as test_properties, responses_profile as wire,
+};
 #[path = "support/semantic_events.rs"]
 mod events_support;
 #[path = "support/image_generation.rs"]
@@ -9,10 +10,6 @@ mod image_support;
 mod messages_stream;
 #[path = "support/resources.rs"]
 mod resources_support;
-#[path = "support/properties.rs"]
-mod test_properties;
-#[path = "support/responses_profile.rs"]
-mod wire;
 
 #[path = "semantic/anthropic.rs"]
 mod anthropic;

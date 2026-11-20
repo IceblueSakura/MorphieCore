@@ -40,9 +40,7 @@ async fn respond(
     )
     .await
 }
-#[allow(dead_code)]
-#[path = "../../../tests/support/chat_profile.rs"]
-mod wire;
+use morphiecore_test_support::chat_profile as wire;
 struct Tracked {
     rx: mpsc::Receiver<Result<Bytes, std::io::Error>>,
     reads: Arc<AtomicUsize>,
@@ -553,12 +551,11 @@ async fn failed_responses_reach_chat_clients_as_classified_failures() {
     // has no Chat success carrier, so its class is the HTTP answer.
     let gate = gateway(Limits::default());
     let (tx, source, _, _) = upstream(200, "text/event-stream");
-    tx.send(Ok(crate::test_responses_wire::response_stream(
-        failed.clone(),
-    )
-    .into()))
-        .await
-        .unwrap();
+    tx.send(Ok(
+        morphiecore_test_support::responses_profile::response_stream(failed.clone()).into(),
+    ))
+    .await
+    .unwrap();
     drop(tx);
     let report = crate::execution::report::Report::default();
     let error = bounded(chat_over_responses(&gate, source, false, report.clone()))

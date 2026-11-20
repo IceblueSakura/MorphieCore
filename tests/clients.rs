@@ -2,9 +2,8 @@
 #![cfg(unix)]
 #[path = "support/child_process.rs"]
 mod child_process;
-#[path = "support/filesystem.rs"]
-mod filesystem;
 use morphiecore::credential::{CredentialManager, Secret};
+use morphiecore_test_support::filesystem;
 use std::{path::PathBuf, time::Duration};
 
 async fn installed_case(script: &str, case: &str, variable: &str, arguments: &[&str]) {

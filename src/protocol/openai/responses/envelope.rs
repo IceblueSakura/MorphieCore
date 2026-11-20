@@ -113,7 +113,11 @@ pub(in crate::protocol::openai) fn decode_request_with_history(
             stream: read_presence(o, "stream", |v| v.as_bool().ok_or(CodecError::invalid()))?,
             options: read_presence(o, "stream_options", |v| StreamOptions::read(v, direction))?,
         },
-        execution: ExecutionHints::read(o, GenerationApi::Responses, direction)?,
+        execution: crate::protocol::openai::context::read_execution_hints(
+            o,
+            GenerationApi::Responses,
+            direction,
+        )?,
         service_policy: super::super::service::read_policy(o, GenerationApi::Responses)?,
     };
     context.validate()?;
@@ -161,7 +165,7 @@ pub fn encode_request(
     }
     let mut v = crate::protocol::openai::responses::encode_generation(target)?;
     let o = v.as_object_mut().expect("object");
-    context.execution.write(o)?;
+    crate::protocol::openai::context::write_execution_hints(&context.execution, o)?;
     super::super::service::write_policy(o, &context.service_policy, GenerationApi::Responses)?;
     o.insert("store".into(), json!(false));
     o.insert("model".into(), json!(context.model));
@@ -196,121 +200,120 @@ pub fn is_stateful_request(value: &Value) -> Result<bool, CodecError> {
     }))
 }
 
-impl ResponseContext {
-    pub(in crate::protocol::openai) fn read(
-        o: &Map<String, Value>,
-        direction: DecodeDirection,
-    ) -> Result<(Self, crate::protocol::fidelity::FidelityRecords), CodecError> {
-        check_access_programs(o)?;
-        let mut controls = o.clone();
-        // Storage facts belong to the API envelope, never upstream execution intent.
-        let storage = read_storage(o)?;
-        if matches!(direction, DecodeDirection::Upstream)
-            && storage.as_ref().is_some_and(|storage| {
-                storage.store == Presence::Value(true)
-                    || storage.previous_response_id.value().is_some()
-            })
-        {
-            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-        }
-        let execution = o
-            .iter()
-            .filter(|(key, _)| {
-                (EXEC_FIELDS.contains(&key.as_str()) || CACHE_FIELDS.contains(&key.as_str()))
-                    && key.as_str() != "store"
-                    && key.as_str() != "previous_response_id"
-            })
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect();
-        let mut fidelity = crate::protocol::fidelity::FidelityRecords::default();
-        let instruction_messages = if let Some(Value::Array(values)) = o.get("instructions") {
-            controls.remove("instructions");
-            let mut items = Items::new(direction);
-            crate::protocol::openai::responses::items::decode_items(
-                &mut items,
-                values,
-                crate::protocol::openai::responses::items::ItemSide::History,
-                "completed",
-                false,
-            )?;
-            fidelity = items.fidelity;
-            Some(items.items)
-        } else {
-            None
-        };
-        let s = if settings::FIELDS.iter().any(|k| o.contains_key(*k)) {
-            Some(settings::read(&controls, true, direction)?)
-        } else {
-            None
-        };
-        let value = Self {
-            reports: crate::semantic::context::ResponseReports::phased(
-                match o.get("status").and_then(Value::as_str) {
-                    Some("queued" | "in_progress") => {
-                        crate::semantic::context::ReportPhase::Opening
-                    }
-                    _ => crate::semantic::context::ReportPhase::Terminal,
-                },
-                crate::semantic::context::ResponseReport {
-                    settings: s,
-                    service_class: super::super::service::read_class(o, GenerationApi::Responses)?,
-                },
-            ),
-            instruction_messages,
-            execution: ExecutionHints::read(&execution, GenerationApi::Responses, direction)?,
-            completed_at: read_presence(o, "completed_at", timestamp)?
-                .value()
-                .cloned(),
-            cache_diagnostics: read_presence(o, "prompt_cache_diagnostics", |v| {
-                serde_json::from_value::<crate::protocol::openai::context::wire::CacheDiagnostics>(
-                    v.clone(),
-                )
-                .map(|value| (&value).into())
-                .map_err(|_| CodecError::invalid())
-            })?
+pub(in crate::protocol::openai) fn read_response_context(
+    o: &Map<String, Value>,
+    direction: DecodeDirection,
+) -> Result<(ResponseContext, crate::protocol::fidelity::FidelityRecords), CodecError> {
+    check_access_programs(o)?;
+    let mut controls = o.clone();
+    // Storage facts belong to the API envelope, never upstream execution intent.
+    let storage = read_storage(o)?;
+    if matches!(direction, DecodeDirection::Upstream)
+        && storage.as_ref().is_some_and(|storage| {
+            storage.store == Presence::Value(true) || storage.previous_response_id.value().is_some()
+        })
+    {
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+    }
+    let execution = o
+        .iter()
+        .filter(|(key, _)| {
+            (EXEC_FIELDS.contains(&key.as_str()) || CACHE_FIELDS.contains(&key.as_str()))
+                && key.as_str() != "store"
+                && key.as_str() != "previous_response_id"
+        })
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    let mut fidelity = crate::protocol::fidelity::FidelityRecords::default();
+    let instruction_messages = if let Some(Value::Array(values)) = o.get("instructions") {
+        controls.remove("instructions");
+        let mut items = Items::new(direction);
+        crate::protocol::openai::responses::items::decode_items(
+            &mut items,
+            values,
+            crate::protocol::openai::responses::items::ItemSide::History,
+            "completed",
+            false,
+        )?;
+        fidelity = items.fidelity;
+        Some(items.items)
+    } else {
+        None
+    };
+    let s = if settings::FIELDS.iter().any(|k| o.contains_key(*k)) {
+        Some(settings::read(&controls, true, direction)?)
+    } else {
+        None
+    };
+    let value = ResponseContext {
+        reports: crate::semantic::context::ResponseReports::phased(
+            match o.get("status").and_then(Value::as_str) {
+                Some("queued" | "in_progress") => crate::semantic::context::ReportPhase::Opening,
+                _ => crate::semantic::context::ReportPhase::Terminal,
+            },
+            crate::semantic::context::ResponseReport {
+                settings: s,
+                service_class: super::super::service::read_class(o, GenerationApi::Responses)?,
+            },
+        ),
+        instruction_messages,
+        execution: crate::protocol::openai::context::read_execution_hints(
+            &execution,
+            GenerationApi::Responses,
+            direction,
+        )?,
+        completed_at: read_presence(o, "completed_at", timestamp)?
             .value()
             .cloned(),
-            // Responses wire has no `system_fingerprint` position; the field is
-            // Chat-only and rejected on Responses bodies by `response_fields`.
-            system_fingerprint: None,
-        };
-        value.validate()?;
-        Ok((value, fidelity))
+        cache_diagnostics: read_presence(o, "prompt_cache_diagnostics", |v| {
+            serde_json::from_value::<crate::protocol::openai::context::wire::CacheDiagnostics>(
+                v.clone(),
+            )
+            .map(|value| (&value).into())
+            .map_err(|_| CodecError::invalid())
+        })?
+        .value()
+        .cloned(),
+        // Responses wire has no `system_fingerprint` position; the field is
+        // Chat-only and rejected on Responses bodies by `response_fields`.
+        system_fingerprint: None,
+    };
+    value.validate()?;
+    Ok((value, fidelity))
+}
+pub(in crate::protocol::openai) fn write_response_context(
+    context: &ResponseContext,
+    fidelity: &crate::protocol::fidelity::FidelityRecords,
+    o: &mut Map<String, Value>,
+    completed: bool,
+) -> Result<(), CodecError> {
+    context.validate()?;
+    if let Some(s) = context.settings() {
+        settings::write(s, o)?;
     }
-    pub(in crate::protocol::openai) fn write(
-        &self,
-        fidelity: &crate::protocol::fidelity::FidelityRecords,
-        o: &mut Map<String, Value>,
-        completed: bool,
-    ) -> Result<(), CodecError> {
-        self.validate()?;
-        if let Some(s) = self.settings() {
-            settings::write(s, o)?;
-        }
-        self.execution.write(o)?;
-        super::super::service::write_class(o, self.service_class(), GenerationApi::Responses)?;
-        if let Some(messages) = &self.instruction_messages {
-            o.insert(
-                "instructions".into(),
-                json!(crate::protocol::openai::responses::items::encode_items(
-                    messages,
-                    fidelity,
-                    false,
-                    &ResourceTable::default()
-                )?),
-            );
-        }
-        if completed && let Some(timestamp) = &self.completed_at {
-            o.insert("completed_at".into(), Value::Number(timestamp.clone()));
-        }
-        if let Some(diagnostics) = &self.cache_diagnostics {
-            o.insert(
-                "prompt_cache_diagnostics".into(),
-                json!(crate::protocol::openai::context::wire::CacheDiagnostics::from(diagnostics)),
-            );
-        }
-        Ok(())
+    crate::protocol::openai::context::write_execution_hints(&context.execution, o)?;
+    super::super::service::write_class(o, context.service_class(), GenerationApi::Responses)?;
+    if let Some(messages) = &context.instruction_messages {
+        o.insert(
+            "instructions".into(),
+            json!(crate::protocol::openai::responses::items::encode_items(
+                messages,
+                fidelity,
+                false,
+                &ResourceTable::default()
+            )?),
+        );
     }
+    if completed && let Some(timestamp) = &context.completed_at {
+        o.insert("completed_at".into(), Value::Number(timestamp.clone()));
+    }
+    if let Some(diagnostics) = &context.cache_diagnostics {
+        o.insert(
+            "prompt_cache_diagnostics".into(),
+            json!(crate::protocol::openai::context::wire::CacheDiagnostics::from(diagnostics)),
+        );
+    }
+    Ok(())
 }
 /// Decode a bounded raw JSON response with strict syntax and complete envelope validation.
 pub fn decode_response_bytes(
@@ -387,7 +390,7 @@ pub(crate) fn validate_response_snapshot_with(
         direction,
     )?;
     let o = object(&v)?;
-    ResponseContext::read(o, direction)?.0.validate()?;
+    read_response_context(o, direction)?.0.validate()?;
     // A complete Response snapshot requires the output array; an absent value is
     // never the explicit empty array and no lower layer may backfill it.
     for item in o
@@ -506,9 +509,12 @@ pub(in crate::protocol::openai) fn write_metadata(
     o: &mut Map<String, Value>,
     completed: bool,
 ) -> Result<(), CodecError> {
-    metadata
-        .context
-        .write(&metadata.instruction_fidelity, o, completed)?;
+    write_response_context(
+        &metadata.context,
+        &metadata.instruction_fidelity,
+        o,
+        completed,
+    )?;
     if let Some(echo) = metadata.request_metadata_echo() {
         o.insert("metadata".into(), json!(echo));
     }

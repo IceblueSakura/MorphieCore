@@ -14,27 +14,28 @@ use crate::{
 };
 use serde_json::{Map, Value, json};
 
-impl StreamOptions {
-    fn read(v: &Value, direction: DecodeDirection<'_>) -> Result<Self, CodecError> {
-        let o = object(v)?;
-        direction.fields(o, &["include_usage", "include_obfuscation"])?;
-        let boolean = |v: &Value| v.as_bool().ok_or(CodecError::invalid());
-        let s = Self {
-            include_usage: o.get("include_usage").map(boolean).transpose()?,
-            include_obfuscation: o.get("include_obfuscation").map(boolean).transpose()?,
-        };
-        Ok(s)
+pub(in crate::protocol::openai) fn read_stream_options(
+    v: &Value,
+    direction: DecodeDirection<'_>,
+) -> Result<StreamOptions, CodecError> {
+    let o = object(v)?;
+    direction.fields(o, &["include_usage", "include_obfuscation"])?;
+    let boolean = |v: &Value| v.as_bool().ok_or(CodecError::invalid());
+    let s = StreamOptions {
+        include_usage: o.get("include_usage").map(boolean).transpose()?,
+        include_obfuscation: o.get("include_obfuscation").map(boolean).transpose()?,
+    };
+    Ok(s)
+}
+fn write_stream_options(options: &StreamOptions) -> Value {
+    let mut o = Map::new();
+    if let Some(value) = options.include_usage {
+        o.insert("include_usage".into(), json!(value));
     }
-    fn write(&self) -> Value {
-        let mut o = Map::new();
-        if let Some(value) = self.include_usage {
-            o.insert("include_usage".into(), json!(value));
-        }
-        if let Some(value) = self.include_obfuscation {
-            o.insert("include_obfuscation".into(), json!(value));
-        }
-        Value::Object(o)
+    if let Some(value) = options.include_obfuscation {
+        o.insert("include_obfuscation".into(), json!(value));
     }
+    Value::Object(o)
 }
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RequestContext {
@@ -149,12 +150,16 @@ pub(crate) fn decode_request_with(
         ])
         .collect();
     direction.fields(o, &allowed)?;
-    let hints = ExecutionHints::read(o, crate::protocol::openai::GenerationApi::Chat, direction)?;
+    let hints = crate::protocol::openai::context::read_execution_hints(
+        o,
+        crate::protocol::openai::GenerationApi::Chat,
+        direction,
+    )?;
     let context = RequestContext {
         model: string(o, "model")?.into(),
         n: read_presence(o, "n", |v| v.as_u64().ok_or(CodecError::invalid()))?,
         stream: read_presence(o, "stream", |v| v.as_bool().ok_or(CodecError::invalid()))?,
-        stream_options: read_presence(o, "stream_options", |v| StreamOptions::read(v, direction))?,
+        stream_options: read_presence(o, "stream_options", |v| read_stream_options(v, direction))?,
         store: hints.store,
         cache: hints.cache,
         identity: hints.identity,
@@ -227,10 +232,10 @@ pub fn encode_request(
             o,
             "stream_options",
             &context.stream_options,
-            StreamOptions::write,
+            write_stream_options,
         );
     }
-    context.cache.write(o)?;
+    crate::protocol::openai::context::write_cache_hints(&context.cache, o)?;
     let Value::Object(identity) = serde_json::to_value(
         crate::protocol::openai::context::wire::ClientIdentityHints::from(&context.identity),
     )

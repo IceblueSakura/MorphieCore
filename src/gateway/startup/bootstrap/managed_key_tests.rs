@@ -5,7 +5,7 @@ use super::{
 };
 use crate::protocol::ClientProtocol;
 fn setup() -> (tempfile::TempDir, CredentialManager) {
-    let dir = crate::test_files::private_directory();
+    let dir = morphiecore_test_support::filesystem::private_directory();
     let manager = CredentialManager::new(dir.path().join("credentials"), vec![]).unwrap();
     write_configuration(
         dir.path(),

@@ -6,8 +6,7 @@ mod api_keys;
 #[path = "support/child_process.rs"]
 mod child_process;
 #[cfg(unix)]
-#[path = "support/filesystem.rs"]
-mod test_files;
+pub(crate) use morphiecore_test_support::filesystem as test_files;
 #[cfg(unix)]
 #[path = "credential/oauth_accounts.rs"]
 mod unix;

@@ -224,7 +224,7 @@ fn info_level_emits_cancelled_summary_without_promoting_cancellation_to_failure(
 
 #[test]
 fn failed_terminal_snapshot_keeps_source_context_after_cancellation() {
-    let mut events = crate::test_responses_wire::events(2);
+    let mut events = morphiecore_test_support::responses_profile::events(2);
     let mut terminal = events.pop().unwrap();
     terminal["response"]["output"] = serde_json::json!([]);
     let mut attempt = Attempt::new(
@@ -273,7 +273,7 @@ fn failed_terminal_snapshot_keeps_source_context_after_cancellation() {
 
 #[test]
 fn missing_terminal_is_a_finish_failure_not_a_failure_of_the_last_valid_frame() {
-    let mut events = crate::test_responses_wire::events(2);
+    let mut events = morphiecore_test_support::responses_profile::events(2);
     events.pop();
     let mut attempt = Attempt::new(
         GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
@@ -383,7 +383,7 @@ fn preflight_names_the_incompatible_declaration_without_exporting_private_schema
 
 #[test]
 fn source_failure_keeps_primary_class_and_later_decode_context() {
-    let mut events = crate::test_responses_wire::events(2);
+    let mut events = morphiecore_test_support::responses_profile::events(2);
     let terminal = events.last_mut().unwrap();
     terminal["type"] = serde_json::json!("response.failed");
     terminal["response"]["status"] = serde_json::json!("failed");

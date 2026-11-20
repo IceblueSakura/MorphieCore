@@ -36,7 +36,10 @@ pub(super) fn metadata(
             .ok_or(CodecError::Invalid(ShapeReason::Metadata))?,
     )?;
     let (mut context, instruction_fidelity) = if profile == GenerationApi::Responses {
-        crate::semantic::context::ResponseContext::read(o, DecodeDirection::Upstream)?
+        crate::protocol::openai::responses::envelope::read_response_context(
+            o,
+            DecodeDirection::Upstream,
+        )?
     } else {
         (
             crate::semantic::context::ResponseContext {
@@ -49,11 +52,7 @@ pub(super) fn metadata(
                         ..Default::default()
                     },
                 ),
-                execution: crate::semantic::context::ExecutionHints::read(
-                    o,
-                    GenerationApi::Chat,
-                    DecodeDirection::Upstream,
-                )?,
+                execution: read_execution_hints(o, GenerationApi::Chat, DecodeDirection::Upstream)?,
                 system_fingerprint: read_presence(o, "system_fingerprint", |v| {
                     v.as_str().map(str::to_owned).ok_or(CodecError::invalid())
                 })?
@@ -122,20 +121,18 @@ pub(in crate::protocol::openai) const CACHE_FIELDS: &[&str] = &[
     "safety_identifier",
     "user",
 ];
-impl CacheHints {
-    pub(in crate::protocol::openai) fn write(
-        &self,
-        o: &mut Map<String, Value>,
-    ) -> Result<(), CodecError> {
-        self.validate()?;
-        let Value::Object(v) = serde_json::to_value(wire::CacheHints::from(self))
-            .map_err(|_| CodecError::invalid())?
-        else {
-            unreachable!()
-        };
-        o.extend(v);
-        Ok(())
-    }
+pub(in crate::protocol::openai) fn write_cache_hints(
+    cache: &CacheHints,
+    o: &mut Map<String, Value>,
+) -> Result<(), CodecError> {
+    cache.validate()?;
+    let Value::Object(v) =
+        serde_json::to_value(wire::CacheHints::from(cache)).map_err(|_| CodecError::invalid())?
+    else {
+        unreachable!()
+    };
+    o.extend(v);
+    Ok(())
 }
 
 pub(in crate::protocol::openai) const EXEC_FIELDS: &[&str] = &[
@@ -158,118 +155,116 @@ pub(in crate::protocol::openai) fn check_access_programs(
     }
     Ok(())
 }
-impl ExecutionHints {
-    pub(in crate::protocol::openai) fn read(
-        o: &Map<String, Value>,
-        profile: GenerationApi,
-        direction: DecodeDirection<'_>,
-    ) -> Result<Self, CodecError> {
-        if profile == GenerationApi::Responses {
-            for field in [
-                "previous_response_id",
-                "conversation",
-                "prompt",
-                "moderation",
-            ] {
-                if o.get(field).is_some_and(|value| !value.is_null()) {
-                    return Err(CodecError::invalid());
-                }
-            }
-            if let Some(value) = o.get("context_management").filter(|value| !value.is_null()) {
-                let values = value.as_array().ok_or(CodecError::invalid())?;
-                if values.iter().any(|value| !value.is_null()) {
-                    return Err(CodecError::invalid());
-                }
-                if !values.is_empty() {
-                    return Err(crate::semantic::context::ContextError::Stateful.into());
-                }
-            }
-        }
-        if profile == GenerationApi::Responses {
-            if matches!(
-                direction,
-                DecodeDirection::Request | DecodeDirection::Client(_)
-            ) && o.get("access_programs").is_some_and(Value::is_null)
-            {
+pub(in crate::protocol::openai) fn read_execution_hints(
+    o: &Map<String, Value>,
+    profile: GenerationApi,
+    direction: DecodeDirection<'_>,
+) -> Result<ExecutionHints, CodecError> {
+    if profile == GenerationApi::Responses {
+        for field in [
+            "previous_response_id",
+            "conversation",
+            "prompt",
+            "moderation",
+        ] {
+            if o.get(field).is_some_and(|value| !value.is_null()) {
                 return Err(CodecError::invalid());
             }
-            check_access_programs(o)?;
         }
-        let mut fields: Map<_, _> = o
-            .iter()
-            .filter(|(k, _)| {
-                k.as_str() != "service_tier"
-                    && ![
-                        "previous_response_id",
-                        "conversation",
-                        "prompt",
-                        "moderation",
-                        "context_management",
-                    ]
-                    .contains(&k.as_str())
-                    && (CACHE_FIELDS.contains(&k.as_str())
-                        // Chat `store` persists completions; only false/null is admitted.
-                        || if profile == GenerationApi::Chat {
-                            matches!(k.as_str(), "metadata" | "store")
-                        } else {
-                            EXEC_FIELDS.contains(&k.as_str())
-                        })
-            })
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        // Reports may echo null, but request cache-options containers are non-nullable.
+        if let Some(value) = o.get("context_management").filter(|value| !value.is_null()) {
+            let values = value.as_array().ok_or(CodecError::invalid())?;
+            if values.iter().any(|value| !value.is_null()) {
+                return Err(CodecError::invalid());
+            }
+            if !values.is_empty() {
+                return Err(crate::semantic::context::ContextError::Stateful.into());
+            }
+        }
+    }
+    if profile == GenerationApi::Responses {
         if matches!(
             direction,
             DecodeDirection::Request | DecodeDirection::Client(_)
-        ) && fields
-            .get("prompt_cache_options")
-            .is_some_and(Value::is_null)
+        ) && o.get("access_programs").is_some_and(Value::is_null)
         {
             return Err(CodecError::invalid());
         }
-        if let Some(options) = fields
-            .get_mut("prompt_cache_options")
-            .filter(|v| !v.is_null())
+        check_access_programs(o)?;
+    }
+    let mut fields: Map<_, _> = o
+        .iter()
+        .filter(|(k, _)| {
+            k.as_str() != "service_tier"
+                && ![
+                    "previous_response_id",
+                    "conversation",
+                    "prompt",
+                    "moderation",
+                    "context_management",
+                ]
+                .contains(&k.as_str())
+                && (CACHE_FIELDS.contains(&k.as_str())
+                    // Chat `store` persists completions; only false/null is admitted.
+                    || if profile == GenerationApi::Chat {
+                        matches!(k.as_str(), "metadata" | "store")
+                    } else {
+                        EXEC_FIELDS.contains(&k.as_str())
+                    })
+        })
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    // Reports may echo null, but request cache-options containers are non-nullable.
+    if matches!(
+        direction,
+        DecodeDirection::Request | DecodeDirection::Client(_)
+    ) && fields
+        .get("prompt_cache_options")
+        .is_some_and(Value::is_null)
+    {
+        return Err(CodecError::invalid());
+    }
+    if let Some(options) = fields
+        .get_mut("prompt_cache_options")
+        .filter(|v| !v.is_null())
+    {
+        let options = options.as_object_mut().ok_or(CodecError::invalid())?;
+        if ["mode", "ttl", "prewarm"]
+            .iter()
+            .any(|key| options.get(*key).is_some_and(Value::is_null))
         {
-            let options = options.as_object_mut().ok_or(CodecError::invalid())?;
-            if ["mode", "ttl", "prewarm"]
-                .iter()
-                .any(|key| options.get(*key).is_some_and(Value::is_null))
-            {
-                return Err(crate::semantic::context::ContextError::Invalid(
-                    crate::semantic::context::ContextReason::CacheOptions,
-                )
-                .into());
-            }
-            let allowed: &[&str] = if profile == GenerationApi::Chat {
-                &["mode", "ttl"]
-            } else {
-                &["mode", "ttl", "comparison_response_id", "prewarm"]
-            };
-            direction.fields(options, allowed)?;
-            options.retain(|key, _| allowed.contains(&key.as_str()));
+            return Err(crate::semantic::context::ContextError::Invalid(
+                crate::semantic::context::ContextReason::CacheOptions,
+            )
+            .into());
         }
-        let hints: wire::ExecutionHints =
-            serde_json::from_value(Value::Object(fields)).map_err(|_| CodecError::invalid())?;
-        let hints = Self::from(&hints);
-        hints.validate()?;
-        validate_identity(&hints.identity)?;
-        Ok(hints)
-    }
-    pub(in crate::protocol::openai) fn write(
-        &self,
-        o: &mut Map<String, Value>,
-    ) -> Result<(), CodecError> {
-        self.validate()?;
-        validate_identity(&self.identity)?;
-        let Value::Object(v) = serde_json::to_value(wire::ExecutionHints::from(self))
-            .map_err(|_| CodecError::invalid())?
-        else {
-            unreachable!()
+        let allowed: &[&str] = if profile == GenerationApi::Chat {
+            &["mode", "ttl"]
+        } else {
+            &["mode", "ttl", "comparison_response_id", "prewarm"]
         };
-        o.extend(v);
-        Ok(())
+        direction.fields(options, allowed)?;
+        options.retain(|key, _| allowed.contains(&key.as_str()));
     }
+    let hints: wire::ExecutionHints =
+        serde_json::from_value(Value::Object(fields)).map_err(|_| CodecError::invalid())?;
+    let hints = ExecutionHints::from(&hints);
+    hints.validate()?;
+    validate_identity(&hints.identity)?;
+    Ok(hints)
+}
+pub(in crate::protocol::openai) fn write_execution_hints(
+    hints: &ExecutionHints,
+    o: &mut Map<String, Value>,
+) -> Result<(), CodecError> {
+    hints.validate()?;
+    validate_identity(&hints.identity)?;
+    let Value::Object(v) = serde_json::to_value(wire::ExecutionHints::from(hints))
+        .map_err(|_| CodecError::invalid())?
+    else {
+        unreachable!()
+    };
+    o.extend(v);
+    Ok(())
 }
 
 pub(in crate::protocol::openai) fn timestamp(v: &Value) -> Result<Number, CodecError> {
@@ -309,7 +304,7 @@ mod tests {
             "prompt_cache_options":{"mode":"explicit","ttl":"30m","prewarm":false,"comparison_response_id":null},
             "safety_identifier":null,"user":"","metadata":{},"store":false
         });
-        let hints = ExecutionHints::read(
+        let hints = read_execution_hints(
             value.as_object().unwrap(),
             GenerationApi::Responses,
             DecodeDirection::Request,
@@ -333,7 +328,7 @@ mod tests {
             json!({"prompt_cache_options":{"ttl":"ThirtyMinutes"}}),
         ] {
             assert!(
-                ExecutionHints::read(
+                read_execution_hints(
                     invalid.as_object().unwrap(),
                     GenerationApi::Responses,
                     DecodeDirection::Request
@@ -363,7 +358,7 @@ mod tests {
             ..Default::default()
         };
         let mut output = Map::new();
-        hints.write(&mut output).unwrap();
+        write_execution_hints(&hints, &mut output).unwrap();
         assert_eq!(
             Value::Object(output),
             json!({

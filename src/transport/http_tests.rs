@@ -1,7 +1,7 @@
 //! Offline HTTP transport checks with two literal-loopback listeners.
 use super::*;
-use crate::test_proxy_environment as proxy_environment;
 use axum::{Router, body::Body, http::StatusCode, response::Response, routing::post};
+use morphiecore_test_support::proxy_environment;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
