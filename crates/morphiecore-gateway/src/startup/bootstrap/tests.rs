@@ -1,0 +1,1060 @@
+//! Independent activation/target assertions over synthetic file configuration.
+use super::{test_support::*, *};
+use crate::protocol::{
+    ClientProtocol,
+    failure::{CarrierReason, ShapeReason},
+};
+
+#[test]
+fn public_alias_preserves_canonical_identity_and_upstream_model() {
+    let boot = Fixture::new(
+        service(),
+        selected_models(&["glm-5.3-prime"], &["aliyun-dashscope-cn"]),
+        &[(
+            "aliyun-dashscope-cn",
+            "aliyun-dashscope-cn-api-key",
+            "synthetic-metered-key",
+        )],
+    )
+    .unwrap();
+    let (entry, request) = crate::ingress::admission::prepare(
+        &boot.gateway.state,
+        ClientProtocol::Chat,
+        br#"{"model":"glm-5.3-prime","messages":[{"role":"user","content":"hi"}],"max_completion_tokens":64}"#,&crate::execution::report::Report::default()).unwrap();
+    assert_eq!(entry.public.canonical_model.as_str(), "glm-5.3");
+    assert_eq!(entry.candidates.len(), 1);
+    let candidate = &entry.candidates[0];
+    assert_eq!(candidate.provider.id.as_str(), "aliyun-dashscope-cn");
+    let prepared = crate::execution::prepare(
+        &candidate.endpoint,
+        &candidate.provider,
+        &candidate.secret.resolve().unwrap().0,
+        &request,
+    )
+    .unwrap();
+    assert_eq!(prepared.origin, "https://dashscope.aliyuncs.com");
+    assert_eq!(prepared.path, "/compatible-mode/v1/chat/completions");
+    let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
+    assert_eq!(wire["model"], "glm-5.3-prime");
+    assert_eq!(wire["max_completion_tokens"], 64);
+    assert!(wire.get("max_tokens").is_none());
+    assert!(boot.gateway.state.entries.contains_key(&(
+        crate::protocol::ClientProtocol::Responses,
+        "glm-5.3-prime".into(),
+    )));
+}
+
+#[test]
+fn subscription_and_metered_entries_never_exchange_credentials_or_origins() {
+    for (subscription, metered) in [(true, false), (false, true), (true, true)] {
+        let mut credentials = vec![];
+        if subscription {
+            credentials.push((
+                "aliyun-tokenplan-cn",
+                "aliyun-tokenplan-cn-api-key",
+                "synthetic-subscription-key",
+            ));
+        }
+        if metered {
+            credentials.push((
+                "aliyun-dashscope-cn",
+                "aliyun-dashscope-cn-api-key",
+                "synthetic-metered-key",
+            ));
+        }
+        let providers: Vec<_> = credentials
+            .iter()
+            .map(|(provider, _, _)| *provider)
+            .collect();
+        let boot = Fixture::new(
+            service(),
+            selected_models(&["qwen3.8-flash", "qwen3.8-max"], &providers),
+            &credentials,
+        )
+        .unwrap();
+        for profile in [GenerationApi::Chat, GenerationApi::Responses] {
+            for model in ["qwen3.8-flash", "qwen3.8-max"] {
+                let value = if profile == GenerationApi::Chat {
+                    serde_json::json!({"model":model,"messages":[{"role":"user","content":"hi"}],"max_completion_tokens":32})
+                } else {
+                    serde_json::json!({"model":model,"input":"hi","max_output_tokens":32})
+                };
+                let admitted = crate::ingress::admission::prepare(
+                    &boot.gateway.state,
+                    crate::protocol::ClientProtocol::from(profile),
+                    &serde_json::to_vec(&value).unwrap(),
+                    &crate::execution::report::Report::default(),
+                );
+                let (entry, request) = admitted.unwrap();
+                assert_eq!(
+                    entry.candidates.len(),
+                    2 * (usize::from(subscription) + usize::from(metered))
+                );
+                for candidate in &entry.candidates {
+                    let (origin, secret) = match candidate.provider.id.as_str() {
+                        "aliyun-tokenplan-cn" => {
+                            assert!(subscription);
+                            (
+                                "https://token-plan.cn-beijing.maas.aliyuncs.com",
+                                "synthetic-subscription-key",
+                            )
+                        }
+                        "aliyun-dashscope-cn" => {
+                            assert!(metered);
+                            ("https://dashscope.aliyuncs.com", "synthetic-metered-key")
+                        }
+                        _ => panic!("unexpected provider"),
+                    };
+                    let prepared = crate::execution::prepare(
+                        &candidate.endpoint,
+                        &candidate.provider,
+                        &candidate.secret.resolve().unwrap().0,
+                        &request,
+                    )
+                    .unwrap();
+                    assert_eq!(prepared.origin, origin);
+                    assert_eq!(
+                        prepared.auth_header,
+                        ("authorization".into(), format!("Bearer {secret}"))
+                    );
+                    assert_eq!(
+                        prepared.path,
+                        if candidate.endpoint.protocol
+                            == crate::topology::GenerationProtocol::OpenAiChat
+                        {
+                            "/compatible-mode/v1/chat/completions"
+                        } else {
+                            "/compatible-mode/v1/responses"
+                        }
+                    );
+                    let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
+                    assert_eq!(wire["model"], model);
+                    assert_eq!(
+                        wire[if candidate.endpoint.protocol
+                            == crate::topology::GenerationProtocol::OpenAiChat
+                        {
+                            assert!(wire.get("max_tokens").is_none());
+                            "max_completion_tokens"
+                        } else {
+                            "max_output_tokens"
+                        }],
+                        32
+                    );
+                }
+            }
+        }
+        if subscription && metered {
+            let subscription_entry = &boot.gateway.state.entries[&(
+                crate::protocol::ClientProtocol::Chat,
+                "qwen3.8-flash".into(),
+            )];
+            let metered_entry = &boot.gateway.state.entries
+                [&(crate::protocol::ClientProtocol::Chat, "qwen3.8-max".into())];
+            assert_ne!(
+                subscription_entry.candidates[0]
+                    .endpoint
+                    .representation
+                    .openai()
+                    .unwrap()
+                    .adaptation
+                    .scope,
+                metered_entry.candidates[0]
+                    .endpoint
+                    .representation
+                    .openai()
+                    .unwrap()
+                    .adaptation
+                    .scope
+            );
+        }
+    }
+}
+
+#[test]
+fn bootstrap_is_loopback_and_requires_explicit_auth_and_provider_keys() {
+    let models = selected_models(&["deepseek-v4.1-flash-1017"], &["deepseek"]);
+    let credentials = [("deepseek", "deepseek-api-key", "synthetic-upstream-only")];
+    assert!(Fixture::new(service(), models.clone(), &credentials).is_ok());
+    // Omitted auth_file selects the fixture's required private auth.json.
+    assert!(Fixture::new(serde_json::json!({}), models.clone(), &credentials).is_ok());
+    let mut public = service();
+    public["bind"] = serde_json::json!("0.0.0.0:8080");
+    assert!(matches!(
+        Fixture::new(public, models.clone(), &credentials),
+        Err(StartupError::Listener)
+    ));
+    assert!(matches!(
+        Fixture::new(service(), models, &[]),
+        Err(StartupError::Credentials)
+    ));
+}
+
+#[test]
+fn responses_chat_bridge_is_explicit_and_replaces_not_falls_back_to_native_responses() {
+    let binding = catalog::API_KEY_BINDINGS
+        .iter()
+        .find(|b| b.model == "gpt-6-luna" && (b.provider)().id.as_str() == "openrouter")
+        .unwrap()
+        .endpoint_id(crate::topology::GenerationProtocol::OpenAiChat);
+    let config =
+        serde_json::json!({"models":{"gpt-6-luna":{"candidates":[{"binding":binding.as_str()}]}}});
+    let credentials = [(
+        "openrouter",
+        "openrouter-api-key",
+        "synthetic-upstream-only",
+    )];
+    let boot = Fixture::new(service(), config.clone(), &credentials).unwrap();
+    let entry = &boot.gateway.state.entries[&(
+        crate::protocol::ClientProtocol::Responses,
+        "gpt-6-luna".into(),
+    )];
+    assert_eq!(entry.candidates.len(), 1);
+    assert_eq!(
+        entry.candidates[0].endpoint.protocol,
+        crate::topology::GenerationProtocol::OpenAiChat
+    );
+    assert_eq!(
+        entry.candidates[0].endpoint.target.path.as_str(),
+        "/api/v1/chat/completions"
+    );
+    for invalid in ["unknown", "deepseek-flash-chat"] {
+        let mut bad = config.clone();
+        bad["models"]["gpt-6-luna"]["candidates"][0]["binding"] = serde_json::json!(invalid);
+        assert!(Fixture::new(service(), bad, &credentials).is_err());
+    }
+    assert!(
+        Fixture::new(
+            service(),
+            serde_json::json!({"models":{"gpt-6-luna":{"candidates":[]}}}),
+            &credentials
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn transcription_model_requires_one_explicit_binding_when_providers_share_identity() {
+    let model = "qwen-audio-3.0-asr-flash";
+    let config = |selection: serde_json::Value| serde_json::json!({"models":{model:selection}});
+    for (binding, provider, pool) in [
+        (
+            "tokenplan-qwen-asr",
+            "aliyun-tokenplan-cn",
+            "aliyun-tokenplan-cn-api-key",
+        ),
+        (
+            "dashscope-qwen-asr",
+            "aliyun-dashscope-cn",
+            "aliyun-dashscope-cn-api-key",
+        ),
+    ] {
+        let credentials = [(provider, pool, "synthetic-asr-key")];
+        let selection = serde_json::json!({"binding":binding,"account":pool});
+        let boot = Fixture::new(service(), config(selection.clone()), &credentials).unwrap();
+        assert_eq!(boot.gateway.state.transcriptions.len(), 1);
+        assert!(boot.gateway.state.transcriptions.contains_key(model));
+        assert!(boot.gateway.state.entries.is_empty());
+        let discovery: serde_json::Value =
+            serde_json::from_slice(&boot.gateway.state.models.list).unwrap();
+        assert_eq!(discovery["data"].as_array().unwrap().len(), 1);
+        assert_eq!(discovery["data"][0]["id"], model);
+        assert_eq!(discovery["data"][0]["owned_by"], "Alibaba");
+        assert!(matches!(
+            Fixture::new(service(), config(selection.clone()), &[]),
+            Err(StartupError::Credentials)
+        ));
+        for invalid in [
+            serde_json::json!({}),
+            serde_json::json!({"binding":"unknown"}),
+            serde_json::json!({"binding":"xiaomi-asr"}),
+            serde_json::json!({"binding":binding,"candidates":[{"binding":binding}]}),
+        ] {
+            assert!(Fixture::new(service(), config(invalid), &credentials).is_err());
+        }
+    }
+    let wrong_pool = [(
+        "aliyun-tokenplan-cn",
+        "aliyun-tokenplan-cn-api-key",
+        "synthetic-asr-key",
+    )];
+    assert!(matches!(
+        Fixture::new(
+            service(),
+            config(
+                serde_json::json!({"binding":"dashscope-qwen-asr","account":"aliyun-tokenplan-cn-api-key"})
+            ),
+            &wrong_pool
+        ),
+        Err(StartupError::Credentials)
+    ));
+}
+
+#[test]
+fn xiaomi_audio_is_explicit_and_prepares_its_own_json_contracts() {
+    let credentials = [("xiaomi", "xiaomi-api-key", "synthetic-upstream-only")];
+    let implicit = Fixture::new(
+        service(),
+        selected_models(&["mimo-v2.6-pro"], &["xiaomi"]),
+        &credentials,
+    )
+    .unwrap();
+    assert!(implicit.gateway.state.speech.is_empty());
+    assert!(implicit.gateway.state.transcriptions.is_empty());
+    let explicit = Fixture::new(
+        service(),
+        selected_models(&["mimo-v2.5-tts", "mimo-v2.5-asr"], &["xiaomi"]),
+        &credentials,
+    )
+    .unwrap();
+    assert!(explicit.gateway.state.entries.is_empty());
+    assert_eq!(explicit.gateway.state.speech.len(), 1);
+    assert_eq!(explicit.gateway.state.transcriptions.len(), 1);
+    let topology = catalog::default_topology().unwrap();
+    let provider = crate::provider::catalog::xiaomi();
+    let secret = SecretMaterial::new("synthetic-upstream-only").unwrap();
+    let speech = crate::protocol::speech::Request::new(
+        "mimo-v2.5-tts",
+        crate::semantic::task::speech_synthesis::SpeechRequest::new("Hello.", "Chloe").unwrap(),
+    );
+    let transcription = crate::protocol::transcription::Request {
+        model: "mimo-v2.5-asr".into(),
+        task: crate::semantic::task::speech_recognition::RecognitionRequest::new(
+            crate::semantic::task::speech_recognition::AudioInput::new(
+                bytes::Bytes::from_static(b"synthetic"),
+                crate::semantic::task::speech_recognition::InputFormat::Wav,
+            )
+            .unwrap(),
+        ),
+    };
+    for prepared in [
+        crate::execution::speech::prepare(
+            topology.speech_route(&speech.model).unwrap(),
+            &provider,
+            &speech,
+        )
+        .unwrap(),
+        crate::execution::transcription::prepare(
+            topology.transcription_route(&transcription.model).unwrap(),
+            &provider,
+            &transcription,
+        )
+        .unwrap(),
+    ] {
+        let prepared = prepared.authorize(&provider, &secret).unwrap();
+        assert_eq!(prepared.origin, "https://api.xiaomimimo.com");
+        assert_eq!(prepared.path, "/v1/chat/completions");
+        assert!(
+            prepared
+                .safe_headers
+                .contains(&("accept".into(), "application/json".into()))
+        );
+        assert!(
+            !prepared
+                .safe_headers
+                .iter()
+                .any(|(name, _)| name == "x-dashscope-sse")
+        );
+        assert_eq!(
+            prepared.auth_header,
+            (
+                "authorization".into(),
+                "Bearer synthetic-upstream-only".into()
+            )
+        );
+    }
+}
+
+#[test]
+fn codex_history_reaches_the_native_binding_by_named_rules() {
+    let mut models = selected_models(&["claude-haiku-5-5"], &["opencode-go"]);
+    models["models"]["claude-haiku-5-5"]["candidates"][0]["reasoning_as_text"] =
+        serde_json::json!(true);
+    let boot = Fixture::new(
+        service(),
+        models,
+        &[(
+            "opencode-go",
+            "opencode-go-api-key",
+            "synthetic-upstream-only",
+        )],
+    )
+    .unwrap();
+    let call = |id: &str, output: &str| {
+        [
+            serde_json::json!({"type":"function_call","call_id":id,"name":"lookup","arguments":"{}"}),
+            serde_json::json!({"type":"function_call_output","call_id":id,"output":output}),
+        ]
+    };
+    let mut input = vec![serde_json::json!({"role":"user","content":"go"})];
+    input.extend(call("call:1", "found"));
+    input.extend(call("call_2", "again"));
+    let body = |reasoning: serde_json::Value, input: &[serde_json::Value]| {
+        let mut body = serde_json::json!({"model":"claude-haiku-5-5","instructions":"brief","max_output_tokens":64,
+        "temperature":0.2,"store":false,"include":["reasoning.encrypted_content"],
+        "tools":[{"type":"function","name":"lookup","parameters":{"type":"object","properties":{}},"strict":false}],
+        "input":input});
+        if !reasoning.is_null() {
+            body["reasoning"] = reasoning;
+        }
+        body
+    };
+    let prepare = |reasoning, input: &[serde_json::Value]| {
+        let (entry, mut request) = crate::ingress::admission::prepare(
+            &boot.gateway.state,
+            ClientProtocol::Responses,
+            &serde_json::to_vec(&body(reasoning, input)).unwrap(),
+            &crate::execution::report::Report::default(),
+        )
+        .unwrap();
+        request.conversation =
+            Some(crate::semantic::context::ConversationContext::conversation("synthetic").unwrap());
+        let candidate = &entry.candidates[0];
+        let (prepared, rules) = crate::execution::prepare_with_rules(
+            &candidate.endpoint,
+            &candidate.provider,
+            &candidate.secret.resolve().unwrap().0,
+            &request,
+        )?;
+        Ok::<_, crate::execution::AttemptError>((
+            serde_json::from_slice::<serde_json::Value>(&prepared.body).unwrap(),
+            rules,
+        ))
+    };
+    let (wire, rules) = prepare(serde_json::Value::Null, &input).unwrap();
+    let projected = "mc_0af6315558b41599b4a0fbfa5d31d4431b2e5c81";
+    assert_eq!(
+        wire,
+        serde_json::json!({"model":"claude-haiku-5-5","max_tokens":64,"stream":true,"system":"brief",
+        "tools":[{"name":"lookup","input_schema":{"type":"object","properties":{}},"strict":false}],
+        "cache_control":{"type":"ephemeral"},"messages":[
+            {"role":"user","content":[{"type":"text","text":"go"}]},
+            {"role":"assistant","content":[{"type":"tool_use","id":projected,"name":"lookup","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":projected,"content":"found"}]},
+            {"role":"assistant","content":[{"type":"tool_use","id":"call_2","name":"lookup","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"call_2","content":"again"}]}
+        ]})
+    );
+    assert_eq!(
+        rules,
+        [
+            "generation.omit-encrypted-reasoning-include.v1",
+            "generation.omit-temperature.v1",
+        ]
+    );
+    let (wire, rules) = prepare(serde_json::json!({"effort":"xhigh"}), &input).unwrap();
+    assert_eq!(wire["output_config"], serde_json::json!({"effort":"xhigh"}));
+    assert!(
+        wire.get("thinking").is_none(),
+        "effort does not invent activation"
+    );
+    assert_eq!(
+        rules,
+        [
+            "generation.omit-encrypted-reasoning-include.v1",
+            "generation.omit-temperature.v1",
+            "generation.project-effort.v1"
+        ]
+    );
+    let (wire, rules) = prepare(serde_json::json!({"summary":"auto"}), &input).unwrap();
+    assert!(
+        wire.get("thinking").is_none(),
+        "auto presentation does not enable thinking"
+    );
+    assert_eq!(
+        rules,
+        [
+            "generation.omit-encrypted-reasoning-include.v1",
+            "generation.omit-temperature.v1"
+        ]
+    );
+    // Foreign opaque values are dropped; readable reasoning without this target's
+    // signature becomes assistant text in every turn.
+    let foreign = crate::protocol::replay_envelope::seal(
+        &crate::protocol::replay_envelope::issuer("openai", "gpt-6.2-sol"),
+        crate::semantic::task::generation::ReplayFormat::ResponsesEncrypted,
+        "synthetic-foreign-token",
+    )
+    .unwrap();
+    let reasoning = |id: &str, summary: &[&str], sealed: Option<&str>| {
+        let mut item = serde_json::json!({"type":"reasoning","id":id,"summary":summary
+            .iter().map(|text| serde_json::json!({"type":"summary_text","text":text})).collect::<Vec<_>>()});
+        if let Some(sealed) = sealed {
+            item["encrypted_content"] = serde_json::json!(sealed);
+        }
+        item
+    };
+    let mut history = vec![
+        serde_json::json!({"role":"user","content":"go"}),
+        reasoning("rs_1", &["Plan A"], Some(foreign.as_str())),
+        reasoning("rs_2", &[], Some(foreign.as_str())),
+        reasoning("rs_3", &["Plan B"], None),
+    ];
+    history.extend(call("call_2", "again"));
+    let (entry, mut rejected) = crate::ingress::admission::prepare(
+        &boot.gateway.state,
+        ClientProtocol::Responses,
+        &serde_json::to_vec(&body(serde_json::Value::Null, &history)).unwrap(),
+        &crate::execution::report::Report::default(),
+    )
+    .unwrap();
+    rejected.conversation =
+        Some(crate::semantic::context::ConversationContext::conversation("synthetic").unwrap());
+    let mut disabled = entry.candidates[0].endpoint.clone();
+    assert!(
+        disabled
+            .representation
+            .messages()
+            .unwrap()
+            .reasoning_as_text
+    );
+    disabled
+        .representation
+        .messages_mut()
+        .unwrap()
+        .reasoning_as_text = false;
+    let uncarried = disabled.encode_request(&rejected).unwrap();
+    assert!(!uncarried.to_string().contains("Plan B"));
+    let (wire, rules) = prepare(serde_json::Value::Null, &history).unwrap();
+    assert_eq!(
+        wire["messages"],
+        serde_json::json!([
+            {"role":"user","content":[{"type":"text","text":"go"}]},
+            {"role":"assistant","content":[
+                {"type":"tool_use","id":"call_2","name":"lookup","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"call_2","content":"again"}]}
+        ])
+    );
+    assert_eq!(
+        rules,
+        [
+            "generation.omit-encrypted-reasoning-include.v1",
+            "generation.omit-temperature.v1",
+            "messages.transfer-visible-history.v1",
+        ]
+    );
+    // A client ID equal to a projected digest fails instead of merging two calls.
+    input.truncate(3);
+    input.extend(call(projected, "again"));
+    let error = prepare(serde_json::Value::Null, &input).unwrap_err();
+    assert!(
+        matches!(
+            error.codec(),
+            Some(crate::protocol::CodecError::Invalid(
+                ShapeReason::CallIdentity
+            ))
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
+    let directory = morphiecore_test_support::filesystem::private_directory();
+    let store = directory.path().join("credentials");
+    let manager = crate::credential::CredentialManager::new(&store, vec![]).unwrap();
+    manager
+        .add_api_key(
+            "openrouter",
+            "one",
+            crate::credential::Secret::new("synthetic-configured-key".into()).unwrap(),
+        )
+        .unwrap();
+    let mut account_config = serde_json::json!({"version":1,"providers":{"openrouter":{"accounts":[
+        {"name":"primary","enabled":true,"credential":{"alias":"one"},"base_url":"https://primary.example/custom/v1"},
+        {"name":"secondary","enabled":true,"credential":{"alias":"one"},"base_url":"https://secondary.example/v1"}
+    ]}}});
+    write_accounts(directory.path(), &account_config);
+    let binding = catalog::API_KEY_BINDINGS
+        .iter()
+        .find(|b| b.model == "claude-haiku-5-5" && (b.provider)().id.as_str() == "openrouter")
+        .unwrap();
+    let gateway_file = directory.path().join("gateway.json");
+    let models_file = directory.path().join("models.json");
+    write_private(
+        &directory.path().join("auth.json"),
+        br#"{"version":1,"agents":[{"agent_id":"fixture-agent","key":"synthetic-gateway-client-token-0001"}]}"#,
+    );
+    let private_write = |path: &std::path::Path, mut value: serde_json::Value| {
+        value["version"] = serde_json::json!(1);
+        write_private(path, &serde_json::to_vec(&value).unwrap());
+    };
+    private_write(
+        &gateway_file,
+        serde_json::json!({
+            "auth_file":"auth.json",
+            "bind":"127.0.0.1:0",
+            "models_file":"models.json"
+        }),
+    );
+    let model_config = serde_json::json!({"models":{"claude-haiku-5-5":{
+        "total_timeout_ms":12000,
+        "candidates":[{
+            "binding":binding.endpoint_id(crate::topology::GenerationProtocol::OpenAiChat).as_str(),
+            "upstream_model":"configured-wire-model"
+        }]
+    }}});
+    private_write(&models_file, model_config.clone());
+    let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
+    let policy = configured.gateway.state.limits.delta_coalescing.unwrap();
+    assert_eq!((policy.max_delay_ms, policy.max_pending_bytes), (50, 16384));
+    let embedded = Limits::default().delta_coalescing.unwrap();
+    assert_eq!(
+        (policy.max_delay_ms, policy.max_pending_bytes),
+        (embedded.max_delay_ms, embedded.max_pending_bytes)
+    );
+    let mut service = serde_json::json!({
+        "auth_file":"auth.json",
+        "bind":"127.0.0.1:0","models_file":"models.json",
+        "delivery":{"delta_coalescing":{"max_delay_ms":10,"max_pending_bytes":16384}}
+    });
+    private_write(&gateway_file, service.clone());
+    let enabled = Bootstrap::from_files(&gateway_file, &store).unwrap();
+    let policy = enabled.gateway.state.limits.delta_coalescing.unwrap();
+    assert_eq!((policy.max_delay_ms, policy.max_pending_bytes), (10, 16384));
+    service["delivery"]["delta_coalescing"] = serde_json::Value::Null;
+    private_write(&gateway_file, service.clone());
+    assert!(
+        Bootstrap::from_files(&gateway_file, &store)
+            .unwrap()
+            .gateway
+            .state
+            .limits
+            .delta_coalescing
+            .is_none()
+    );
+    for invalid in [
+        serde_json::json!({"max_delay_ms":0,"max_pending_bytes":16384}),
+        serde_json::json!({"max_delay_ms":10,"max_pending_bytes":0}),
+        serde_json::json!({"max_delay_ms":101,"max_pending_bytes":16384}),
+        serde_json::json!({"max_delay_ms":50}),
+        serde_json::json!(false),
+    ] {
+        service["delivery"]["delta_coalescing"] = invalid;
+        private_write(&gateway_file, service.clone());
+        assert!(Bootstrap::from_files(&gateway_file, &store).is_err());
+    }
+    service["delivery"]
+        .as_object_mut()
+        .unwrap()
+        .remove("delta_coalescing");
+    private_write(&gateway_file, service);
+    let entry = &configured.gateway.state.entries[&(
+        crate::protocol::ClientProtocol::Chat,
+        "claude-haiku-5-5".into(),
+    )];
+    assert_eq!(entry.policy.total_timeout_ms, Some(12000));
+    assert_eq!(entry.candidates.len(), 2);
+    assert_eq!(
+        entry.candidates[0].endpoint.target.origin.as_str(),
+        "https://primary.example"
+    );
+    assert_eq!(
+        entry.candidates[0].endpoint.target.path.as_str(),
+        "/custom/v1/chat/completions"
+    );
+    assert_eq!(entry.candidates[0].endpoint.execution.timeout_ms, 3_600_000);
+    assert_eq!(
+        entry.candidates[0].endpoint.upstream_model,
+        "configured-wire-model"
+    );
+    assert_eq!(
+        entry.candidates[1].endpoint.target.origin.as_str(),
+        "https://secondary.example"
+    );
+    assert_ne!(
+        entry.candidates[0].cache_scope(),
+        entry.candidates[1].cache_scope()
+    );
+    assert_ne!(
+        entry.candidates[0]
+            .endpoint
+            .adapter()
+            .unwrap()
+            .openai()
+            .unwrap()
+            .adaptation
+            .scope,
+        entry.candidates[1]
+            .endpoint
+            .adapter()
+            .unwrap()
+            .openai()
+            .unwrap()
+            .adaptation
+            .scope,
+    );
+    assert!(
+        !entry.candidates[0]
+            .endpoint
+            .representation
+            .openai()
+            .unwrap()
+            .reasoning_as_text
+    );
+    let mut invalid = model_config.clone();
+    invalid["models"]["claude-haiku-5-5"]["candidates"][0]["base_url"] =
+        serde_json::json!("https://user:secret@primary.example/v1");
+    private_write(&models_file, invalid);
+    assert!(Bootstrap::from_files(&gateway_file, &store).is_err());
+
+    let mut ordered = selected_models(&["claude-haiku-5-5"], &["openrouter", "opencode-go"]);
+    ordered["models"]["claude-haiku-5-5"]["candidates"]
+        .as_array_mut()
+        .unwrap()
+        .reverse();
+    let credentials = [
+        ("opencode-go", "opencode-go-api-key", "synthetic-upstream"),
+        ("openrouter", "openrouter-api-key", "synthetic-upstream"),
+    ];
+    let providers = |boot: &Fixture, protocol| {
+        boot.gateway
+            .state
+            .entries
+            .get(&(
+                crate::protocol::ClientProtocol::from(protocol),
+                "claude-haiku-5-5".into(),
+            ))
+            .map(|entry| {
+                entry
+                    .candidates
+                    .iter()
+                    .map(|c| c.provider.id.as_str().to_owned())
+                    .collect::<Vec<_>>()
+            })
+    };
+    let boot = Fixture::new(test_support::service(), ordered.clone(), &credentials).unwrap();
+    assert_eq!(
+        providers(&boot, GenerationApi::Chat).unwrap(),
+        ["opencode-go", "openrouter"]
+    );
+    assert_eq!(
+        providers(&boot, GenerationApi::Responses).unwrap(),
+        ["opencode-go", "openrouter"]
+    );
+    let mut unlisted = ordered.clone();
+    unlisted["models"]["claude-haiku-5-5"]["candidates"]
+        .as_array_mut()
+        .unwrap()
+        .remove(1);
+    let boot = Fixture::new(test_support::service(), unlisted, &credentials).unwrap();
+    assert_eq!(
+        providers(&boot, GenerationApi::Chat).unwrap(),
+        ["opencode-go"]
+    );
+    write_private(&models_file, br#"{"models":{},"models":{}}"#);
+    assert!(Bootstrap::from_files(&gateway_file, &store).is_err());
+
+    let replay_binding = catalog::API_KEY_BINDINGS
+        .iter()
+        .find(|b| b.model == "gpt-6-luna" && (b.provider)().id.as_str() == "openrouter")
+        .unwrap()
+        .endpoint_id(crate::topology::GenerationProtocol::OpenAiResponses);
+    account_config["providers"]["openrouter"]["accounts"][0]["base_url"] =
+        serde_json::json!("https://primary.example/first/v1");
+    account_config["providers"]["openrouter"]["accounts"][1]["base_url"] =
+        serde_json::json!("https://primary.example/second/v1");
+    write_accounts(directory.path(), &account_config);
+    private_write(
+        &models_file,
+        serde_json::json!({"models":{"gpt-6-luna":{
+            "candidates":[{"binding":replay_binding.as_str()}]
+        }}}),
+    );
+    let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
+    let entry = &configured.gateway.state.entries[&(
+        crate::protocol::ClientProtocol::Responses,
+        "gpt-6-luna".into(),
+    )];
+    let first = &entry.candidates[0].endpoint;
+    let second = &entry.candidates[1].endpoint;
+    assert_ne!(first.replay_origin(), second.replay_origin());
+    let sealed = crate::protocol::replay_envelope::seal(
+        &first.replay_origin(),
+        crate::semantic::task::generation::ReplayFormat::ResponsesCompaction,
+        "synthetic-compacted-history",
+    )
+    .unwrap();
+    let mut replay = crate::protocol::openai::GenerationCodec::new(
+        GenerationApi::Responses,
+        crate::protocol::openai::Dialect::Standard,
+        Some(crate::protocol::replay_envelope::CLIENT_ORIGIN.clone()),
+    )
+    .decode_request(
+        &serde_json::to_vec(&serde_json::json!({
+            "model":"gpt-6-luna",
+            "input":[{"type":"compaction","id":"cmp","encrypted_content":sealed.as_str()}]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    crate::execution::replay::open_from_client(&mut replay).unwrap();
+    assert!(first.encode_request(&replay).is_err());
+    // Catalog compaction admission stays closed. Synthetic caps isolate replay
+    // authority independently of that unchanged public admission boundary.
+    let mut first = first.clone();
+    let mut second = second.clone();
+    first
+        .representation
+        .openai_mut()
+        .unwrap()
+        .dispositions
+        .set_native(crate::semantic::task::generation::Feature::Compaction, true);
+    second
+        .representation
+        .openai_mut()
+        .unwrap()
+        .dispositions
+        .set_native(crate::semantic::task::generation::Feature::Compaction, true);
+    assert_eq!(
+        first.encode_request(&replay).unwrap()["input"][0]["encrypted_content"],
+        "synthetic-compacted-history"
+    );
+    assert!(second.encode_request(&replay).is_err());
+
+    let google = &catalog::GOOGLE_BINDINGS[0];
+    let provider = google.provider();
+    manager
+        .add_api_key(
+            provider.id.as_str(),
+            "one",
+            Secret::new("synthetic-google-key".into()).unwrap(),
+        )
+        .unwrap();
+    account_config["providers"]["google"] = serde_json::json!({"accounts":[{
+        "name":"primary","enabled":true,"credential":{"alias":"one"}
+    }]});
+    write_accounts(directory.path(), &account_config);
+    let limits_config = serde_json::json!({"models":{google.model:{"candidates":[
+        {"binding":google.endpoint().id.as_str(),
+            "allowed_effort":["medium","high"],"maximum_output_tokens":4096,
+            "context_window_tokens":200000,"maximum_input_tokens":100000},
+        {"binding":google.interactions_endpoint().id.as_str()}
+    ]}}});
+    private_write(&models_file, limits_config.clone());
+    let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
+    for protocol in [GenerationApi::Chat, GenerationApi::Responses] {
+        let entry = &configured.gateway.state.entries[&(
+            crate::protocol::ClientProtocol::from(protocol),
+            google.model.into(),
+        )];
+        assert_eq!(entry.candidates.len(), 2);
+        let limits = entry.candidates[0].endpoint.representation.model_limits();
+        assert_eq!(limits.maximum_output_tokens, Some(4096));
+        assert_eq!(limits.context_window_tokens, Some(200_000));
+        assert_eq!(limits.maximum_input_tokens, Some(100_000));
+        assert_eq!(
+            limits.allowed_effort.as_deref(),
+            Some(
+                &[
+                    crate::semantic::task::generation::EffortLevel::Medium,
+                    crate::semantic::task::generation::EffortLevel::High,
+                ][..]
+            )
+        );
+        assert_eq!(
+            entry.candidates[1].endpoint.representation.model_limits(),
+            google.interactions_endpoint().representation.model_limits()
+        );
+    }
+    // The loader retains the catalog scope policy when no conversion override is supplied.
+    let (entry, request) = crate::ingress::admission::prepare(
+        &configured.gateway.state,
+        ClientProtocol::Messages,
+        &serde_json::to_vec(&serde_json::json!({"model":google.model,"max_tokens":2048,
+            "thinking":{"type":"adaptive"},"output_config":{"effort":"medium"},
+            "messages":[{"role":"user","content":"go"}]}))
+        .unwrap(),
+        &crate::execution::report::Report::default(),
+    )
+    .unwrap();
+    let before = request.clone();
+    for candidate in &entry.candidates {
+        use crate::semantic::task::generation::{EffortControl, EffortLevel, EffortScope};
+        let projection = candidate
+            .endpoint
+            .encode_request_with_evidence(&request)
+            .unwrap();
+        let evidence: Vec<_> = projection
+            .evidence
+            .iter()
+            .filter_map(|c| match c {
+                crate::protocol::conversion::generation::Effect::Reasoning {
+                    rule,
+                    input,
+                    output,
+                    preset_tokens,
+                    ..
+                } => Some((rule, input, output, preset_tokens)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(evidence.len(), 1);
+        let (rule, input, output, preset) = evidence[0];
+        assert_eq!(
+            rule.as_str(),
+            "google.gemini-3.8-flash.response-effort-to-thinking.v1"
+        );
+        assert_eq!(
+            input.effort.as_ref(),
+            Some(&EffortControl {
+                scope: EffortScope::Response,
+                level: EffortLevel::Medium,
+            })
+        );
+        let mut expected = input.clone();
+        expected.effort = Some(EffortControl {
+            scope: EffortScope::Reasoning,
+            level: EffortLevel::Medium,
+        });
+        assert_eq!(output, &expected);
+        assert_eq!(*preset, None);
+        assert_eq!(input.max_output_tokens, Some(2048));
+        assert!(
+            !candidate
+                .endpoint
+                .representation
+                .dispositions()
+                .native(crate::semantic::task::generation::Feature::ResponseEffort)
+        );
+    }
+    assert_eq!(request, before);
+    let scoped_request = request;
+    for (name, value) in [
+        ("allowed_effort", serde_json::json!([])),
+        ("allowed_effort", serde_json::json!(["high", "high"])),
+        ("allowed_effort", serde_json::json!(["minimal"])),
+        ("allowed_effort", serde_json::json!(["unknown"])),
+        (
+            "allowed_effort",
+            serde_json::json!(["high", "medium", "low", "minimal", "xhigh", "max", "high"]),
+        ),
+        ("allowed_effort", serde_json::json!("high")),
+        ("maximum_output_tokens", serde_json::json!(0)),
+        ("maximum_output_tokens", serde_json::json!(65537)),
+        ("maximum_output_tokens", serde_json::json!(-1)),
+        ("maximum_output_tokens", serde_json::json!(1.5)),
+        ("context_window_tokens", serde_json::json!(0)),
+        ("context_window_tokens", serde_json::json!(-1)),
+        ("maximum_input_tokens", serde_json::json!(0)),
+        ("maximum_input_tokens", serde_json::json!(1048577)),
+    ] {
+        let mut invalid = limits_config.clone();
+        invalid["models"][google.model]["candidates"][0][name] = value;
+        private_write(&models_file, invalid);
+        assert!(
+            Bootstrap::from_files(&gateway_file, &store).is_err(),
+            "{name}"
+        );
+    }
+    // Changed trusted deployments do not inherit unrelated planning-capacity evidence.
+    for (field, replacement) in [
+        ("upstream_model", "another-model".to_owned()),
+        ("base_url", "https://example.invalid".to_owned()),
+        (
+            "base_url",
+            format!("{}/another-path", google.provider().origin.as_str()),
+        ),
+    ] {
+        let mut candidate = serde_json::json!({"binding":google.endpoint().id.as_str()});
+        account_config["providers"]["google"]["accounts"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("base_url");
+        if field == "base_url" {
+            account_config["providers"]["google"]["accounts"][0]["base_url"] =
+                serde_json::json!(replacement);
+        } else {
+            candidate[field] = serde_json::json!(replacement);
+        }
+        write_accounts(directory.path(), &account_config);
+        private_write(
+            &models_file,
+            serde_json::json!({"models":{google.model:{"candidates":[candidate.clone()]}}}),
+        );
+        let changed = Bootstrap::from_files(&gateway_file, &store).unwrap();
+        let entry =
+            &changed.gateway.state.entries[&(ClientProtocol::Responses, google.model.into())];
+        let limits = entry.candidates[0].endpoint.representation.model_limits();
+        assert_eq!(limits.maximum_input_tokens, None);
+        assert_eq!(limits.context_window_tokens, None);
+        assert_eq!(limits.maximum_output_tokens, Some(65_536));
+        candidate["context_window_tokens"] = serde_json::json!(2_000_000);
+        candidate["maximum_input_tokens"] = serde_json::json!(1_200_000);
+        private_write(
+            &models_file,
+            serde_json::json!({"models":{google.model:{"candidates":[candidate]}}}),
+        );
+        let declared = Bootstrap::from_files(&gateway_file, &store).unwrap();
+        let entry =
+            &declared.gateway.state.entries[&(ClientProtocol::Responses, google.model.into())];
+        let limits = entry.candidates[0].endpoint.representation.model_limits();
+        assert_eq!(limits.context_window_tokens, Some(2_000_000));
+        assert_eq!(limits.maximum_input_tokens, Some(1_200_000));
+    }
+    account_config["providers"]["google"]["accounts"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("base_url");
+    write_accounts(directory.path(), &account_config);
+    let mut models = serde_json::json!({"models":{google.model:{
+        "thinking_tokens":{"minimal":1024,"low":2048,"medium":3072,"high":8192,"xhigh":16384,"max":24576},
+        "candidates":[{"binding":google.endpoint().id.as_str(),"thinking_conversion":"effort_to_budget"}]
+    }}});
+    private_write(&models_file, models.clone());
+    let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
+    let (entry, request) = crate::ingress::admission::prepare(
+        &configured.gateway.state, ClientProtocol::Responses,
+        &serde_json::to_vec(&serde_json::json!({
+            "model":google.model,"input":"hi","reasoning":{"effort":"medium"},"max_output_tokens":6000
+        })).unwrap(),&crate::execution::report::Report::default()).unwrap();
+    let before = request.clone();
+    let (wire, rules) = entry.candidates[0]
+        .endpoint
+        .encode_request_with_rules(&request)
+        .unwrap();
+    assert_eq!(
+        wire["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+        "MEDIUM"
+    );
+    assert!(
+        wire["generationConfig"]["thinkingConfig"]
+            .get("thinkingBudget")
+            .is_none()
+    );
+    assert!(!rules.contains(&"configured.effort-to-budget.v1"));
+    assert_eq!(request, before);
+    assert!(
+        matches!(
+            entry.candidates[0].endpoint.encode_request(&scoped_request),
+            Err(crate::protocol::ConversionFailure { cause: crate::protocol::ConversionCause::Codec(crate::protocol::CodecError::Unsupported(reason)), .. })
+                if matches!(reason,CarrierReason::Reasoning)
+        ),
+        "an explicit numeric policy replaces, rather than chains with, the scope policy"
+    );
+    models["models"][google.model]["thinking_tokens"]["medium"] = serde_json::json!(7000);
+    private_write(&models_file, models);
+    let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
+    let entry = &configured.gateway.state.entries[&(
+        crate::protocol::ClientProtocol::Responses,
+        google.model.into(),
+    )];
+    let wire = entry.candidates[0]
+        .endpoint
+        .encode_request(&request)
+        .unwrap();
+    assert_eq!(
+        wire["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+        "MEDIUM"
+    );
+    assert_eq!(wire["generationConfig"]["maxOutputTokens"], 6000);
+
+    private_write(
+        &gateway_file,
+        serde_json::json!({
+            "auth_file":"auth.json",
+            "credentials_dir":"credentials"
+        }),
+    );
+    assert!(Bootstrap::from_options(&gateway_file, None, Some("http://127.0.0.1:9")).is_ok());
+    assert!(Bootstrap::from_files(&gateway_file, &directory.path().join("empty-store")).is_err());
+}

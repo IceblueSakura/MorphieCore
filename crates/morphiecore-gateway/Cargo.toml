@@ -1,0 +1,59 @@
+[package]
+name = "morphiecore-gateway"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "HTTP ingress, startup bootstrap, routing, recovery and diagnostics for MorphieCore"
+
+[features]
+test-hooks = [
+    "morphiecore-runtime/test-hooks",
+    "dep:morphiecore-test-support",
+    "dep:tempfile",
+    "opentelemetry_sdk/testing",
+]
+
+[dependencies]
+morphiecore-semantic.workspace = true
+morphiecore-lowering.workspace = true
+morphiecore-protocol.workspace = true
+morphiecore-catalog.workspace = true
+morphiecore-runtime.workspace = true
+
+axum.workspace = true
+base64.workspace = true
+bytes.workspace = true
+futures-util.workspace = true
+getrandom.workspace = true
+httpdate.workspace = true
+hyper.workspace = true
+mime.workspace = true
+opentelemetry.workspace = true
+opentelemetry_sdk.workspace = true
+opentelemetry-otlp.workspace = true
+opentelemetry-appender-tracing.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+strum.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-opentelemetry.workspace = true
+url.workspace = true
+
+morphiecore-test-support = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
+
+[dev-dependencies]
+morphiecore-runtime = { workspace = true, features = ["test-hooks"] }
+morphiecore-test-support.workspace = true
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+reqwest = { workspace = true, features = ["json"] }
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+tower.workspace = true

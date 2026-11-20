@@ -1,0 +1,474 @@
+//! One acknowledged frame in flight. A chain owns one permit/deadline/trace;
+//! each candidate owns a fresh decoder/delivery, and visibility forbids advancement.
+#[cfg(test)]
+mod tests;
+use crate::{
+    ApiError, Limits,
+    diagnostics::{Outcome, Stage, Trace},
+    execution::ResponseDelivery,
+};
+use axum::{
+    body::{Body, Bytes},
+    response::Response,
+};
+use futures_util::Stream;
+use std::{
+    pin::Pin,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    task::{Context, Poll},
+};
+use tokio::{
+    sync::{OwnedSemaphorePermit, mpsc, oneshot},
+    task::AbortHandle,
+    time::Instant,
+};
+pub(super) struct Chunk {
+    bytes: Bytes,
+    ack: oneshot::Sender<()>,
+    final_frame: bool,
+    audio_content_type: Option<&'static str>,
+}
+pub(super) enum ResponseType {
+    Json,
+    EventStream,
+    Audio,
+}
+pub(super) enum Message {
+    Chunk(Chunk),
+    Error(ApiError),
+}
+#[derive(Default)]
+pub(super) struct FailureState {
+    /// The first failure time survives later classification and error-body cleanup.
+    pub(super) head: Option<crate::routing::executors::FailureObservation>,
+    /// A later I/O interruption does not replace the classified upstream failure.
+    interruption: Option<crate::routing::executors::FailureObservation>,
+    pub(super) material_revision: Option<u64>,
+    previous: Vec<crate::routing::executors::FailureObservation>,
+}
+#[derive(Default)]
+enum FinalHandoff {
+    #[default]
+    Open,
+    Queued,
+    Accepted,
+    Revoked,
+}
+#[derive(Default)]
+pub(super) struct Status {
+    error: Mutex<Option<ApiError>>,
+    complete: AtomicBool,
+    final_handoff: Mutex<FinalHandoff>,
+    pub(super) published: AtomicBool,
+    /// Explicit wait attribution; the last trace stage is not a wait state.
+    pub(super) waiting_upstream: AtomicBool,
+    pub(super) failures: Mutex<FailureState>,
+    pub(super) recovery_ready: AtomicBool,
+    pub(super) readiness: tokio::sync::Notify,
+}
+impl Status {
+    /// Serialize cancellation with final acceptance. After acceptance only the
+    /// producer's synchronous completion/health/cache settlement may remain.
+    pub(super) fn cancel(&self) -> bool {
+        let mut handoff = self.final_handoff.lock().expect("final handoff");
+        match *handoff {
+            FinalHandoff::Accepted => false,
+            FinalHandoff::Queued => {
+                *handoff = FinalHandoff::Revoked;
+                true
+            }
+            FinalHandoff::Open | FinalHandoff::Revoked => true,
+        }
+    }
+    pub(super) fn final_accepted(&self) -> bool {
+        matches!(
+            *self.final_handoff.lock().expect("final handoff"),
+            FinalHandoff::Accepted
+        )
+    }
+    pub(super) fn ready(&self) {
+        self.recovery_ready.store(true, Ordering::Release);
+        self.readiness.notify_waiters();
+    }
+    pub(super) fn retain_attempt(&self, error: ApiError) {
+        let failures = self.take_failures(Some(error));
+        self.failures.lock().expect("failure state").previous = failures;
+    }
+    pub(super) fn observe_failure(&self, error: ApiError) {
+        let mut failures = self.failures.lock().expect("failure state");
+        let material_revision = failures.material_revision;
+        let observation =
+            failures
+                .head
+                .get_or_insert_with(|| crate::routing::executors::FailureObservation {
+                    error,
+                    at: Instant::now(),
+                    material_revision,
+                });
+        observation.error = error;
+    }
+    pub(super) fn observe_interruption(&self, error: ApiError) {
+        let mut failures = self.failures.lock().expect("failure state");
+        let material_revision = failures.material_revision;
+        failures.interruption.get_or_insert_with(|| {
+            crate::routing::executors::FailureObservation {
+                error,
+                at: Instant::now(),
+                material_revision,
+            }
+        });
+    }
+    pub(super) fn take_failures(
+        &self,
+        final_error: Option<ApiError>,
+    ) -> Vec<crate::routing::executors::FailureObservation> {
+        let mut state = self.failures.lock().expect("failure state");
+        let mut failures = std::mem::take(&mut state.previous);
+        failures.extend(state.head.take());
+        failures.extend(state.interruption.take());
+        if let Some(error) = final_error
+            && error.recovery.affects_health
+            && !failures.iter().any(|failure| failure.error == error)
+        {
+            failures.push(crate::routing::executors::FailureObservation {
+                error,
+                at: Instant::now(),
+                material_revision: state.material_revision,
+            });
+        }
+        failures
+    }
+    pub(super) fn timeout_error(&self) -> ApiError {
+        let observed = {
+            let failures = self.failures.lock().expect("failure state");
+            failures.interruption.or(failures.head)
+        };
+        if let Some(failure) = observed {
+            failure.error
+        } else if self.waiting_upstream.load(Ordering::Acquire) {
+            ApiError::transport_fact(crate::transport::http::TransportError::Timeout)
+        } else {
+            ApiError::timeout()
+        }
+    }
+}
+struct Output {
+    report: crate::execution::report::Report,
+    first: Option<Chunk>,
+    rx: mpsc::Receiver<Message>,
+    status: Arc<Status>,
+    abort: AbortHandle,
+    ended: bool,
+}
+impl Stream for Output {
+    type Item = Result<Bytes, std::io::Error>;
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if self.ended {
+            return Poll::Ready(None);
+        }
+        if self.status.error.lock().expect("delivery status").is_some() {
+            self.ended = true;
+            return Poll::Ready(Some(Err(std::io::Error::other("upstream stream failed"))));
+        }
+        let item = if let Some(first) = self.first.take() {
+            Poll::Ready(Some(Message::Chunk(first)))
+        } else {
+            self.rx.poll_recv(cx)
+        };
+        match item {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Some(Message::Chunk(chunk))) => {
+                let mut final_handoff = chunk
+                    .final_frame
+                    .then(|| self.status.final_handoff.lock().expect("final handoff"));
+                if final_handoff
+                    .as_deref()
+                    .is_some_and(|handoff| matches!(handoff, FinalHandoff::Revoked))
+                {
+                    drop(final_handoff);
+                    self.ended = true;
+                    return Poll::Ready(Some(Err(std::io::Error::other("delivery cancelled"))));
+                }
+                let accepted = chunk.ack.send(()).is_ok();
+                if !accepted {
+                    drop(final_handoff);
+                    self.ended = true;
+                    Poll::Ready(Some(Err(std::io::Error::other("delivery cancelled"))))
+                } else {
+                    if let Some(handoff) = final_handoff.as_deref_mut() {
+                        *handoff = FinalHandoff::Accepted;
+                    }
+                    Poll::Ready(Some(Ok(chunk.bytes)))
+                }
+            }
+            Poll::Ready(Some(Message::Error(_))) => {
+                self.ended = true;
+                Poll::Ready(Some(Err(std::io::Error::other("upstream stream failed"))))
+            }
+            Poll::Ready(None) => {
+                self.ended = true;
+                if self.status.complete.load(Ordering::Acquire) {
+                    Poll::Ready(None)
+                } else {
+                    Poll::Ready(Some(Err(std::io::Error::other("unfinished delivery"))))
+                }
+            }
+        }
+    }
+}
+impl Drop for Output {
+    fn drop(&mut self) {
+        if self.status.cancel() {
+            self.report.failure(
+                None,
+                &crate::execution::AttemptError::Delivery(
+                    crate::execution::attempt::DeliveryReason::BodyConsumerClosed,
+                ),
+            );
+            self.abort.abort();
+        }
+    }
+}
+pub(super) struct Lane<'a> {
+    pub(super) tx: &'a mpsc::Sender<Message>,
+    pub(super) state: &'a Status,
+}
+pub(super) async fn send_frames(
+    lane: &Lane<'_>,
+    delivery: &mut ResponseDelivery,
+    frames: crate::execution::report::EncodedBatch,
+    trace: &mut Trace,
+) -> Result<(), ApiError> {
+    for bytes in frames {
+        send_chunk(lane, bytes, None, false, trace).await?;
+        delivery.commit().map_err(|_| ApiError::upstream())?;
+    }
+    Ok(())
+}
+pub(super) async fn send_error_frames(
+    lane: &Lane<'_>,
+    frames: crate::execution::report::EncodedBatch,
+    trace: &mut Trace,
+) -> Result<(), ApiError> {
+    for bytes in frames {
+        send_chunk(lane, bytes, None, false, trace).await?;
+    }
+    Ok(())
+}
+pub(super) async fn send_final_frame(
+    lane: &Lane<'_>,
+    bytes: Bytes,
+    trace: &mut Trace,
+) -> Result<(), ApiError> {
+    send_chunk(lane, bytes, None, true, trace).await
+}
+pub(super) async fn send_final_frames(
+    lane: &Lane<'_>,
+    delivery: &mut ResponseDelivery,
+    frames: crate::execution::report::EncodedBatch,
+    trace: &mut Trace,
+) -> Result<(), ApiError> {
+    let mut frames = frames.into_iter().peekable();
+    if frames.peek().is_none() {
+        return Err(ApiError::upstream());
+    }
+    while let Some(bytes) = frames.next() {
+        let final_frame = frames.peek().is_none();
+        send_chunk(lane, bytes, None, final_frame, trace).await?;
+        delivery.commit().map_err(|_| ApiError::upstream())?;
+    }
+    Ok(())
+}
+pub(super) async fn send_final_audio(
+    lane: &Lane<'_>,
+    audio: crate::semantic::value::AudioArtifact,
+    trace: &mut Trace,
+) -> Result<(), ApiError> {
+    let content_type = crate::protocol::openai::speech::response_content_type(&audio);
+    send_chunk(lane, audio.into_data(), Some(content_type), true, trace).await
+}
+async fn send_chunk(
+    lane: &Lane<'_>,
+    bytes: Bytes,
+    audio_content_type: Option<&'static str>,
+    final_frame: bool,
+    trace: &mut Trace,
+) -> Result<(), ApiError> {
+    trace.stage(Stage::Delivery);
+    lane.state.waiting_upstream.store(false, Ordering::Release);
+    let (ack, seen) = oneshot::channel();
+    // Publication freezes advancement; acknowledgement alone proves body handoff.
+    lane.state.published.store(true, Ordering::Release);
+    trace.publishing();
+    if final_frame {
+        *lane.state.final_handoff.lock().expect("final handoff") = FinalHandoff::Queued;
+    }
+
+    lane.tx
+        .send(Message::Chunk(Chunk {
+            bytes,
+            ack,
+            final_frame,
+            audio_content_type,
+        }))
+        .await
+        .map_err(|_| {
+            trace.report.failure(
+                None,
+                &crate::execution::AttemptError::Delivery(
+                    crate::execution::attempt::DeliveryReason::BodyConsumerClosed,
+                ),
+            );
+            ApiError::upstream()
+        })?;
+    seen.await.map_err(|_| {
+        trace.report.failure(
+            None,
+            &crate::execution::AttemptError::Delivery(
+                crate::execution::attempt::DeliveryReason::BodyConsumerClosed,
+            ),
+        );
+        ApiError::upstream()
+    })?;
+
+    trace.handoff(final_frame);
+    Ok(())
+}
+/// The work behind one response body: Generation's attempt chain or a
+/// standalone task exchange. The body owner only publishes what it produces.
+/// After a final send is acknowledged, only synchronous validation/settlement
+/// may remain: no upstream I/O, credential reads or additional sends.
+pub(super) trait Produce: Send + 'static {
+    fn produce(
+        self,
+        limits: &Limits,
+        deadline: Instant,
+        lane: &Lane<'_>,
+        trace: &mut Trace,
+    ) -> impl std::future::Future<Output = Result<(), ApiError>> + Send;
+}
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn respond_producer(
+    producer: impl Produce,
+    response_type: ResponseType,
+    limits: Limits,
+    deadline: Instant,
+    shutdown: tokio_util::sync::CancellationToken,
+    permit: OwnedSemaphorePermit,
+    mut trace: Trace,
+) -> Result<Response, ApiError> {
+    if Instant::now() >= deadline {
+        trace.outcome(Outcome::Timeout);
+        return Err(ApiError::timeout());
+    }
+    let (tx, mut rx) = mpsc::channel(1);
+    let state = Arc::new(Status::default());
+    let worker_state = state.clone();
+    let report = trace.report.clone();
+    let tasks = trace.tasks.clone().unwrap_or_default();
+    use tracing::{Instrument, instrument::WithSubscriber};
+    let worker = tasks.spawn(async move {
+        trace.outcome(Outcome::Interrupted);
+        let _permit = permit;
+        use crate::execution::{
+            AttemptError,
+            attempt::{DeadlineReason, DeliveryReason},
+        };
+        let lane = Lane {
+            tx: &tx,
+            state: &worker_state,
+        };
+        let mut interruption = None;
+        let result = {
+            let production = producer.produce(&limits, deadline, &lane, &mut trace);
+            tokio::pin!(production);
+            tokio::select! {
+            biased;
+            _ = shutdown.cancelled() => {
+                if worker_state.cancel() { Err(ApiError::shutdown()) } else { production.await }
+            },
+            _ = tx.closed() => {
+                if worker_state.cancel() {
+                    interruption = Some(AttemptError::Delivery(DeliveryReason::BodyConsumerClosed));
+                    Err(ApiError::upstream())
+                } else { production.await }
+            }
+            result = &mut production => result,
+            // Generation's own attempt deadline must record upstream evidence
+            // before the outer safety deadline cancels its recovery lease.
+            _ = tokio::time::sleep_until(deadline) => {
+                if worker_state.cancel() {
+                    interruption = Some(AttemptError::Deadline(DeadlineReason::Exchange));
+                    Err(ApiError::timeout())
+                } else { production.await }
+            }
+            }
+        };
+        if let Some(interruption) = interruption {
+            trace.report.failure(None, &interruption);
+        }
+        match result {
+            Ok(()) => {
+                trace.stage(Stage::Complete);
+                trace.outcome(Outcome::Complete);
+                worker_state.complete.store(true, Ordering::Release);
+            }
+            Err(error) => {
+                trace
+                    .report
+                    .request_failure(error.diagnostic_code(), error.status.as_u16());
+                trace.outcome(match error.kind {
+                    crate::error::ErrorKind::Timeout => Outcome::Timeout,
+                    crate::error::ErrorKind::Shutdown => Outcome::Shutdown,
+                    _ => Outcome::Error,
+                });
+                *worker_state.error.lock().expect("delivery status") = Some(error);
+                let _ = tx.try_send(Message::Error(error));
+            }
+        }
+    }.in_current_span().with_current_subscriber());
+    let abort = worker.abort_handle();
+    let first = match rx.recv().await {
+        Some(Message::Chunk(chunk)) => {
+            if let Some(error) = *state.error.lock().expect("delivery status") {
+                return Err(error);
+            }
+            chunk
+        }
+        Some(Message::Error(error)) => return Err(error),
+        _ => {
+            return Err(state
+                .error
+                .lock()
+                .expect("delivery status")
+                .unwrap_or_else(ApiError::upstream));
+        }
+    };
+    let content_type = match response_type {
+        ResponseType::Audio => first.audio_content_type.ok_or_else(ApiError::upstream)?,
+        ResponseType::Json => "application/json",
+        ResponseType::EventStream => "text/event-stream",
+    };
+    // Conservatively freeze the candidate when HTTP response ownership leaves
+    // this layer; encoding/queueing alone still never calls delivery.commit().
+    state.published.store(true, Ordering::Release);
+    let body = Body::from_stream(Output {
+        report,
+        first: Some(first),
+        rx,
+        status: state,
+        abort,
+        ended: false,
+    });
+    let mut response = Response::builder()
+        .header("content-type", content_type)
+        .header("cache-control", "no-store")
+        .header("x-content-type-options", "nosniff");
+    if matches!(response_type, ResponseType::EventStream) {
+        response = response.header("x-accel-buffering", "no");
+    }
+    response.body(body).map_err(|_| ApiError::upstream())
+}

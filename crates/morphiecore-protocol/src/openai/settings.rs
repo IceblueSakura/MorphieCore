@@ -1,0 +1,310 @@
+//! Task settings shared by request parsing and provider-reported response echoes.
+use crate::{
+    failure::CarrierReason,
+    openai::{CodecError, GenerationApi, function_tools, reasoning, shape::*},
+    semantic::{task::generation::*, value::Text},
+};
+use serde_json::{Map, Value, json};
+pub(super) const FIELDS: &[&str] = &[
+    "instructions",
+    "temperature",
+    "max_output_tokens",
+    "top_p",
+    "top_logprobs",
+    "truncation",
+    "tools",
+    "tool_choice",
+    "parallel_tool_calls",
+    "reasoning",
+    "include",
+    "text",
+];
+/// Root instructions projected into a temporary leading message. Semantic
+/// settings remain request-local even when the wire lacks an exact root carrier.
+pub(super) fn instruction_content(
+    root: &RootInstructions,
+    profile: GenerationApi,
+) -> Result<Value, CodecError> {
+    if let Some(text) = root.plain_text() {
+        return Ok(json!(text.as_str()));
+    }
+    let mut parts = vec![];
+    for part in &root.parts {
+        let mut value = json!({
+            "type": if profile == GenerationApi::Chat { "text" } else { "input_text" },
+            "text": part.text.as_str(),
+        });
+        match part.cache {
+            None => {}
+            Some(PrefixCacheBoundary::RequestLifetime) if profile == GenerationApi::Responses => {
+                value["prompt_cache_breakpoint"] = json!({"mode":"explicit"});
+            }
+            _ => {
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+            }
+        }
+        parts.push(value);
+    }
+    Ok(json!(parts))
+}
+/// `reported` distinguishes response-echo admission from request admission: the
+/// pinned response model marks `text` nullable, the create type does not.
+pub(super) fn read(
+    o: &Map<String, Value>,
+    reported: bool,
+    direction: DecodeDirection,
+) -> Result<GenerationSettings, CodecError> {
+    let instructions = read_presence(o, "instructions", |v| {
+        Text::allowing_empty(
+            v.as_str().ok_or(CodecError::invalid())?,
+            "instructions",
+            MAX_TEXT_BYTES,
+        )
+        .map(RootInstructions::from)
+        .map_err(|_| CodecError::Limit)
+    })?
+    .value()
+    .cloned();
+    let mut s = GenerationSettings {
+        instructions,
+        controls: controls(o, "max_output_tokens")?,
+        ..Default::default()
+    };
+    reasoning::request(o, reported, direction, &mut s)?;
+    if let Some(v) = o.get("top_p").filter(|v| !v.is_null()) {
+        s.controls = s
+            .controls
+            .with_top_p(v.as_f64().ok_or(CodecError::invalid())?)?;
+    }
+    s.controls.top_logprobs = o
+        .get("top_logprobs")
+        .filter(|v| !v.is_null())
+        .map(|v| {
+            v.as_u64()
+                .filter(|n| *n <= 20)
+                .map(|n| n as u8)
+                .ok_or(CodecError::invalid())
+        })
+        .transpose()?;
+    if o.get("include")
+        .and_then(Value::as_array)
+        .is_some_and(|a| a.iter().any(|v| v == "message.output_text.logprobs"))
+    {
+        s.controls.logprobs = Some(true);
+    }
+    s.controls.truncation = o
+        .get("truncation")
+        .filter(|v| !v.is_null())
+        .map(|v| match v.as_str() {
+            Some("auto") => Ok(Truncation::Auto),
+            Some("disabled") => Ok(Truncation::Disabled),
+            _ => Err(CodecError::invalid()),
+        })
+        .transpose()?;
+    if o.get("text").is_some_and(Value::is_null) && !reported {
+        // The pinned create type is non-nullable; an explicit null is not "no text".
+        return Err(CodecError::invalid());
+    }
+    s.text.presence = read_presence(o, "text", |t| {
+        let t = object(t)?;
+        direction.fields(t, &["format", "verbosity"])?;
+        if !reported && t.get("format").is_some_and(Value::is_null) {
+            return Err(CodecError::invalid());
+        }
+        s.text.format = read_presence(t, "format", |v| read_format(v, reported, direction))?
+            .value()
+            .cloned();
+        s.text.verbosity = read_presence(t, "verbosity", verbosity)?.value().copied();
+        Ok(())
+    })?
+    .value()
+    .copied();
+    function_tools::read_settings(o, GenerationApi::Responses, &mut s, direction)?;
+    s.validate()?;
+    Ok(s)
+}
+pub(super) fn read_format(
+    v: &Value,
+    reported: bool,
+    direction: DecodeDirection,
+) -> Result<OutputConstraint, CodecError> {
+    let o = object(v)?;
+    Ok(match string(o, "type")? {
+        "text" => {
+            direction.fields(o, &["type"])?;
+            OutputConstraint::Text
+        }
+        "json_object" => {
+            direction.fields(o, &["type"])?;
+            OutputConstraint::JsonObject
+        }
+        "json_schema" => {
+            direction.fields(o, &["type", "name", "description", "schema", "strict"])?;
+            read_schema_body(o, reported)?
+        }
+        _ => {
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+        }
+    })
+}
+/// Shared json_schema body fields; each protocol shell owns its wrapper and key set.
+pub(super) fn read_schema_body(
+    o: &Map<String, Value>,
+    reported: bool,
+) -> Result<OutputConstraint, CodecError> {
+    if !reported && o.get("description").is_some_and(Value::is_null) {
+        return Err(CodecError::invalid());
+    }
+    Ok(OutputConstraint::JsonSchema {
+        name: Some(text(string(o, "name")?, "schema name", 64)?),
+        description: o
+            .get("description")
+            .filter(|v| !v.is_null())
+            .map(|v| {
+                Text::allowing_empty(
+                    v.as_str().ok_or(CodecError::invalid())?,
+                    "description",
+                    MAX_TEXT_BYTES,
+                )
+                .map_err(|_| CodecError::Limit)
+            })
+            .transpose()?,
+        schema: o
+            .get("schema")
+            .cloned()
+            .ok_or(CodecError::invalid())?
+            .into(),
+        strict: o
+            .get("strict")
+            .filter(|v| !v.is_null())
+            .map(|v| v.as_bool().ok_or(CodecError::invalid()))
+            .transpose()?,
+    })
+}
+/// Reports may normalize null descriptions; nullable strictness keeps explicit false.
+pub(super) fn write_schema_body(
+    o: &mut Map<String, Value>,
+    name: Option<&Text>,
+    description: Option<&Text>,
+    schema: &SchemaDocument,
+    strict: Option<bool>,
+) -> Result<(), CodecError> {
+    schema.validate()?;
+    // OpenAI requires the name; an unnamed source schema needs the adapter's named rule.
+    let name = name.ok_or(CodecError::Unsupported(CarrierReason::Unavailable))?;
+    o.insert("name".into(), json!(name.as_str()));
+    if let Some(d) = description {
+        o.insert("description".into(), json!(d.as_str()));
+    }
+    o.insert("schema".into(), schema.root().clone());
+    if let Some(s) = strict {
+        o.insert("strict".into(), json!(s));
+    }
+    Ok(())
+}
+pub(super) fn write_format(f: &OutputConstraint) -> Result<Value, CodecError> {
+    Ok(match f {
+        OutputConstraint::Text => json!({"type":"text"}),
+        OutputConstraint::JsonObject => json!({"type":"json_object"}),
+        OutputConstraint::JsonSchema {
+            name,
+            description,
+            schema,
+            strict,
+        } => {
+            let mut o = Map::new();
+            o.insert("type".into(), json!("json_schema"));
+            write_schema_body(&mut o, name.as_ref(), description.as_ref(), schema, *strict)?;
+            Value::Object(o)
+        }
+    })
+}
+pub(super) fn write(s: &GenerationSettings, o: &mut Map<String, Value>) -> Result<(), CodecError> {
+    if s.controls.has_extended_controls() || s.automatic_prefix_cache.is_some() {
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+    }
+    if let Some(root) = &s.instructions {
+        let text = root
+            .plain_text()
+            .ok_or(CodecError::Unsupported(CarrierReason::Unavailable))?;
+        o.insert("instructions".into(), json!(text.as_str()));
+    }
+    write_control_values(&s.controls, o, "max_output_tokens");
+    if let Some(v) = s.controls.top_p() {
+        o.insert("top_p".into(), json!(v));
+    }
+    if let Some(v) = s.controls.top_logprobs {
+        o.insert("top_logprobs".into(), json!(v));
+    }
+    if let Some(v) = s.controls.truncation {
+        o.insert(
+            "truncation".into(),
+            json!(match v {
+                Truncation::Auto => "auto",
+                Truncation::Disabled => "disabled",
+            }),
+        );
+    }
+    function_tools::write_settings(s, GenerationApi::Responses, o)?;
+    reasoning::write_request(s, o, GenerationApi::Responses)?;
+    if s.controls.logprobs == Some(true) {
+        let a = o.entry("include").or_insert_with(|| json!([]));
+        a.as_array_mut()
+            .expect("typed include")
+            .push(json!("message.output_text.logprobs"));
+    }
+    if s.text.presence.is_some() {
+        let mut t = Map::new();
+        match &s.text.format {
+            None => {}
+            Some(format) => {
+                t.insert("format".into(), write_format(format)?);
+            }
+        }
+        if let Some(value) = s.text.verbosity {
+            t.insert(
+                "verbosity".into(),
+                json!(match value {
+                    Verbosity::Low => "low",
+                    Verbosity::Medium => "medium",
+                    Verbosity::High => "high",
+                }),
+            );
+        }
+        o.insert("text".into(), Value::Object(t));
+    }
+    Ok(())
+}
+/// Responses nests verbosity under `text`; Chat intake reads it at top level.
+pub(super) fn verbosity(v: &Value) -> Result<Verbosity, CodecError> {
+    match v.as_str() {
+        Some("low") => Ok(Verbosity::Low),
+        Some("medium") => Ok(Verbosity::Medium),
+        Some("high") => Ok(Verbosity::High),
+        _ => Err(CodecError::invalid()),
+    }
+}
+
+pub(super) fn controls(
+    o: &Map<String, Value>,
+    key: &'static str,
+) -> Result<GenerationControls, CodecError> {
+    let mut c = GenerationControls::default();
+    c.max_output_tokens = o
+        .get(key)
+        .filter(|v| !v.is_null())
+        .map(|v| v.as_u64().filter(|n| *n > 0).ok_or(CodecError::invalid()))
+        .transpose()?;
+    if let Some(t) = o.get("temperature").filter(|v| !v.is_null()) {
+        c = c.with_temperature(t.as_f64().ok_or(CodecError::invalid())?)?;
+    }
+    Ok(c)
+}
+pub(super) fn write_control_values(c: &GenerationControls, o: &mut Map<String, Value>, key: &str) {
+    if let Some(t) = c.temperature() {
+        o.insert("temperature".into(), Value::from(t));
+    }
+    if let Some(n) = c.max_output_tokens {
+        o.insert(key.into(), Value::from(n));
+    }
+}

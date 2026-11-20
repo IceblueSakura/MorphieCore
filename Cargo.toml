@@ -10,6 +10,11 @@ license = "MIT"
 
 [workspace.dependencies]
 morphiecore-semantic = { path = "crates/morphiecore-semantic" }
+morphiecore-lowering = { path = "crates/morphiecore-lowering" }
+morphiecore-protocol = { path = "crates/morphiecore-protocol" }
+morphiecore-catalog = { path = "crates/morphiecore-catalog" }
+morphiecore-runtime = { path = "crates/morphiecore-runtime" }
+morphiecore-gateway = { path = "crates/morphiecore-gateway" }
 morphiecore-test-support = { path = "crates/morphiecore-test-support" }
 
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
@@ -66,55 +71,33 @@ license.workspace = true
 
 [dependencies]
 morphiecore-semantic.workspace = true
+morphiecore-lowering.workspace = true
+morphiecore-protocol.workspace = true
+morphiecore-catalog.workspace = true
+morphiecore-runtime.workspace = true
+morphiecore-gateway.workspace = true
 
 axum.workspace = true
-futures-util.workspace = true
-getrandom.workspace = true
-httpdate.workspace = true
-hyper.workspace = true
-rustls.workspace = true
-reqwest.workspace = true
-subtle.workspace = true
-tokio.workspace = true
 bytes.workspace = true
-base64.workspace = true
-url.workspace = true
+clap.workspace = true
 mime.workspace = true
-multer.workspace = true
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
 thiserror.workspace = true
-strum.workspace = true
-fs-mistrust.workspace = true
-atomicwrites.workspace = true
-clap.workspace = true
-serde_with.workspace = true
-secrecy.workspace = true
-zeroize.workspace = true
-oauth2.workspace = true
-tokio-util.workspace = true
-jsonwebtoken.workspace = true
-httparse.workspace = true
-unicode-general-category.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
-tracing-opentelemetry.workspace = true
-opentelemetry-appender-tracing.workspace = true
-opentelemetry.workspace = true
-opentelemetry_sdk.workspace = true
-opentelemetry-otlp.workspace = true
-xxhash-rust.workspace = true
-
-[target.'cfg(windows)'.dependencies]
-windows-permissions.workspace = true
+tokio.workspace = true
+url.workspace = true
 
 [target.'cfg(unix)'.dev-dependencies]
 libc.workspace = true
 
 [dev-dependencies]
+morphiecore-gateway = { workspace = true, features = ["test-hooks"] }
+morphiecore-runtime = { workspace = true, features = ["test-hooks"] }
 morphiecore-test-support.workspace = true
 aws-lc-rs.workspace = true
+base64.workspace = true
+futures-util.workspace = true
 opentelemetry_sdk = { workspace = true, features = ["testing"] }
 proptest.workspace = true
 tempfile.workspace = true

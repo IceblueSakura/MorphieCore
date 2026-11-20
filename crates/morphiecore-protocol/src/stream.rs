@@ -1,0 +1,83 @@
+//! Shared bounded SSE admission and codec limits.
+//!
+//! Enforces bounded memory and event consumption across upstream and downstream
+//! SSE event streams without socket I/O or protocol wire grammar dependencies.
+use crate::{CodecError, semantic::task::generation::MAX_TOTAL_BYTES, sse::SseDecodeError};
+
+/// Last complete source frame, not necessarily the frame causing a framing/EOF error.
+/// Event names come from a protocol-owned static vocabulary, never raw input.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SourceEvent {
+    pub ordinal: usize,
+    pub kind: &'static str,
+    pub sequence: Option<u64>,
+}
+
+/// Hard resource consumption bounds for Server-Sent Events (SSE) streams.
+#[derive(Clone, Copy, Debug)]
+pub struct SseLimits {
+    /// Maximum byte size of an individual SSE event data payload.
+    pub max_event_bytes: usize,
+    /// Maximum cumulative wire byte limit allowed for an entire stream session.
+    pub max_wire_bytes: usize,
+    /// Maximum total event count permitted before terminating the stream.
+    pub max_events: usize,
+    /// Aggregate decoded UTF-8 padding bytes; independent of wire and semantic budgets.
+    /// Zero forbids non-empty padding without disabling unpadded streams.
+    pub max_obfuscation_bytes: usize,
+}
+
+impl Default for SseLimits {
+    fn default() -> Self {
+        Self {
+            max_event_bytes: MAX_TOTAL_BYTES + 256,
+            max_wire_bytes: 64 << 20,
+            max_events: 1_000_000,
+            max_obfuscation_bytes: 4 << 20,
+        }
+    }
+}
+
+impl SseLimits {
+    /// Validates that limits are non-zero.
+    pub fn validate(self) -> Result<(), SseError> {
+        if self.max_event_bytes == 0 || self.max_wire_bytes == 0 || self.max_events == 0 {
+            return Err(SseError::Limit);
+        }
+        Ok(())
+    }
+}
+
+/// Validates HTTP status and Content-Type for incoming SSE streams.
+///
+/// Requires HTTP 200 and `text/event-stream; charset=utf-8`.
+pub fn validate_http(status: u16, content_type: &str) -> Result<(), SseError> {
+    let media: mime::Mime = content_type.parse().map_err(|_| SseError::Http)?;
+    if status != 200
+        || media.type_() != mime::TEXT
+        || media.subtype() != "event-stream"
+        || media
+            .params()
+            .any(|(k, v)| k == mime::CHARSET && v != mime::UTF_8)
+    {
+        return Err(SseError::Http);
+    }
+    Ok(())
+}
+
+/// SSE transport and admission error classifications.
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum SseError {
+    #[error("invalid SSE HTTP status or content type")]
+    Http,
+    #[error("SSE budget exceeded")]
+    Limit,
+    #[error("SSE event and JSON type disagree")]
+    EventType,
+    #[error("SSE decoder is closed or rejected")]
+    Closed,
+    #[error(transparent)]
+    Framing(#[from] SseDecodeError),
+    #[error(transparent)]
+    Codec(#[from] CodecError),
+}

@@ -1,0 +1,109 @@
+//! Native service tokens belong here, not in semantic enum serialization.
+//! Chat excludes `ultrafast`; request and reported vocabularies remain independent.
+//! https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/completion_create_params.py
+use super::{CodecError, GenerationApi, shape::read_presence};
+use crate::{
+    failure::CarrierReason,
+    semantic::context::{ServiceClass, ServicePolicy},
+};
+use serde_json::{Map, Value, json};
+
+pub(super) fn read_policy(
+    o: &Map<String, Value>,
+    profile: GenerationApi,
+) -> Result<Option<ServicePolicy>, CodecError> {
+    Ok(read_presence(o, "service_tier", |v| {
+        Ok(match v.as_str() {
+            Some("auto") => ServicePolicy::ProjectConfigured,
+            Some("default") => ServicePolicy::StandardProcessing,
+            Some("flex") => ServicePolicy::FlexibleProcessing,
+            Some("fast") => ServicePolicy::FastProcessing,
+            Some("priority") => ServicePolicy::PriorityProcessing,
+            Some("scale") => ServicePolicy::ScaleProcessing,
+            Some("ultrafast") if profile == GenerationApi::Responses => {
+                ServicePolicy::UltraFastProcessing
+            }
+            _ => {
+                return Err(CodecError::invalid());
+            }
+        })
+    })?
+    .value()
+    .copied())
+}
+pub fn policy_wire(
+    policy: ServicePolicy,
+    profile: GenerationApi,
+) -> Result<&'static str, CodecError> {
+    Ok(match policy {
+        ServicePolicy::ProjectConfigured => "auto",
+        ServicePolicy::StandardProcessing => "default",
+        ServicePolicy::FlexibleProcessing => "flex",
+        ServicePolicy::FastProcessing => "fast",
+        ServicePolicy::PriorityProcessing => "priority",
+        ServicePolicy::ScaleProcessing => "scale",
+        ServicePolicy::UltraFastProcessing if profile == GenerationApi::Responses => "ultrafast",
+        _ => {
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+        }
+    })
+}
+pub(super) fn write_policy(
+    o: &mut Map<String, Value>,
+    policy: &Option<ServicePolicy>,
+    profile: GenerationApi,
+) -> Result<(), CodecError> {
+    if let Some(value) = policy {
+        o.insert("service_tier".into(), json!(policy_wire(*value, profile)?));
+    }
+    Ok(())
+}
+pub(super) fn read_class(
+    o: &Map<String, Value>,
+    profile: GenerationApi,
+) -> Result<Option<ServiceClass>, CodecError> {
+    read_presence(o, "service_tier", |v| {
+        Ok(match v.as_str() {
+            Some("auto") => ServiceClass::ConfiguredProcessing,
+            Some("default") => ServiceClass::StandardProcessing,
+            Some("flex") => ServiceClass::FlexibleProcessing,
+            Some("fast") => ServiceClass::FastProcessing,
+            Some("priority") => ServiceClass::PriorityProcessing,
+            Some("scale") => ServiceClass::ScaleProcessing,
+            Some("ultrafast") if profile == GenerationApi::Responses => {
+                ServiceClass::UltraFastProcessing
+            }
+            _ => {
+                return Err(CodecError::invalid());
+            }
+        })
+    })
+    .map(|value| value.value().copied())
+}
+pub(super) fn class_wire(
+    class: ServiceClass,
+    profile: GenerationApi,
+) -> Result<&'static str, CodecError> {
+    Ok(match class {
+        ServiceClass::ConfiguredProcessing => "auto",
+        ServiceClass::StandardProcessing => "default",
+        ServiceClass::FlexibleProcessing => "flex",
+        ServiceClass::FastProcessing => "fast",
+        ServiceClass::PriorityProcessing => "priority",
+        ServiceClass::ScaleProcessing => "scale",
+        ServiceClass::UltraFastProcessing if profile == GenerationApi::Responses => "ultrafast",
+        _ => {
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+        }
+    })
+}
+pub(super) fn write_class(
+    o: &mut Map<String, Value>,
+    class: &Option<ServiceClass>,
+    profile: GenerationApi,
+) -> Result<(), CodecError> {
+    if let Some(value) = class {
+        o.insert("service_tier".into(), json!(class_wire(*value, profile)?));
+    }
+    Ok(())
+}

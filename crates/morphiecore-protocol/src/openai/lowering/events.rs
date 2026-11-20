@@ -1,0 +1,450 @@
+//! Incremental representability checks against one immutable output target.
+use crate::{
+    openai::{
+        GenerationApi,
+        lowering::{RepresentationError, TargetContract},
+    },
+    semantic::task::generation::*,
+};
+
+pub fn check_event(
+    state: &StreamState,
+    event: &StreamEvent,
+    profile: GenerationApi,
+    contract: &TargetContract,
+) -> Result<(), RepresentationError> {
+    if matches!(event, StreamEvent::SafetyReport(_)) || !state.safety_reports().is_empty() {
+        return Err(RepresentationError::Safety);
+    }
+    if matches!(event, StreamEvent::UsageReport(report) if report.has_unrepresented_details())
+        || state.usage_reports().has_unrepresented_details()
+    {
+        return Err(RepresentationError::ReportedFacts);
+    }
+    let usage = match event {
+        StreamEvent::Usage(usage) => Some(*usage),
+        StreamEvent::UsageReport(report) => report.scalar_summary(),
+        _ => None,
+    };
+    if let Some(usage) = usage {
+        let projected = if profile == GenerationApi::Chat {
+            usage
+        } else {
+            super::projection::responses_usage(usage, &contract.adaptation.rules)?.0
+        };
+        super::checks::check_usage(projected, profile, &contract.adaptation.rules)?;
+    }
+    if let StreamEvent::Terminal { terminal, details } = event
+        && *terminal != StreamTerminal::Error
+    {
+        // Selected approximations are recorded when the terminal is lowered.
+        crate::openai::terminal::terminal_losses(details, profile)
+            .map_err(|_| RepresentationError::Terminal)?;
+    }
+    if let StreamEvent::ItemStarted {
+        replay: Some(replay),
+        ..
+    }
+    | StreamEvent::ItemFinished {
+        replay: Some(replay),
+        ..
+    } = event
+    {
+        if super::readable_reasoning::selected(profile, &contract.adaptation.rules) {
+            return Err(RepresentationError::ReplayFormat);
+        }
+        let format = replay.value.format();
+        if !matches!(
+            format,
+            ReplayFormat::ResponsesEncrypted | ReplayFormat::ResponsesCompaction
+        ) {
+            return Err(RepresentationError::ReplayFormat);
+        }
+        // A started item cannot already carry its final encrypted value.
+        if matches!(event, StreamEvent::ItemStarted { .. })
+            && format == ReplayFormat::ResponsesEncrypted
+            && replay.value.replay_token().is_some()
+        {
+            return Err(RepresentationError::ReplayPhase);
+        }
+    }
+    if super::readable_reasoning::selected(profile, &contract.adaptation.rules)
+        && super::readable_reasoning::owner(event).is_some_and(|item| {
+            matches!(
+                event,
+                StreamEvent::ItemStarted {
+                    kind: ItemKind::Reasoning,
+                    ..
+                }
+            ) || state
+                .item(item)
+                .is_ok_and(|item| matches!(item.kind, ItemKind::Reasoning))
+        })
+    {
+        if super::readable_reasoning::carries_replay(event) {
+            return Err(RepresentationError::ReplayFormat);
+        }
+        // The encoder still reduces the source event before suppressing rendering.
+        return Ok(());
+    }
+    match event {
+        StreamEvent::AnnotationAdded { annotation, .. } => {
+            crate::openai::content::citations::check(annotation, state.resources(), profile)
+                .map_err(|_| RepresentationError::TextMetadata)?;
+        }
+        StreamEvent::ToolBatchSnapshot { batch, .. }
+        | StreamEvent::ItemStarted {
+            kind: ItemKind::ToolBatch(batch),
+            ..
+        } => {
+            if profile != GenerationApi::Responses
+                || !contract.dispositions.native(Feature::Tools)
+                || !contract.dispositions.native(Feature::CustomTools)
+                    && batch
+                        .tools
+                        .iter()
+                        .flat_map(ToolDefinition::leaves)
+                        .any(|tool| matches!(tool, ToolDefinition::Custom(_)))
+            {
+                return Err(RepresentationError::Tools);
+            }
+        }
+        StreamEvent::TextMetadata { annotations, .. } => {
+            for a in annotations {
+                crate::openai::content::citations::check(a, state.resources(), profile)
+                    .map_err(|_| RepresentationError::TextMetadata)?;
+            }
+        }
+        _ => {}
+    }
+    match event {
+        StreamEvent::PartInterrupted { .. } | StreamEvent::CompactionProgress { .. }
+            if profile != GenerationApi::Responses =>
+        {
+            return Err(RepresentationError::UnmigratedSemantic);
+        }
+        StreamEvent::ResourceDeclared { resource, .. } => {
+            if profile != GenerationApi::Responses
+                && !crate::openai::content::citations::context(resource)
+            {
+                return Err(RepresentationError::UnmigratedSemantic);
+            }
+        }
+        StreamEvent::ToolResultOutput { item, output } => {
+            let (ItemKind::ToolResult(result) | ItemKind::CustomResult(result)) =
+                &state.item(*item)?.kind
+            else {
+                return Err(RepresentationError::Tools);
+            };
+            let mut result = result.clone();
+            result.output = output.clone();
+            check_result(
+                state,
+                &result,
+                matches!(state.item(*item)?.kind, ItemKind::CustomResult(_)),
+                profile,
+                contract,
+            )?;
+        }
+        StreamEvent::MessageEnvelope(group) => {
+            let items = snapshot_items(state).map_err(|_| RepresentationError::MessageGrouping)?;
+            super::message_groups::project(&items, std::slice::from_ref(group), profile)?;
+        }
+        StreamEvent::Terminal {
+            terminal: StreamTerminal::Cancelled,
+            ..
+        } if profile == GenerationApi::Responses => {
+            // The static status exists, but the pinned standard stream union
+            // has no cancellation event. Never invent one or report failure/success.
+            // https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_stream_event.py
+            return Err(RepresentationError::Terminal);
+        }
+        StreamEvent::PartStarted {
+            kind: PartKind::Audio,
+            ..
+        }
+        | StreamEvent::AudioDelta { .. }
+            if profile != GenerationApi::Chat
+                || !contract
+                    .dispositions
+                    .native(crate::semantic::task::generation::Feature::AudioOutput) =>
+        {
+            return Err(RepresentationError::UnmigratedSemantic);
+        }
+        StreamEvent::PartStarted {
+            kind: PartKind::StructuredArguments | PartKind::ResultText | PartKind::ResultJson,
+            ..
+        } => return Err(RepresentationError::Tools),
+        StreamEvent::Progress(_) => {
+            return Err(RepresentationError::InteractionProgress);
+        }
+        StreamEvent::ItemStarted { kind, replay, .. } => {
+            match kind {
+                ItemKind::Compaction
+                    if profile != GenerationApi::Responses
+                        || !contract
+                            .dispositions
+                            .native(crate::semantic::task::generation::Feature::Compaction) =>
+                {
+                    return Err(RepresentationError::UnmigratedSemantic);
+                }
+                ItemKind::ToolResult(result) | ItemKind::CustomResult(result) => {
+                    check_result(
+                        state,
+                        result,
+                        matches!(kind, ItemKind::CustomResult(_)),
+                        profile,
+                        contract,
+                    )?;
+                }
+                ItemKind::ProviderTool(_) | ItemKind::ProviderResult { .. } => {
+                    return Err(RepresentationError::UnmigratedSemantic);
+                }
+                ItemKind::ToolCall { context, .. } | ItemKind::CustomCall { context, .. }
+                    if context.alias_domain.is_some() =>
+                {
+                    return Err(RepresentationError::UnmigratedSemantic);
+                }
+                ItemKind::Message { phase: Some(_) } if profile == GenerationApi::Chat => {
+                    return Err(RepresentationError::UnmigratedSemantic);
+                }
+                ItemKind::ToolCall {
+                    format: ArgumentFormat::Json,
+                    ..
+                } => {
+                    return Err(RepresentationError::Tools);
+                }
+                ItemKind::ToolCall { context, .. }
+                    if profile == GenerationApi::Chat && !context.is_direct() =>
+                {
+                    return Err(RepresentationError::Tools);
+                }
+                ItemKind::ConfigurationUpdate(_) => {
+                    return Err(RepresentationError::Reasoning);
+                }
+                // Chat reasoning is provisional at event time: its carrier
+                // message and single text part are validated at the terminal.
+                ItemKind::Reasoning
+                    if !contract
+                        .dispositions
+                        .native(crate::semantic::task::generation::Feature::Reasoning)
+                        || (profile == GenerationApi::Chat
+                            && !contract.adaptation.rules.readable_reasoning) =>
+                {
+                    return Err(RepresentationError::Reasoning);
+                }
+                ItemKind::CustomCall { .. }
+                    if profile != GenerationApi::Responses
+                        || !contract
+                            .dispositions
+                            .native(crate::semantic::task::generation::Feature::Tools)
+                        || !contract
+                            .dispositions
+                            .native(crate::semantic::task::generation::Feature::CustomTools) =>
+                {
+                    return Err(RepresentationError::Tools);
+                }
+                ItemKind::Program { .. } | ItemKind::ProgramOutput { .. }
+                    if profile != GenerationApi::Responses
+                        || !contract
+                            .dispositions
+                            .native(crate::semantic::task::generation::Feature::Tools) =>
+                {
+                    return Err(RepresentationError::Tools);
+                }
+                ItemKind::ToolCall { .. }
+                    if !contract
+                        .dispositions
+                        .native(crate::semantic::task::generation::Feature::Tools) =>
+                {
+                    return Err(RepresentationError::Tools);
+                }
+                ItemKind::Message { .. }
+                    if profile == GenerationApi::Chat
+                        && state.items().iter().any(|i| {
+                            matches!(i.kind, ItemKind::Message { .. } | ItemKind::ToolCall { .. })
+                        }) =>
+                {
+                    return Err(RepresentationError::MessageGrouping);
+                }
+                _ => {}
+            }
+            if replay.as_ref().is_some_and(|r| {
+                !r.permits(if matches!(kind, ItemKind::Reasoning) {
+                    contract.reasoning_origin()
+                } else {
+                    contract.replay_origin()
+                })
+            }) {
+                return Err(RepresentationError::ReplayOrigin);
+            }
+        }
+        StreamEvent::ItemFinished { item, replay, .. }
+            if replay.as_ref().is_some_and(|r| {
+                !r.permits(
+                    if state
+                        .item(*item)
+                        .is_ok_and(|owner| matches!(owner.kind, ItemKind::Reasoning))
+                    {
+                        contract.reasoning_origin()
+                    } else {
+                        contract.replay_origin()
+                    },
+                )
+            }) =>
+        {
+            return Err(RepresentationError::ReplayOrigin);
+        }
+        StreamEvent::ItemFinished {
+            replay: Some(replay),
+            ..
+        } if profile == GenerationApi::Chat && replay.value.replay_token().is_none() => {
+            return Err(RepresentationError::ReplayPhase);
+        }
+        StreamEvent::ItemFinished {
+            status,
+            replay: Some(_),
+            ..
+        } if profile == GenerationApi::Chat && *status != ItemLifecycle::Completed => {
+            return Err(RepresentationError::Terminal);
+        }
+        StreamEvent::AnnotationAdded { .. }
+            if profile == GenerationApi::Chat
+                || !contract
+                    .dispositions
+                    .native(crate::semantic::task::generation::Feature::TextMetadata) =>
+        {
+            return Err(RepresentationError::TextMetadata);
+        }
+        StreamEvent::Queued if profile != GenerationApi::Responses => {
+            return Err(RepresentationError::Lifecycle);
+        }
+        StreamEvent::Delta {
+            item,
+            part,
+            logprobs,
+            ..
+        } if !logprobs.is_empty() => {
+            probability_target(state, *item, *part, logprobs, profile, contract)?;
+        }
+        StreamEvent::LogprobsSnapshot {
+            item,
+            part,
+            logprobs,
+        } => {
+            probability_target(state, *item, *part, logprobs, profile, contract)?;
+            if profile == GenerationApi::Chat {
+                let old = &state.part(*item, *part)?.logprobs;
+                if let Some(old) = old.as_ref()
+                    && old != logprobs
+                {
+                    return Err(RepresentationError::TextMetadata);
+                }
+            }
+        }
+        StreamEvent::TextMetadata {
+            item,
+            part,
+            annotations,
+            logprobs,
+        } => {
+            if !annotations.is_empty()
+                && (profile == GenerationApi::Chat
+                    || !contract
+                        .dispositions
+                        .native(crate::semantic::task::generation::Feature::TextMetadata))
+            {
+                return Err(RepresentationError::TextMetadata);
+            }
+            if !logprobs.is_none() {
+                probability_target(
+                    state,
+                    *item,
+                    *part,
+                    logprobs.as_ref().map(Vec::as_slice).unwrap_or_default(),
+                    profile,
+                    contract,
+                )?;
+            }
+            if profile == GenerationApi::Chat
+                && let Some(old) = state.part(*item, *part)?.logprobs.as_ref()
+                && logprobs.as_ref() != Some(old)
+            {
+                // A final snapshot cannot retract or rewrite facts already emitted to Chat.
+                return Err(RepresentationError::TextMetadata);
+            }
+        }
+        StreamEvent::PartStarted { item, kind, .. }
+            if profile == GenerationApi::Chat
+                && matches!(state.item(*item)?.kind, ItemKind::Message { .. })
+                && state.item(*item)?.parts.iter().any(|p| {
+                    *kind != PartKind::Audio
+                        || matches!(p.kind, PartKind::Audio | PartKind::Refusal)
+                }) =>
+        {
+            return Err(RepresentationError::MessageGrouping);
+        }
+        StreamEvent::Terminal { terminal, details }
+            if profile == GenerationApi::Chat
+                && (matches!(
+                    terminal,
+                    StreamTerminal::Failed | StreamTerminal::Cancelled | StreamTerminal::Error
+                ) || !crate::openai::terminal::chat_incomplete(
+                    *terminal == StreamTerminal::Incomplete,
+                    details,
+                )) =>
+        {
+            return Err(RepresentationError::Terminal);
+        }
+        _ => {}
+    }
+    Ok(())
+}
+fn check_result(
+    state: &StreamState,
+    result: &ToolResult,
+    custom: bool,
+    profile: GenerationApi,
+    contract: &TargetContract,
+) -> Result<(), RepresentationError> {
+    if profile != GenerationApi::Responses {
+        return Err(RepresentationError::Tools);
+    }
+    let item = if custom {
+        Item::CustomResult(result.clone())
+    } else {
+        Item::ToolResult(result.clone())
+    };
+    let items = vec![(ItemId::new(1), item)];
+    super::checks::text_items(&items, profile, false, state.resources())?;
+    let response =
+        GenerationResponse::from_resources(items, Outcome::Incomplete, state.resources().clone())
+            .map_err(|_| RepresentationError::Tools)?;
+    contract.dispositions.check_response(&response)?;
+    Ok(())
+}
+
+fn probability_target(
+    state: &StreamState,
+    item: ItemId,
+    part: PartId,
+    logprobs: &[Logprob],
+    profile: GenerationApi,
+    contract: &TargetContract,
+) -> Result<(), RepresentationError> {
+    if !contract
+        .dispositions
+        .native(crate::semantic::task::generation::Feature::Logprobs)
+        || !contract
+            .dispositions
+            .native(crate::semantic::task::generation::Feature::TextMetadata)
+        || profile == GenerationApi::Responses && state.part(item, part)?.kind == PartKind::Refusal
+    {
+        return Err(RepresentationError::TextMetadata);
+    }
+    if profile == GenerationApi::Chat {
+        crate::openai::chat::logprobs::validate(logprobs)
+            .map_err(|_| RepresentationError::TextMetadata)?;
+    }
+    Ok(())
+}

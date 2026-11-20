@@ -1,0 +1,85 @@
+//! Synthetic gateway and upstream body fixtures, without test cases.
+use super::topology::topology;
+use crate::{
+    Entry, Gateway, Limits,
+    protocol::ClientProtocol,
+    provider::{CredentialBindingId, SecretMaterial},
+    topology::EndpointId,
+};
+use bytes::Bytes;
+use futures_util::Stream;
+use std::{
+    collections::BTreeMap,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
+use tokio::sync::{mpsc, oneshot};
+pub(crate) const KEY: &str = "synthetic-gateway-client-token-0001";
+pub(crate) fn gateway(limits: Limits) -> Gateway {
+    Gateway::new(
+        topology(),
+        crate::TaskEntries {
+            generation: [ClientProtocol::Chat, ClientProtocol::Messages]
+                .map(|protocol| Entry {
+                    model: "fixture-model".into(),
+                    protocol,
+                    endpoint: EndpointId::new("fixture-chat").unwrap(),
+                })
+                .into(),
+            ..Default::default()
+        },
+        BTreeMap::from([(
+            CredentialBindingId::new("fixture-key").unwrap(),
+            Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
+        )]),
+        std::collections::BTreeMap::from([(
+            "fixture-agent".into(),
+            SecretMaterial::new(KEY).unwrap(),
+        )]),
+        limits,
+        None,
+    )
+    .unwrap()
+}
+struct Tracked {
+    rx: mpsc::Receiver<Result<Bytes, std::io::Error>>,
+    dropped: Option<oneshot::Sender<()>>,
+}
+impl Stream for Tracked {
+    type Item = Result<Bytes, std::io::Error>;
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.rx.poll_recv(cx)
+    }
+}
+impl Drop for Tracked {
+    fn drop(&mut self) {
+        if let Some(tx) = self.dropped.take() {
+            let _ = tx.send(());
+        }
+    }
+}
+type Probe = (
+    mpsc::Sender<Result<Bytes, std::io::Error>>,
+    reqwest::Response,
+    oneshot::Receiver<()>,
+);
+pub(crate) fn source(status: u16, media: &str) -> Probe {
+    let (tx, rx) = mpsc::channel(2);
+    let (done, dropped) = oneshot::channel();
+    let body = reqwest::Body::wrap_stream(Tracked {
+        rx,
+        dropped: Some(done),
+    });
+    (
+        tx,
+        reqwest::Response::from(
+            axum::http::Response::builder()
+                .status(status)
+                .header("content-type", media)
+                .body(body)
+                .unwrap(),
+        ),
+        dropped,
+    )
+}

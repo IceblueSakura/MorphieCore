@@ -1,0 +1,26 @@
+[package]
+name = "morphiecore-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pure HTTP/SSE/JSON wire protocol codecs and downstream/upstream adapters for MorphieCore"
+
+[features]
+test-hooks = []
+
+[dependencies]
+morphiecore-semantic.workspace = true
+morphiecore-lowering.workspace = true
+base64.workspace = true
+bytes.workspace = true
+futures-util.workspace = true
+mime.workspace = true
+multer.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+strum.workspace = true
+thiserror.workspace = true
+unicode-general-category.workspace = true
+url.workspace = true
+xxhash-rust.workspace = true

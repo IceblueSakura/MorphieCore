@@ -1324,36 +1324,76 @@ dependencies = [
 name = "morphiecore"
 version = "0.1.0"
 dependencies = [
- "atomicwrites",
  "aws-lc-rs",
  "axum",
  "base64 0.23.1",
  "bytes",
  "clap",
- "fs-mistrust",
  "futures-util",
- "getrandom 0.4.3",
- "httparse",
- "httpdate",
- "hyper",
- "jsonwebtoken",
  "libc",
  "mime",
+ "morphiecore-catalog",
+ "morphiecore-gateway",
+ "morphiecore-lowering",
+ "morphiecore-protocol",
+ "morphiecore-runtime",
  "morphiecore-semantic",
  "morphiecore-test-support",
- "multer",
- "oauth2",
+ "opentelemetry_sdk",
+ "proptest",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tower",
+ "url",
+]
+
+[[package]]
+name = "morphiecore-catalog"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "morphiecore-lowering",
+ "morphiecore-protocol",
+ "morphiecore-semantic",
+ "morphiecore-test-support",
+ "proptest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "strum",
+ "thiserror 2.0.21",
+ "url",
+]
+
+[[package]]
+name = "morphiecore-gateway"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.23.1",
+ "bytes",
+ "futures-util",
+ "getrandom 0.4.3",
+ "httpdate",
+ "hyper",
+ "mime",
+ "morphiecore-catalog",
+ "morphiecore-lowering",
+ "morphiecore-protocol",
+ "morphiecore-runtime",
+ "morphiecore-semantic",
+ "morphiecore-test-support",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
- "proptest",
  "reqwest",
- "rustls",
- "secrecy",
  "serde",
  "serde_json",
- "serde_with",
  "sha2 0.11.1",
  "strum",
  "subtle",
@@ -1365,10 +1405,76 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "morphiecore-lowering"
+version = "0.1.0"
+dependencies = [
+ "morphiecore-semantic",
+ "serde",
+ "serde_json",
+ "strum",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "morphiecore-protocol"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "bytes",
+ "futures-util",
+ "mime",
+ "morphiecore-lowering",
+ "morphiecore-semantic",
+ "multer",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "strum",
+ "thiserror 2.0.21",
  "unicode-general-category",
  "url",
- "windows-permissions",
  "xxhash-rust",
+]
+
+[[package]]
+name = "morphiecore-runtime"
+version = "0.1.0"
+dependencies = [
+ "atomicwrites",
+ "aws-lc-rs",
+ "axum",
+ "base64 0.23.1",
+ "bytes",
+ "fs-mistrust",
+ "futures-util",
+ "getrandom 0.4.3",
+ "httparse",
+ "hyper",
+ "jsonwebtoken",
+ "morphiecore-catalog",
+ "morphiecore-lowering",
+ "morphiecore-protocol",
+ "morphiecore-semantic",
+ "morphiecore-test-support",
+ "oauth2",
+ "reqwest",
+ "rustls",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "sha2 0.11.1",
+ "subtle",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "url",
+ "windows-permissions",
  "zeroize",
 ]
 

@@ -1,0 +1,860 @@
+//! Bounded Interactions step intake; terminals are released only after strict EOF.
+//! Source: <https://ai.google.dev/gemini-api/docs/interactions/streaming>.
+use super::{accounting::usage, replay::Signed};
+use crate::{
+    CodecError, DecodedResponse, ResponseMetadata,
+    failure::{CarrierReason, RecognitionBasis, ShapeReason, SourceFailureEvidence},
+    fidelity::FidelityRecords,
+    native::ReplayTarget,
+    semantic::{
+        context::{ReportPhase, ResponseReport, ResponseReports},
+        task::generation::*,
+        value::{JsonLimits, Text, parse_json},
+    },
+    sse::SseDecoder,
+    stream::{SseError, SseLimits},
+};
+use serde_json::{Map, Value};
+
+enum Kind {
+    Thought,
+    Text,
+    Call { initial: Value },
+}
+struct Open {
+    index: u64,
+    item: ItemId,
+    part: PartId,
+    kind: Kind,
+    started: bool,
+    signature: Option<String>,
+}
+pub struct GenerationSseDecoder {
+    framing: SseDecoder,
+    limits: SseLimits,
+    bytes: usize,
+    frames: usize,
+    scope: LocalScope,
+    target: ReplayTarget,
+    metadata: Option<ResponseMetadata>,
+    model_reported: bool,
+    state: StreamState,
+    fidelity: FidelityRecords,
+    open: Option<Open>,
+    // Source ordinals include empty output steps, unlike semantic members.
+    steps: Vec<Option<ItemId>>,
+    members: Vec<ItemId>,
+    calls: Vec<String>,
+    completed: bool,
+    done: bool,
+    closed: bool,
+    rejected: bool,
+}
+pub(super) fn invalid(reason: ShapeReason) -> SseError {
+    CodecError::Invalid(reason).into()
+}
+pub(super) fn object<'a>(
+    v: &'a Value,
+    _what: &'static str,
+) -> Result<&'a Map<String, Value>, SseError> {
+    v.as_object().ok_or_else(|| invalid(ShapeReason::Object))
+}
+pub(super) fn string<'a>(
+    o: &'a Map<String, Value>,
+    key: &'static str,
+) -> Result<Option<&'a str>, SseError> {
+    match o.get(key) {
+        None => Ok(None),
+        Some(Value::String(s)) => Ok(Some(s)),
+        _ => Err(invalid(ShapeReason::InvalidValue)),
+    }
+}
+pub(super) fn required<'a>(
+    o: &'a Map<String, Value>,
+    key: &'static str,
+) -> Result<&'a str, SseError> {
+    string(o, key)?
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| invalid(ShapeReason::InvalidValue))
+}
+pub(super) fn field<'a>(
+    o: &'a Map<String, Value>,
+    key: &'static str,
+) -> Result<&'a Value, SseError> {
+    o.get(key).ok_or_else(|| invalid(ShapeReason::InvalidValue))
+}
+fn check_continuation(o: &Map<String, Value>) -> Result<(), SseError> {
+    if let Some(value) = o.get("continuation_token").filter(|v| !v.is_null()) {
+        if !value.is_string() {
+            return Err(invalid(ShapeReason::InvalidValue));
+        }
+        return Err(CodecError::Unsupported(CarrierReason::Terminal).into());
+    }
+    Ok(())
+}
+fn status(o: &Map<String, Value>) -> Result<&str, SseError> {
+    match required(o, "status").map_err(|_| invalid(ShapeReason::Status))? {
+        value @ ("in_progress" | "requires_action" | "completed" | "failed" | "cancelled"
+        | "incomplete") => Ok(value),
+        // SDK additions do not activate background or budget-resumption support.
+        "queued" | "budget_exceeded" => {
+            Err(CodecError::Unsupported(CarrierReason::Unavailable).into())
+        }
+        _ => Err(invalid(ShapeReason::Status)),
+    }
+}
+pub(super) fn check_annotations(p: &Map<String, Value>) -> Result<(), SseError> {
+    if p.get("annotations")
+        .is_some_and(|v| !v.is_null() && v.as_array().is_none_or(|a| !a.is_empty()))
+    {
+        return Err(CodecError::Unsupported(CarrierReason::Annotations).into());
+    }
+    Ok(())
+}
+impl GenerationSseDecoder {
+    pub fn new(
+        status: u16,
+        media: &str,
+        limits: SseLimits,
+        scope: LocalScope,
+        target: ReplayTarget,
+    ) -> Result<Self, SseError> {
+        limits.validate()?;
+        crate::stream::validate_http(status, media)?;
+        Ok(Self {
+            framing: SseDecoder::new(limits.max_event_bytes),
+            limits,
+            bytes: 0,
+            frames: 0,
+            scope,
+            target,
+            metadata: None,
+            model_reported: false,
+            state: StreamState::new(),
+            fidelity: Default::default(),
+            open: None,
+            steps: vec![],
+            members: vec![],
+            calls: vec![],
+            completed: false,
+            done: false,
+            closed: false,
+            rejected: false,
+        })
+    }
+    pub fn metadata(&self) -> Option<&ResponseMetadata> {
+        self.metadata.as_ref()
+    }
+    pub fn fidelity(&self) -> &FidelityRecords {
+        &self.fidelity
+    }
+    pub fn consume(&mut self, chunk: &[u8]) -> Result<(usize, Vec<StreamEvent>), SseError> {
+        if self.closed || self.rejected {
+            return Err(SseError::Closed);
+        }
+        let result = (|| {
+            let available = chunk.len().min(
+                self.limits
+                    .max_wire_bytes
+                    .saturating_sub(self.bytes)
+                    .saturating_add(1),
+            );
+            let (frame, n) = self.framing.push_until_event(&chunk[..available])?;
+            self.bytes = self.bytes.checked_add(n).ok_or(SseError::Limit)?;
+            if self.bytes > self.limits.max_wire_bytes {
+                return Err(SseError::Limit);
+            }
+            let mut out = vec![];
+            if let Some(frame) = frame {
+                self.frames = self.frames.checked_add(1).ok_or(SseError::Limit)?;
+                if self.frames > self.limits.max_events {
+                    return Err(SseError::Limit);
+                }
+                if self.done {
+                    return Err(invalid(ShapeReason::AfterFinish));
+                }
+                if frame.data() == "[DONE]" {
+                    if !self.completed || frame.event().is_some_and(|e| e != "done") {
+                        return Err(invalid(ShapeReason::TerminalStatus));
+                    }
+                    self.done = true;
+                } else {
+                    let v =
+                        parse_json(frame.data().as_bytes(), JsonLimits::ENVELOPE).map_err(|e| {
+                            match e {
+                                crate::semantic::value::JsonError::Limit(resource) => {
+                                    crate::CodecError::from(
+                                        crate::semantic::value::JsonError::Limit(resource),
+                                    )
+                                    .into()
+                                }
+                                _ => invalid(ShapeReason::Json),
+                            }
+                        })?;
+                    let o = object(&v, "Interactions event")?;
+                    let kind = required(o, "event_type")?;
+                    if frame.event().is_some_and(|e| e != kind) {
+                        return Err(invalid(ShapeReason::Identity));
+                    }
+                    string(o, "event_id").map_err(|_| invalid(ShapeReason::Identity))?;
+                    self.event(kind, o, &mut out)?;
+                }
+            }
+            Ok((n, out))
+        })();
+        if result.is_err() {
+            self.rejected = true;
+        }
+        result
+    }
+    fn emit(&mut self, event: StreamEvent, out: &mut Vec<StreamEvent>) -> Result<(), SseError> {
+        self.state =
+            reduce(std::mem::take(&mut self.state), event.clone()).map_err(CodecError::from)?;
+        out.push(event);
+        Ok(())
+    }
+    fn ids(&mut self) -> Result<(ItemId, PartId), SseError> {
+        if self.members.len() >= MAX_ITEMS {
+            return Err(SseError::Limit);
+        }
+        let n = self.members.len() as u64 + 1;
+        let item = ItemId::scoped(self.scope, n);
+        self.members.push(item);
+        Ok((item, PartId::scoped(self.scope, n * (MAX_ITEMS as u64 + 1))))
+    }
+    fn check_identity(
+        &mut self,
+        o: &Map<String, Value>,
+        key: &'static str,
+    ) -> Result<(), SseError> {
+        let Some(id) = string(o, key).map_err(|_| invalid(ShapeReason::Identity))? else {
+            return Ok(());
+        };
+        if id.is_empty() || id.len() > 256 {
+            return Err(invalid(ShapeReason::Identity));
+        }
+        let metadata = self
+            .metadata
+            .as_mut()
+            .ok_or_else(|| invalid(ShapeReason::Identity))?;
+        if metadata
+            .id
+            .as_deref()
+            .is_some_and(|previous| previous != id)
+        {
+            return Err(invalid(ShapeReason::MetadataIdChanged));
+        }
+        if metadata.id.is_none() {
+            metadata.id = Some(id.into());
+        }
+        Ok(())
+    }
+    fn event(
+        &mut self,
+        kind: &str,
+        o: &Map<String, Value>,
+        out: &mut Vec<StreamEvent>,
+    ) -> Result<(), SseError> {
+        if self.completed {
+            return Err(invalid(ShapeReason::AfterFinish));
+        }
+        if kind == "error" {
+            let error = object(field(o, "error")?, "Interactions error")?;
+            let code = match error.get("code") {
+                Some(Value::Number(n)) => n
+                    .as_u64()
+                    .and_then(|n| u16::try_from(n).ok())
+                    .filter(|n| (400..600).contains(n))
+                    .unwrap_or(500),
+                Some(Value::String(s)) => match s.as_str() {
+                    "RESOURCE_EXHAUSTED" => 429,
+                    "INVALID_ARGUMENT" => 400,
+                    "UNAUTHENTICATED" => 401,
+                    "PERMISSION_DENIED" => 403,
+                    "UNAVAILABLE" => 503,
+                    _ => 500,
+                },
+                _ => return Err(invalid(ShapeReason::InvalidValue)),
+            };
+            string(error, "message")?;
+            return Err(CodecError::StreamFailure(SourceFailureEvidence::envelope(
+                code,
+                RecognitionBasis::EnvelopeCode,
+                error.get("code").and_then(Value::as_str),
+                None,
+                error.get("message").and_then(Value::as_str),
+            ))
+            .into());
+        }
+        if kind == "interaction.created" {
+            if self.metadata.is_some() {
+                return Err(invalid(ShapeReason::InvalidValue));
+            }
+            let i = object(field(o, "interaction")?, "interaction")?;
+            check_continuation(i)?;
+            let service_class = super::super::service::read(i, "service_tier")?;
+            super::snapshots::reconcile(i.get("steps"), &self.steps, &self.state)?;
+            // Creation starts the native stream, not a reported execution state.
+            // A supplied status still has the selected fresh-foreground constraint.
+            if i.contains_key("status") && status(i)? != "in_progress" {
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable).into());
+            }
+            if string(i, "object")?.is_some_and(|v| v != "interaction") {
+                return Err(invalid(ShapeReason::Object));
+            }
+            let model = string(i, "model")?;
+            let mut metadata = ResponseMetadata {
+                source_failure: None,
+                delivery: None,
+                storage: None,
+                id: if i.contains_key("id") {
+                    Some(
+                        required(i, "id")
+                            .map_err(|_| invalid(ShapeReason::Identity))?
+                            .into(),
+                    )
+                } else {
+                    None
+                },
+                // Lifecycle payloads are partial; this bound label is not a
+                // source observation and may be replaced by the first report.
+                model: model.unwrap_or(self.target.model()).into(),
+                created: None,
+                context: Default::default(),
+                instruction_fidelity: Default::default(),
+            };
+            metadata.context.reports = ResponseReports::Lifecycle {
+                opening: (!service_class.is_none()).then(|| {
+                    Box::new(ResponseReport {
+                        service_class,
+                        ..Default::default()
+                    })
+                }),
+                terminal: None,
+            };
+            metadata.validate()?;
+            self.model_reported = model.is_some();
+            self.metadata = Some(metadata);
+            self.emit(StreamEvent::Started, out)?;
+            if let Some(value) = i.get("usage").filter(|v| !v.is_null()) {
+                self.emit(
+                    StreamEvent::UsageReport(usage(
+                        value,
+                        UsageScope::Operation,
+                        UsageStage::Checkpoint,
+                    )?),
+                    out,
+                )?;
+            }
+            return Ok(());
+        }
+        if self.metadata.is_none() {
+            return Err(invalid(ShapeReason::InvalidValue));
+        }
+        match kind {
+            "interaction.status_update" => {
+                self.check_identity(o, "interaction_id")?;
+                check_continuation(o)?;
+                if o.contains_key("service_tier") {
+                    super::super::service::read(o, "service_tier")?;
+                    return Err(CodecError::Unsupported(CarrierReason::Field(
+                        crate::conversion::generation::Field::ServiceClass,
+                    ))
+                    .into());
+                }
+                // Updates are observations, not completion or tool authorization.
+                // The final envelope alone supplies outcome/progress; no transition
+                // graph or equality with an earlier checkpoint is inferred.
+                status(o)?;
+                if let Some(value) = o.get("usage").filter(|v| !v.is_null()) {
+                    self.emit(
+                        StreamEvent::UsageReport(usage(
+                            value,
+                            UsageScope::Operation,
+                            UsageStage::Checkpoint,
+                        )?),
+                        out,
+                    )?;
+                }
+                Ok(())
+            }
+            "step.start" => self.start(o, out),
+            "step.delta" | "step.stop" => {
+                let index = field(o, "index")?
+                    .as_u64()
+                    .ok_or_else(|| invalid(ShapeReason::InvalidValue))?;
+                if self.open.as_ref().is_none_or(|s| s.index != index) {
+                    return Err(invalid(ShapeReason::InvalidValue));
+                }
+                if kind == "step.stop" {
+                    self.stop(out)?;
+                    for (field, scope, stage) in [
+                        ("usage", UsageScope::Operation, UsageStage::Checkpoint),
+                        ("step_usage", UsageScope::Step(index), UsageStage::Final),
+                    ] {
+                        if let Some(value) = o.get(field).filter(|v| !v.is_null()) {
+                            self.emit(StreamEvent::UsageReport(usage(value, scope, stage)?), out)?;
+                        }
+                    }
+                    Ok(())
+                } else {
+                    self.delta(object(field(o, "delta")?, "delta")?, out)?;
+                    if let Some(metadata) = o.get("metadata").filter(|v| !v.is_null())
+                        && let Some(value) = object(metadata, "metadata")?
+                            .get("total_usage")
+                            .filter(|v| !v.is_null())
+                    {
+                        self.emit(
+                            StreamEvent::UsageReport(usage(
+                                value,
+                                UsageScope::Operation,
+                                UsageStage::Checkpoint,
+                            )?),
+                            out,
+                        )?;
+                    }
+                    Ok(())
+                }
+            }
+            "interaction.completed" => {
+                self.terminal(object(field(o, "interaction")?, "interaction")?, out)
+            }
+            _ => Err(CodecError::Unsupported(CarrierReason::Unavailable).into()),
+        }
+    }
+    fn start(
+        &mut self,
+        o: &Map<String, Value>,
+        out: &mut Vec<StreamEvent>,
+    ) -> Result<(), SseError> {
+        let index = field(o, "index")?
+            .as_u64()
+            .ok_or_else(|| invalid(ShapeReason::InvalidValue))?;
+        if self.open.is_some() || index != self.steps.len() as u64 {
+            return Err(invalid(ShapeReason::InvalidValue));
+        }
+        if self.steps.len() >= MAX_ITEMS {
+            return Err(SseError::Limit);
+        }
+        let s = object(field(o, "step")?, "step")?;
+        if s.get("error").is_some_and(|v| !v.is_null()) {
+            return Err(CodecError::Unsupported(CarrierReason::StepError).into());
+        }
+        string(s, "id")?;
+        string(s, "name")?;
+        if s.get("arguments").is_some_and(|v| !v.is_object()) {
+            return Err(invalid(ShapeReason::InvalidValue));
+        }
+        let step_type = required(s, "type")?;
+        let signature = match string(s, "signature").map_err(|_| invalid(ShapeReason::Signature))? {
+            // An opening thought placeholder is not completed replay evidence.
+            Some("") if step_type == "thought" => None,
+            Some("") => return Err(invalid(ShapeReason::Signature)),
+            signature => signature.map(str::to_owned),
+        };
+        if signature.is_some() && !matches!(step_type, "thought" | "function_call") {
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable).into());
+        }
+        let (kind, item_kind) = match step_type {
+            "thought" => (Kind::Thought, ItemKind::Reasoning),
+            "model_output" if signature.is_none() => {
+                (Kind::Text, ItemKind::Message { phase: None })
+            }
+            "function_call" => {
+                let id = required(s, "id")?;
+                let name = required(s, "name")?;
+                if self.calls.iter().any(|c| c == id) {
+                    return Err(invalid(ShapeReason::InvalidValue));
+                }
+                let initial = s
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or_else(|| Value::Object(Map::new()));
+                if !initial.is_object() {
+                    return Err(invalid(ShapeReason::InvalidValue));
+                }
+                self.calls.push(id.into());
+                let text = |v| {
+                    Text::new(v, "Interactions call", MAX_TEXT_BYTES).map_err(|_| SseError::Limit)
+                };
+                (
+                    Kind::Call { initial },
+                    ItemKind::ToolCall {
+                        format: ArgumentFormat::Json,
+                        call_id: text(id)?,
+                        name: text(name)?,
+                        context: Default::default(),
+                    },
+                )
+            }
+            _ => {
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable).into());
+            }
+        };
+        let (item, part) = self.ids()?;
+        // A token-limited response can open and close an empty model_output step.
+        // Do not invent an empty semantic message or publish its lifecycle.
+        if !matches!(kind, Kind::Text) {
+            self.emit(
+                StreamEvent::ItemStarted {
+                    item,
+                    kind: item_kind,
+                    replay: None,
+                },
+                out,
+            )?;
+        }
+        self.open = Some(Open {
+            index,
+            item,
+            part,
+            kind,
+            started: false,
+            signature,
+        });
+        for (field_name, part_kind) in [("summary", PartKind::Summary), ("content", PartKind::Text)]
+        {
+            if let Some(v) = s.get(field_name) {
+                let valid = matches!(
+                    (&self.open.as_ref().expect("open").kind, field_name),
+                    (Kind::Thought, "summary") | (Kind::Text, "content")
+                );
+                if !valid {
+                    return Err(invalid(ShapeReason::InvalidValue));
+                }
+                let parts = v
+                    .as_array()
+                    .ok_or_else(|| invalid(ShapeReason::InvalidValue))?;
+                if parts.len() > 1 {
+                    return Err(CodecError::Unsupported(CarrierReason::MultipartContent).into());
+                }
+                for part in parts {
+                    let p = object(part, "step content part")?;
+                    check_annotations(p)?;
+                    if required(p, "type")? != "text" {
+                        return Err(CodecError::Unsupported(CarrierReason::Unavailable).into());
+                    }
+                    self.fragment(
+                        string(p, "text")?.ok_or_else(|| invalid(ShapeReason::InvalidValue))?,
+                        part_kind,
+                        out,
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+    fn fragment(
+        &mut self,
+        text: &str,
+        kind: PartKind,
+        out: &mut Vec<StreamEvent>,
+    ) -> Result<(), SseError> {
+        if text.is_empty() {
+            return Ok(());
+        }
+        let open = self
+            .open
+            .as_mut()
+            .ok_or_else(|| invalid(ShapeReason::InvalidValue))?;
+        let (item, part, start) = (open.item, open.part, !open.started);
+        let message = matches!(open.kind, Kind::Text);
+        open.started = true;
+        if start {
+            if message {
+                self.emit(
+                    StreamEvent::ItemStarted {
+                        item,
+                        kind: ItemKind::Message { phase: None },
+                        replay: None,
+                    },
+                    out,
+                )?;
+            }
+            self.emit(StreamEvent::PartStarted { item, part, kind }, out)?;
+        }
+        self.emit(
+            StreamEvent::Delta {
+                item,
+                part,
+                fragment: text.into(),
+                logprobs: vec![],
+            },
+            out,
+        )
+    }
+    fn delta(
+        &mut self,
+        d: &Map<String, Value>,
+        out: &mut Vec<StreamEvent>,
+    ) -> Result<(), SseError> {
+        let open = self
+            .open
+            .as_mut()
+            .ok_or_else(|| invalid(ShapeReason::InvalidValue))?;
+        match (required(d, "type")?, &open.kind) {
+            ("thought_signature", Kind::Thought) => {
+                if open.signature.is_some() {
+                    return Err(invalid(ShapeReason::Sequence));
+                }
+                open.signature = Some(required(d, "signature")?.into());
+                Ok(())
+            }
+            ("text", Kind::Text) => self.fragment(
+                string(d, "text")?.ok_or_else(|| invalid(ShapeReason::InvalidValue))?,
+                PartKind::Text,
+                out,
+            ),
+            ("thought_summary", Kind::Thought) => {
+                let p = object(field(d, "content")?, "thought summary")?;
+                check_annotations(p)?;
+                if required(p, "type")? != "text" {
+                    return Err(invalid(ShapeReason::InvalidValue));
+                }
+                self.fragment(
+                    string(p, "text")?.ok_or_else(|| invalid(ShapeReason::InvalidValue))?,
+                    PartKind::Summary,
+                    out,
+                )
+            }
+            ("arguments_delta", Kind::Call { initial, .. }) => {
+                if initial.as_object().is_none_or(|o| !o.is_empty()) {
+                    return Err(invalid(ShapeReason::InvalidValue));
+                }
+                self.fragment(
+                    string(d, "arguments")?.ok_or_else(|| invalid(ShapeReason::InvalidValue))?,
+                    PartKind::StructuredArguments,
+                    out,
+                )
+            }
+            _ => Err(CodecError::Unsupported(CarrierReason::Unavailable).into()),
+        }
+    }
+    fn replay(
+        &mut self,
+        item: ItemId,
+        signed: Signed,
+        out: &mut Vec<StreamEvent>,
+    ) -> Result<(), SseError> {
+        let value = ReplayValue::final_value(
+            signed.format(),
+            Text::new(signed.encode(), "Interactions signature", MAX_TEXT_BYTES)
+                .map_err(|_| SseError::Limit)?,
+        );
+        self.emit(
+            StreamEvent::ItemFinished {
+                item,
+                status: ItemLifecycle::Completed,
+                replay: Some(ItemReplay {
+                    value,
+                    origin: Some(self.target.origin()),
+                }),
+            },
+            out,
+        )?;
+        let snapshot = self
+            .state
+            .item(item)
+            .and_then(|i| i.snapshot())
+            .map_err(CodecError::from)?;
+        match snapshot {
+            Item::Reasoning(r) => {
+                self.fidelity
+                    .record_replay(item, &r, Some(self.target.origin()))?
+            }
+            Item::ToolCall(c) => {
+                self.fidelity
+                    .record_call_replay(item, &c, Some(self.target.origin()))?
+            }
+            _ => return Err(invalid(ShapeReason::InvalidValue)),
+        };
+        Ok(())
+    }
+    fn stop(&mut self, out: &mut Vec<StreamEvent>) -> Result<(), SseError> {
+        if let Some(Open {
+            kind: Kind::Call { initial, .. },
+            started: false,
+            ..
+        }) = &self.open
+        {
+            let initial = initial.to_string();
+            self.fragment(&initial, PartKind::StructuredArguments, out)?;
+        }
+        let open = self
+            .open
+            .take()
+            .ok_or_else(|| invalid(ShapeReason::InvalidValue))?;
+        if matches!(open.kind, Kind::Text) && !open.started {
+            self.members.pop();
+            self.steps.push(None);
+            return Ok(());
+        }
+        if open.started {
+            self.emit(
+                StreamEvent::ValueFinished {
+                    item: open.item,
+                    part: open.part,
+                },
+                out,
+            )?;
+            self.emit(
+                StreamEvent::PartFinished {
+                    item: open.item,
+                    part: open.part,
+                },
+                out,
+            )?;
+        }
+        let signed = match (&open.kind, open.signature) {
+            (Kind::Thought, signature) => Some(Signed::Thought(signature)),
+            (Kind::Call { .. }, Some(signature)) => Some(Signed::Call(signature)),
+            _ => None,
+        };
+        if let Some(signed) = signed {
+            self.replay(open.item, signed, out)?;
+        } else {
+            self.emit(
+                StreamEvent::ItemFinished {
+                    item: open.item,
+                    status: ItemLifecycle::Completed,
+                    replay: None,
+                },
+                out,
+            )?;
+        }
+        self.steps.push(Some(open.item));
+        Ok(())
+    }
+    fn terminal(
+        &mut self,
+        i: &Map<String, Value>,
+        out: &mut Vec<StreamEvent>,
+    ) -> Result<(), SseError> {
+        if self.open.is_some() {
+            return Err(invalid(ShapeReason::InvalidValue));
+        }
+        check_continuation(i)?;
+        let service_class = super::super::service::read(i, "service_tier")?;
+        self.check_identity(i, "id")?;
+        super::snapshots::reconcile(i.get("steps"), &self.steps, &self.state)?;
+        if let Some(model) = string(i, "model")? {
+            let metadata = self.metadata.as_mut().expect("Interactions metadata");
+            if self.model_reported && metadata.model != model {
+                return Err(invalid(ShapeReason::MetadataModelChanged));
+            }
+            metadata.model = model.into();
+            metadata.validate()?;
+            self.model_reported = true;
+        }
+        let (terminal, progress, incomplete) = match status(i)? {
+            "completed" if self.calls.is_empty() => (
+                StreamTerminal::Completed,
+                InteractionProgress::TurnFinished,
+                None,
+            ),
+            "requires_action" if !self.calls.is_empty() => (
+                StreamTerminal::Completed,
+                InteractionProgress::AwaitingToolResults,
+                None,
+            ),
+            // The status names no cause; a token limit is only one documented example.
+            "incomplete" => (
+                StreamTerminal::Incomplete,
+                InteractionProgress::Unreported,
+                Some(IncompleteReason::Unspecified),
+            ),
+            "failed" | "cancelled" => {
+                return Err(
+                    CodecError::StreamFailure(SourceFailureEvidence::stream(500, b"")).into(),
+                );
+            }
+            _ => {
+                return Err(invalid(ShapeReason::TerminalStatus));
+            }
+        };
+        let metadata = self.metadata.as_ref().expect("Interactions metadata");
+        if !metadata.context.service_class().is_none()
+            && !service_class.is_none()
+            && metadata.context.service_class() != &service_class
+        {
+            return Err(invalid(ShapeReason::Metadata));
+        }
+        let reports = crate::reports::observe(
+            Some(&metadata.context.reports),
+            &ResponseReports::phased(
+                ReportPhase::Terminal,
+                ResponseReport {
+                    service_class,
+                    ..Default::default()
+                },
+            ),
+            false,
+        )?;
+        let final_usage = i
+            .get("usage")
+            .filter(|v| !v.is_null())
+            .map(|v| usage(v, UsageScope::Operation, UsageStage::Final))
+            .transpose()?;
+        self.metadata
+            .as_mut()
+            .expect("Interactions metadata")
+            .context
+            .reports = reports;
+        let group = GroupId::new(self.scope, 1);
+        let envelope = if self.members.is_empty() {
+            MessageEnvelope::empty(group, MessageEnvelopeRole::Assistant, None)
+        } else {
+            MessageEnvelope::new(group, MessageEnvelopeRole::Assistant, self.members.clone())
+                .map_err(CodecError::from)?
+        };
+        self.emit(StreamEvent::MessageEnvelope(envelope), out)?;
+        if let Some(usage) = final_usage {
+            self.emit(StreamEvent::UsageReport(usage), out)?;
+        } else if let Some(mut latest) = self.state.usage_reports().operation().cloned() {
+            latest.stage = UsageStage::Final;
+            self.emit(StreamEvent::UsageReport(latest), out)?;
+        }
+        if progress != InteractionProgress::Unreported {
+            self.emit(StreamEvent::Progress(progress), out)?;
+        }
+        self.emit(
+            StreamEvent::Terminal {
+                terminal,
+                details: TerminalDetails {
+                    error: None,
+                    incomplete,
+                    completion: None,
+                    ..Default::default()
+                },
+            },
+            out,
+        )?;
+        self.completed = true;
+        Ok(())
+    }
+    pub fn finish(&mut self) -> Result<DecodedResponse, SseError> {
+        if self.closed || self.rejected {
+            return Err(SseError::Closed);
+        }
+        self.closed = true;
+        let result = (|| {
+            self.framing.finish_strict()?;
+            if !self.completed {
+                return Err(CodecError::Event(EventError::EofBeforeTerminal).into());
+            }
+            Ok(DecodedResponse {
+                evidence: Default::default(),
+                semantic: materialize(&self.state).map_err(CodecError::from)?,
+                fidelity: self.fidelity.clone(),
+                metadata: self
+                    .metadata
+                    .clone()
+                    .ok_or_else(|| invalid(ShapeReason::InvalidValue))?,
+            })
+        })();
+        if result.is_err() {
+            self.rejected = true;
+        }
+        result
+    }
+}

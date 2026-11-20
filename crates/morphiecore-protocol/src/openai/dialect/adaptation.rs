@@ -1,0 +1,280 @@
+//! Explicit wire rules selected by trusted adapters, never by business JSON.
+use crate::semantic::value::ReplayOrigin;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChatFinishReason {
+    ContentFilter,
+    ContextWindow,
+    Repetition,
+    Interrupted,
+    ResourceFailure,
+    NetworkFailure,
+    ServerFailure,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct WireRules {
+    /// Closed aliases selected by a trusted dialect, shared by JSON and chunks.
+    pub chat_finish_reasons: &'static [(&'static str, ChatFinishReason)],
+    /// Closed opening-to-terminal reasoning/service resolutions on the selected
+    /// OpenRouter Luna contract, including its complete default reasoning report
+    /// after an opening null. Same-phase drift is never admitted.
+    pub responses_lifecycle_reports: bool,
+    /// Public SIWC is a restricted Responses operation, not a product-backend alias.
+    /// https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations
+    pub responses_siwc: bool,
+    /// Public SIWC requires upstream SSE regardless of downstream delivery.
+    /// https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference
+    /// Closed public access-program report, not permission to execute hosted tools.
+    /// https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference
+    pub responses_access_programs: bool,
+    /// Exact zero-only tool counters are inactive source reports, not hosted usage.
+    pub responses_zero_tool_accounting: bool,
+    /// Numeric-zero penalty echoes and null moderation are inactive reports only.
+    pub responses_inactive_reports: bool,
+    /// Closed attribution coordinates remain scoped reports, never Generation totals.
+    pub responses_usage_attribution: bool,
+    /// Distinct billing ticks/context-window counters, never standard token usage.
+    pub responses_context_accounting: bool,
+    /// A completed stream may carry an empty terminal output summary after all
+    /// item.done snapshots. Only those fully closed items supply the output.
+    pub responses_event_owned_output: bool,
+    /// An empty, fully validated failed snapshot may be the first Responses event.
+    /// This is a stream error, not evidence that generation started.
+    pub responses_initial_failed: bool,
+    /// A fixed SSE-only backend may omit Content-Type. This does not permit
+    /// conflicting explicit media or bypass framing/terminal/EOF validation.
+    pub responses_sse_without_content_type: bool,
+    /// Chat standard has auto/low/high; this profile additionally represents original.
+    /// Source: <https://api-docs.deepseek.com/guides/vision>.
+    pub chat_original_image_detail: bool,
+    /// This target has no image-detail carrier; explicit detail needs a selected policy.
+    /// https://mimo.mi.com/docs/zh-CN/api/chat/responses
+    pub omit_image_detail: bool,
+    /// DeepSeek Chat cache-hit/miss aliases; canonical counts must agree.
+    pub chat_cache_usage_aliases: bool,
+    /// MorphieCore's explicit image-token extension on Responses input details;
+    /// the fixed standard Responses schema has no such position.
+    pub responses_image_usage: bool,
+    /// Omitted text delta/done probabilities mean unreported, not a static empty
+    /// probability fact. Explicit null/malformed values and missing final reports
+    /// after reported probabilities still fail. Standard grammar stays strict.
+    /// Source: <https://mimo.mi.com/docs/zh-CN/api/chat/responses>.
+    pub responses_unreported_text_logprobs: bool,
+    /// Assistant reasoning text has its own typed owner before its Chat carrier.
+    pub readable_reasoning: bool,
+    /// DashScope's explicit historical reasoning consumption switch.
+    pub chat_preserve_thinking: bool,
+    /// Exact enable_thinking, Chat thinking_budget and positive top_k carriers.
+    pub thinking_controls: bool,
+    /// ModelBest Chat's nested Boolean activation, independent of budget/top-k.
+    pub chat_template_thinking: bool,
+    /// The documented Bailian request subset, separate from upstream report shapes.
+    pub bailian_requests: bool,
+    /// Native DeepSeek Chat's output-format and reasoning-sensitive tool subset.
+    pub deepseek_chat_requests: bool,
+    /// Native DeepSeek Responses does not generate summaries or accept `include`.
+    pub deepseek_responses_reasoning: bool,
+    /// Qwen4 Responses supports explicit auto summaries with same-target opaque
+    /// replay, and reports a null legacy summary alias alongside the concrete echo.
+    pub qwen4_responses_reasoning: bool,
+    /// Preserve reasoning items while rejecting unverified active request controls.
+    /// A readable history carrier does not establish reasoning-effort admission.
+    pub reject_reasoning_controls: bool,
+    /// This profile always reasons; never project an off request into a level.
+    pub reject_disabled_reasoning: bool,
+    /// SGLang-shaped Chat reports reasoning tokens beside totals, not inside details.
+    /// Normalize one typed count; conflicting aliases fail and unknown is not zero.
+    /// Source: https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/entrypoints/openai/protocol.py
+    pub chat_reasoning_usage_alias: bool,
+    /// Default absent/null cache-write to zero only inside valid usage. Never
+    /// replace a reported/invalid count or invent whole usage; record provenance.
+    /// This compatibility value is not evidence of cache activity or billing.
+    pub default_cache_write: bool,
+    /// Classified, bounded response facts bind final semantics and trusted scope.
+    pub response_extras: bool,
+    /// Bind first timestamp/fingerprint values while keeping identity/model strict.
+    pub chunk_metadata_drift: bool,
+    /// Normalize timestamp drift only, without permitting fingerprint changes.
+    pub chunk_created_drift: bool,
+    /// Empty IDs on continuation chunks retain an already announced call identity.
+    /// Initial IDs and function names stay strict; this never creates a call.
+    pub empty_continuation_call_id: bool,
+    /// Bounded, source-bound router and billing facts, never task semantics.
+    pub routing_extras: bool,
+    /// OpenRouter body sessions may be derived from declared conversations, not cache hints.
+    pub openrouter_session: bool,
+    /// Admit the plaintext `reasoning` input alias independently of output spelling.
+    pub accept_reasoning_alias: bool,
+    /// Emit the Provider's `reasoning` spelling instead of `reasoning_content`.
+    pub reasoning_alias: bool,
+    /// Scoped OpenAI Responses-format reasoning details on a Chat carrier.
+    /// Final encrypted replay requires a completed owner and matching origin;
+    /// it does not make the carrier response completed or permit partial replay.
+    pub structured_chat_reasoning: bool,
+    /// A closed format:unknown reasoning.text view owns readable text only.
+    /// Never interprets its marker as a versioned or encrypted replay format.
+    /// Source: <https://opencode.ai/docs/go/>.
+    pub unversioned_chat_reasoning_view: bool,
+    /// Accept only the checked redundant format marker, not arbitrary formats.
+    pub responses_reasoning_format: bool,
+    /// One data-only DONE may follow a validated terminal; never replace it.
+    pub responses_done_marker: bool,
+    /// Content-free usage tail may repeat the same finish, not add new output.
+    pub repeated_finish_usage: bool,
+    /// Trusted request policy; business JSON cannot override parameter admission.
+    pub require_parameters: bool,
+    /// This target can choose tools automatically but cannot enforce explicit selection.
+    pub auto_tool_choice_only: bool,
+    /// Sampling and probabilities have a carrier only when thinking is explicitly disabled.
+    pub sampling_requires_reasoning_off: bool,
+    /// Provider request spelling; downstream still uses max_completion_tokens.
+    pub legacy_max_tokens: bool,
+    /// Native application-instruction carrier, for both root and ordered instructions.
+    pub system_instruction_messages: bool,
+    /// Chat instructions have a string-only carrier; do not join typed parts implicitly.
+    pub chat_string_instructions: bool,
+    /// Responses has no OpenAI shorthand for message items.
+    pub responses_typed_messages: bool,
+    /// DeepSeek Responses accepts developer spelling with effective user meaning.
+    pub responses_developer_is_user: bool,
+    /// Target always permits parallel calls and has no request switch.
+    /// Explicit serial intent rejects; explicit permission is omitted on a copy.
+    pub parallel_tools_always_enabled: bool,
+    /// Fixed client identity and an explicit session header for OpenCode Go.
+    /// Never forwards inbound headers or invents a conversation identity.
+    /// Source: <https://opencode.ai/docs/go/#where-can-i-use-it>.
+    pub opencode_go_headers: bool,
+    /// Advisory lastOne marker and source-bound numeric matched_stop diagnostics.
+    pub chat_stop_diagnostics: bool,
+    /// Source-bound diagnostic; never public response identity or task semantics.
+    pub reported_request_id: bool,
+    /// One response_api usage row: validate redundant totals and promote declared
+    /// image/text facts. Conflicts, tool charges and unknown breakdowns are errors.
+    /// Source: <https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-responses>.
+    pub responses_billing_view: bool,
+    /// Explicit typed text-token positions beyond the fixed Responses schema.
+    /// MorphieCore uses canonical detail slots; billing-view profiles own their wire.
+    pub responses_text_usage: bool,
+    /// This wire names summary deltas/done reasoning_text and indexes them by
+    /// content_index. Preserve Summary semantics and validate final snapshots.
+    /// Source: <https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-responses>.
+    pub responses_summary_text_alias: bool,
+    /// Only reasoning.content entries containing exactly a text string may omit
+    /// their reasoning_text tag. No other item/part discriminator is inferred.
+    pub responses_reasoning_text_shorthand: bool,
+    /// A real completed snapshot may close open readable reasoning only when
+    /// identity, explicit completed status and all received content match exactly.
+    /// Never supply text, close message/tool parts or finalize opaque replay here.
+    pub responses_terminal_reasoning: bool,
+    /// Empty previous_response_id and empty/null conversation_id are inactive
+    /// response placeholders, never permission to resolve or replay remote state.
+    /// Source: <https://docs.bigmodel.cn/cn/guide/develop/responses/introduction>.
+    pub responses_inactive_state: bool,
+    /// Reported JSON Schema uses schema_ as a field alias, never a new constraint.
+    /// Requests and standard downstream encoding retain the canonical schema key.
+    /// Source: https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-responses
+    pub responses_reported_schema_alias: bool,
+    /// vLLM-shaped null-only debug slots and typed cache/image report aliases.
+    /// Active unsupported values fail; no defaults or modality estimates are added.
+    /// Source: https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/chat_completion/protocol.py
+    pub chat_inference_response_shape: bool,
+    /// User video as `{"type":"video_url","video_url":{"url":…}}`, URL or data URL.
+    /// Media policy: docs/architecture/adaptation-and-dialects.md#media.
+    pub chat_video_url: bool,
+    /// User video as `{"type":"input_video","video_url":…}`, URL or data URL; no
+    /// tool-result carrier. Source: OpenRouter OpenAPI `InputVideo` (2026-10-13).
+    pub responses_input_video: bool,
+}
+
+impl WireRules {
+    pub fn qwen4_auto_summary(
+        &self,
+        reasoning: &crate::semantic::task::generation::ReasoningRequest,
+    ) -> bool {
+        use crate::semantic::task::generation::{ReasoningDisplay, ReasoningSummary};
+        self.qwen4_responses_reasoning
+            && reasoning.presentation.summary == Some(ReasoningSummary::Auto)
+            && matches!(
+                reasoning.presentation.visibility.as_ref(),
+                None | Some(ReasoningDisplay::Summary)
+            )
+    }
+
+    /// Responses presentation exceptions belong to the trusted target dialect.
+    pub fn responses_reasoning_presentation(
+        &self,
+        reasoning: &crate::semantic::task::generation::ReasoningRequest,
+    ) -> Option<
+        [(
+            crate::semantic::task::generation::Feature,
+            crate::lowering::disposition::Disposition,
+        ); 3],
+    > {
+        use crate::{
+            lowering::disposition::{
+                Disposition as D, OMIT_REASONING_INCLUDE, OMIT_REASONING_SUMMARY,
+            },
+            semantic::task::generation::{Feature as F, ReasoningActivation, ReasoningDisplay},
+        };
+        let disabled = reasoning.activation == Some(ReasoningActivation::Disabled);
+        let unsupported = D::Omit(OMIT_REASONING_SUMMARY);
+        let (mut display, summary, encrypted) = if self.qwen4_responses_reasoning {
+            if self.qwen4_auto_summary(reasoning) {
+                // Explicit auto summaries request ciphertext on this wire without `include`.
+                (D::Native, D::Native, D::Equivalent)
+            } else {
+                let presentation = if reasoning.presentation.is_absent() {
+                    D::Native
+                } else {
+                    D::Reject(
+                        "Qwen4 Responses only supports explicit automatic reasoning summaries",
+                    )
+                };
+                (presentation, presentation, D::Omit(OMIT_REASONING_INCLUDE))
+            }
+        } else if self.deepseek_responses_reasoning {
+            (unsupported, unsupported, D::Omit(OMIT_REASONING_INCLUDE))
+        } else {
+            return None;
+        };
+        if reasoning.presentation.visibility.as_ref() == Some(&ReasoningDisplay::Omitted) {
+            display = D::Reject("the selected carrier cannot guarantee hidden reasoning display");
+        }
+        Some([
+            (F::ReasoningDisplay, display),
+            (F::ReasoningSummary, summary),
+            (
+                F::EncryptedReasoning,
+                if disabled { D::Equivalent } else { encrypted },
+            ),
+        ])
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Adaptation {
+    pub rules: WireRules,
+    pub reasoning_policy: Option<crate::reasoning::ReasoningRequestPolicy>,
+    pub effort_mapping: Option<&'static crate::reasoning::ReasoningEffortMapping>,
+    /// GenerationApi image admission is intersected with independently configured Endpoint limits.
+    pub images: crate::image_constraints::ImageConstraints,
+    pub files: crate::file_constraints::FileConstraints,
+    pub cache: crate::cache::CacheTargetPolicy,
+    /// Stable adapter contract identity, not a network or credential locator.
+    pub profile_id: &'static str,
+    /// Strict target identity for compaction, audio and Provider-specific reports.
+    pub scope: Option<ReplayOrigin>,
+    /// Bound service identity for native OpenAI reasoning, independent of model labels.
+    pub reasoning_scope: Option<ReplayOrigin>,
+}
+
+impl Adaptation {
+    /// A separate reasoning identity does not grant replay to an unbound target.
+    pub fn reasoning_origin<'a>(
+        &'a self,
+        origin: Option<&'a ReplayOrigin>,
+    ) -> Option<&'a ReplayOrigin> {
+        origin.map(|strict| self.reasoning_scope.as_ref().unwrap_or(strict))
+    }
+}

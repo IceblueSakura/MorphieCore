@@ -1,0 +1,130 @@
+//! Synthetic body and activation checks at the embedding owner; no live egress.
+use crate::{
+    adapter::embeddings::UpstreamAdapter, diagnostics::Trace, protocol::embedding::Encoding,
+    tests::support::source,
+};
+use bytes::Bytes;
+const RESULT: &[u8] = br#"{"object":"list","model":"synthetic","data":[{"object":"embedding","index":0,"embedding":[0.5,1]}],"usage":{"prompt_tokens":1,"total_tokens":1}}"#;
+
+#[tokio::test]
+async fn failed_embedding_heads_do_not_wait_for_optional_error_bodies() {
+    for (status, code) in [(429, "rate_limit_exceeded"), (503, "server_is_overloaded")] {
+        let mut trace = Trace::new(None);
+        let (_tx, mut response, dropped) = source(status, "application/json");
+        response
+            .headers_mut()
+            .insert("retry-after", "3".parse().unwrap());
+        let error = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            crate::tasks::embeddings::receive(
+                response,
+                4096,
+                &mut trace,
+                UpstreamAdapter::Google,
+                Encoding::Float,
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+        assert_eq!(error.code(), code);
+        assert_eq!(error.retry_after, Some(3));
+        dropped.await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn embedding_body_requires_eof_and_rejects_bad_heads_reads_and_limits() {
+    let mut trace = Trace::new(None);
+    let (tx, response, dropped) = source(200, "application/json");
+    tx.send(Ok(Bytes::from_static(RESULT))).await.unwrap();
+    let mut pending = Box::pin(crate::tasks::embeddings::receive(
+        response,
+        4096,
+        &mut trace,
+        UpstreamAdapter::Standard,
+        Encoding::Float,
+    ));
+    assert!(futures_util::poll!(&mut pending).is_pending());
+    drop(tx);
+    assert_eq!(pending.await.unwrap().vectors()[0].values().len(), 2);
+    dropped.await.unwrap();
+    for case in 0..8 {
+        let (tx, mut response, dropped) = source(
+            if case == 0 { 500 } else { 200 },
+            if case == 1 {
+                "text/event-stream"
+            } else {
+                "application/json"
+            },
+        );
+        match case {
+            2 => {
+                response
+                    .headers_mut()
+                    .insert("content-encoding", "gzip".parse().unwrap());
+            }
+            3 => {
+                response
+                    .headers_mut()
+                    .insert("content-length", "1".parse().unwrap());
+            }
+            4 => {
+                response
+                    .headers_mut()
+                    .append("content-type", "application/json".parse().unwrap());
+            }
+            7 => {
+                response.headers_mut().insert(
+                    "content-type",
+                    "application/json;charset=latin1".parse().unwrap(),
+                );
+            }
+            _ => {}
+        }
+        tx.send(Ok(Bytes::from_static(RESULT))).await.unwrap();
+        if case == 5 {
+            tx.send(Err(std::io::Error::other("private fixture")))
+                .await
+                .unwrap();
+        }
+        drop(tx);
+        assert!(
+            crate::tasks::embeddings::receive(
+                response,
+                if case == 6 { 2 } else { 4096 },
+                &mut trace,
+                UpstreamAdapter::Standard,
+                Encoding::Float,
+            )
+            .await
+            .is_err()
+        );
+        dropped.await.unwrap();
+    }
+}
+#[tokio::test]
+async fn cancelled_embedding_intake_releases_its_body_without_a_result() {
+    let sink = crate::capture::Sink::new(16 << 10);
+    let mut trace = Trace::new(None);
+    trace.capture = Some(sink.exchange());
+    trace.begin_candidate(1);
+    let (tx, response, dropped) = source(200, "application/json");
+    tx.send(Ok(Bytes::from_static(RESULT))).await.unwrap();
+    let mut pending = Box::pin(crate::tasks::embeddings::receive(
+        response,
+        4096,
+        &mut trace,
+        UpstreamAdapter::Standard,
+        Encoding::Float,
+    ));
+    assert!(futures_util::poll!(&mut pending).is_pending());
+    drop(pending);
+    tokio::time::timeout(std::time::Duration::from_secs(1), dropped)
+        .await
+        .unwrap()
+        .unwrap();
+    let context = format!("{:?}", trace.capture.as_ref().unwrap().context());
+    assert!(context.contains("incomplete"));
+    assert!(!context.contains("source_eof"));
+}

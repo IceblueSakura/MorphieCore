@@ -1,0 +1,294 @@
+//! Provider-selected wire rules. A dialect adjusts the standard API; it never
+//! replaces the codec, and a model or endpoint capability is a separate decision.
+use crate::{
+    openai::{
+        GenerationApi,
+        dialect::adaptation::{Adaptation, ChatFinishReason, WireRules},
+    },
+    semantic::value::ReplayOrigin,
+};
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Dialect {
+    #[default]
+    Standard,
+    Siwc,
+    Grok,
+    MorphieCore,
+    DeepSeek,
+    Xiaomi,
+    OpenRouter,
+    OpenCodeGo,
+    ModelBest,
+    Nvidia,
+    Bailian,
+    Zhipu,
+}
+impl Dialect {
+    pub(in crate::openai) fn adaptation(
+        self,
+        profile: GenerationApi,
+        scope: Option<ReplayOrigin>,
+    ) -> Adaptation {
+        let (profile_id, mut rules) = match self {
+            Self::Standard => ("standard-v1", WireRules::default()),
+            Self::Siwc => (
+                "openai-responses",
+                WireRules {
+                    responses_siwc: true,
+                    responses_access_programs: true,
+                    responses_zero_tool_accounting: true,
+                    responses_inactive_reports: true,
+                    responses_usage_attribution: true,
+                    responses_event_owned_output: true,
+                    responses_sse_without_content_type: true,
+                    ..Default::default()
+                },
+            ),
+            Self::Grok => (
+                "grok-v1",
+                WireRules {
+                    response_extras: true,
+                    responses_context_accounting: true,
+                    ..Default::default()
+                },
+            ),
+            Self::MorphieCore => (
+                "morphiecore-v1",
+                WireRules {
+                    chat_video_url: true,
+                    readable_reasoning: true,
+                    chat_preserve_thinking: true,
+                    thinking_controls: true,
+                    structured_chat_reasoning: true,
+                    accept_reasoning_alias: true,
+                    responses_image_usage: true,
+                    responses_text_usage: true,
+                    ..Default::default()
+                },
+            ),
+            Self::DeepSeek => (
+                "deepseek-v1",
+                WireRules {
+                    deepseek_chat_requests: profile == GenerationApi::Chat,
+                    deepseek_responses_reasoning: profile == GenerationApi::Responses,
+                    legacy_max_tokens: profile == GenerationApi::Chat,
+                    chat_finish_reasons: &[
+                        (
+                            "insufficient_system_resource",
+                            ChatFinishReason::ResourceFailure,
+                        ),
+                        ("aborted", ChatFinishReason::Interrupted),
+                    ],
+                    system_instruction_messages: true,
+                    responses_developer_is_user: profile == GenerationApi::Responses,
+                    parallel_tools_always_enabled: true,
+                    chat_cache_usage_aliases: true,
+                    readable_reasoning: true,
+                    chat_original_image_detail: true,
+                    default_cache_write: true,
+                    response_extras: true,
+                    chunk_metadata_drift: true,
+                    ..Default::default()
+                },
+            ),
+            Self::OpenRouter => (
+                "openrouter-v1",
+                WireRules {
+                    chat_finish_reasons: &[("error", ChatFinishReason::ServerFailure)],
+                    chat_video_url: true,
+                    responses_input_video: true,
+                    readable_reasoning: true,
+                    routing_extras: true,
+                    openrouter_session: true,
+                    response_extras: true,
+                    responses_reasoning_format: true,
+                    responses_access_programs: true,
+                    responses_done_marker: true,
+                    responses_initial_failed: profile == GenerationApi::Responses,
+                    accept_reasoning_alias: true,
+                    reasoning_alias: true,
+                    structured_chat_reasoning: true,
+                    // Non-OpenAI models (`z-ai/glm-5.3`) stream `format: "unknown"` text.
+                    unversioned_chat_reasoning_view: true,
+                    repeated_finish_usage: true,
+                    require_parameters: true,
+                    ..Default::default()
+                },
+            ),
+            Self::OpenCodeGo => (
+                "opencode-go-v1",
+                WireRules {
+                    readable_reasoning: true,
+                    reject_reasoning_controls: true,
+                    accept_reasoning_alias: true,
+                    reasoning_alias: true,
+                    unversioned_chat_reasoning_view: true,
+                    repeated_finish_usage: true,
+                    legacy_max_tokens: true,
+                    opencode_go_headers: true,
+                    ..Default::default()
+                },
+            ),
+            // Hosted Chat has nested activation and readable reasoning carriers;
+            // no native Responses operation or numeric thinking budget is inferred.
+            // https://github.com/OpenBMB/MiniCPM-V/blob/main/docs/api.md
+            Self::ModelBest => (
+                "modelbest-v1",
+                WireRules {
+                    chat_video_url: true,
+                    readable_reasoning: true,
+                    accept_reasoning_alias: true,
+                    reasoning_alias: true,
+                    chat_stop_diagnostics: true,
+                    chat_reasoning_usage_alias: true,
+                    chunk_created_drift: true,
+                    chat_inference_response_shape: true,
+                    legacy_max_tokens: true,
+                    chat_template_thinking: profile == GenerationApi::Chat,
+                    reject_reasoning_controls: profile != GenerationApi::Chat,
+                    ..Default::default()
+                },
+            ),
+            Self::Nvidia => (
+                "nvidia-v1",
+                WireRules {
+                    readable_reasoning: true,
+                    legacy_max_tokens: true,
+                    response_extras: true,
+                    responses_reasoning_text_shorthand: true,
+                    responses_terminal_reasoning: true,
+                    responses_done_marker: true,
+                    ..Default::default()
+                },
+            ),
+            Self::Bailian => (
+                "bailian-v1",
+                WireRules {
+                    system_instruction_messages: profile == GenerationApi::Chat,
+                    chat_string_instructions: profile == GenerationApi::Chat,
+                    chat_video_url: true,
+                    // Both billing plans use the same upstream wire dialect.
+                    chunk_created_drift: true,
+                    empty_continuation_call_id: true,
+                    responses_reported_schema_alias: true,
+                    readable_reasoning: true,
+                    chat_preserve_thinking: true,
+                    thinking_controls: true,
+                    bailian_requests: true,
+                    response_extras: true,
+                    responses_billing_view: true,
+                    responses_text_usage: true,
+                    responses_image_usage: true,
+                    responses_summary_text_alias: true,
+                    ..Default::default()
+                },
+            ),
+            Self::Zhipu => (
+                "zhipu-v1",
+                WireRules {
+                    chat_finish_reasons: &[
+                        ("sensitive", ChatFinishReason::ContentFilter),
+                        (
+                            "model_context_window_exceeded",
+                            ChatFinishReason::ContextWindow,
+                        ),
+                        ("network_error", ChatFinishReason::NetworkFailure),
+                    ],
+                    // Chat and Responses have different role and message-shape contracts.
+                    // https://docs.bigmodel.cn/api-reference/模型-api/对话补全
+                    // https://docs.bigmodel.cn/api-reference/response/创建-response
+                    system_instruction_messages: profile == GenerationApi::Chat,
+                    chat_string_instructions: profile == GenerationApi::Chat,
+                    responses_typed_messages: profile == GenerationApi::Responses,
+                    chat_video_url: true,
+                    readable_reasoning: true,
+                    reject_disabled_reasoning: true,
+                    legacy_max_tokens: true,
+                    reported_request_id: true,
+                    responses_inactive_state: true,
+                    responses_unreported_text_logprobs: true,
+                    // Optional transport trailer, never a replacement for a real terminal.
+                    responses_done_marker: true,
+                    ..Default::default()
+                },
+            ),
+            Self::Xiaomi => (
+                "xiaomi-v1",
+                WireRules {
+                    chat_finish_reasons: &[("repetition_truncation", ChatFinishReason::Repetition)],
+                    omit_image_detail: true,
+                    readable_reasoning: true,
+                    responses_unreported_text_logprobs: true,
+                    chunk_metadata_drift: true,
+                    ..Default::default()
+                },
+            ),
+        };
+        let mut images = match self {
+            Self::MorphieCore | Self::Xiaomi => crate::image_constraints::ImageConstraints::all(),
+            _ => crate::image_constraints::ImageConstraints::common(),
+        };
+        if matches!(self, Self::Xiaomi | Self::Bailian) {
+            images.details.clear();
+        }
+        let mut cache = match self {
+            // Public Responses carriers, independent of OAuth or product session headers.
+            // https://docs.x.ai/developers/advanced-api-usage/prompt-caching/maximizing-cache-hits
+            Self::Siwc | Self::Grok => crate::cache::CacheTargetPolicy {
+                key: true,
+                ..Default::default()
+            },
+            Self::Standard => crate::cache::CacheTargetPolicy {
+                session_id: false,
+                ..crate::cache::CacheTargetPolicy::all()
+            },
+            Self::MorphieCore => crate::cache::CacheTargetPolicy::all(),
+            // Explicit sessions or declared conversations activate session stickiness.
+            // Cache keys alone retain the separate upstream affinity fallback.
+            // https://openrouter.ai/docs/guides/best-practices/prompt-caching
+            // https://openrouter.ai/docs/client-sdks/typescript/models/responsesrequest
+            Self::OpenRouter => crate::cache::CacheTargetPolicy {
+                key: true,
+                session_id: true,
+                ..Default::default()
+            },
+            // Neutral request context supplies the internal session header;
+            // cache keys remain independent and do not enter the Go body.
+            // https://opencode.ai/docs/go/#where-can-i-use-it
+            Self::OpenCodeGo => crate::cache::CacheTargetPolicy {
+                session_id: true,
+                ..Default::default()
+            },
+            _ => Default::default(),
+        };
+        // A Responses-only rule set never activates a Chat encoding, and the reverse.
+        if self == Self::Grok && profile != GenerationApi::Responses {
+            cache.key = false;
+        }
+        if self == Self::Bailian && profile != GenerationApi::Chat {
+            rules.chunk_created_drift = false;
+            rules.empty_continuation_call_id = false;
+        }
+        Adaptation {
+            rules,
+            effort_mapping: None,
+            reasoning_policy: None,
+            images,
+            files: match self {
+                Self::Standard | Self::MorphieCore | Self::Siwc => {
+                    crate::file_constraints::FileConstraints::all()
+                }
+                Self::OpenRouter => crate::file_constraints::FileConstraints {
+                    urls: true,
+                    ..crate::file_constraints::FileConstraints::pdf()
+                },
+                _ => crate::file_constraints::FileConstraints::none(),
+            },
+            cache,
+            profile_id,
+            scope,
+            reasoning_scope: None,
+        }
+    }
+}
