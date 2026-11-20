@@ -25,6 +25,7 @@ pub(super) fn decode_chat_finish(
         "content_filter" => IncompleteReason::ContentFilter,
         _ => match adaptation
             .rules
+            .metadata
             .chat_finish_reasons
             .iter()
             .find(|(label, _)| *label == reason)

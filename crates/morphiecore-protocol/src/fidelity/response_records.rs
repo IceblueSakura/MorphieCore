@@ -147,7 +147,7 @@ impl FidelityRecords {
                     && Some(&r.origin) == adaptation.scope.as_ref()
                     && r.response_id.as_str() == response_id
                     && r.dependency == response_dependency(semantic)
-                    && adaptation.rules.response_extras
+                    && adaptation.rules.metadata.response_extras
             })
             .map(|r| &r.values)
     }
@@ -167,14 +167,14 @@ impl FidelityRecords {
         self.routing_extras = if values.is_empty() {
             None
         } else {
-            if !(adaptation.rules.routing_extras
-                || adaptation.rules.chat_stop_diagnostics
-                || adaptation.rules.reported_request_id
-                || adaptation.rules.responses_access_programs
-                || adaptation.rules.responses_zero_tool_accounting
-                || adaptation.rules.responses_inactive_reports
-                || adaptation.rules.responses_usage_attribution
-                || adaptation.rules.responses_context_accounting)
+            if !(adaptation.rules.metadata.routing_extras
+                || adaptation.rules.metadata.chat_stop_diagnostics
+                || adaptation.rules.metadata.reported_request_id
+                || adaptation.rules.metadata.responses_access_programs
+                || adaptation.rules.accounting.responses_zero_tool_accounting
+                || adaptation.rules.metadata.responses_inactive_reports
+                || adaptation.rules.accounting.responses_usage_attribution
+                || adaptation.rules.accounting.responses_context_accounting)
             {
                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
@@ -203,14 +203,14 @@ impl FidelityRecords {
         self.routing_extras
             .as_ref()
             .filter(|r| {
-                (adaptation.rules.routing_extras
-                    || adaptation.rules.chat_stop_diagnostics
-                    || adaptation.rules.reported_request_id
-                    || adaptation.rules.responses_access_programs
-                    || adaptation.rules.responses_zero_tool_accounting
-                    || adaptation.rules.responses_inactive_reports
-                    || adaptation.rules.responses_usage_attribution
-                    || adaptation.rules.responses_context_accounting)
+                (adaptation.rules.metadata.routing_extras
+                    || adaptation.rules.metadata.chat_stop_diagnostics
+                    || adaptation.rules.metadata.reported_request_id
+                    || adaptation.rules.metadata.responses_access_programs
+                    || adaptation.rules.accounting.responses_zero_tool_accounting
+                    || adaptation.rules.metadata.responses_inactive_reports
+                    || adaptation.rules.accounting.responses_usage_attribution
+                    || adaptation.rules.accounting.responses_context_accounting)
                     && r.protocol == protocol
                     && r.profile == adaptation.profile_id
                     && Some(&r.origin) == adaptation.scope.as_ref()

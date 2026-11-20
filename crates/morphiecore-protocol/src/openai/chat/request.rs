@@ -170,7 +170,7 @@ pub fn decode_generation_with(
     };
     crate::openai::reasoning::chat_request(o, &mut settings)?;
     if let Some(value) = o.get("preserve_thinking") {
-        if adaptation.rules.chat_preserve_thinking {
+        if adaptation.rules.reasoning.chat_preserve_thinking {
             settings.reasoning.presence = ReasoningPresence::Present;
             settings.reasoning.read_history = Some(value.as_bool().ok_or(CodecError::invalid())?);
         } else if direction.client() {
@@ -275,7 +275,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     {
         return Err(CodecError::Unsupported(CarrierReason::Tools));
     }
-    if target.adaptation.rules.bailian_requests {
+    if target.adaptation.rules.hooks.bailian_requests {
         crate::openai::dialect::bailian::check_semantic(
             &target.semantic,
             GenerationApi::Chat,
@@ -287,11 +287,11 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         target.semantic.items(),
         &owners::owners(target.semantic.items(), target.semantic.message_envelopes()),
         target.fidelity,
-        target.adaptation.rules.structured_chat_reasoning,
+        target.adaptation.rules.reasoning.structured_chat_reasoning,
         false,
         target.semantic.resources(),
     );
-    let role = if target.adaptation.rules.system_instruction_messages {
+    let role = if target.adaptation.rules.request.system_instruction_messages {
         for message in &mut messages {
             if message.get("role").and_then(Value::as_str) == Some("developer") {
                 message["role"] = json!("system");
@@ -310,7 +310,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
             }),
         );
     }
-    if target.adaptation.rules.chat_string_instructions
+    if target.adaptation.rules.request.chat_string_instructions
         && messages.iter().any(|message| {
             matches!(message["role"].as_str(), Some("developer" | "system"))
                 && !message["content"].is_string()
@@ -339,7 +339,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     write_control_values(
         target.semantic.controls(),
         o,
-        if target.adaptation.rules.legacy_max_tokens {
+        if target.adaptation.rules.request.legacy_max_tokens {
             "max_tokens"
         } else {
             "max_completion_tokens"
@@ -349,7 +349,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         o.insert("top_p".into(), json!(p));
     }
     if let Some(k) = target.semantic.controls().top_k {
-        if !target.adaptation.rules.thinking_controls {
+        if !target.adaptation.rules.reasoning.thinking_controls {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         o.insert("top_k".into(), json!(k));
@@ -399,7 +399,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         }
     }
     crate::openai::chat::audio::write_settings(target.semantic.settings(), o);
-    if target.adaptation.rules.bailian_requests {
+    if target.adaptation.rules.hooks.bailian_requests {
         crate::openai::dialect::bailian::write_tools(
             target.semantic.settings(),
             o,
@@ -410,15 +410,15 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     }
     let mut settings = target.semantic.settings().clone();
     if let Some(read_history) = settings.reasoning.read_history {
-        if !target.adaptation.rules.chat_preserve_thinking {
+        if !target.adaptation.rules.reasoning.chat_preserve_thinking {
             return Err(CodecError::Unsupported(CarrierReason::Reasoning));
         }
         o.insert("preserve_thinking".into(), json!(read_history));
         settings.reasoning.read_history = None;
     }
-    if target.adaptation.rules.chat_template_thinking {
+    if target.adaptation.rules.reasoning.chat_template_thinking {
         crate::openai::dialect::modelbest::write(&settings, o)?;
-    } else if target.adaptation.rules.thinking_controls {
+    } else if target.adaptation.rules.reasoning.thinking_controls {
         crate::openai::dialect::bailian::write_reasoning(&settings, o, GenerationApi::Chat)?;
     } else {
         crate::openai::reasoning::write_request(&settings, o, GenerationApi::Chat)?;

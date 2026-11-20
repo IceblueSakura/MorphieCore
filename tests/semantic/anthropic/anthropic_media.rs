@@ -295,7 +295,7 @@ fn document_context_normalizes_null_and_preserves_per_use_values_in_messages_and
         input.conversation = Some(
             morphiecore::semantic::context::ConversationContext::conversation("synthetic").unwrap(),
         );
-        catalog::MESSAGES_BINDINGS[0]
+        catalog::messages_bindings()[0]
             .endpoint()
             .encode_request_with_rules(&input)
             .unwrap();
@@ -744,7 +744,7 @@ fn unrepresentable_sources_and_uncalibrated_options_fail_without_losing_filename
         .is_ok()
     );
     use morphiecore::protocol::openai::{Dialect, GenerationApi as Client, GenerationCodec};
-    let endpoint = catalog::MESSAGES_BINDINGS[0].endpoint();
+    let endpoint = catalog::messages_bindings()[0].endpoint();
     let chat = GenerationCodec::new(Client::Chat, Dialect::ModelBest, None);
     let decode = |content: Value| {
         let mut request = chat

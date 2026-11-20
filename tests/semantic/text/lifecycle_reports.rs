@@ -17,7 +17,11 @@ use serde_json::{Value, json};
 
 fn adapter() -> GenerationCodec {
     let mut adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::OpenRouter, None);
-    adapter.adaptation.rules.responses_lifecycle_reports = true;
+    adapter
+        .adaptation
+        .rules
+        .metadata
+        .responses_lifecycle_reports = true;
     adapter
 }
 fn event(kind: &str, sequence: u64, reasoning: Value, tier: Value) -> Value {

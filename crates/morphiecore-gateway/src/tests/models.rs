@@ -30,6 +30,7 @@ fn admitted_omitted_control_is_not_published_as_rejected_input() {
         .unwrap()
         .adaptation
         .rules
+        .hooks
         .responses_siwc = true;
     entry.candidates = vec![Arc::new(candidate)];
     let entries = [(

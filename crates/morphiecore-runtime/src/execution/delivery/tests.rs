@@ -4,6 +4,7 @@ use crate::{
     protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
     semantic::value::Presence,
 };
+use bytes::Bytes;
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
@@ -51,7 +52,7 @@ fn completed_reasoning_is_not_rehashed_for_unrelated_text_batches() {
         protocol::fidelity::REASONING_FINGERPRINT_BYTES,
         semantic::task::generation::{Item, ReasoningContent},
     };
-    let endpoint = crate::topology::catalog::MESSAGES_BINDINGS[0].endpoint();
+    let endpoint = crate::topology::catalog::messages_bindings()[0].endpoint();
     let thinking = "r".repeat(32 << 10);
     for stream in [false, true] {
         let mut attempt = Attempt::new(endpoint.adapter().unwrap(), 1 << 20, Default::default());
@@ -65,6 +66,7 @@ fn completed_reasoning_is_not_rehashed_for_unrelated_text_batches() {
             Default::default(),
             Default::default(),
             Obfuscation::Disabled,
+            stream,
         );
         let push = |frame: Value, attempt: &mut Attempt, delivery: &mut ResponseDelivery| {
             let (_, events) = attempt
@@ -157,7 +159,7 @@ fn completed_reasoning_is_not_rehashed_for_unrelated_text_batches() {
 
 #[test]
 fn late_chat_reasoning_identity_keeps_published_and_retained_aliases() {
-    let endpoint = crate::topology::catalog::API_KEY_BINDINGS
+    let endpoint = crate::topology::catalog::api_key_bindings()
         .iter()
         .find(|binding| {
             binding.canonical_model == "gpt-6-luna" && binding.dialect == Dialect::OpenRouter
@@ -179,8 +181,9 @@ fn late_chat_reasoning_identity_keeps_published_and_retained_aliases() {
             ..Default::default()
         },
         Obfuscation::Disabled,
+        true,
     );
-    delivery.generated_id = Some("public-response".into());
+    delivery.envelope.generated_id = Some("public-response".into());
     let mut output = vec![];
     for (delta, finish) in [
         (
@@ -273,7 +276,7 @@ fn native_tool_argument_views(api: GenerationApi, arguments: &str, incomplete: b
     use crate::semantic::task::generation::{
         IncompleteReason, Item, ItemLifecycle, Outcome, ToolArguments,
     };
-    let endpoint = crate::topology::catalog::MESSAGES_BINDINGS[0].endpoint();
+    let endpoint = crate::topology::catalog::messages_bindings()[0].endpoint();
     let frames = [
         json!({"type":"message_start","message":{"id":"r","type":"message","role":"assistant",
             "model":endpoint.upstream_model,"content":[],"stop_reason":null,"stop_sequence":null,
@@ -303,8 +306,9 @@ fn native_tool_argument_views(api: GenerationApi, arguments: &str, incomplete: b
                 ..Default::default()
             },
             Obfuscation::Disabled,
+            stream,
         );
-        delivery.generated_id = Some(format!("response-{stream}"));
+        delivery.envelope.generated_id = Some(format!("response-{stream}"));
         let mut output = vec![];
         for frame in &frames {
             let (_, events) = attempt
@@ -489,6 +493,7 @@ fn finalized_json_still_needs_handoff_and_cannot_resume_after_rejection() {
             Default::default(),
             StreamOptions::default(),
             Obfuscation::Disabled,
+            false,
         );
         let body = delivery.encode_json(&attempt).unwrap();
         assert_eq!(
@@ -537,7 +542,7 @@ fn messages_end_turn_derivation_uses_original_request_without_mutating_reports()
     use crate::semantic::task::generation::{
         CompletionCause, InteractionProgress, Item, TerminalDetails,
     };
-    let binding = crate::topology::catalog::API_KEY_BINDINGS
+    let binding = crate::topology::catalog::api_key_bindings()
         .iter()
         .find(|b| b.endpoint_prefix == "openrouter")
         .unwrap();
@@ -617,6 +622,7 @@ fn messages_end_turn_derivation_uses_original_request_without_mutating_reports()
                 Default::default(),
                 Default::default(),
                 Obfuscation::Disabled,
+                false,
             );
             if bound {
                 delivery = delivery.with_request(&endpoint, &effective, &original);
@@ -712,7 +718,7 @@ fn messages_end_turn_derivation_uses_original_request_without_mutating_reports()
 #[test]
 fn messages_end_turn_stream_waits_for_eof_and_final_metadata() {
     use crate::semantic::task::generation::{CompletionCause, InteractionProgress};
-    let endpoint = crate::topology::catalog::API_KEY_BINDINGS
+    let endpoint = crate::topology::catalog::api_key_bindings()
         .iter()
         .find(|b| b.endpoint_prefix == "openrouter")
         .unwrap()
@@ -738,6 +744,7 @@ fn messages_end_turn_stream_waits_for_eof_and_final_metadata() {
             Default::default(),
             Default::default(),
             Obfuscation::Disabled,
+            true,
         )
         .with_request(&endpoint, &request, &request);
         attempt.begin(200, "text/event-stream").unwrap();
@@ -850,6 +857,7 @@ fn messages_end_turn_stream_waits_for_eof_and_final_metadata() {
                     Default::default(),
                     Default::default(),
                     Obfuscation::Disabled,
+                    false,
                 )
                 .with_request(&endpoint, &request, &request);
                 let json: Value =
@@ -920,6 +928,7 @@ fn messages_report_omissions_match_json_stream_and_retained_views() {
                 Default::default(),
                 Default::default(),
                 Obfuscation::Disabled,
+                stream,
             );
             let mut output = vec![];
             let mut error = None;
@@ -1093,7 +1102,7 @@ fn original_request_metadata_is_attempt_local_and_matches_responses_snapshots() 
             br#"{"model":"public","input":"go","metadata":{"ticket":"original"}}"#,
         )
         .unwrap();
-    let endpoint = crate::topology::catalog::API_KEY_BINDINGS
+    let endpoint = crate::topology::catalog::api_key_bindings()
         .iter()
         .find(|b| {
             b.protocols
@@ -1127,6 +1136,7 @@ fn original_request_metadata_is_attempt_local_and_matches_responses_snapshots() 
                 ..Default::default()
             },
             Obfuscation::Disabled,
+            stream,
         )
         .with_request(&endpoint, &request, &original);
         let chunk = json!({"id":"r","object":"chat.completion.chunk","model":"m","created":1,
@@ -1239,6 +1249,7 @@ fn prepared_batches_keep_the_metadata_snapshot_from_their_intake() {
             ..Default::default()
         },
         Obfuscation::Disabled,
+        true,
     );
     let mut batches = vec![];
     for (fragment, fingerprint) in [("first", None), ("second", Some("later"))] {
@@ -1289,7 +1300,11 @@ fn prepared_batches_keep_the_metadata_snapshot_from_their_intake() {
 fn lifecycle_reports_freeze_opening_batches_and_charge_both_observations() {
     use crate::semantic::context::{ReportPhase, ServiceClass};
     let mut adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::OpenRouter, None);
-    adapter.adaptation.rules.responses_lifecycle_reports = true;
+    adapter
+        .adaptation
+        .rules
+        .metadata
+        .responses_lifecycle_reports = true;
     let mut attempt = Attempt::new(adapter, 65536, Default::default());
     attempt.begin(200, "text/event-stream").unwrap();
     let mut delivery = ResponseDelivery::new(
@@ -1304,6 +1319,7 @@ fn lifecycle_reports_freeze_opening_batches_and_charge_both_observations() {
             ..Default::default()
         },
         Obfuscation::Disabled,
+        true,
     );
     let opening = json!({"type":"response.created","sequence_number":0,"response":{"id":"reported","object":"response",
         "created_at":1,"model":"model","status":"in_progress","output":[],
@@ -1365,6 +1381,9 @@ fn lifecycle_reports_freeze_opening_batches_and_charge_both_observations() {
     .unwrap();
     assert_eq!(terminal["response"]["service_tier"], "default");
     let retained = delivery
+        .output
+        .stream()
+        .unwrap()
         .prepared_source
         .as_ref()
         .unwrap()
@@ -1390,6 +1409,7 @@ fn classified_failure_after_opening_has_no_invented_terminal_reports() {
         Default::default(),
         StreamOptions::default(),
         Obfuscation::Disabled,
+        true,
     );
     let opening = json!({"type":"response.created","sequence_number":0,"response":{
         "id":"failed-report","object":"response","created_at":1,"model":"m",
@@ -1440,6 +1460,7 @@ fn classified_response_errors_obey_remaining_budgets_and_poison_failed_delivery(
             limits,
             StreamOptions::default(),
             Obfuscation::Disabled,
+            true,
         );
         let prefix = if started {
             let (_, events) = attempt.push(br#"data: {"type":"response.created","sequence_number":0,"response":{"id":"r","object":"response","created_at":1,"model":"m","status":"in_progress","output":[]}}
@@ -1584,6 +1605,7 @@ fn coalescing_preserves_first_content_barriers_and_attempt_isolation() {
                 ..Default::default()
             },
             Obfuscation::Disabled,
+            true,
         )
         .with_coalescing(Some(policy));
         let now = Instant::now();
@@ -1739,6 +1761,7 @@ fn paced_text_windows_preserve_content_and_bound_intentional_delay() {
                     ..Default::default()
                 },
                 Obfuscation::Disabled,
+                true,
             )
             .with_coalescing(Some(DeltaCoalescing {
                 max_delay_ms: window_ms,
@@ -1860,6 +1883,7 @@ fn coalescing_respects_escaped_frame_and_pending_memory_limits() {
             },
             Default::default(),
             Obfuscation::Seeded([7; 32]),
+            true,
         )
         .with_coalescing(Some(policy));
         let mut output = vec![];
@@ -1955,6 +1979,7 @@ fn assessment_only_safety_reports_are_omitted_and_blocking_reports_reject() {
                 ..Default::default()
             },
             Obfuscation::Disabled,
+            stream,
         );
         let (_, events) = attempt.push(wire(blocked).as_bytes()).unwrap();
         let body = if stream {
@@ -2051,6 +2076,7 @@ fn responses_snapshot_preserves_wire_identity_and_result_lifecycle() {
             Default::default(),
             Default::default(),
             Obfuscation::Disabled,
+            false,
         );
         let (retained, body) = delivery.encode_json_snapshot(&attempt).unwrap();
         let body: Value = serde_json::from_slice(&body.into_bytes().concat()).unwrap();
@@ -2080,7 +2106,7 @@ fn chat_delivery_uses_terminal_service_reports_without_rewriting_opening_facts()
                 "content":[{"type":"output_text","text":"answer","annotations":[],"logprobs":[]}]}]});
         let mut frames = morphiecore_test_support::responses_profile::response_events(response);
         frames[0]["response"]["service_tier"] = json!("auto");
-        let endpoint = crate::topology::catalog::API_KEY_BINDINGS
+        let endpoint = crate::topology::catalog::api_key_bindings()
             .iter()
             .find(|binding| {
                 binding.canonical_model == "gpt-6-luna" && binding.dialect == Dialect::OpenRouter
@@ -2102,6 +2128,7 @@ fn chat_delivery_uses_terminal_service_reports_without_rewriting_opening_facts()
                 ..Default::default()
             },
             Obfuscation::Disabled,
+            stream,
         );
         let mut output = vec![];
         for frame in frames {

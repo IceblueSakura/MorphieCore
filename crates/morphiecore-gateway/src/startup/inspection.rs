@@ -56,8 +56,10 @@ pub fn catalog() -> Result<Value, StartupError> {
             .collect();
         models.push(json!({"model":model.id.as_str(),"task":"generation","candidates":candidates}));
     }
-    for binding in catalog::IMAGE_BINDINGS {
-        let route = binding.route();
+    for binding in catalog::image_bindings() {
+        let route = topology
+            .image_route(binding.model)
+            .ok_or(StartupError::Binding)?;
         models.push(task(
             binding.model,
             route.endpoint.provider.as_str(),
@@ -66,8 +68,10 @@ pub fn catalog() -> Result<Value, StartupError> {
             "images",
         ));
     }
-    for binding in catalog::SPEECH_BINDINGS {
-        let route = binding.route();
+    for binding in catalog::speech_bindings() {
+        let route = topology
+            .speech_route(binding.model)
+            .ok_or(StartupError::Binding)?;
         models.push(task(
             binding.model,
             route.endpoint.provider.as_str(),
@@ -76,8 +80,10 @@ pub fn catalog() -> Result<Value, StartupError> {
             "speech",
         ));
     }
-    for binding in catalog::EMBEDDING_BINDINGS {
-        let route = binding.route();
+    for binding in catalog::embedding_bindings() {
+        let route = topology
+            .embedding_route(binding.model)
+            .ok_or(StartupError::Binding)?;
         models.push(task(
             binding.model,
             route.endpoint.provider.as_str(),
@@ -86,8 +92,12 @@ pub fn catalog() -> Result<Value, StartupError> {
             "embeddings",
         ));
     }
-    for binding in catalog::TRANSCRIPTION_BINDINGS {
-        let route = binding.route();
+    for binding in catalog::transcription_bindings() {
+        let id = crate::topology::EndpointId::new(binding.endpoint_id)
+            .map_err(|_| StartupError::Binding)?;
+        let route = topology
+            .transcription_binding(binding.model, &id)
+            .ok_or(StartupError::Binding)?;
         models.push(task(
             binding.model,
             route.endpoint.provider.as_str(),

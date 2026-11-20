@@ -17,8 +17,9 @@ pub(super) async fn send<R>(
     entry: &BoundTask<R>,
     prepared: PreparedTaskRequest,
     deadline: Instant,
+    limit: usize,
     trace: &mut Trace,
-) -> Result<reqwest::Response, ApiError> {
+) -> Result<Receiver, ApiError> {
     trace.stage(Stage::Prepare);
     trace.executor(entry.provider.id.as_str());
     trace.named_account(entry.account.as_deref());
@@ -42,14 +43,15 @@ pub(super) async fn send<R>(
     }
     trace.sent();
 
-    runtime
+    let upstream = runtime
         .transport
         .send(prepared, deadline.saturating_duration_since(Instant::now()))
         .await
         .map_err(|error| {
             trace.report.failure(None, &AttemptError::Transport(error));
             ApiError::transport_fact(error)
-        })
+        })?;
+    Receiver::new(upstream, limit, trace)
 }
 
 /// Bounded receive state only: no retries, semantic terminal inference or delivery.

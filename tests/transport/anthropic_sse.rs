@@ -603,6 +603,7 @@ fn scoped_accounting_preserves_opening_ttls_and_replaces_cumulative_tool_reports
         SseLimits::default(),
         Default::default(),
         Obfuscation::Disabled,
+        true,
     );
     let mut output = vec![];
     let mut reports = vec![];
@@ -848,6 +849,7 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
                     include_obfuscation: Some(false),
                 },
                 Obfuscation::Disabled,
+                true,
             );
             attempt.begin(200, "text/event-stream").unwrap();
             let mut native = frames();
@@ -962,6 +964,7 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
                 SseLimits::default(),
                 Default::default(),
                 Obfuscation::Disabled,
+                false,
             );
             let body: Value =
                 serde_json::from_slice(&json_delivery.encode_json(&attempt).unwrap()).unwrap();
@@ -995,6 +998,7 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
         SseLimits::default(),
         Default::default(),
         Obfuscation::Disabled,
+        true,
     );
     let mut output = vec![];
     let bytes = wire(&native);
@@ -1123,6 +1127,7 @@ fn eager_partial_arguments_keep_exact_bytes_only_on_incomplete_native_sse() {
             SseLimits::default(),
             StreamOptions::default(),
             Obfuscation::Disabled,
+            true,
         );
         let mut output = vec![];
         for frame in &input {

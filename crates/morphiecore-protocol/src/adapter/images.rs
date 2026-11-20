@@ -1,7 +1,8 @@
 //! Image codec dispatch.
 use crate::image::Request;
 /// Trusted upstream image wire contract, independent of the public Images operation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum UpstreamAdapter {
     GptImage,
     OpenRouterFlare,

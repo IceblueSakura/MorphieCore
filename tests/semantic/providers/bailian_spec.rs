@@ -6,7 +6,7 @@ use morphiecore::{
         openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
     },
     semantic::{task::generation::*, value::Presence},
-    topology::{GenerationProtocol, catalog::API_KEY_BINDINGS},
+    topology::{GenerationProtocol, catalog::api_key_bindings},
 };
 use serde_json::{Value, json};
 fn client(profile: GenerationApi) -> GenerationCodec {
@@ -19,7 +19,7 @@ fn chat() -> Value {
     json!({"model":"qwen3.8-flash","messages":[{"role":"user","content":"go"}]})
 }
 fn endpoint(prefix: &str, profile: GenerationProtocol) -> morphiecore::topology::Endpoint {
-    API_KEY_BINDINGS
+    api_key_bindings()
         .iter()
         .find(|b| b.endpoint_prefix == prefix)
         .unwrap()

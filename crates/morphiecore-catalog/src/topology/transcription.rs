@@ -31,19 +31,26 @@ pub struct TranscriptionRoute {
 impl CompiledTopology {
     /// All bindings of a public label must share this canonical identity.
     pub fn transcription_model(&self, model: &str) -> Option<&ModelId> {
-        self.transcription_routes
-            .values()
-            .find(|route| route.model.as_str() == model)
+        self.transcription_bindings(model)
+            .next()
             .map(|route| &route.canonical_model)
+    }
+    pub fn transcription_bindings<'a>(
+        &'a self,
+        model: &str,
+    ) -> impl Iterator<Item = &'a TranscriptionRoute> + use<'a> {
+        self.transcription_models
+            .get(model)
+            .into_iter()
+            .flatten()
+            .map(|id| &self.transcription_routes[id.as_str()])
     }
     /// Implicit selection is valid only for a single-binding model.
     pub fn transcription_route(&self, model: &str) -> Option<&TranscriptionRoute> {
-        let mut routes = self
-            .transcription_routes
-            .values()
-            .filter(|r| r.model.as_str() == model);
-        let route = routes.next()?;
-        routes.next().is_none().then_some(route)
+        let [id] = self.transcription_models.get(model)?.as_slice() else {
+            return None;
+        };
+        self.transcription_binding(model, id)
     }
     /// Select one trusted binding without introducing runtime fallback.
     pub fn transcription_binding(
@@ -150,13 +157,16 @@ impl CompiledTopology {
                 || self.embedding_route(route.model.as_str()).is_some()
                 || self.image_route(route.model.as_str()).is_some()
                 || self.speech_route(route.model.as_str()).is_some()
-                || self.transcription_routes.values().any(|existing| {
-                    existing.model == route.model
-                        && existing.canonical_model != route.canonical_model
-                })
+                || self
+                    .transcription_model(route.model.as_str())
+                    .is_some_and(|existing| existing != &route.canonical_model)
             {
                 return Err(TopologyError::DuplicateModel);
             }
+            self.transcription_models
+                .entry(route.model.as_str().into())
+                .or_default()
+                .push(endpoint.id.clone());
             self.transcription_routes
                 .insert(endpoint.id.as_str().into(), route);
         }

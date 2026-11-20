@@ -490,7 +490,7 @@ mod native_catalog {
     #[test]
     fn native_binding_resolves_conditional_strictness_before_preflight_and_preparation() {
         use morphiecore::protocol::openai::{Dialect, GenerationApi as Client, GenerationCodec};
-        let binding = &catalog::MESSAGES_BINDINGS[0];
+        let binding = &catalog::messages_bindings()[0];
         let topology = catalog::default_topology().unwrap();
         // pi's shape: a developer prompt and a tool whose `strict` is omitted.
         let client = GenerationCodec::new(Client::Responses, Dialect::Standard, None);
@@ -620,7 +620,7 @@ mod native_catalog {
     }
     #[test]
     fn declared_native_binding_prepares_the_messages_wire() {
-        let binding = &catalog::MESSAGES_BINDINGS[0];
+        let binding = &catalog::messages_bindings()[0];
         let topology = catalog::default_topology().unwrap();
         let endpoint = binding.endpoint();
         let provider = binding.provider();
@@ -736,7 +736,7 @@ mod native_catalog {
     }
     #[test]
     fn native_caps_and_reasoning_policies_do_not_widen_unrelated_admission() {
-        let mut endpoint = catalog::MESSAGES_BINDINGS[0].endpoint();
+        let mut endpoint = catalog::messages_bindings()[0].endpoint();
         endpoint.validate().unwrap();
         endpoint.protocol = morphiecore::topology::GenerationProtocol::OpenAiChat;
         assert!(endpoint.validate().is_err());

@@ -1,8 +1,11 @@
 //! Authenticated file transcription, bounded native JSON intake and standard projection.
+use super::{
+    exchange::Receiver,
+    lifecycle::{Admission, TaskOutput},
+};
 use crate::{
     ApiError, Credentials, Runtime, StartupError, TranscriptionEntry, body,
     diagnostics::{Stage, Trace},
-    ingress::admission,
     protocol::openai::transcription as codec,
     semantic::task::speech_recognition::RecognitionResult,
     topology::{CompiledTopology, transcription::TranscriptionRoute},
@@ -12,8 +15,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
-use tokio::time::Instant;
+use std::{collections::BTreeMap, sync::Arc};
 pub(crate) type BoundTranscription = super::BoundTask<TranscriptionRoute>;
 pub(crate) fn bind(
     topology: &CompiledTopology,
@@ -76,17 +78,11 @@ fn upload_head(headers: &HeaderMap, limit: usize) -> Result<(String, Option<u64>
     Ok((raw.into(), length))
 }
 async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, ApiError> {
-    let started = Instant::now();
-    let mut trace = Trace::for_request(runtime.diagnostics.as_ref(), &request);
-    let permit = admission::acquire_permit(&runtime)?;
-    let limit = runtime.limits.transcription_request_bytes;
-    let (media, length) = upload_head(request.headers(), limit)?;
-    let bytes = crate::ingress::http::read_body(
+    let (admitted, (media, length), bytes) = Admission::upload(
         &runtime,
-        request.into_body(),
-        limit,
-        started + runtime.limits.exchange_timeout,
-        &mut trace,
+        request,
+        runtime.limits.transcription_request_bytes,
+        upload_head,
     )
     .await?;
     if length.is_some_and(|n| n != bytes.len() as u64) {
@@ -106,88 +102,52 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
     let prepared =
         crate::execution::transcription::prepare(&entry.route, &entry.provider, &request)
             .map_err(|_| ApiError::invalid())?;
-    let deadline = started
-        + runtime.limits.exchange_timeout.min(Duration::from_millis(
-            entry.route.endpoint.execution.timeout_ms,
-        ));
-    if Instant::now() >= deadline {
-        return Err(ApiError::timeout());
-    }
-    body::respond_producer(
-        Exchange {
-            runtime: runtime.clone(),
-            entry,
-            prepared,
-        },
-        body::ResponseType::Json,
-        runtime.limits.clone(),
-        deadline,
-        runtime.shutdown.clone(),
-        permit,
-        trace,
-    )
-    .await
+    admitted.respond(runtime, entry, prepared, Output).await
 }
-pub(crate) async fn receive(
-    upstream: reqwest::Response,
+async fn decode(
+    receiver: Receiver,
     profile: crate::adapter::transcription::UpstreamAdapter,
-    limit: usize,
     trace: &mut Trace,
 ) -> Result<RecognitionResult, ApiError> {
-    let receiver = super::exchange::Receiver::new(upstream, limit, trace)?;
     receiver.require_media("application/json")?;
     let bytes = receiver.collect(trace).await?;
     profile
         .decode_response(&bytes)
         .map_err(|_| ApiError::upstream())
 }
-/// One bounded upstream exchange behind the response body.
-struct Exchange {
-    runtime: Arc<Runtime>,
-    entry: Arc<BoundTranscription>,
-    prepared: crate::execution::task::PreparedTaskRequest,
+#[cfg(test)]
+pub(crate) async fn receive_for_test(
+    upstream: reqwest::Response,
+    profile: crate::adapter::transcription::UpstreamAdapter,
+    limit: usize,
+    trace: &mut Trace,
+) -> Result<RecognitionResult, ApiError> {
+    decode(Receiver::new(upstream, limit, trace)?, profile, trace).await
 }
-impl body::Produce for Exchange {
-    async fn produce(
+struct Output;
+impl TaskOutput for Output {
+    type Route = TranscriptionRoute;
+    const RESPONSE: body::ResponseType = body::ResponseType::Json;
+
+    fn receive_limit(&self, _: &BoundTranscription, _: &crate::Limits, wire_limit: usize) -> usize {
+        wire_limit
+    }
+
+    async fn publish(
         self,
-        _: &crate::Limits,
-        deadline: Instant,
+        receiver: Receiver,
+        entry: &BoundTranscription,
+        limits: &crate::Limits,
         lane: &body::Lane<'_>,
         trace: &mut Trace,
     ) -> Result<(), ApiError> {
-        let Self {
-            runtime,
-            entry,
-            prepared,
-        } = self;
-        trace.begin_candidate(1);
-        trace.models(
-            entry.route.model.as_str(),
-            &entry.route.endpoint.upstream_model,
-        );
-        let result: Result<(), ApiError> = async {
-            let upstream =
-                super::exchange::send(&runtime, &entry, prepared, deadline, trace).await?;
-            let result = receive(
-                upstream,
-                entry.route.endpoint.profile,
-                runtime
-                    .limits
-                    .response_bytes
-                    .min(entry.route.endpoint.execution.response_body_limit),
-                trace,
-            )
-            .await?;
-            trace.stage(Stage::Projection);
-            let projected = codec::project_result(&result).map_err(|_| ApiError::upstream())?;
-            crate::semantic::value::json_size(&projected.body, runtime.limits.response_bytes)
-                .map_err(|_| ApiError::upstream())?;
-            let bytes = serde_json::to_vec(&projected.body).map_err(|_| ApiError::upstream())?;
-            body::send_final_frame(lane, bytes.into(), trace).await?;
-            Ok(())
-        }
-        .await;
-        trace.end_candidate(result.as_ref().err().map(|e| e.diagnostic_code()), false);
-        result
+        let result = decode(receiver, entry.route.endpoint.profile, trace).await?;
+        trace.stage(Stage::Projection);
+        let projected = codec::project_result(&result).map_err(|_| ApiError::upstream())?;
+        crate::semantic::value::json_size(&projected.body, limits.response_bytes)
+            .map_err(|_| ApiError::upstream())?;
+        let bytes = serde_json::to_vec(&projected.body).map_err(|_| ApiError::upstream())?;
+        body::send_final_frame(lane, bytes.into(), trace).await?;
+        Ok(())
     }
 }

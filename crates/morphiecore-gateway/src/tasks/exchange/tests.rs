@@ -15,7 +15,7 @@ async fn every_task_preserves_retry_after_and_releases_a_failed_head() {
         let mut trace = Trace::new(None);
         let result = tokio::time::timeout(Duration::from_secs(1), async {
             match task {
-                0 => tasks::embeddings::receive(
+                0 => tasks::embeddings::receive_for_test(
                     upstream,
                     4096,
                     &mut trace,
@@ -24,7 +24,7 @@ async fn every_task_preserves_retry_after_and_releases_a_failed_head() {
                 )
                 .await
                 .map(|_| ()),
-                1 => tasks::images::receive(
+                1 => tasks::images::receive_for_test(
                     upstream,
                     crate::adapter::images::UpstreamAdapter::GptImage,
                     4096,
@@ -32,7 +32,7 @@ async fn every_task_preserves_retry_after_and_releases_a_failed_head() {
                 )
                 .await
                 .map(|_| ()),
-                2 => tasks::speech::receive(
+                2 => tasks::speech::receive_for_test(
                     upstream,
                     &speech,
                     crate::adapter::speech::UpstreamAdapter::Standard,
@@ -41,10 +41,12 @@ async fn every_task_preserves_retry_after_and_releases_a_failed_head() {
                 )
                 .await
                 .map(|_| ()),
-                3 => tasks::speech::aliyun::receive(upstream, 4096, 4096, 4096, 16, &mut trace)
-                    .await
-                    .map(|_| ()),
-                _ => tasks::transcription::receive(
+                3 => tasks::speech::aliyun::receive_for_test(
+                    upstream, 4096, 4096, 4096, 16, &mut trace,
+                )
+                .await
+                .map(|_| ()),
+                _ => tasks::transcription::receive_for_test(
                     upstream,
                     crate::adapter::transcription::UpstreamAdapter::AliyunFlash,
                     4096,
@@ -170,7 +172,7 @@ async fn image_read_timeout_keeps_its_wire_policy_and_precise_internal_cause() {
     trace.begin_candidate(1);
     let error = tokio::time::timeout(
         Duration::from_secs(2),
-        tasks::images::receive(
+        tasks::images::receive_for_test(
             upstream,
             crate::adapter::images::UpstreamAdapter::GptImage,
             4096,

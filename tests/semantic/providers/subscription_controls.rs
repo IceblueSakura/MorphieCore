@@ -6,7 +6,7 @@ use morphiecore::{
         openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
     },
     semantic::{task::generation::*, value::ReplayOrigin},
-    topology::catalog::{API_KEY_BINDINGS, SUBSCRIPTION_BINDINGS},
+    topology::catalog::{api_key_bindings, subscription_bindings},
 };
 use serde_json::{Value, json};
 
@@ -98,7 +98,7 @@ fn request_wire(grouped: bool, stream: bool) -> Value {
 }
 #[test]
 fn native_request_directions_use_actual_subscription_bindings() {
-    for binding in SUBSCRIPTION_BINDINGS {
+    for binding in subscription_bindings() {
         let grouped = binding.profile == "openai";
         let wire = request_wire(grouped, false);
         let source = adapter(binding.dialect)
@@ -128,7 +128,7 @@ fn native_request_directions_use_actual_subscription_bindings() {
 
 #[test]
 fn grok_recovery_preserves_instruction_text_order_and_explicit_tool_policy() {
-    let binding = SUBSCRIPTION_BINDINGS
+    let binding = subscription_bindings()
         .iter()
         .find(|binding| binding.dialect == Dialect::Grok)
         .unwrap();
@@ -381,7 +381,7 @@ fn independent_semantic_events_encode_native_subscription_sse() {
 }
 #[test]
 fn subscription_identity_and_extended_retention_omissions_are_named() {
-    for binding in SUBSCRIPTION_BINDINGS {
+    for binding in subscription_bindings() {
         let mut input = request(binding.profile == "openai", false);
         input.context.identity.user = Some("opaque-user".into());
         let before = input.clone();
@@ -405,17 +405,17 @@ fn subscription_identity_and_extended_retention_omissions_are_named() {
 #[test]
 fn billing_plans_share_one_dialect_but_keep_authority_and_replay_isolated() {
     use morphiecore::topology::GenerationProtocol;
-    let dash = API_KEY_BINDINGS
+    let dash = api_key_bindings()
         .iter()
         .find(|b| b.endpoint_prefix == "dashscope-flash")
         .unwrap();
-    let plan = API_KEY_BINDINGS
+    let plan = api_key_bindings()
         .iter()
         .find(|b| b.endpoint_prefix == "aliyun-tokenplan-cn")
         .unwrap();
-    for binding in API_KEY_BINDINGS.iter().filter(|b| {
+    for binding in api_key_bindings().iter().filter(|b| {
         matches!(
-            (b.provider)().id.as_str(),
+            b.provider().id.as_str(),
             "aliyun-dashscope-cn" | "aliyun-tokenplan-cn"
         )
     }) {

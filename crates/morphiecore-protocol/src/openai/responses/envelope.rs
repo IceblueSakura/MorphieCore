@@ -143,7 +143,7 @@ pub fn encode_request(
     if target.profile != GenerationApi::Responses {
         return Err(CodecError::ProfileMismatch);
     }
-    if target.adaptation.rules.bailian_requests {
+    if target.adaptation.rules.hooks.bailian_requests {
         crate::openai::dialect::bailian::check_semantic(
             target.semantic(),
             GenerationApi::Responses,
@@ -170,7 +170,7 @@ pub fn encode_request(
     put_presence(o, "stream", &context.delivery.stream, |s| json!(s));
     // Client delivery preferences are implemented by ResponseDelivery.
     // Bailian does not advertise a matching upstream option.
-    if !target.adaptation.rules.bailian_requests {
+    if !target.adaptation.rules.hooks.bailian_requests {
         put_presence(o, "stream_options", &context.delivery.options, |s| json!(s));
     }
     bounded(&v)?;

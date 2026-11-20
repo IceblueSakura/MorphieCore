@@ -163,11 +163,11 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
         target.semantic.items(),
         &chat::owners::owners(target.semantic.items(), target.semantic.message_envelopes()),
         target.fidelity,
-        target.adaptation.rules.structured_chat_reasoning,
+        target.adaptation.rules.reasoning.structured_chat_reasoning,
         true,
         target.semantic.resources(),
     );
-    if target.adaptation.rules.reasoning_alias {
+    if target.adaptation.rules.reasoning.reasoning_alias {
         for message in &mut messages {
             crate::openai::dialect::adapter_shapes::encode_message(message);
         }

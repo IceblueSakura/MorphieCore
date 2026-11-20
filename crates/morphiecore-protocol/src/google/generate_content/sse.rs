@@ -13,8 +13,7 @@ use crate::{
         task::generation::*,
         value::{JsonLimits, Text, parse_json},
     },
-    sse::SseDecoder,
-    stream::{SseError, SseLimits},
+    stream::{SseError, SseIntake, SseLimits},
 };
 use serde_json::{Map, Value};
 
@@ -29,10 +28,7 @@ struct Open {
     part_started: bool,
 }
 pub struct GenerationSseDecoder {
-    framing: SseDecoder,
-    limits: SseLimits,
-    wire_bytes: usize,
-    events: usize,
+    intake: SseIntake,
     scope: LocalScope,
     target: ReplayTarget,
     state: StreamState,
@@ -44,8 +40,6 @@ pub struct GenerationSseDecoder {
     calls: Vec<String>,
     usage: Option<UsageReport>,
     finished: bool,
-    closed: bool,
-    rejected: bool,
 }
 pub(super) fn invalid(reason: ShapeReason) -> SseError {
     CodecError::Invalid(reason).into()
@@ -104,10 +98,7 @@ impl GenerationSseDecoder {
         limits.validate()?;
         crate::stream::validate_http(status, media)?;
         Ok(Self {
-            framing: SseDecoder::new(limits.max_event_bytes),
-            limits,
-            wire_bytes: 0,
-            events: 0,
+            intake: SseIntake::new(limits),
             scope,
             target,
             state: StreamState::new(),
@@ -119,8 +110,6 @@ impl GenerationSseDecoder {
             calls: vec![],
             usage: None,
             finished: false,
-            closed: false,
-            rejected: false,
         })
     }
     pub fn metadata(&self) -> Option<&ResponseMetadata> {
@@ -131,23 +120,12 @@ impl GenerationSseDecoder {
     }
     /// Consume at most one frame. The caller owns and revisits the unconsumed suffix.
     pub fn consume(&mut self, chunk: &[u8]) -> Result<(usize, Vec<StreamEvent>), SseError> {
-        if self.closed || self.rejected {
-            return Err(SseError::Closed);
-        }
+        self.intake.open()?;
         let result = (|| {
-            let remaining = self.limits.max_wire_bytes.saturating_sub(self.wire_bytes);
-            let available = chunk.len().min(remaining.saturating_add(1));
-            let (frame, used) = self.framing.push_until_event(&chunk[..available])?;
-            self.wire_bytes = self.wire_bytes.checked_add(used).ok_or(SseError::Limit)?;
-            if self.wire_bytes > self.limits.max_wire_bytes {
-                return Err(SseError::Limit);
-            }
+            let (frame, used) = self.intake.pull(chunk)?;
             let mut out = vec![];
             if let Some(frame) = frame {
-                self.events = self.events.checked_add(1).ok_or(SseError::Limit)?;
-                if self.events > self.limits.max_events {
-                    return Err(SseError::Limit);
-                }
+                self.intake.charge_frame()?;
                 let value = parse_json(frame.data().as_bytes(), JsonLimits::ENVELOPE).map_err(
                     |e| match e {
                         crate::semantic::value::JsonError::Limit(resource) => {
@@ -164,7 +142,7 @@ impl GenerationSseDecoder {
             Ok((used, out))
         })();
         if result.is_err() {
-            self.rejected = true;
+            self.intake.reject();
         }
         result
     }
@@ -802,15 +780,11 @@ impl GenerationSseDecoder {
     }
     /// Strict transport closure after a finish reason releases the aggregate.
     pub fn finish(&mut self) -> Result<DecodedResponse, SseError> {
-        if self.closed || self.rejected {
-            return Err(SseError::Closed);
-        }
-        self.closed = true;
+        self.intake.open()?;
+
         let result = (|| {
-            self.framing.finish_strict()?;
-            if !self.finished {
-                return Err(CodecError::Event(EventError::EofBeforeTerminal).into());
-            }
+            self.intake.finish_framing()?;
+            crate::stream::require_terminal(self.finished)?;
             Ok(DecodedResponse {
                 evidence: Default::default(),
                 semantic: materialize(&self.state).map_err(CodecError::from)?,
@@ -822,7 +796,7 @@ impl GenerationSseDecoder {
             })
         })();
         if result.is_err() {
-            self.rejected = true;
+            self.intake.reject();
         }
         result
     }

@@ -49,7 +49,7 @@ fn messages_format_is_an_unnamed_strict_schema_with_native_and_openai_carriers()
     };
     assert_eq!((name, description, strict), (&None, &None, &Some(true)));
     assert_eq!(decoded.root().to_string(), schema().to_string());
-    let endpoint = catalog::MESSAGES_BINDINGS[0].endpoint();
+    let endpoint = catalog::messages_bindings()[0].endpoint();
     let (wire, rules) = endpoint.encode_request_with_rules(&source).unwrap();
     assert_eq!(wire["output_config"], json!({"format":format}));
     assert!(rules.is_empty());
@@ -162,7 +162,7 @@ fn messages_format_is_an_unnamed_strict_schema_with_native_and_openai_carriers()
 fn unknown_and_natively_unrepresentable_formats_fail() {
     assert!(messages(json!({"format":{"type":"json_object"}})).is_err());
     assert!(messages(json!({"format":{"type":"json_schema","schema":true}})).is_err());
-    let endpoint = catalog::MESSAGES_BINDINGS[0].endpoint();
+    let endpoint = catalog::messages_bindings()[0].endpoint();
     // Messages has no JSON-object mode and no model-visible schema description.
     for format in [
         json!({"type":"json_object"}),

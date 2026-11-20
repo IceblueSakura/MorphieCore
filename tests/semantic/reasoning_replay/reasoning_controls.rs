@@ -159,7 +159,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
             .unwrap()["messages"][0]["role"],
         "developer"
     );
-    client.adaptation.rules.system_instruction_messages = true;
+    client.adaptation.rules.request.system_instruction_messages = true;
     let (wire, rules) = client
         .encode_request_with_rules(&instruction, "m", &TargetContract::full())
         .unwrap();

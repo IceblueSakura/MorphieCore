@@ -35,7 +35,7 @@ impl DimensionSupport {
         }
     }
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EncodingSupport {
     Float,
@@ -51,7 +51,7 @@ impl EncodingSupport {
         }
     }
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UserPolicy {
     Forward,

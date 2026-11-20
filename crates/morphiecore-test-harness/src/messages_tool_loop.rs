@@ -3,7 +3,7 @@ use crate::morphiecore::{
     gateway::{Entry, Gateway, Limits, TaskEntries},
     protocol::ClientProtocol,
     provider::{SecretMaterial, TrustedOrigin},
-    topology::{self, catalog::MESSAGES_BINDINGS},
+    topology::{self, catalog::messages_bindings},
 };
 use axum::{Json, Router, extract::State, http::HeaderMap, response::Response, routing::post};
 use morphiecore_test_support::messages_wire::native_response;
@@ -212,7 +212,7 @@ async fn start_with_recovery(recover: bool) -> Fixture {
             recovery: recovery.clone(),
         });
     let upstream = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let binding = &MESSAGES_BINDINGS[0];
+    let binding = &messages_bindings()[0];
     let mut provider = binding.provider();
     provider.origin = origin.clone();
     let mut endpoint = binding.endpoint();

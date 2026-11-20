@@ -31,7 +31,7 @@ pub fn declared_response_extras(
     profile: GenerationApi,
     adaptation: &Adaptation,
 ) -> &'static [&'static str] {
-    if profile == GenerationApi::Responses && adaptation.rules.response_extras {
+    if profile == GenerationApi::Responses && adaptation.rules.metadata.response_extras {
         RESPONSE_EXTRA_FIELDS
     } else {
         &[]

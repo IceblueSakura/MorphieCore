@@ -1,15 +1,11 @@
 //! Deployment bindings, not model discovery. Aliases and profiles are explicit.
 use crate::{
     lowering::capabilities::SamplingConstraints,
-    protocol::{
-        openai::Dialect,
-        reasoning::{ReasoningEffortMapping, ReasoningHistory},
-    },
-    provider::{ProviderDefinition, catalog},
-    semantic::task::generation::{EffortLevel as E, EffortScope},
+    protocol::{openai::Dialect, reasoning::ReasoningHistory},
     topology::GenerationProtocol,
 };
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RequestSlice {
     Canonical,
     RestrictedLuna,
@@ -67,8 +63,10 @@ impl RequestSlice {
         contract
     }
 }
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ApiKeyBinding {
-    pub provider: fn() -> ProviderDefinition,
+    pub(super) provider: &'static str,
     pub dialect: Dialect,
     pub endpoint_prefix: &'static str,
     /// Downstream label only; clients cannot choose a Provider through it.
@@ -77,12 +75,18 @@ pub struct ApiKeyBinding {
     pub canonical_model: &'static str,
     /// Exact model spelling accepted by this Provider, injected during encoding.
     pub upstream: &'static str,
-    pub protocols: &'static [GenerationProtocol],
-    pub effort_mappings: &'static [(GenerationProtocol, &'static ReasoningEffortMapping)],
+    pub protocols: Box<[GenerationProtocol]>,
+    pub(super) effort_mappings: Box<[(GenerationProtocol, &'static str)]>,
     /// Missing protocol members are explicitly unassessed.
-    pub reasoning_history: &'static [(GenerationProtocol, ReasoningHistory)],
+    pub reasoning_history: Box<[(GenerationProtocol, ReasoningHistory)]>,
     pub public_slice: RequestSlice,
     pub endpoint_slice: RequestSlice,
+    #[serde(default)]
+    pub(super) limits: crate::protocol::model_limits::ModelLimits,
+    #[serde(default)]
+    pub(super) sampling_requires_reasoning_off: bool,
+    #[serde(default)]
+    pub(super) wire_overrides: Box<[(GenerationProtocol, super::data::WireOverrides)]>,
 }
 use super::{GENERATION_REQUEST_BYTES, GENERATION_RESPONSE_BYTES, GENERATION_TIMEOUT_MS, models};
 use crate::{
@@ -94,8 +98,12 @@ use crate::{
     },
 };
 impl ApiKeyBinding {
+    pub fn provider(&self) -> crate::provider::ProviderDefinition {
+        super::data::provider(self.provider).clone()
+    }
+
     pub fn credential(&self) -> CredentialBindingId {
-        CredentialBindingId::new((self.provider)().id.as_str()).expect("catalog Provider identity")
+        CredentialBindingId::new(self.provider().id.as_str()).expect("catalog Provider identity")
     }
     pub fn public_model(&self) -> PublicModel {
         PublicModel {
@@ -109,7 +117,7 @@ impl ApiKeyBinding {
         }
     }
     pub fn endpoint(&self, protocol: GenerationProtocol) -> Result<Endpoint, TopologyError> {
-        let provider = (self.provider)();
+        let provider = self.provider();
         let (family, path) = match protocol {
             GenerationProtocol::OpenAiChat => (
                 crate::protocol::openai::GenerationApi::Chat,
@@ -135,48 +143,20 @@ impl ApiKeyBinding {
         };
         let scope = crate::protocol::replay_envelope::issuer(provider.id.as_str(), self.upstream);
         let mut adapter = GenerationCodec::new(family, self.dialect, Some(scope.clone()));
-        // The Go directory declares standard effort controls for these models.
-        if self.dialect == Dialect::OpenCodeGo
-            && matches!(
-                self.canonical_model,
-                "hy4" | "minimax-m3.1-flash" | "step-5-preview"
-            )
-        {
-            adapter.adaptation.rules.reject_reasoning_controls = false;
-        }
-        if self.dialect == Dialect::OpenCodeGo {
-            adapter.adaptation.rules.chat_video_url = self.canonical_model == "minimax-m3.1-flash";
-            adapter.adaptation.rules.auto_tool_choice_only =
-                self.canonical_model == "minimax-m3.1-flash";
-            if matches!(self.canonical_model, "hy4" | "minimax-m3.1-flash") {
-                adapter.adaptation.rules.reasoning_alias = false;
-            }
-        }
-        // Hosted MiniCPM5 uses the canonical readable field; V4.7 uses `reasoning`.
-        if self.dialect == Dialect::ModelBest
-            && matches!(self.canonical_model, "minicpm5-1b" | "minicpm5-2b")
-        {
-            adapter.adaptation.rules.reasoning_alias = false;
-        }
-        // These bindings emit an explicit reasoning.content part rather than the
-        // legacy summary shorthand. Keep the event and snapshot domains equal.
-        let qwen4_responses =
-            self.upstream == "qwen4-max" && provider.id.as_str() == "aliyun-tokenplan-cn";
-        if self.dialect == Dialect::Bailian
-            && family == crate::protocol::openai::GenerationApi::Responses
-            && (self.upstream == "deepseek-v4.1-flash-1017" || qwen4_responses)
-        {
-            adapter.adaptation.rules.responses_summary_text_alias = false;
-            adapter.adaptation.rules.qwen4_responses_reasoning = qwen4_responses;
-        }
-        adapter.adaptation.rules.responses_lifecycle_reports = self.dialect == Dialect::OpenRouter
-            && family == crate::protocol::openai::GenerationApi::Responses
-            && self.canonical_model == "gpt-6-luna";
+        let overrides = self
+            .wire_overrides
+            .iter()
+            .find(|(member, _)| *member == protocol)
+            .map(|(_, rules)| *rules)
+            .unwrap_or_default();
+        overrides.apply(&mut adapter.adaptation.rules);
         let mut mappings = self
             .effort_mappings
             .iter()
             .filter(|(member, _)| *member == protocol);
-        adapter.adaptation.effort_mapping = mappings.next().map(|(_, mapping)| *mapping);
+        adapter.adaptation.effort_mapping = mappings
+            .next()
+            .map(|(_, mapping)| super::data::effort_mapping(mapping));
         if adapter.adaptation.effort_mapping.is_none()
             && self.dialect == crate::protocol::openai::Dialect::Bailian
         {
@@ -200,8 +180,7 @@ impl ApiKeyBinding {
         let mut contract = TargetContract {
             reasoning_history,
             sampling: SamplingConstraints {
-                requires_reasoning_off: self.dialect == Dialect::Standard
-                    && self.canonical_model == "gpt-6.1-terra",
+                requires_reasoning_off: self.sampling_requires_reasoning_off,
                 ..Default::default()
             },
             dispositions: self
@@ -223,10 +202,10 @@ impl ApiKeyBinding {
                 ),
             replay_origin: Some(scope.clone()),
             cache: adapter.adaptation.cache,
-            model_limits: models::model_limits(self.canonical_model, provider.id.as_str()),
+            model_limits: self.limits.clone(),
             ..TargetContract::full()
         };
-        if self.dialect == Dialect::OpenRouter && self.canonical_model == "gpt-6-luna" {
+        if overrides.delegate_strict_tools {
             // The router carries strict, but its endpoint inventory does not
             // assess this nested guarantee. Let require_parameters qualify it.
             contract.dispositions.set(
@@ -276,562 +255,3 @@ impl ApiKeyBinding {
         EndpointId::new(&format!("{}-{suffix}", self.endpoint_prefix)).expect("static id")
     }
 }
-const BOTH: &[GenerationProtocol] = &[
-    GenerationProtocol::OpenAiResponses,
-    GenerationProtocol::OpenAiChat,
-];
-const CHAT: &[GenerationProtocol] = &[GenerationProtocol::OpenAiChat];
-const RESPONSES: &[GenerationProtocol] = &[GenerationProtocol::OpenAiResponses];
-// Endpoint-qualified facts; carrier support and history scope remain separate.
-// Source: docs/refs/2026-10-27-client-ir-boundaries.md#binding-history-source-review-2026-10-28.
-const ACCEPTED_HISTORY: &[(GenerationProtocol, ReasoningHistory)] = &[
-    (GenerationProtocol::OpenAiChat, ReasoningHistory::Accepted),
-    (
-        GenerationProtocol::OpenAiResponses,
-        ReasoningHistory::Accepted,
-    ),
-];
-const TOOL_HISTORY: &[(GenerationProtocol, ReasoningHistory)] = &[
-    (
-        GenerationProtocol::OpenAiChat,
-        ReasoningHistory::RequiredWithTools,
-    ),
-    (
-        GenerationProtocol::OpenAiResponses,
-        ReasoningHistory::Accepted,
-    ),
-];
-// Documented wire aliases, not a claim of distinct effective thinking strength.
-// https://mimo.mi.com/docs/zh-CN/api/chat/responses
-const MIMO_FLASH_RESPONSES_EFFORT: ReasoningEffortMapping = ReasoningEffortMapping {
-    canonical_model: "mimo-v2.6-flash",
-    rule: "mimo-v2.6-flash.responses.effort.v1",
-    scope: EffortScope::Reasoning,
-    native_levels: &[E::Minimal, E::Low, E::Medium, E::High, E::XHigh, E::Max],
-    encode: &[
-        (E::Minimal, E::Low),
-        (E::Low, E::Low),
-        (E::Medium, E::Medium),
-        (E::High, E::High),
-        (E::XHigh, E::High),
-        (E::Max, E::High),
-    ],
-    decode: &[
-        (E::Minimal, E::Low),
-        (E::Low, E::Low),
-        (E::Medium, E::Medium),
-        (E::High, E::High),
-        (E::XHigh, E::High),
-        (E::Max, E::High),
-    ],
-};
-// Preserve the previously declared positive calibration, without a Provider-wide
-// switch or an off-to-low conversion. Reports use their own explicit direction.
-const ZHIPU_GLM_EFFORT: ReasoningEffortMapping = ReasoningEffortMapping {
-    canonical_model: "glm-5.3",
-    rule: "zhipu.glm-5.3.effort.v1",
-    scope: EffortScope::Reasoning,
-    native_levels: &[E::Low, E::High, E::Max],
-    encode: &[
-        (E::Minimal, E::Low),
-        (E::Low, E::Low),
-        (E::Medium, E::High),
-        (E::High, E::High),
-        (E::XHigh, E::Max),
-        (E::Max, E::Max),
-    ],
-    decode: &[(E::Low, E::Low), (E::High, E::High), (E::Max, E::Max)],
-};
-const ZHIPU_GLM_FLASH_EFFORT: ReasoningEffortMapping = ReasoningEffortMapping {
-    canonical_model: "glm-5.3-flash",
-    rule: "zhipu.glm-5.3-flash.effort.v1",
-    ..ZHIPU_GLM_EFFORT
-};
-// Native DeepSeek's documented compatibility aliases, not Bailian's calibration.
-// https://api-docs.deepseek.com/guides/thinking_mode/ (2026-11-10).
-const DEEPSEEK_FLASH_EFFORT: ReasoningEffortMapping = ReasoningEffortMapping {
-    canonical_model: "deepseek-flash",
-    rule: "deepseek.deepseek-flash.effort.v1",
-    scope: EffortScope::Reasoning,
-    native_levels: &[E::Low, E::High, E::Max],
-    encode: &[
-        (E::Minimal, E::Low),
-        (E::Low, E::Low),
-        (E::Medium, E::High),
-        (E::High, E::High),
-        (E::XHigh, E::High),
-        (E::Max, E::Max),
-    ],
-    decode: &[(E::Low, E::Low), (E::High, E::High), (E::Max, E::Max)],
-};
-/// Only declared protocol members are activated by the environment bootstrap.
-pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
-    // Official API-key contracts are independent of SIWC. Responses is selected
-    // for tool/reasoning execution; Chat has model-specific tool restrictions.
-    // https://developers.openai.com/api/docs/models/gpt-6.2-sol
-    ApiKeyBinding {
-        provider: catalog::openai,
-        dialect: Dialect::Standard,
-        endpoint_prefix: "openai-sol",
-        effort_mappings: &[],
-        model: "gpt-6.2-sol",
-        canonical_model: "gpt-6.2-sol",
-        upstream: "gpt-6.2-sol",
-        protocols: RESPONSES,
-        reasoning_history: ACCEPTED_HISTORY,
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::openai,
-        dialect: Dialect::Standard,
-        endpoint_prefix: "openai-astra",
-        effort_mappings: &[],
-        model: "gpt-6.2-astra",
-        canonical_model: "gpt-6.2-astra",
-        upstream: "gpt-6.2-astra",
-        protocols: RESPONSES,
-        reasoning_history: ACCEPTED_HISTORY,
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::openai,
-        dialect: Dialect::Standard,
-        endpoint_prefix: "openai-luna",
-        effort_mappings: &[],
-        model: "gpt-6-luna",
-        canonical_model: "gpt-6-luna",
-        upstream: "gpt-6-luna",
-        protocols: RESPONSES,
-        reasoning_history: ACCEPTED_HISTORY,
-        public_slice: RequestSlice::RestrictedLuna,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::xiaomi,
-        dialect: Dialect::Xiaomi,
-        endpoint_prefix: "xiaomi-ultraspeed",
-        effort_mappings: &[],
-        model: "mimo-v2.6-pro-ultraspeed",
-        canonical_model: "mimo-v2.6-pro-ultraspeed",
-        upstream: "mimo-v2.6-pro-ultraspeed",
-        protocols: BOTH,
-        reasoning_history: ACCEPTED_HISTORY,
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    // https://opencode.ai/docs/go/#endpoints
-    ApiKeyBinding {
-        provider: catalog::opencode_go,
-        dialect: Dialect::OpenCodeGo,
-        endpoint_prefix: "opencode-go-minimax",
-        effort_mappings: &[],
-        model: "minimax-m3.1-flash",
-        canonical_model: "minimax-m3.1-flash",
-        upstream: "minimax-m3.1-flash",
-        protocols: CHAT,
-        reasoning_history: ACCEPTED_HISTORY,
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::opencode_go,
-        dialect: Dialect::OpenCodeGo,
-        endpoint_prefix: "opencode-go-mimo-pro",
-        effort_mappings: &[],
-        model: "mimo-v2.6-pro",
-        canonical_model: "mimo-v2.6-pro",
-        upstream: "mimo-v2.6-pro",
-        protocols: CHAT,
-        reasoning_history: &[],
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::LimitedControls,
-    },
-    ApiKeyBinding {
-        provider: catalog::opencode_go,
-        dialect: Dialect::OpenCodeGo,
-        endpoint_prefix: "opencode-go-mimo-flash",
-        effort_mappings: &[],
-        model: "mimo-v2.6-flash",
-        canonical_model: "mimo-v2.6-flash",
-        upstream: "mimo-v2.6-flash",
-        protocols: CHAT,
-        reasoning_history: &[],
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::LimitedControls,
-    },
-    ApiKeyBinding {
-        provider: catalog::aliyun_dashscope_cn,
-        dialect: Dialect::Bailian,
-        endpoint_prefix: "dashscope-flash",
-        effort_mappings: &[],
-        model: "qwen3.8-flash",
-        canonical_model: "qwen3.8-flash",
-        upstream: "qwen3.8-flash",
-        protocols: BOTH,
-        reasoning_history: ACCEPTED_HISTORY,
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    // https://help.aliyun.com/zh/model-studio/kimi-k3-1-pro
-    ApiKeyBinding {
-        provider: catalog::aliyun_dashscope_cn,
-        dialect: Dialect::Bailian,
-        endpoint_prefix: "dashscope-kimi",
-        effort_mappings: &[],
-        model: "kimi-k3.1-pro",
-        canonical_model: "kimi-k3.1-pro",
-        upstream: "kimi-k3.1-pro",
-        protocols: CHAT,
-        reasoning_history: &[],
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::aliyun_dashscope_cn,
-        dialect: Dialect::Bailian,
-        endpoint_prefix: "dashscope-glm",
-        effort_mappings: &[],
-        model: "glm-5.3",
-        canonical_model: "glm-5.3",
-        upstream: "glm-5.3",
-        protocols: BOTH,
-        reasoning_history: &[],
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    // Prime is an inference mode, not a new canonical model publication.
-    // https://help.aliyun.com/en/model-studio/prime-mode
-    ApiKeyBinding {
-        provider: catalog::aliyun_dashscope_cn,
-        dialect: Dialect::Bailian,
-        endpoint_prefix: "dashscope-glm-prime",
-        effort_mappings: &[],
-        model: "glm-5.3-prime",
-        canonical_model: "glm-5.3",
-        upstream: "glm-5.3-prime",
-        protocols: CHAT,
-        reasoning_history: &[],
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::aliyun_tokenplan_cn,
-        dialect: Dialect::Bailian,
-        endpoint_prefix: "tokenplan-max",
-        effort_mappings: &[],
-        model: "qwen3.8-max",
-        canonical_model: "qwen3.8-max",
-        upstream: "qwen3.8-max",
-        protocols: BOTH,
-        reasoning_history: &[],
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::aliyun_tokenplan_cn,
-        dialect: Dialect::Bailian,
-        endpoint_prefix: "tokenplan-glm",
-        effort_mappings: &[],
-        model: "glm-5.3",
-        canonical_model: "glm-5.3",
-        upstream: "glm-5.3",
-        protocols: RESPONSES,
-        reasoning_history: &[],
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::deepseek,
-        dialect: Dialect::DeepSeek,
-        endpoint_prefix: "deepseek",
-        effort_mappings: &[
-            (GenerationProtocol::OpenAiChat, &DEEPSEEK_FLASH_EFFORT),
-            (GenerationProtocol::OpenAiResponses, &DEEPSEEK_FLASH_EFFORT),
-        ],
-        model: "deepseek-v4.1-flash-1017",
-        canonical_model: "deepseek-flash",
-        upstream: "deepseek-flash",
-        protocols: BOTH,
-        reasoning_history: TOOL_HISTORY,
-        public_slice: RequestSlice::Canonical,
-        // https://api-docs.deepseek.com/guides/tool_calls/
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::aliyun_dashscope_cn,
-        dialect: Dialect::Bailian,
-        endpoint_prefix: "dashscope-deepseek",
-        effort_mappings: &[],
-        model: "deepseek-v4.1-flash-1017",
-        canonical_model: "deepseek-flash",
-        upstream: "deepseek-v4.1-flash-1017",
-        protocols: BOTH,
-        reasoning_history: &[],
-        public_slice: RequestSlice::Canonical,
-        // Native beta strictness is not a Bailian guarantee.
-        endpoint_slice: RequestSlice::NonStrictTools,
-    },
-    ApiKeyBinding {
-        provider: catalog::xiaomi,
-        dialect: Dialect::Xiaomi,
-        endpoint_prefix: "xiaomi",
-        effort_mappings: &[],
-        model: "mimo-v2.6-pro",
-        canonical_model: "mimo-v2.6-pro",
-        upstream: "mimo-v2.6-pro",
-        protocols: BOTH,
-        reasoning_history: ACCEPTED_HISTORY,
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::xiaomi,
-        dialect: Dialect::Xiaomi,
-        endpoint_prefix: "xiaomi-flash",
-        effort_mappings: &[(
-            GenerationProtocol::OpenAiResponses,
-            &MIMO_FLASH_RESPONSES_EFFORT,
-        )],
-        model: "mimo-v2.6-flash",
-        canonical_model: "mimo-v2.6-flash",
-        upstream: "mimo-v2.6-flash",
-        protocols: BOTH,
-        reasoning_history: ACCEPTED_HISTORY,
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    // Separate public and endpoint slices preserve the existing admitted contract.
-    // Source: https://openrouter.ai/api/v1/models/openai/gpt-6-luna/endpoints
-    ApiKeyBinding {
-        provider: catalog::openrouter,
-        dialect: Dialect::OpenRouter,
-        endpoint_prefix: "openrouter",
-        effort_mappings: &[],
-        model: "gpt-6-luna",
-        canonical_model: "gpt-6-luna",
-        upstream: "openai/gpt-6-luna",
-        protocols: BOTH,
-        reasoning_history: &[],
-        public_slice: RequestSlice::RestrictedLuna,
-        endpoint_slice: RequestSlice::RestrictedLuna,
-    },
-    ApiKeyBinding {
-        provider: catalog::nvidia,
-        dialect: Dialect::Nvidia,
-        endpoint_prefix: "nvidia",
-        effort_mappings: &[],
-        model: "nemotron-3.5-super-vl-120b-a12b",
-        canonical_model: "nemotron-3.5-super-vl-120b-a12b",
-        upstream: "nvidia/nemotron-3.5-super-vl-120b-a12b",
-        protocols: BOTH,
-        reasoning_history: &[],
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::nvidia,
-        dialect: Dialect::Nvidia,
-        endpoint_prefix: "nvidia-lightning",
-        effort_mappings: &[],
-        model: "nemotron-3.5-lightning-30b-a3b",
-        canonical_model: "nemotron-3.5-lightning-30b-a3b",
-        upstream: "nvidia/nemotron-3.5-lightning-30b-a3b",
-        protocols: CHAT,
-        reasoning_history: &[],
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::aliyun_dashscope_cn,
-        dialect: Dialect::Bailian,
-        endpoint_prefix: "aliyun-dashscope-cn",
-        effort_mappings: &[],
-        model: "qwen3.8-max",
-        canonical_model: "qwen3.8-max",
-        upstream: "qwen3.8-max",
-        protocols: BOTH,
-        reasoning_history: ACCEPTED_HISTORY,
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::aliyun_tokenplan_cn,
-        dialect: Dialect::Bailian,
-        endpoint_prefix: "aliyun-tokenplan-cn",
-        effort_mappings: &[],
-        model: "qwen3.8-flash",
-        canonical_model: "qwen3.8-flash",
-        upstream: "qwen3.8-flash",
-        protocols: BOTH,
-        reasoning_history: &[],
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::modelbest,
-        dialect: Dialect::ModelBest,
-        endpoint_prefix: "modelbest-minicpm5-1b",
-        effort_mappings: &[],
-        model: "minicpm5-1b",
-        canonical_model: "minicpm5-1b",
-        upstream: "MiniCPM5-1B",
-        protocols: CHAT,
-        reasoning_history: &[],
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::modelbest,
-        dialect: Dialect::ModelBest,
-        endpoint_prefix: "modelbest-minicpm5-2b",
-        effort_mappings: &[],
-        model: "minicpm5-2b",
-        canonical_model: "minicpm5-2b",
-        upstream: "MiniCPM5-2B",
-        protocols: CHAT,
-        reasoning_history: &[],
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::modelbest,
-        dialect: Dialect::ModelBest,
-        endpoint_prefix: "modelbest-minicpm-v-4.7-1b",
-        effort_mappings: &[],
-        model: "MiniCPM-V-4.7-1B",
-        canonical_model: "MiniCPM-V-4.7-1B",
-        upstream: "MiniCPM-V-4.7-1B",
-        protocols: CHAT,
-        reasoning_history: &[],
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::modelbest,
-        dialect: Dialect::ModelBest,
-        endpoint_prefix: "modelbest-minicpm-v-4.7-35b-a3b",
-        effort_mappings: &[],
-        model: "MiniCPM-V-4.7-35B-A3B",
-        canonical_model: "MiniCPM-V-4.7-35B-A3B",
-        upstream: "MiniCPM-V-4.7-35B-A3B",
-        protocols: CHAT,
-        reasoning_history: &[],
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::opencode_go,
-        dialect: Dialect::OpenCodeGo,
-        endpoint_prefix: "opencode-go",
-        effort_mappings: &[],
-        model: "hy4",
-        canonical_model: "hy4",
-        upstream: "hy4",
-        protocols: CHAT,
-        reasoning_history: ACCEPTED_HISTORY,
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::zhipu,
-        dialect: Dialect::Zhipu,
-        endpoint_prefix: "zhipu",
-        effort_mappings: &[
-            (GenerationProtocol::OpenAiChat, &ZHIPU_GLM_EFFORT),
-            (GenerationProtocol::OpenAiResponses, &ZHIPU_GLM_EFFORT),
-        ],
-        model: "glm-5.3",
-        canonical_model: "glm-5.3",
-        upstream: "glm-5.3",
-        protocols: BOTH,
-        reasoning_history: TOOL_HISTORY,
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    // https://openrouter.ai/anthropic/claude-haiku-5.5
-    ApiKeyBinding {
-        provider: catalog::openrouter,
-        dialect: Dialect::OpenRouter,
-        endpoint_prefix: "openrouter-haiku",
-        effort_mappings: &[],
-        model: "claude-haiku-5-5",
-        canonical_model: "claude-haiku-5-5",
-        upstream: "anthropic/claude-haiku-5.5",
-        protocols: CHAT,
-        reasoning_history: &[],
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::zhipu,
-        dialect: Dialect::Zhipu,
-        endpoint_prefix: "zhipu-flash",
-        effort_mappings: &[
-            (GenerationProtocol::OpenAiChat, &ZHIPU_GLM_FLASH_EFFORT),
-            (GenerationProtocol::OpenAiResponses, &ZHIPU_GLM_FLASH_EFFORT),
-        ],
-        model: "glm-5.3-flash",
-        canonical_model: "glm-5.3-flash",
-        upstream: "glm-5.3-flash",
-        protocols: BOTH,
-        reasoning_history: TOOL_HISTORY,
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    // Failover alternative for glm-5.3-flash, and its Responses video carrier.
-    // Source: https://openrouter.ai/api/v1/models/z-ai/glm-5.3-flash/endpoints
-    ApiKeyBinding {
-        provider: catalog::openrouter,
-        dialect: Dialect::OpenRouter,
-        endpoint_prefix: "openrouter-glm-5.3-flash",
-        effort_mappings: &[],
-        model: "glm-5.3-flash",
-        canonical_model: "glm-5.3-flash",
-        upstream: "z-ai/glm-5.3-flash",
-        protocols: BOTH,
-        reasoning_history: &[],
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::openai,
-        dialect: Dialect::Standard,
-        endpoint_prefix: "openai-terra",
-        effort_mappings: &[],
-        model: "gpt-6.1-terra",
-        canonical_model: "gpt-6.1-terra",
-        upstream: "gpt-6.1-terra",
-        protocols: RESPONSES,
-        reasoning_history: ACCEPTED_HISTORY,
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::openrouter,
-        dialect: Dialect::OpenRouter,
-        endpoint_prefix: "openrouter-step",
-        effort_mappings: &[],
-        model: "step-5-preview",
-        canonical_model: "step-5-preview",
-        upstream: "stepfun/step-5-preview",
-        protocols: BOTH,
-        reasoning_history: ACCEPTED_HISTORY,
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-    ApiKeyBinding {
-        provider: catalog::aliyun_tokenplan_cn,
-        dialect: Dialect::Bailian,
-        endpoint_prefix: "tokenplan-qwen4",
-        effort_mappings: &[],
-        model: "qwen4-max",
-        canonical_model: "qwen4-max",
-        upstream: "qwen4-max",
-        protocols: BOTH,
-        reasoning_history: ACCEPTED_HISTORY,
-        public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::Canonical,
-    },
-];

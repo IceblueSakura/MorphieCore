@@ -298,7 +298,7 @@ Unresolved cases may remain limited while independently useful workflows ship un
 
 This vocabulary replaces the separate requirement, feature-set, feature-enum, target-contract and published-rejection representations; encoders consume only projected copies, and source-level admission keeps only grammar checks and L5.
 
-The delivery side has one owner in [`ClientAdapter`](../../src/adapter/downstream.rs): a (fact, client protocol) table drives one projection over the IR event stream; JSON and retained views reduce the projected events to a snapshot and render it, so JSON/SSE agreement holds by construction and encoders only render.
+The delivery side has one owner in [`ClientAdapter`](../../crates/morphiecore-protocol/src/adapter/downstream.rs): a (fact, client protocol) table drives one projection over the IR event stream; JSON and retained views reduce the projected events to a snapshot and render it, so JSON/SSE agreement holds by construction and encoders only render.
 
 Discovery and `/capabilities` read the same tables.
 

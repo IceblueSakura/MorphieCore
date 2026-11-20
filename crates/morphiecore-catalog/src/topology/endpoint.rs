@@ -293,7 +293,7 @@ mod tests {
                 ..Default::default()
             },
         ] {
-            let mut endpoint = crate::topology::catalog::GOOGLE_BINDINGS[0].endpoint();
+            let mut endpoint = crate::topology::catalog::google_bindings()[0].endpoint();
             *endpoint.representation.model_limits_mut() = limits;
             assert_eq!(
                 endpoint.validate(),

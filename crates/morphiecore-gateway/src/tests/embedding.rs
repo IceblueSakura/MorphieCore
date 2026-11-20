@@ -16,7 +16,7 @@ async fn failed_embedding_heads_do_not_wait_for_optional_error_bodies() {
             .insert("retry-after", "3".parse().unwrap());
         let error = tokio::time::timeout(
             std::time::Duration::from_secs(1),
-            crate::tasks::embeddings::receive(
+            crate::tasks::embeddings::receive_for_test(
                 response,
                 4096,
                 &mut trace,
@@ -38,7 +38,7 @@ async fn embedding_body_requires_eof_and_rejects_bad_heads_reads_and_limits() {
     let mut trace = Trace::new(None);
     let (tx, response, dropped) = source(200, "application/json");
     tx.send(Ok(Bytes::from_static(RESULT))).await.unwrap();
-    let mut pending = Box::pin(crate::tasks::embeddings::receive(
+    let mut pending = Box::pin(crate::tasks::embeddings::receive_for_test(
         response,
         4096,
         &mut trace,
@@ -90,7 +90,7 @@ async fn embedding_body_requires_eof_and_rejects_bad_heads_reads_and_limits() {
         }
         drop(tx);
         assert!(
-            crate::tasks::embeddings::receive(
+            crate::tasks::embeddings::receive_for_test(
                 response,
                 if case == 6 { 2 } else { 4096 },
                 &mut trace,
@@ -111,7 +111,7 @@ async fn cancelled_embedding_intake_releases_its_body_without_a_result() {
     trace.begin_candidate(1);
     let (tx, response, dropped) = source(200, "application/json");
     tx.send(Ok(Bytes::from_static(RESULT))).await.unwrap();
-    let mut pending = Box::pin(crate::tasks::embeddings::receive(
+    let mut pending = Box::pin(crate::tasks::embeddings::receive_for_test(
         response,
         4096,
         &mut trace,

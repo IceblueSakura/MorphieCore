@@ -14,7 +14,7 @@ use morphiecore::{
     },
     provider::SecretMaterial,
     semantic::task::generation::*,
-    topology::{Endpoint, catalog::GOOGLE_BINDINGS},
+    topology::{Endpoint, catalog::google_bindings},
 };
 use serde_json::{Value, json};
 
@@ -36,7 +36,7 @@ fn service_output_ceilings_bound_prepared_requests_without_filling_unknown_servi
         semantic::context::ConversationContext,
         topology::{
             GenerationProtocol,
-            catalog::{API_KEY_BINDINGS, MESSAGES_BINDINGS},
+            catalog::{api_key_bindings, messages_bindings},
         },
     };
     let secret = SecretMaterial::new("synthetic").unwrap();
@@ -78,7 +78,7 @@ fn service_output_ceilings_bound_prepared_requests_without_filling_unknown_servi
             128000,
         ),
     ] {
-        let binding = API_KEY_BINDINGS
+        let binding = api_key_bindings()
             .iter()
             .find(|b| b.endpoint_prefix == prefix)
             .unwrap();
@@ -90,13 +90,13 @@ fn service_output_ceilings_bound_prepared_requests_without_filling_unknown_servi
         assert_eq!(representable(&endpoint, &request), Ok(()));
         let (_, rules) = endpoint.encode_request_with_rules(&request).unwrap();
         assert!(rules.contains(&"generation.clamp-output-to-model-maximum.v1"));
-        let prepared = prepare(&endpoint, &(binding.provider)(), &secret, &request).unwrap();
+        let prepared = prepare(&endpoint, &binding.provider(), &secret, &request).unwrap();
         let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
         assert_eq!(wire[key], maximum, "{prefix}");
         assert_eq!(request, before);
     }
     // A native Xiaomi binding must not inherit the Go ceiling for the same model.
-    let native = API_KEY_BINDINGS
+    let native = api_key_bindings()
         .iter()
         .find(|b| b.endpoint_prefix == "xiaomi")
         .unwrap()
@@ -107,7 +107,7 @@ fn service_output_ceilings_bound_prepared_requests_without_filling_unknown_servi
         native.encode_request(&request).unwrap()["max_output_tokens"],
         500000
     );
-    let deepseek = API_KEY_BINDINGS
+    let deepseek = api_key_bindings()
         .iter()
         .find(|b| b.endpoint_prefix == "deepseek")
         .unwrap()
@@ -125,7 +125,7 @@ fn service_output_ceilings_bound_prepared_requests_without_filling_unknown_servi
         );
         assert!(rules.is_empty());
     }
-    let haiku = &MESSAGES_BINDINGS[0];
+    let haiku = &messages_bindings()[0];
     let endpoint = haiku.endpoint();
     for (cap, expected) in [(Some(500000), 128000), (None, 32000)] {
         let mut body = json!({"model":"public","input":"go"});
@@ -146,7 +146,7 @@ fn service_output_ceilings_bound_prepared_requests_without_filling_unknown_servi
 #[test]
 fn google_response_effort_is_a_selected_direction_not_native_support() {
     use morphiecore::{execution::admit, topology::*};
-    let binding = &GOOGLE_BINDINGS[0];
+    let binding = &google_bindings()[0];
     let rule = "google.gemini-3.8-flash.response-effort-to-thinking.v1";
     for mut endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
         assert!(
@@ -311,7 +311,7 @@ fn google_response_effort_is_a_selected_direction_not_native_support() {
 
 #[test]
 fn google_scope_mapping_approximates_levels_without_weakening_activation_or_history() {
-    let binding = &GOOGLE_BINDINGS[0];
+    let binding = &google_bindings()[0];
     for endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
         let base = json!({"model":binding.model,"max_tokens":2048,
             "output_config":{"effort":"low"},"messages":[{"role":"user","content":"go"}]});
@@ -433,7 +433,7 @@ fn google_scope_mapping_approximates_levels_without_weakening_activation_or_hist
 
 #[test]
 fn google_ordered_effort_uses_source_activation_not_the_last_marker() {
-    let binding = &GOOGLE_BINDINGS[0];
+    let binding = &google_bindings()[0];
     let body = json!({"model":binding.model,"max_tokens":2048,
     "output_config":{"effort":"low"},
     "tools":[{"name":"read","input_schema":{"type":"object"}}],
@@ -483,7 +483,7 @@ fn google_ordered_effort_uses_source_activation_not_the_last_marker() {
 
 #[test]
 fn google_effective_tools_preserve_old_calls_and_explicit_guarantees() {
-    let binding = &GOOGLE_BINDINGS[0];
+    let binding = &google_bindings()[0];
     let old = json!({"type":"object","properties":{"old":{"type":"integer"}},
         "required":["old"],"additionalProperties":false});
     let current = json!({"type":"object","properties":{"new":{"type":"string"}},
@@ -580,7 +580,7 @@ fn projected(endpoint: &Endpoint, request: &Request) -> (Value, Vec<&'static str
     assert_eq!(representable(endpoint, request), Ok(()));
     let prepared = prepare(
         endpoint,
-        &GOOGLE_BINDINGS[0].provider(),
+        &google_bindings()[0].provider(),
         &SecretMaterial::new("synthetic").unwrap(),
         request,
     )
@@ -602,9 +602,9 @@ fn go_root_composition_rejects_before_dispatch_without_rewriting_nested_schemas(
             failure::{CarrierReason, ToolConstraint},
         },
         semantic::context::ConversationContext,
-        topology::catalog::MESSAGES_BINDINGS,
+        topology::catalog::messages_bindings,
     };
-    let binding = &MESSAGES_BINDINGS[0];
+    let binding = &messages_bindings()[0];
     let endpoint = binding.endpoint();
     let secret = SecretMaterial::new("synthetic").unwrap();
     for (keyword, strict, choice, inline, nested) in [
@@ -692,9 +692,9 @@ fn go_root_composition_rejects_before_dispatch_without_rewriting_nested_schemas(
 
 #[test]
 fn interactions_scalar_parameters_require_no_call_in_preflight_and_preparation() {
-    let endpoint = GOOGLE_BINDINGS[0].interactions_endpoint();
+    let endpoint = google_bindings()[0].interactions_endpoint();
     for strict in [Some(false), Some(true), None] {
-        let mut body = json!({"model":GOOGLE_BINDINGS[0].model,"input":"go",
+        let mut body = json!({"model":google_bindings()[0].model,"input":"go",
             "tool_choice":"none","parallel_tool_calls":false,
             "tools":[{"type":"function","name":"probe","parameters":{"type":"string"}}]});
         if let Some(strict) = strict {
@@ -726,7 +726,7 @@ fn interactions_scalar_parameters_require_no_call_in_preflight_and_preparation()
             assert!(
                 prepare(
                     &endpoint,
-                    &GOOGLE_BINDINGS[0].provider(),
+                    &google_bindings()[0].provider(),
                     &SecretMaterial::new("synthetic").unwrap(),
                     &request
                 )
@@ -750,11 +750,11 @@ fn google_no_call_admission_agrees_with_preparation_without_relaxing_other_choic
     let parameters = json!({"type":"object","properties":{
         "label":{"type":"string","minLength":5}},"required":["label"],"additionalProperties":false});
     for endpoint in [
-        GOOGLE_BINDINGS[0].endpoint(),
-        GOOGLE_BINDINGS[0].interactions_endpoint(),
+        google_bindings()[0].endpoint(),
+        google_bindings()[0].interactions_endpoint(),
     ] {
         for strict in [Some(true), None] {
-            let mut body = json!({"model":GOOGLE_BINDINGS[0].model,"input":"go",
+            let mut body = json!({"model":google_bindings()[0].model,"input":"go",
                 "tool_choice":"none","parallel_tool_calls":false,
                 "tools":[{"type":"function","name":"lookup","parameters":parameters}]});
             if let Some(strict) = strict {
@@ -802,10 +802,10 @@ fn google_conditional_strictness_accounts_for_the_entire_validated_inventory() {
         "required":["minLength"],"additionalProperties":false});
     let closed = json!({"$ref":"#/$defs/Args","$defs":{"Args":closed}});
     for endpoint in [
-        GOOGLE_BINDINGS[0].endpoint(),
-        GOOGLE_BINDINGS[0].interactions_endpoint(),
+        google_bindings()[0].endpoint(),
+        google_bindings()[0].interactions_endpoint(),
     ] {
-        let body = json!({"model":GOOGLE_BINDINGS[0].model,"input":"go",
+        let body = json!({"model":google_bindings()[0].model,"input":"go",
             "tools":[{"type":"function","name":"lookup","parameters":closed},
                 {"type":"function","name":"other","strict":false,"parameters":{"type":"object"}}]});
         let (wire, rules) = projected(&endpoint, &source(body.clone()));
@@ -839,7 +839,7 @@ fn google_conditional_strictness_accounts_for_the_entire_validated_inventory() {
 
 #[test]
 fn gemini_model_values_are_checked_by_both_preflight_and_preparation() {
-    let binding = &GOOGLE_BINDINGS[0];
+    let binding = &google_bindings()[0];
     for mut endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
         let request = source(json!({"model":binding.model,"input":"go",
             "reasoning":{"effort":"high"},"max_output_tokens":65536}));
@@ -918,7 +918,7 @@ fn gemini_model_values_are_checked_by_both_preflight_and_preparation() {
 
 #[test]
 fn gemini_preserves_native_budgets_and_checks_fallback_levels_without_requantizing() {
-    let binding = &GOOGLE_BINDINGS[0];
+    let binding = &google_bindings()[0];
     let plain = source(json!({"model":binding.model,"input":"go","max_output_tokens":4096}));
     let mut settings = plain.task.semantic.settings().clone();
     settings.reasoning = ReasoningRequest::present(None);
@@ -1104,7 +1104,7 @@ fn google_sampling_omission_is_binding_selected_and_preparation_matches_prefligh
         google::{self, SamplingPolicy},
         native::ReplayTarget,
     };
-    let binding = &GOOGLE_BINDINGS[0];
+    let binding = &google_bindings()[0];
     let request = source(
         json!({"model":binding.model,"input":"go","max_output_tokens":64,
         "temperature":0.25,"top_p":0.8,"store":false}),
@@ -1207,7 +1207,7 @@ fn google_sampling_omission_is_binding_selected_and_preparation_matches_prefligh
 }
 #[test]
 fn hydrogen_xhigh_uses_both_native_carriers_without_reactivating_disabled_thinking() {
-    let binding = GOOGLE_BINDINGS
+    let binding = google_bindings()
         .iter()
         .find(|b| b.model == "gemini-4-hydrogen")
         .unwrap();
@@ -1240,8 +1240,8 @@ fn hydrogen_xhigh_uses_both_native_carriers_without_reactivating_disabled_thinki
 
 #[test]
 fn terra_sampling_is_available_only_with_explicit_thinking_off() {
-    use morphiecore::topology::{GenerationProtocol, catalog::API_KEY_BINDINGS};
-    let binding = API_KEY_BINDINGS
+    use morphiecore::topology::{GenerationProtocol, catalog::api_key_bindings};
+    let binding = api_key_bindings()
         .iter()
         .find(|b| b.endpoint_prefix == "openai-terra")
         .unwrap();

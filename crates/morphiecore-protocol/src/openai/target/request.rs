@@ -18,7 +18,7 @@ impl GenerationCodec {
         mut cache: crate::cache::CacheTargetPolicy,
         effective_cache_key: Option<&str>,
     ) -> Result<Vec<(String, String)>, CodecError> {
-        if self.adaptation.rules.responses_siwc {
+        if self.adaptation.rules.hooks.responses_siwc {
             return Ok(effective_cache_key
                 .map(|key| {
                     (
@@ -29,7 +29,7 @@ impl GenerationCodec {
                 .into_iter()
                 .collect());
         }
-        if !self.adaptation.rules.opencode_go_headers {
+        if !self.adaptation.rules.hooks.opencode_go_headers {
             return Ok(vec![]);
         }
         cache.intersect(self.adaptation.cache);
@@ -76,7 +76,7 @@ impl GenerationCodec {
     ) -> Result<crate::conversion::generation::Conversion<serde_json::Value>, ConversionFailure>
     {
         let result = (|| {
-            if self.adaptation.rules.bailian_requests
+            if self.adaptation.rules.hooks.bailian_requests
                 && self.adaptation.effort_mapping.is_none()
                 && let Some(mapping) =
                     openai::dialect::bailian::effort_mapping(model, self.protocol)
@@ -85,16 +85,19 @@ impl GenerationCodec {
                 bound.adaptation.effort_mapping = Some(mapping);
                 return bound.encode_request_with_evidence(request, model, contract);
             }
-            let contract = self.contract(contract).with_model_sampling(model);
+            let contract = self
+                .contract(contract)
+                .with_model_policy(model, self.protocol);
             let request_projection = crate::lowering::request::project(
                 request,
                 crate::lowering::request::Target::OpenAi(self.protocol, &contract),
-                model,
                 None,
             )?;
             let request = request_projection.value.as_ref();
             let mut evidence = request_projection.evidence;
-            if self.adaptation.rules.responses_siwc && self.protocol != GenerationApi::Responses {
+            if self.adaptation.rules.hooks.responses_siwc
+                && self.protocol != GenerationApi::Responses
+            {
                 return Err(CodecError::ProfileMismatch.into());
             }
             let context = request.context.clone();
@@ -173,7 +176,7 @@ impl GenerationCodec {
                 value["stream"] = Value::Bool(true);
             }
             if self.protocol == GenerationApi::Chat
-                && self.adaptation.rules.reasoning_alias
+                && self.adaptation.rules.reasoning.reasoning_alias
                 && let Some(messages) = value.get_mut("messages").and_then(Value::as_array_mut)
             {
                 for message in messages {
@@ -181,10 +184,10 @@ impl GenerationCodec {
                 }
             }
             if let Some(session) = &request.cache_session
-                && !self.adaptation.rules.opencode_go_headers
+                && !self.adaptation.rules.hooks.opencode_go_headers
             {
                 value["session_id"] = serde_json::json!(session.as_str());
-            } else if self.adaptation.rules.openrouter_session
+            } else if self.adaptation.rules.hooks.openrouter_session
                 && cache.session_id
                 && let Some(group) = request
                     .conversation
@@ -198,7 +201,7 @@ impl GenerationCodec {
                     crate::cache::SessionNamespace::OpenRouter,
                 )?);
             }
-            if self.adaptation.rules.require_parameters {
+            if self.adaptation.rules.hooks.require_parameters {
                 // Fixed adapter policy, not a user-controlled routing extension.
                 value["provider"] = serde_json::json!({"require_parameters": true});
             }
@@ -239,7 +242,6 @@ mod tests {
         let projected = crate::lowering::request::project_semantic(
             &source.task.semantic,
             crate::lowering::request::Target::OpenAi(GenerationApi::Responses, &contract),
-            "m",
         )
         .unwrap();
         assert!(
@@ -288,7 +290,6 @@ mod tests {
             crate::lowering::request::project_semantic(
                 &source.task.semantic,
                 crate::lowering::request::Target::OpenAi(GenerationApi::Responses, &contract),
-                "m"
             )
             .is_err()
         );

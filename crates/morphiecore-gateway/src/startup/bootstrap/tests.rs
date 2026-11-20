@@ -191,9 +191,9 @@ fn bootstrap_is_loopback_and_requires_explicit_auth_and_provider_keys() {
 
 #[test]
 fn responses_chat_bridge_is_explicit_and_replaces_not_falls_back_to_native_responses() {
-    let binding = catalog::API_KEY_BINDINGS
+    let binding = catalog::api_key_bindings()
         .iter()
-        .find(|b| b.model == "gpt-6-luna" && (b.provider)().id.as_str() == "openrouter")
+        .find(|b| b.model == "gpt-6-luna" && b.provider().id.as_str() == "openrouter")
         .unwrap()
         .endpoint_id(crate::topology::GenerationProtocol::OpenAiChat);
     let config =
@@ -564,9 +564,9 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
         {"name":"secondary","enabled":true,"credential":{"alias":"one"},"base_url":"https://secondary.example/v1"}
     ]}}});
     write_accounts(directory.path(), &account_config);
-    let binding = catalog::API_KEY_BINDINGS
+    let binding = catalog::api_key_bindings()
         .iter()
-        .find(|b| b.model == "claude-haiku-5-5" && (b.provider)().id.as_str() == "openrouter")
+        .find(|b| b.model == "claude-haiku-5-5" && b.provider().id.as_str() == "openrouter")
         .unwrap();
     let gateway_file = directory.path().join("gateway.json");
     let models_file = directory.path().join("models.json");
@@ -744,9 +744,9 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
     write_private(&models_file, br#"{"models":{},"models":{}}"#);
     assert!(Bootstrap::from_files(&gateway_file, &store).is_err());
 
-    let replay_binding = catalog::API_KEY_BINDINGS
+    let replay_binding = catalog::api_key_bindings()
         .iter()
-        .find(|b| b.model == "gpt-6-luna" && (b.provider)().id.as_str() == "openrouter")
+        .find(|b| b.model == "gpt-6-luna" && b.provider().id.as_str() == "openrouter")
         .unwrap()
         .endpoint_id(crate::topology::GenerationProtocol::OpenAiResponses);
     account_config["providers"]["openrouter"]["accounts"][0]["base_url"] =
@@ -811,7 +811,7 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
     );
     assert!(second.encode_request(&replay).is_err());
 
-    let google = &catalog::GOOGLE_BINDINGS[0];
+    let google = &catalog::google_bindings()[0];
     let provider = google.provider();
     manager
         .add_api_key(

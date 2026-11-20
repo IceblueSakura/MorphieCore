@@ -25,13 +25,14 @@ fn options() -> StreamOptions {
         include_obfuscation: Some(false),
     }
 }
-fn delivery(adapter: GenerationCodec, contract: Contract) -> ResponseDelivery {
+fn delivery(adapter: GenerationCodec, contract: Contract, stream: bool) -> ResponseDelivery {
     ResponseDelivery::new(
         morphiecore::adapter::ClientAdapter::openai(adapter, contract),
         "public-model",
         SseLimits::default(),
         options(),
         Obfuscation::Disabled,
+        stream,
     )
 }
 fn bytes(profile: GenerationApi) -> Vec<u8> {
@@ -80,7 +81,7 @@ fn consume(
 fn incremental_chain_emits_before_terminal_and_does_not_commit_by_encoding() {
     for profile in [GenerationApi::Chat, GenerationApi::Responses] {
         let mut intake = Attempt::new(standard(profile), 4096, SseLimits::default());
-        let mut output = delivery(standard(profile), Contract::full());
+        let mut output = delivery(standard(profile), Contract::full(), true);
         intake.begin(200, "text/event-stream").unwrap();
         let body = bytes(profile);
         let (n, events) = intake.push(&body).unwrap();
@@ -210,7 +211,7 @@ fn delivery_cannot_switch_attempts_even_when_wire_identity_matches() {
     let mut first = Attempt::new(standard(profile), 4096, SseLimits::default());
     first.begin(200, "text/event-stream").unwrap();
     let (_, events) = first.push(&body).unwrap();
-    let mut output = delivery(standard(profile), Contract::full());
+    let mut output = delivery(standard(profile), Contract::full(), true);
     output
         .encode_events(&first, &events)
         .map(|batch| batch.into_bytes())
@@ -234,7 +235,7 @@ fn terminal_is_withheld_on_truncated_eof_or_trailing_invalid_data() {
     for profile in [GenerationApi::Chat, GenerationApi::Responses] {
         for trailing in [false, true] {
             let mut intake = Attempt::new(standard(profile), 4096, SseLimits::default());
-            let mut output = delivery(standard(profile), Contract::full());
+            let mut output = delivery(standard(profile), Contract::full(), true);
             intake.begin(200, "text/event-stream").unwrap();
             let mut body = bytes(profile);
             if trailing {
@@ -300,6 +301,7 @@ fn malformed_tool_input_can_fail_late_without_fabricating_a_terminal() {
         SseLimits::default(),
         options(),
         Obfuscation::Disabled,
+        true,
     );
     intake.begin(200, "text/event-stream").unwrap();
     let mut chunks = chat_wire::events(1);
@@ -387,6 +389,7 @@ fn static_delivery_wraps_the_issuer_value_and_commit_is_explicit() {
             replay_origin: Some(scope.clone()),
             ..Contract::full()
         },
+        false,
     );
     let encoded: Value = serde_json::from_slice(&permitted.encode_json(&intake).unwrap()).unwrap();
     assert_eq!(encoded["model"], "public-model");
@@ -447,7 +450,7 @@ fn streaming_carrier_seals_opaque_for_both_downstream_protocols() {
         );
         let mut intake = Attempt::new(source, 1 << 20, SseLimits::default());
         let target = GenerationCodec::new(profile, Dialect::MorphieCore, None);
-        let mut output = delivery(target.clone(), Contract::full());
+        let mut output = delivery(target.clone(), Contract::full(), true);
         intake.begin(200, "text/event-stream").unwrap();
         let mut bytes = consume(&mut intake, &mut output, &body).unwrap();
         assert!(!bytes.is_empty());
@@ -514,7 +517,7 @@ fn intake_errors_are_classified_bounded_and_irrecoverable() {
 fn cancellation_closes_intake_and_delivery_without_success() {
     for profile in [GenerationApi::Chat, GenerationApi::Responses] {
         let mut intake = Attempt::new(standard(profile), 4096, SseLimits::default());
-        let mut output = delivery(standard(profile), Contract::full());
+        let mut output = delivery(standard(profile), Contract::full(), true);
         intake.begin(200, "text/event-stream").unwrap();
         let (_, events) = intake.push(&bytes(profile)).unwrap();
         output
@@ -619,11 +622,11 @@ fn unified_request_projection_keeps_targets_trusted_and_debug_redacted() {
 fn grok_public_binding_uses_the_responses_cache_carrier() {
     let topology = catalog::default_topology().unwrap();
     let secret = SecretMaterial::new("synthetic-oauth-token").unwrap();
-    let binding = catalog::SUBSCRIPTION_BINDINGS
+    let binding = catalog::subscription_bindings()
         .iter()
         .find(|binding| binding.profile == "grok")
         .unwrap();
-    let provider = (binding.provider)();
+    let provider = binding.provider();
     let endpoint = binding.endpoint();
     let request = standard(GenerationApi::Responses)
         .decode_request(
@@ -667,12 +670,12 @@ fn siwc_session_header_follows_the_final_cache_key_without_mutating_source() {
             .map(|(_, value)| value.clone())
     };
     let mut previous_model = None;
-    for binding in catalog::SUBSCRIPTION_BINDINGS
+    for binding in catalog::subscription_bindings()
         .iter()
         .filter(|binding| binding.profile == "openai")
     {
         let endpoint = binding.endpoint();
-        let provider = (binding.provider)();
+        let provider = binding.provider();
         let mut request = source
             .decode_request(
                 json!({"model":binding.model,"input":"first","prompt_cache_key":"shared-☃"})

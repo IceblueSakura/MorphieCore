@@ -124,7 +124,7 @@ fn modelbest_tool_history_uses_the_hosted_models_reasoning_field() {
         ("minicpm5-1b", "reasoning_content"),
         ("MiniCPM-V-4.7-1B", "reasoning"),
     ] {
-        let binding = morphiecore::topology::catalog::API_KEY_BINDINGS
+        let binding = morphiecore::topology::catalog::api_key_bindings()
             .iter()
             .find(|binding| binding.model == id)
             .unwrap();

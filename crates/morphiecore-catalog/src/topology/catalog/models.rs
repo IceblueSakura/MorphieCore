@@ -3,7 +3,11 @@ use crate::{
     lowering::disposition::Dispositions,
     topology::{CanonicalModel, ModelId},
 };
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ModelDefinition {
+    pub custom_tools: bool,
+    pub video: bool,
     pub id: &'static str,
     pub images: bool,
     pub files: bool,
@@ -12,249 +16,20 @@ pub struct ModelDefinition {
     pub developer: &'static str,
 }
 // Official publication dates normalized to UTC midnight, not router listing timestamps.
-pub const MODELS: &[ModelDefinition] = &[
-    // Retain the predecessor's catalog timestamp; publication source:
-    // https://openai.com/index/safety-overview-gpt-6-astra/ (2026-09-03).
-    ModelDefinition {
-        id: "gpt-6.2-astra",
-        images: true,
-        files: true,
-        strict_tools: true,
-        released_at: 1_788_393_600,
-        developer: "OpenAI",
-    },
-    // https://mimo.mi.com/docs/updates/model (2026-09-22).
-    ModelDefinition {
-        id: "mimo-v2.6-pro-ultraspeed",
-        images: true,
-        files: false,
-        strict_tools: false,
-        released_at: 1_790_035_200,
-        developer: "Xiaomi",
-    },
-    // https://www.minimax.io/blog/minimax-m31f (2026-10-19).
-    ModelDefinition {
-        id: "minimax-m3.1-flash",
-        images: true,
-        files: false,
-        strict_tools: false,
-        released_at: 1792368000,
-        developer: "MiniMax",
-    },
-    // https://www.kimi.com/en/blog/kimi-k3-1-pro (2026-10-24).
-    ModelDefinition {
-        id: "kimi-k3.1-pro",
-        images: true,
-        files: false,
-        strict_tools: false,
-        released_at: 1792800000,
-        developer: "Moonshot AI",
-    },
-    // Retain the predecessor's catalog timestamp; publication source:
-    // https://openai.com/index/introducing-gpt-6-1-sol/ (2026-09-29).
-    ModelDefinition {
-        id: "gpt-6.2-sol",
-        images: true,
-        files: false,
-        strict_tools: true,
-        released_at: 1_790_640_000,
-        developer: "OpenAI",
-    },
-    // Source: https://x.ai/news/grok-4-7 (2026-09-21).
-    // Image input: https://docs.x.ai/developers/grok-4-7
-    ModelDefinition {
-        id: "grok-4.7",
-        images: true,
-        files: false,
-        strict_tools: false,
-        released_at: 1_789_948_800,
-        developer: "SpaceXAI",
-    },
-    // The official alias names V4.1 Flash.
-    // Source: https://api-docs.deepseek.com/updates/ (2026-09-10).
-    // Strict tool schemas are validated by the beta endpoint binding, not the
-    // standard endpoint. Source: https://api-docs.deepseek.com/guides/tool_calls/
-    ModelDefinition {
-        id: "deepseek-flash",
-        images: true,
-        files: false,
-        strict_tools: true,
-        released_at: 1_788_998_400,
-        developer: "DeepSeek",
-    },
-    // Source: https://mimo.xiaomi.com/mimo-v2-6/article (2026-09-22).
-    ModelDefinition {
-        id: "mimo-v2.6-pro",
-        images: true,
-        files: false,
-        strict_tools: false,
-        released_at: 1_790_035_200,
-        developer: "Xiaomi",
-    },
-    // Source: https://mimo.xiaomi.com/mimo-v2-6/article (2026-09-22).
-    ModelDefinition {
-        id: "mimo-v2.6-flash",
-        images: true,
-        files: false,
-        strict_tools: false,
-        released_at: 1_790_035_200,
-        developer: "Xiaomi",
-    },
-    // Publication: https://openai.com/index/introducing-gpt-6-sol-and-luna/ (2026-09-22).
-    // Native function strictness uses the official OpenAI carrier; endpoint
-    // inventories must not impose another Provider's assessment on this model.
-    ModelDefinition {
-        id: "gpt-6-luna",
-        images: true,
-        files: true,
-        strict_tools: true,
-        released_at: 1_790_035_200,
-        developer: "OpenAI",
-    },
-    // Source: https://developer.nvidia.com/blog/nvidia-nemotron-3-5-super-vl-powers-specialized-agents-with-multimodal-reasoning/ (2026-10-15).
-    ModelDefinition {
-        id: "nemotron-3.5-super-vl-120b-a12b",
-        images: false,
-        files: false,
-        strict_tools: false,
-        released_at: 1_792_022_400,
-        developer: "NVIDIA",
-    },
-    // Source: https://build.nvidia.com/nvidia/nemotron-3.5-lightning-30b-a3b/modelcard (2026-08-11).
-    ModelDefinition {
-        id: "nemotron-3.5-lightning-30b-a3b",
-        images: false,
-        files: false,
-        strict_tools: false,
-        released_at: 1_786_406_400,
-        developer: "NVIDIA",
-    },
-    // Source: https://www.alibabacloud.com/en/press-room/alibaba-unveils-qwen3-8-max (2026-08-03).
-    ModelDefinition {
-        id: "qwen3.8-max",
-        images: true,
-        files: false,
-        strict_tools: true,
-        released_at: 1_785_715_200,
-        developer: "Alibaba",
-    },
-    // Source: https://qwen.ai/blog?id=qwen3.8-flash-next (2026-08-26).
-    ModelDefinition {
-        id: "qwen3.8-flash",
-        images: false,
-        files: false,
-        strict_tools: true,
-        released_at: 1_787_702_400,
-        developer: "Alibaba",
-    },
-    // Source: https://github.com/OpenBMB/MiniCPM (2026-05-19).
-    ModelDefinition {
-        id: "minicpm5-1b",
-        images: false,
-        files: false,
-        strict_tools: false,
-        released_at: 1_779_148_800,
-        developer: "ModelBest",
-    },
-    // Source: https://github.com/OpenBMB/MiniCPM (2026-09-07).
-    ModelDefinition {
-        id: "minicpm5-2b",
-        images: false,
-        files: false,
-        strict_tools: false,
-        released_at: 1_788_739_200,
-        developer: "ModelBest",
-    },
-    // Source: https://github.com/OpenBMB/MiniCPM-V (2026-10-12).
-    ModelDefinition {
-        id: "MiniCPM-V-4.7-1B",
-        images: true,
-        files: false,
-        strict_tools: false,
-        released_at: 1_791_763_200,
-        developer: "ModelBest",
-    },
-    // Source: https://github.com/OpenBMB/MiniCPM-V (2026-10-12).
-    ModelDefinition {
-        id: "MiniCPM-V-4.7-35B-A3B",
-        images: true,
-        files: false,
-        strict_tools: false,
-        released_at: 1_791_763_200,
-        developer: "ModelBest",
-    },
-    // https://www.tencent.com/tencent-launches-hy4-joining-the-ranks-of-the-worlds-leading-open-source-ai-models/ (2026-11-04).
-    ModelDefinition {
-        id: "hy4",
-        images: true,
-        files: false,
-        strict_tools: false,
-        released_at: 1793750400,
-        developer: "Tencent",
-    },
-    // Source: https://docs.bigmodel.cn/cn/update/new-releases#2026-8-19 (2026-08-19).
-    ModelDefinition {
-        id: "glm-5.3",
-        images: false,
-        files: false,
-        strict_tools: false,
-        released_at: 1_787_097_600,
-        developer: "Zhipu AI",
-    },
-    // Source: https://docs.bigmodel.cn/cn/update/new-releases#2026-08-26 (2026-08-26).
-    ModelDefinition {
-        id: "glm-5.3-flash",
-        images: true,
-        files: false,
-        strict_tools: false,
-        released_at: 1_787_702_400,
-        developer: "Zhipu AI",
-    },
-    // https://developers.openai.com/api/docs/models/gpt-6.1-terra (2026-10-26).
-    ModelDefinition {
-        id: "gpt-6.1-terra",
-        images: true,
-        files: true,
-        strict_tools: true,
-        released_at: 1792972800,
-        developer: "OpenAI",
-    },
-    // https://help.aliyun.com/en/model-studio/newly-released-models (2026-11-16).
-    ModelDefinition {
-        id: "qwen4-max",
-        images: true,
-        files: false,
-        strict_tools: true,
-        released_at: 1794787200,
-        developer: "Alibaba",
-    },
-    // https://www.stepfun.com/news/step-5-preview (2026-09-20).
-    ModelDefinition {
-        id: "step-5-preview",
-        images: true,
-        files: false,
-        strict_tools: false,
-        released_at: 1789862400,
-        developer: "StepFun",
-    },
-];
 pub fn contract(id: &str) -> Dispositions {
-    if let Some(binding) = super::MESSAGES_BINDINGS.iter().find(|b| b.model == id) {
+    if let Some(binding) = super::messages_bindings().iter().find(|b| b.model == id) {
         // Shared public admission is narrower than the model's native capabilities.
         // Do not copy Messages-only cache support into OpenAI-compatible bindings.
         return binding.public_model().contract;
     }
-    let definition = MODELS
+    let definition = super::data::models()
         .iter()
         .find(|m| m.id == id)
         .expect("explicit canonical reference");
     (Dispositions::text_images())
         .with_native(
             crate::semantic::task::generation::Feature::CustomTools,
-            matches!(
-                id,
-                "gpt-6.2-astra" | "gpt-6.2-sol" | "gpt-6-luna" | "gpt-6.1-terra"
-            ),
+            definition.custom_tools,
         )
         .with_native(
             crate::semantic::task::generation::Feature::ImageInput,
@@ -268,15 +43,7 @@ pub fn contract(id: &str) -> Dispositions {
         // Media policy: docs/architecture/adaptation-and-dialects.md#media.
         .with_native(
             crate::semantic::task::generation::Feature::VideoInput,
-            matches!(
-                id,
-                "MiniCPM-V-4.7-1B"
-                    | "MiniCPM-V-4.7-35B-A3B"
-                    | "glm-5.3-flash"
-                    | "minimax-m3.1-flash"
-                    | "step-5-preview"
-                    | "qwen4-max"
-            ),
+            definition.video,
         )
         .with_native(
             crate::semantic::task::generation::Feature::StrictTools,
@@ -290,79 +57,11 @@ pub fn contract(id: &str) -> Dispositions {
         )
 }
 pub fn canonical_models() -> Vec<CanonicalModel> {
-    MODELS
+    super::data::models()
         .iter()
         .map(|m| CanonicalModel {
             id: ModelId::new(m.id).expect("static id"),
             contract: contract(m.id),
         })
         .collect()
-}
-
-pub(super) fn model_limits(
-    model: &str,
-    provider: &str,
-) -> crate::protocol::model_limits::ModelLimits {
-    // Service-qualified declarations; see docs/refs/2026-11-13-model-catalog-expansion.md.
-    let context_window_tokens = match (model, provider) {
-        // Operator-selected SIWC planning windows match the official API.
-        (
-            "gpt-6.2-astra" | "gpt-6.2-sol" | "gpt-6-luna" | "gpt-6.1-terra",
-            "openai" | "chatgpt",
-        ) => Some(1_050_000),
-        ("gpt-6-luna", "openrouter") => Some(1_050_000),
-        ("grok-4.7", "grok") => Some(500_000),
-        ("deepseek-flash", "deepseek") => Some(1_048_576),
-        ("claude-haiku-5-5", "opencode-go") => Some(1_000_000),
-        ("mimo-v2.6-flash" | "mimo-v2.6-pro" | "hy4", "opencode-go") => Some(1_048_576),
-        ("minimax-m3.1-flash", "opencode-go") => Some(1_000_000),
-        ("minicpm5-1b" | "minicpm5-2b", "modelbest") => Some(128_000),
-        ("MiniCPM-V-4.7-1B" | "MiniCPM-V-4.7-35B-A3B", "modelbest") => Some(256_000),
-        ("qwen3.8-max" | "qwen3.8-flash", "aliyun-dashscope-cn") => Some(1_000_000),
-        ("glm-5.3" | "glm-5.3-prime" | "kimi-k3.1-pro", "aliyun-dashscope-cn") => Some(1_048_576),
-        _ => None,
-    };
-    let maximum_input_tokens = match (model, provider) {
-        ("gpt-6.2-astra" | "gpt-6.2-sol" | "gpt-6-luna" | "gpt-6.1-terra", "openai") => {
-            Some(922_000)
-        }
-        ("glm-5.3" | "glm-5.3-prime" | "kimi-k3.1-pro", "aliyun-dashscope-cn") => Some(1_048_576),
-        ("hy4", "opencode-go") => Some(983_010),
-        _ => None,
-    };
-    let maximum_output_tokens = match (model, provider) {
-        ("gpt-6.1-terra", "openai") => Some(128_000),
-        ("deepseek-flash", "deepseek") => Some(393_216),
-        ("claude-haiku-5-5", "opencode-go") => Some(128_000),
-        ("hy4", "opencode-go") => Some(65_536),
-        ("minimax-m3.1-flash", "opencode-go") => Some(512_000),
-        ("mimo-v2.6-flash" | "mimo-v2.6-pro", "opencode-go") => Some(131_072),
-        ("gpt-6-luna", "openrouter") => Some(128_000),
-        ("kimi-k3.1-pro", "aliyun-dashscope-cn") => Some(1_048_576),
-        ("qwen4-max", "aliyun-tokenplan-cn") => Some(262_144),
-        _ => None,
-    };
-    use crate::semantic::task::generation::EffortLevel as E;
-    let allowed_effort: Option<Box<[_]>> = match (model, provider) {
-        ("hy4", "opencode-go") => Some(vec![E::High].into()),
-        ("step-5-preview", _) => Some(vec![E::Low, E::Medium, E::High].into()),
-        ("minimax-m3.1-flash", "opencode-go") => {
-            Some(vec![E::Low, E::Medium, E::High, E::XHigh, E::Max].into())
-        }
-        ("grok-4.7", _) => Some(vec![E::Low, E::Medium, E::High, E::XHigh].into()),
-        ("gpt-6.2-astra" | "gpt-6.2-sol" | "gpt-6-luna" | "gpt-6.1-terra", _) => {
-            Some(vec![E::Low, E::Medium, E::High, E::XHigh, E::Max].into())
-        }
-        _ => None,
-    };
-    crate::protocol::model_limits::ModelLimits {
-        reject_disabled_reasoning: matches!(
-            model,
-            "grok-4.7" | "gpt-6.2-astra" | "gpt-6.2-sol" | "minimax-m3.1-flash" | "step-5-preview"
-        ),
-        allowed_effort,
-        context_window_tokens,
-        maximum_input_tokens,
-        maximum_output_tokens,
-    }
 }

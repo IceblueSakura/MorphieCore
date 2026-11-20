@@ -11,7 +11,7 @@ use morphiecore::{
     gateway::{Entry, Gateway, Limits},
     protocol::openai::GenerationApi,
     provider::{SecretMaterial, TrustedOrigin},
-    topology::{self, catalog::GOOGLE_BINDINGS},
+    topology::{self, catalog::google_bindings},
 };
 use serde_json::{Value, json};
 use std::{
@@ -133,7 +133,7 @@ async fn stateless_json_and_sse_replay_signatures_and_cancel_upstream() {
     let _upstream = Guard(tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap()
     }));
-    let binding = &GOOGLE_BINDINGS[0];
+    let binding = &google_bindings()[0];
     let mut provider = binding.provider();
     provider.origin = TrustedOrigin::parse(&origin).unwrap();
     let mut endpoint = binding.interactions_endpoint();

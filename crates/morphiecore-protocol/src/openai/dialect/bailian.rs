@@ -3,7 +3,6 @@
 use crate::{
     GenerationRequestEnvelope as Request,
     failure::CarrierReason,
-    lowering::capabilities::SamplingValues,
     openai::{
         CodecError, GenerationApi, dialect::adaptation::WireRules, function_tools, reasoning,
         shape::object,
@@ -12,22 +11,10 @@ use crate::{
 };
 use serde_json::{Map, Value, json};
 
-// Qualification is specific to the shared service, exact model and API.
-// Canonical model flags and successful ordinary calls are not enforcement evidence.
-// docs/refs/2026-10-19-bailian-compatible-requests.md
-const VERIFIED_STRICT_TOOLS: &[(&str, GenerationApi)] = &[];
-
-pub fn function_strictness(
-    model: &str,
-    profile: GenerationApi,
-) -> crate::lowering::disposition::Disposition {
-    use crate::lowering::disposition::{BAILIAN_RELAX_STRICTNESS, Disposition};
-    if VERIFIED_STRICT_TOOLS.contains(&(model, profile)) {
-        Disposition::Native
-    } else {
-        Disposition::Approximate(BAILIAN_RELAX_STRICTNESS)
-    }
-}
+mod models;
+pub use models::{effort_mapping, function_strictness};
+pub(crate) use models::{rejects_budget, request_policy, sampling_values};
+use models::{rejects_logprobs, total_output_ceiling};
 
 pub(in crate::openai) const CONTROL_FIELDS: &[&str] =
     &["enable_thinking", "thinking_budget", "top_k"];
@@ -47,28 +34,6 @@ const UNOWNED: &[&str] = &[
     "ocr_options",
 ];
 
-/// Whether the documented ceiling includes thinking as well as visible output.
-pub fn total_output_ceiling(model: &str, profile: GenerationApi) -> bool {
-    model == "qwen4-max"
-        || match profile {
-            GenerationApi::Chat => matches!(model, "glm-5.3" | "glm-5.3-prime"),
-            GenerationApi::Responses => matches!(model, "qwen3.8-flash" | "qwen3.8-max"),
-        }
-}
-
-/// Exact Bailian model spellings, shared by native intake and target binding.
-pub(crate) fn sampling_values(model: &str) -> SamplingValues {
-    const KIMI: SamplingValues =
-        SamplingValues::fixed(1.0, 0.95, 0.0).expect("valid fixed sampling");
-    const QWEN: SamplingValues =
-        SamplingValues::minimum_temperature_while_thinking(0.6).expect("valid minimum temperature");
-    match model {
-        "kimi-k3.1-pro" => KIMI,
-        "qwen3.8-flash" | "qwen3.8-max" => QWEN,
-        _ => SamplingValues::default(),
-    }
-}
-
 /// Registered controls cannot disappear under the unknown-field policy.
 pub(in crate::openai) fn source(
     value: &Value,
@@ -85,7 +50,7 @@ pub(in crate::openai) fn source(
                 .and_then(Value::as_object)
                 .and_then(|r| r.get("effort"))
         };
-        if matches!(model, "glm-5.3" | "glm-5.3-prime")
+        if request_policy(model, profile).reject_reasoning_off
             && effort.is_some_and(|v| v.as_str() == Some("none"))
         {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
@@ -282,125 +247,6 @@ pub(in crate::openai) fn write_reasoning(
     Ok(())
 }
 
-use crate::reasoning::ReasoningEffortMapping;
-const QWEN_FLASH: ReasoningEffortMapping = ReasoningEffortMapping {
-    canonical_model: "qwen3.8-flash",
-    rule: "bailian.qwen3.8-flash.effort.v1",
-    scope: EffortScope::Reasoning,
-    native_levels: &[EffortLevel::Low, EffortLevel::Medium, EffortLevel::XHigh],
-    encode: &[
-        (EffortLevel::Minimal, EffortLevel::Low),
-        (EffortLevel::Low, EffortLevel::Low),
-        (EffortLevel::Medium, EffortLevel::Medium),
-        (EffortLevel::High, EffortLevel::XHigh),
-        (EffortLevel::XHigh, EffortLevel::XHigh),
-        (EffortLevel::Max, EffortLevel::XHigh),
-    ],
-    decode: &[
-        (EffortLevel::Low, EffortLevel::Low),
-        (EffortLevel::Medium, EffortLevel::Medium),
-        (EffortLevel::XHigh, EffortLevel::XHigh),
-    ],
-};
-const QWEN_MAX: ReasoningEffortMapping = ReasoningEffortMapping {
-    canonical_model: "qwen3.8-max",
-    rule: "bailian.qwen3.8-max.effort.v1",
-    ..QWEN_FLASH
-};
-const GLM_CHAT: ReasoningEffortMapping = ReasoningEffortMapping {
-    canonical_model: "glm-5.3",
-    rule: "bailian.glm-5.3.chat.effort.v1",
-    scope: EffortScope::Reasoning,
-    native_levels: &[EffortLevel::Low, EffortLevel::High, EffortLevel::Max],
-    encode: &[
-        (EffortLevel::Low, EffortLevel::Low),
-        (EffortLevel::High, EffortLevel::High),
-        (EffortLevel::Max, EffortLevel::Max),
-    ],
-    decode: &[
-        (EffortLevel::Low, EffortLevel::Low),
-        (EffortLevel::High, EffortLevel::High),
-        (EffortLevel::Max, EffortLevel::Max),
-    ],
-};
-const KIMI_CHAT: ReasoningEffortMapping = ReasoningEffortMapping {
-    canonical_model: "kimi-k3.1-pro",
-    rule: "bailian.kimi-k3.1-pro.chat.effort.v1",
-    scope: EffortScope::Reasoning,
-    native_levels: &[
-        EffortLevel::Low,
-        EffortLevel::Medium,
-        EffortLevel::High,
-        EffortLevel::Max,
-    ],
-    encode: &[
-        (EffortLevel::Minimal, EffortLevel::Low),
-        (EffortLevel::Low, EffortLevel::Low),
-        (EffortLevel::Medium, EffortLevel::Medium),
-        (EffortLevel::High, EffortLevel::High),
-        (EffortLevel::XHigh, EffortLevel::Max),
-        (EffortLevel::Max, EffortLevel::Max),
-    ],
-    decode: &[
-        (EffortLevel::Low, EffortLevel::Low),
-        (EffortLevel::Medium, EffortLevel::Medium),
-        (EffortLevel::High, EffortLevel::High),
-        (EffortLevel::Max, EffortLevel::Max),
-    ],
-};
-const QWEN4_MAX: ReasoningEffortMapping = ReasoningEffortMapping {
-    canonical_model: "qwen4-max",
-    rule: "bailian.qwen4-max.effort.v1",
-    scope: EffortScope::Reasoning,
-    native_levels: &[EffortLevel::Low, EffortLevel::High, EffortLevel::XHigh],
-    encode: &[
-        (EffortLevel::Minimal, EffortLevel::Low),
-        (EffortLevel::Low, EffortLevel::Low),
-        (EffortLevel::Medium, EffortLevel::High),
-        (EffortLevel::High, EffortLevel::High),
-        (EffortLevel::XHigh, EffortLevel::XHigh),
-        (EffortLevel::Max, EffortLevel::XHigh),
-    ],
-    decode: &[
-        (EffortLevel::Low, EffortLevel::Low),
-        (EffortLevel::High, EffortLevel::High),
-        (EffortLevel::XHigh, EffortLevel::XHigh),
-    ],
-};
-// Native low/high/max controls qualified on both Bailian APIs, 2026-11-07.
-const DEEPSEEK: ReasoningEffortMapping = ReasoningEffortMapping {
-    canonical_model: "deepseek-flash",
-    rule: "bailian.deepseek-flash.effort.v1",
-    ..GLM_CHAT
-};
-const GLM_RESPONSES: ReasoningEffortMapping = ReasoningEffortMapping {
-    rule: "bailian.glm-5.3.responses.effort.v1",
-    encode: &[
-        (EffortLevel::Minimal, EffortLevel::Low),
-        (EffortLevel::Low, EffortLevel::Low),
-        (EffortLevel::Medium, EffortLevel::High),
-        (EffortLevel::High, EffortLevel::High),
-        (EffortLevel::XHigh, EffortLevel::Max),
-        (EffortLevel::Max, EffortLevel::Max),
-    ],
-    ..GLM_CHAT
-};
-pub fn effort_mapping(
-    model: &str,
-    profile: GenerationApi,
-) -> Option<&'static ReasoningEffortMapping> {
-    match (model, profile) {
-        ("qwen3.8-flash", _) => Some(&QWEN_FLASH),
-        ("qwen3.8-max", _) => Some(&QWEN_MAX),
-        ("qwen4-max", _) => Some(&QWEN4_MAX),
-        ("glm-5.3" | "glm-5.3-prime", GenerationApi::Chat) => Some(&GLM_CHAT),
-        ("glm-5.3" | "glm-5.3-prime", GenerationApi::Responses) => Some(&GLM_RESPONSES),
-        ("kimi-k3.1-pro", GenerationApi::Chat) => Some(&KIMI_CHAT),
-        ("deepseek-flash" | "deepseek-v4.1-flash-1017", _) => Some(&DEEPSEEK),
-        _ => None,
-    }
-}
-
 pub(in crate::openai) fn check_native_effort(
     settings: &GenerationSettings,
     model: &str,
@@ -416,7 +262,7 @@ pub(in crate::openai) fn check_native_effort(
 }
 pub fn responses_reasoning_carrier(reasoning: &ReasoningItem, rules: &WireRules) -> bool {
     reasoning.replay.as_ref().is_none_or(|replay| {
-        rules.qwen4_responses_reasoning
+        rules.reasoning.qwen4_responses_reasoning
             && reasoning.status == ItemLifecycle::Completed
             && replay.format() == ReplayFormat::ResponsesEncrypted
             && replay.replay_token().is_some()
@@ -449,13 +295,6 @@ pub(in crate::openai) fn check_context(
     }
     Ok(())
 }
-/// These thinking profiles ignore both documented required-selection spellings.
-/// Keep the observed model/API restriction separate from the serial carrier.
-pub fn responses_forcing_unavailable(model: &str, reasoning: &ReasoningRequest) -> bool {
-    matches!(model, "qwen3.8-flash" | "glm-5.3")
-        && reasoning.activation != Some(ReasoningActivation::Disabled)
-}
-
 pub(in crate::openai) fn check_semantic(
     semantic: &GenerationRequest,
     profile: GenerationApi,
@@ -470,8 +309,7 @@ pub(in crate::openai) fn check_semantic(
     {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
-    let qwen = matches!(model, "qwen3.8-flash" | "qwen3.8-max");
-    let glm = matches!(model, "glm-5.3" | "glm-5.3-prime");
+    let policy = request_policy(model, profile);
     if sampling_values(model)
         .incompatible(semantic)
         .next()
@@ -480,10 +318,10 @@ pub(in crate::openai) fn check_semantic(
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     let disabled = r.activation.as_ref() == Some(&ReasoningActivation::Disabled);
-    if glm && disabled {
+    if policy.reject_reasoning_off && disabled {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
-    if r.budget_tokens.is_some() && (glm || model == "kimi-k3.1-pro" || !s.effort.is_none()) {
+    if r.budget_tokens.is_some() && (rejects_budget(model) || !s.effort.is_none()) {
         return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
     if c.top_k.is_some_and(|n| n > 100) {
@@ -494,7 +332,7 @@ pub(in crate::openai) fn check_semantic(
     {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
-    if (qwen || glm || model == "kimi-k3.1-pro") && c.logprobs == Some(true) {
+    if rejects_logprobs(model) && c.logprobs == Some(true) {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     if r.presence == ReasoningPresence::Null {
@@ -508,7 +346,7 @@ pub(in crate::openai) fn check_semantic(
         return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
     if profile == GenerationApi::Chat {
-        if glm && !matches!(s.output(), OutputConstraint::Text) {
+        if policy.text_output_only && !matches!(s.output(), OutputConstraint::Text) {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         for tool in semantic.tools() {
@@ -531,7 +369,7 @@ pub(in crate::openai) fn check_semantic(
         if c.frequency_penalty().is_some() || !s.text.verbosity.is_none() {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
-        if qwen && matches!(s.tool_choice, Some(ToolChoice::Required)) {
+        if policy.reject_required_tools && matches!(s.tool_choice, Some(ToolChoice::Required)) {
             return Err(CodecError::Unsupported(CarrierReason::Tools));
         }
         if !disabled && matches!(s.tool_choice, Some(ToolChoice::Specific(_))) {
@@ -567,7 +405,7 @@ pub(in crate::openai) fn check_semantic(
                     | ToolChoice::Allowed { required: true, .. }
             )
         );
-        if required && (tools.len() != 1 || responses_forcing_unavailable(model, r)) {
+        if required && (tools.len() != 1 || policy.forced_tools_unavailable(r)) {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         for (_, item) in semantic.items() {

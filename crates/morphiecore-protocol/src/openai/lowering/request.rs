@@ -20,11 +20,10 @@ pub fn lower_request<'a>(
         .effort_mapping
         .map(|mapping| mapping.canonical_model)
         .unwrap_or("");
-    let contract = contract.with_model_sampling(model);
+    let contract = contract.with_model_policy(model, profile);
     let projection = crate::lowering::request::project_semantic(
         request,
         crate::lowering::request::Target::OpenAi(profile, &contract),
-        model,
     )?;
     let mut rendered = render_request(projection.value, fidelity, profile, contract)?;
     rendered
@@ -50,7 +49,7 @@ pub fn render_request<'a>(
     let projection = Vec::new();
     let q = r.features();
     if r.controls().top_k.is_some()
-        && !(profile == GenerationApi::Chat && c.adaptation.rules.thinking_controls)
+        && !(profile == GenerationApi::Chat && c.adaptation.rules.reasoning.thinking_controls)
         || profile == GenerationApi::Responses && r.controls().has_extended_controls()
         || profile == GenerationApi::Chat
             && (r.controls().stop_sequences.len() > 4
@@ -99,7 +98,7 @@ pub fn render_request<'a>(
     }
     if profile == GenerationApi::Chat
         && q.contains_key(&Feature::Reasoning)
-        && !c.adaptation.rules.readable_reasoning
+        && !c.adaptation.rules.reasoning.readable_reasoning
         && r.items()
             .iter()
             .any(|(_, item)| matches!(item, Item::Reasoning(_)))
@@ -159,8 +158,8 @@ pub fn render_request<'a>(
                 .is_ok_and(|v| v.kind() == ResourceKind::Video)
         });
     let video_carrier = match profile {
-        GenerationApi::Chat => c.adaptation.rules.chat_video_url,
-        GenerationApi::Responses => c.adaptation.rules.responses_input_video,
+        GenerationApi::Chat => c.adaptation.rules.request.chat_video_url,
+        GenerationApi::Responses => c.adaptation.rules.request.responses_input_video,
     };
     if video && !video_carrier {
         return Err(RepresentationError::UnmigratedSemantic);
@@ -171,7 +170,7 @@ pub fn render_request<'a>(
                 if let ContentPart::Resource(resource) = &part.content
                     && profile == GenerationApi::Chat
                     && resource.media(r.resources())?.image_detail() == Some(ImageDetail::Original)
-                    && !c.adaptation.rules.chat_original_image_detail
+                    && !c.adaptation.rules.request.chat_original_image_detail
                 {
                     return Err(RepresentationError::ImageInput);
                 }

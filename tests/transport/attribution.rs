@@ -3,13 +3,13 @@ use morphiecore::{
     execution::{plan::representable, prepare},
     protocol::openai::{Dialect, GenerationApi, GenerationCodec},
     provider::SecretMaterial,
-    topology::catalog::GOOGLE_BINDINGS,
+    topology::catalog::google_bindings,
 };
 use serde_json::{Value, json};
 
 #[test]
 fn google_safety_labels_preserve_valid_values_and_omit_unrepresentable_identity_without_fallback() {
-    let binding = &GOOGLE_BINDINGS[0];
+    let binding = &google_bindings()[0];
     let endpoint = binding.endpoint();
     for (value, valid) in [
         (String::new(), true),

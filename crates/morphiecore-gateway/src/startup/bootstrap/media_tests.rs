@@ -90,8 +90,8 @@ async fn configured_task_sends_once_to_its_named_account_despite_generation_reco
 
 #[test]
 fn embeddings_select_one_named_account_and_publish_only_the_selected_task() {
-    for binding in catalog::EMBEDDING_BINDINGS {
-        let provider = (binding.provider)();
+    for binding in catalog::embedding_bindings() {
+        let provider = binding.provider();
         let boot = Fixture::new(
             service(),
             json!({"models":{binding.model:{"account":"primary"}}}),
@@ -124,8 +124,8 @@ fn embeddings_select_one_named_account_and_publish_only_the_selected_task() {
         );
         assert!(!snapshot.to_string().contains(provider.origin.as_str()));
         assert!(!snapshot.to_string().contains("synthetic-embedding-key"));
-        if let Some(text) = catalog::API_KEY_BINDINGS.iter().find(|b| {
-            (b.provider)().id == provider.id
+        if let Some(text) = catalog::api_key_bindings().iter().find(|b| {
+            b.provider().id == provider.id
                 && !b
                     .public_model()
                     .contract
@@ -231,9 +231,9 @@ fn tokenplan_audio_stays_explicit_and_each_task_uses_its_fixed_account() {
             .expose(),
         "synthetic-second"
     );
-    let text = catalog::API_KEY_BINDINGS
+    let text = catalog::api_key_bindings()
         .iter()
-        .find(|b| (b.provider)().id.as_str() == "aliyun-tokenplan-cn")
+        .find(|b| b.provider().id.as_str() == "aliyun-tokenplan-cn")
         .unwrap();
     let generation = Fixture::new(
         service(),

@@ -8,7 +8,9 @@ use crate::{
 pub const RULE: &str = "chat.omit-readable-reasoning.v1";
 
 pub fn selected(profile: GenerationApi, rules: &WireRules) -> bool {
-    profile == GenerationApi::Chat && !rules.readable_reasoning && !rules.structured_chat_reasoning
+    profile == GenerationApi::Chat
+        && !rules.reasoning.readable_reasoning
+        && !rules.reasoning.structured_chat_reasoning
 }
 
 pub fn loss(item: ItemId, boundary: ConversionBoundary) -> Effect {

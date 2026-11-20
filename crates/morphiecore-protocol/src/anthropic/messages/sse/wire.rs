@@ -4,13 +4,11 @@ use crate::failure::{RecognitionBasis, ShapeReason, SourceFailureEvidence};
 use crate::{
     CodecError,
     semantic::{
-        task::generation::{
-            EventError, MAX_ITEMS, MAX_TEXT_BYTES, MAX_TOTAL_BYTES, StructuredValue,
-        },
+        task::generation::{MAX_ITEMS, MAX_TEXT_BYTES, MAX_TOTAL_BYTES, StructuredValue},
         value::{JsonLimits, parse_json},
     },
-    sse::{SseDecoder, SseEvent},
-    stream::{SseError, SseLimits},
+    sse::SseEvent,
+    stream::{SseError, SseIntake, SseLimits},
 };
 struct OpenBlock {
     block: Block,
@@ -23,17 +21,12 @@ pub(super) struct ReducedEvent {
 }
 pub struct MessageSseDecoder {
     dialect: Dialect,
-    framing: SseDecoder,
-    limits: SseLimits,
-    wire_bytes: usize,
-    events: usize,
+    intake: SseIntake,
     state_bytes: usize,
     message: Option<Message>,
     open: Option<OpenBlock>,
     ending: bool,
     stopped: bool,
-    closed: bool,
-    rejected: bool,
 }
 /// Status of each documented error type
 /// (https://docs.anthropic.com/en/api/errors), for classification only.
@@ -78,17 +71,12 @@ impl MessageSseDecoder {
         crate::stream::validate_http(status, content_type)?;
         Ok(Self {
             dialect,
-            framing: SseDecoder::new(limits.max_event_bytes),
-            limits,
-            wire_bytes: 0,
-            events: 0,
+            intake: SseIntake::new(limits),
             state_bytes: 0,
             message: None,
             open: None,
             ending: false,
             stopped: false,
-            closed: false,
-            rejected: false,
         })
     }
     /// Consume at most one frame. The caller owns and revisits the unconsumed suffix.
@@ -100,17 +88,9 @@ impl MessageSseDecoder {
         &mut self,
         chunk: &[u8],
     ) -> Result<(usize, Option<ReducedEvent>), SseError> {
-        if self.closed || self.rejected {
-            return Err(SseError::Closed);
-        }
+        self.intake.open()?;
         let result = (|| {
-            let remaining = self.limits.max_wire_bytes.saturating_sub(self.wire_bytes);
-            let available = chunk.len().min(remaining.saturating_add(1));
-            let (frame, used) = self.framing.push_until_event(&chunk[..available])?;
-            self.wire_bytes = self.wire_bytes.checked_add(used).ok_or(SseError::Limit)?;
-            if self.wire_bytes > self.limits.max_wire_bytes {
-                return Err(SseError::Limit);
-            }
+            let (frame, used) = self.intake.pull(chunk)?;
             let event = frame.map(|frame| self.frame(frame)).transpose()?.flatten();
             Ok((used, event))
         })();
@@ -123,10 +103,7 @@ impl MessageSseDecoder {
         if self.stopped {
             return Err(SseError::Closed);
         }
-        self.events = self.events.checked_add(1).ok_or(SseError::Limit)?;
-        if self.events > self.limits.max_events {
-            return Err(SseError::Limit);
-        }
+        self.intake.charge_frame()?;
         let name = frame.event().ok_or(SseError::EventType)?;
         let value = shape::parse(frame.data().as_bytes())?;
         if value.get("type").and_then(serde_json::Value::as_str) != Some(name) {
@@ -409,15 +386,11 @@ impl MessageSseDecoder {
     }
     /// Strict transport closure, not message_stop alone, releases the final value.
     pub fn finish(&mut self) -> Result<Message, SseError> {
-        if self.closed || self.rejected {
-            return Err(SseError::Closed);
-        }
-        self.closed = true;
+        self.intake.open()?;
+
         let result = (|| {
-            self.framing.finish_strict()?;
-            if !self.stopped {
-                return Err(CodecError::Event(EventError::EofBeforeTerminal).into());
-            }
+            self.intake.finish_framing()?;
+            crate::stream::require_terminal(self.stopped)?;
             if self.open.is_some() {
                 return Err(invalid());
             }
@@ -431,7 +404,7 @@ impl MessageSseDecoder {
         result
     }
     fn reject(&mut self) {
-        self.rejected = true;
+        self.intake.reject();
         self.message = None;
         self.open = None;
     }

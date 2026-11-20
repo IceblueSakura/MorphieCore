@@ -247,6 +247,7 @@ async fn handle(
         SseLimits::default(),
         StreamOptions::default(),
         Obfuscation::Disabled,
+        true,
     );
     let mut output = vec![];
     for frame in frames {
@@ -457,6 +458,7 @@ fn responses_null_metadata(events: Vec<StreamEvent>, model: &str) -> Response {
         SseLimits::default(),
         StreamOptions::default(),
         Obfuscation::Disabled,
+        true,
     );
     let mut output = vec![];
     for mut event in events {
@@ -521,7 +523,7 @@ fn cross_protocol(seen: &Mutex<usize>, body: &[u8], wire: &Value) -> Response {
         execution::attempt::prepare,
         protocol::openai::{Dialect, GenerationApi, GenerationCodec},
         provider::SecretMaterial,
-        topology::{GenerationProtocol, catalog::API_KEY_BINDINGS},
+        topology::{GenerationProtocol, catalog::api_key_bindings},
     };
     let turn = {
         let mut n = seen.lock().unwrap();
@@ -543,13 +545,13 @@ fn cross_protocol(seen: &Mutex<usize>, body: &[u8], wire: &Value) -> Response {
             .unwrap();
     }
     let request = anthropic::messages::client::decode_client_request(body).unwrap();
-    let binding = API_KEY_BINDINGS
+    let binding = api_key_bindings()
         .iter()
-        .find(|b| (b.provider)().id.as_str() == "aliyun-tokenplan-cn" && b.model == "qwen3.8-flash")
+        .find(|b| b.provider().id.as_str() == "aliyun-tokenplan-cn" && b.model == "qwen3.8-flash")
         .unwrap();
     let upstream = prepare(
         &binding.endpoint(GenerationProtocol::OpenAiChat).unwrap(),
-        &(binding.provider)(),
+        &binding.provider(),
         &SecretMaterial::new("synthetic-cross-protocol-key").unwrap(),
         &request,
     )
@@ -605,6 +607,7 @@ fn cross_protocol(seen: &Mutex<usize>, body: &[u8], wire: &Value) -> Response {
         SseLimits::default(),
         StreamOptions::default(),
         Obfuscation::Disabled,
+        wire["stream"] == true,
     );
     let input = frames
         .iter()

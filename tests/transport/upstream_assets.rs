@@ -429,8 +429,23 @@ fn upstream_ingress_budgets_are_independent_and_fragmentation_invariant() {
         transport::sse::SseDecodeError,
     };
     let target = ReplayTarget::new("public-fixture", "gemini-fixture").unwrap();
+    let responses = crate::wire::events(2)
+        .iter()
+        .map(|event| {
+            format!(
+                "event: {}\ndata: {event}\n\n",
+                event["type"].as_str().unwrap()
+            )
+        })
+        .collect::<String>()
+        .into_bytes();
     for (adapter, bytes) in [
         (openai(GenerationApi::Chat), asset("openai/chat-tool.sse")),
+        (openai(GenerationApi::Responses), responses),
+        (
+            messages("claude-3-opus-latest"),
+            messages_with_delimiter("anthropic/basic.sse"),
+        ),
         (
             UpstreamAdapter::GoogleGenerateContent {
                 target: target.clone(),
@@ -458,6 +473,10 @@ fn upstream_ingress_budgets_are_independent_and_fragmentation_invariant() {
             max_events: frames.len(),
             ..Default::default()
         };
+        let mut prefix = Attempt::new(adapter.clone(), 2 << 20, exact);
+        prefix.begin(200, "text/event-stream").unwrap();
+        let (used, _) = prefix.push(&bytes).unwrap();
+        assert_eq!(used, frames[0].len(), "{adapter:?}");
         for chunk in [1, bytes.len()] {
             for budget in ["exact", "event", "wire", "count"] {
                 let mut limits = exact;

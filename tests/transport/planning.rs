@@ -217,13 +217,14 @@ mod candidates {
                 .unwrap()
                 .adaptation
                 .rules
+                .request
                 .legacy_max_tokens
         );
     }
     #[test]
     fn a_narrower_native_candidate_is_skipped_not_admitted() {
         let topology = catalog::default_topology().unwrap();
-        let model = catalog::GOOGLE_BINDINGS[0].model;
+        let model = catalog::google_bindings()[0].model;
         let video = GenerationCodec::new(GenerationApi::Chat, Dialect::ModelBest, None)
             .decode_client_request(
                 &serde_json::to_vec(&json!({"model":model,"messages":[{"role":"user","content":[

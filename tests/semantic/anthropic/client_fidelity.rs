@@ -83,7 +83,7 @@ fn omitted_assistant_reasoning_keeps_source_effort_timing_across_targets_and_app
         let rules = projected.evidence.rule_names();
         assert!(rules.contains(&"generation.collapse-configuration.v1"));
         assert!(rules.contains(&"generation.configuration-prefix-change.v1"));
-        let binding = &morphiecore::topology::catalog::GOOGLE_BINDINGS[0];
+        let binding = &morphiecore::topology::catalog::google_bindings()[0];
         for endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
             let (wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
             assert!(rules.contains(&"generation.collapse-configuration.v1"));
@@ -1593,7 +1593,7 @@ fn messages_tool_examples_keep_order_presence_and_tool_change_owners() {
             .features()
             .contains_key(&morphiecore::semantic::task::generation::Feature::ToolExamples)
     );
-    let bound = morphiecore::topology::catalog::MESSAGES_BINDINGS[0].endpoint();
+    let bound = morphiecore::topology::catalog::messages_bindings()[0].endpoint();
     assert!(
         bound
             .representation
@@ -2143,6 +2143,7 @@ fn messages_serializes_interleaved_owners_parts_and_delayed_signatures() {
                 limits,
                 Default::default(),
                 Obfuscation::Disabled,
+                true,
             );
             let mut output = vec![];
             for fragment in input.as_bytes().chunks(13) {

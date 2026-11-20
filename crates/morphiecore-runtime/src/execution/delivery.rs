@@ -2,16 +2,17 @@
 use crate::protocol::failure::CarrierReason;
 mod coalescing;
 mod completion;
+mod json;
+mod stream;
 use crate::{
-    adapter::{ClientAdapter, ClientEncoder},
+    adapter::ClientAdapter,
     execution::{
         Attempt, AttemptError, Lifecycle,
-        report::{EncodedBatch, Report, View},
+        report::{Report, View},
     },
     protocol::{
         ClientProtocol, CodecError, ResponseMetadata,
         conversion::generation::{Effect, EvidenceDelta},
-        fidelity::FidelityRecords,
         openai::obfuscation::Obfuscation,
         stream::SseLimits,
     },
@@ -20,10 +21,11 @@ use crate::{
         task::generation::{Item, ItemKind, StreamEvent},
     },
 };
-use bytes::Bytes;
 pub use coalescing::DeltaCoalescing;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
+pub use stream::PreparedEvents;
+use stream::StreamDelivery;
 
 /// Outgoing carrier identity, not an upstream item fact or replay credential.
 /// Local decoder counters restart for every response; a history can contain many.
@@ -59,31 +61,6 @@ fn response_id() -> Result<String, AttemptError> {
     ))
 }
 
-#[derive(Clone)]
-struct EventContext {
-    metadata: ResponseMetadata,
-    fidelity: Arc<FidelityRecords>,
-    accounted_bytes: std::sync::OnceLock<Option<usize>>,
-    frame_bytes: std::sync::OnceLock<usize>,
-}
-
-/// Raw intake values let unchanged batches reuse the effective delivery context.
-/// Generated aliases must not make every following delta look like a source change.
-struct PreparedSource {
-    metadata: ResponseMetadata,
-    fidelity: Arc<FidelityRecords>,
-    context: Arc<EventContext>,
-}
-
-/// Already projected and sealed. Consume in order on the delivery that prepared it.
-pub struct PreparedEvents {
-    pub events: Vec<StreamEvent>,
-    context: Arc<EventContext>,
-    /// Preserve barriers even when native projection omits their wire event.
-    barrier: bool,
-    evidence: EvidenceDelta,
-}
-
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum ProjectionPhase {
     Open,
@@ -110,6 +87,50 @@ pub fn content_event(event: &StreamEvent) -> bool {
     }
 }
 
+/// Request-local envelope data, never stored as upstream metadata or history.
+struct Envelope {
+    public_label: String,
+    native_created: Option<serde_json::Number>,
+    generated_id: Option<String>,
+    presentation: Option<Arc<crate::protocol::GenerationDelivery>>,
+    input_estimate: u64,
+    request_settings_present: [bool; 3],
+}
+
+struct Projection {
+    content_ready: bool,
+    messages_terminal: Option<crate::protocol::anthropic::messages::client::GoogleTerminalPolicy>,
+    messages_without_stops: bool,
+    messages_ambiguous_stops: bool,
+    source: Option<std::sync::Arc<()>>,
+    rendered: bool,
+    phase: ProjectionPhase,
+    adapter: Option<crate::adapter::ClientProjection>,
+}
+
+enum OutputMode {
+    Json,
+    Sse(Box<StreamDelivery>),
+}
+
+impl OutputMode {
+    fn stream(&self) -> Option<&StreamDelivery> {
+        match self {
+            Self::Sse(stream) => Some(stream),
+            Self::Json => None,
+        }
+    }
+
+    fn stream_mut(&mut self) -> Result<&mut StreamDelivery, AttemptError> {
+        match self {
+            Self::Sse(stream) => Ok(stream),
+            Self::Json => Err(AttemptError::Delivery(
+                crate::execution::attempt::DeliveryReason::MissingStreamEncoder,
+            )),
+        }
+    }
+}
+
 /// Coordinates incremental projection, event queuing, and explicit I/O-owned commit.
 ///
 /// # Delivery Invariants
@@ -121,31 +142,13 @@ pub fn content_event(event: &StreamEvent) -> bool {
 /// - **Honest Completion**: Successful termination requires validated upstream EOF before
 ///   releasing downstream connections.
 pub struct ResponseDelivery {
-    content_ready: bool,
+    envelope: Envelope,
+    projection: Projection,
+    output: OutputMode,
     report: Report,
-    deferred_evidence: EvidenceDelta,
     client: ClientAdapter,
-    messages_terminal: Option<crate::protocol::anthropic::messages::client::GoogleTerminalPolicy>,
-    messages_without_stops: bool,
-    messages_ambiguous_stops: bool,
-    public_label: String,
     limits: SseLimits,
-    options: StreamOptions,
-    padding: Option<Obfuscation>,
-    encoder: Option<ClientEncoder>,
-    projection: Option<crate::adapter::ClientProjection>,
-    prepared_source: Option<PreparedSource>,
-    coalescer: Option<coalescing::Coalescer>,
-    source: Option<std::sync::Arc<()>>,
     lifecycle: Lifecycle,
-    rendered: bool,
-    phase: ProjectionPhase,
-    native_created: Option<serde_json::Number>,
-    /// Request-local envelope identity, never stored as upstream metadata or history.
-    generated_id: Option<String>,
-    presentation: Option<Arc<crate::protocol::GenerationDelivery>>,
-    input_estimate: u64,
-    request_settings_present: [bool; 3],
 }
 impl ResponseDelivery {
     pub fn new(
@@ -154,45 +157,52 @@ impl ResponseDelivery {
         limits: SseLimits,
         options: StreamOptions,
         padding: Obfuscation,
+        streaming: bool,
     ) -> Self {
         client.bind_replay_origin(&crate::protocol::replay_envelope::CLIENT_ORIGIN);
         let report = Report::default();
         report.begin();
         Self {
-            content_ready: false,
+            envelope: Envelope {
+                public_label: public_label.into(),
+                native_created: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .ok()
+                    .map(|time| time.as_secs().into()),
+                generated_id: None,
+                presentation: None,
+                input_estimate: 0,
+                request_settings_present: [false; 3],
+            },
+            projection: Projection {
+                content_ready: false,
+                messages_terminal: None,
+                messages_without_stops: false,
+                messages_ambiguous_stops: false,
+                adapter: None,
+                source: None,
+                rendered: false,
+                phase: ProjectionPhase::Open,
+            },
+            output: if streaming {
+                OutputMode::Sse(Box::new(StreamDelivery::new(options, padding)))
+            } else {
+                OutputMode::Json
+            },
             report,
-            deferred_evidence: EvidenceDelta::default(),
             client,
-            messages_terminal: None,
-            messages_without_stops: false,
-            messages_ambiguous_stops: false,
-            public_label: public_label.into(),
             limits,
-            options,
-            padding: Some(padding),
-            encoder: None,
-            projection: None,
-            prepared_source: None,
-            coalescer: None,
-            source: None,
             lifecycle: Lifecycle::new(),
-            rendered: false,
-            phase: ProjectionPhase::Open,
-            native_created: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .ok()
-                .map(|time| time.as_secs().into()),
-            generated_id: None,
-            presentation: None,
-            input_estimate: 0,
-            request_settings_present: [false; 3],
         }
     }
     pub fn is_messages(&self) -> bool {
         self.client.protocol() == ClientProtocol::Messages
     }
+    pub fn is_streaming(&self) -> bool {
+        matches!(self.output, OutputMode::Sse(_))
+    }
     pub fn content_ready(&self) -> bool {
-        self.content_ready
+        self.projection.content_ready
     }
     /// Only Responses can deliver an upstream-reported failed response as such.
     pub fn carries_failed_responses(&self) -> bool {
@@ -204,7 +214,7 @@ impl ResponseDelivery {
         request: &crate::protocol::GenerationRequestEnvelope,
         original: &crate::protocol::GenerationRequestEnvelope,
     ) -> Self {
-        self.presentation = Some(Arc::new(crate::protocol::GenerationDelivery {
+        self.envelope.presentation = Some(Arc::new(crate::protocol::GenerationDelivery {
             settings: if self.client.protocol() == ClientProtocol::Responses {
                 completion::settings(&request.task.semantic)
             } else {
@@ -218,14 +228,14 @@ impl ResponseDelivery {
             },
         }));
         let settings = request.task.semantic.settings();
-        self.request_settings_present = [
+        self.envelope.request_settings_present = [
             settings.tools.is_some(),
             settings.tool_choice.is_some(),
             settings.parallel_tool_calls.is_some(),
         ];
-        self.input_estimate = completion::input_estimate(&request.task.semantic);
+        self.envelope.input_estimate = completion::input_estimate(&request.task.semantic);
         if self.is_messages() {
-            self.messages_without_stops = original
+            self.projection.messages_without_stops = original
                 .task
                 .semantic
                 .settings()
@@ -233,72 +243,15 @@ impl ResponseDelivery {
                 .stop_sequences
                 .is_empty()
                 && settings.controls.stop_sequences.is_empty();
-            self.messages_terminal = if self.messages_without_stops {
+            self.projection.messages_terminal = if self.projection.messages_without_stops {
                 endpoint.representation.messages_terminal_policy(request)
             } else {
                 None
             };
-            self.messages_ambiguous_stops = !self.messages_without_stops
+            self.projection.messages_ambiguous_stops = !self.projection.messages_without_stops
                 && endpoint.protocol != crate::topology::GenerationProtocol::AnthropicMessages;
         }
         self
-    }
-    pub fn with_coalescing(mut self, policy: Option<DeltaCoalescing>) -> Self {
-        self.coalescer = policy.map(coalescing::Coalescer::new);
-        self
-    }
-    pub fn has_open_pending(&self) -> bool {
-        self.phase == ProjectionPhase::Open
-            && self
-                .coalescer
-                .as_ref()
-                .is_some_and(|c| c.deadline().is_some())
-    }
-    pub fn flush_deadline(&self) -> Option<std::time::Instant> {
-        self.coalescer
-            .as_ref()
-            .and_then(coalescing::Coalescer::deadline)
-    }
-    #[cfg(test)]
-    pub fn coalescing_peak_bytes(&self) -> usize {
-        self.coalescer.as_ref().map_or(0, |c| c.peak_bytes)
-    }
-    pub fn must_flush_before(&self, attempt: &Attempt, events: &[StreamEvent]) -> bool {
-        self.flush_deadline().is_some()
-            && (events.iter().any(|event| {
-                !matches!(
-                    event, StreamEvent::Delta { fragment, logprobs, .. }
-                        if !fragment.is_empty() && logprobs.is_empty()
-                )
-            }) || self.prepared_source.as_ref().is_none_or(|source| {
-                attempt.metadata() != Some(&source.metadata)
-                    || attempt.fidelity() != Some(source.fidelity.as_ref())
-            }))
-    }
-    pub fn queue_events(
-        &mut self,
-        attempt: &Attempt,
-        events: &[StreamEvent],
-        now: std::time::Instant,
-    ) -> Result<Vec<PreparedEvents>, AttemptError> {
-        let Some(prepared) = self.prepare_events(attempt, events)? else {
-            return Ok(vec![]);
-        };
-        match &mut self.coalescer {
-            Some(coalescer) => Ok(coalescer.push(prepared, now, self.limits.max_event_bytes)),
-            None => Ok(vec![prepared]),
-        }
-    }
-    pub fn flush_pending(&mut self) -> Result<EncodedBatch, AttemptError> {
-        self.ready()?;
-        match self
-            .coalescer
-            .as_mut()
-            .and_then(coalescing::Coalescer::flush)
-        {
-            Some(batch) => self.encode_prepared(batch),
-            None => Ok(EncodedBatch::empty()),
-        }
     }
     #[cfg(test)]
     pub fn effects(&self) -> Vec<Effect> {
@@ -320,31 +273,32 @@ impl ResponseDelivery {
     // Wire IDs can repeat across attempts; only the execution-owned token binds
     // this delivery. A different attempt needs a fresh uncommitted delivery.
     fn bind(&mut self, attempt: &Attempt) -> Result<(), AttemptError> {
-        if self.messages_terminal.is_some()
-            && self.messages_terminal != attempt.messages_terminal_source()
+        if self.projection.messages_terminal.is_some()
+            && self.projection.messages_terminal != attempt.messages_terminal_source()
         {
-            self.phase = ProjectionPhase::Rejected;
+            self.projection.phase = ProjectionPhase::Rejected;
             return Err(AttemptError::Delivery(
                 crate::execution::attempt::DeliveryReason::TerminalProjectionSourceChanged,
             ));
         }
         if self
+            .projection
             .source
             .as_ref()
             .is_some_and(|source| !std::sync::Arc::ptr_eq(source, attempt.identity()))
         {
-            self.phase = ProjectionPhase::Rejected;
+            self.projection.phase = ProjectionPhase::Rejected;
             return Err(AttemptError::Delivery(
                 crate::execution::attempt::DeliveryReason::AttemptChanged,
             ));
         }
-        self.source = Some(attempt.identity().clone());
-        if self.generated_id.is_none()
+        self.projection.source = Some(attempt.identity().clone());
+        if self.envelope.generated_id.is_none()
             && attempt
                 .metadata()
                 .is_some_and(|metadata| metadata.id.is_none())
         {
-            self.generated_id = Some(response_id()?);
+            self.envelope.generated_id = Some(response_id()?);
         }
         Ok(())
     }
@@ -352,15 +306,15 @@ impl ResponseDelivery {
         let mut metadata = attempt.metadata().cloned().ok_or(AttemptError::Protocol(
             crate::execution::attempt::ProtocolReason::MissingResponseMetadata,
         ))?;
-        metadata.model = self.public_label.clone();
-        metadata.delivery = self.presentation.clone();
+        metadata.model = self.envelope.public_label.clone();
+        metadata.delivery = self.envelope.presentation.clone();
         if self.client.protocol() == ClientProtocol::Responses {
             metadata.storage = Some(crate::protocol::ResponseStorage {
                 store: crate::semantic::value::Presence::Value(false),
                 previous_response_id: crate::semantic::value::Presence::Null,
             });
         }
-        if let Some(id) = &self.generated_id {
+        if let Some(id) = &self.envelope.generated_id {
             // A later source identity must not replace an already chosen client envelope.
             metadata.id = Some(id.clone());
         }
@@ -371,14 +325,14 @@ impl ResponseDelivery {
         }
         if attempt.is_native() {
             // This is the Gateway envelope's creation time, not an upstream report.
-            metadata.created = Some(self.native_created.clone().ok_or(AttemptError::Protocol(
-                crate::execution::attempt::ProtocolReason::GatewayClock,
-            ))?);
+            metadata.created = Some(self.envelope.native_created.clone().ok_or(
+                AttemptError::Protocol(crate::execution::attempt::ProtocolReason::GatewayClock),
+            )?);
         }
         Ok(metadata)
     }
     fn ready(&self) -> Result<(), AttemptError> {
-        if self.phase != ProjectionPhase::Open {
+        if self.projection.phase != ProjectionPhase::Open {
             Err(AttemptError::Protocol(
                 crate::execution::attempt::ProtocolReason::DeliveryClosed,
             ))
@@ -403,7 +357,7 @@ impl ResponseDelivery {
                     decoded.fidelity.record_response_item_id(
                         *owner,
                         &delivery_item_id(
-                            &self.public_label,
+                            &self.envelope.public_label,
                             decoded.metadata.required_id()?,
                             *owner,
                             if matches!(item, Item::Message(_) | Item::Instruction(_)) {
@@ -424,7 +378,7 @@ impl ResponseDelivery {
         attempt: &Attempt,
         request: &crate::protocol::GenerationRequestEnvelope,
     ) -> Option<crate::protocol::GenerationRequestEnvelope> {
-        if self.phase == ProjectionPhase::Rejected
+        if self.projection.phase == ProjectionPhase::Rejected
             || self.is_messages()
             || self.lifecycle.state() != crate::execution::DeliveryState::Terminal
             || attempt.response().ok()?.semantic.outcome()
@@ -440,49 +394,13 @@ impl ResponseDelivery {
         super::replay::open_from_client(&mut successor).ok()?;
         Some(successor)
     }
-    pub fn encode_json(&mut self, attempt: &Attempt) -> Result<Vec<u8>, AttemptError> {
-        self.encode_json_snapshot(attempt).map(|(_, batch)| {
-            batch
-                .into_bytes()
-                .into_iter()
-                .flat_map(|b| b.to_vec())
-                .collect()
-        })
-    }
-    /// Finalize public JSON and retain its typed history, including managed-only replay.
-    pub fn encode_json_snapshot(
-        &mut self,
-        attempt: &Attempt,
-    ) -> Result<(crate::protocol::DecodedResponse, EncodedBatch), AttemptError> {
-        let result = (|| {
-            self.ready()?;
-            if self.encoder.is_some() {
-                return Err(AttemptError::Delivery(
-                    crate::execution::attempt::DeliveryReason::StreamAlreadyStarted,
-                ));
-            }
-            self.bind(attempt)?;
-            let (response, bytes, evidence) =
-                self.checked_snapshot(attempt, View::DownstreamJson)?;
-            self.rendered = true;
-            self.phase = ProjectionPhase::Finalized;
-            let batch = self
-                .report
-                .batch(View::DownstreamJson, vec![Bytes::from(bytes)], evidence);
-            Ok((response, batch))
-        })();
-        if result.is_err() {
-            self.phase = ProjectionPhase::Rejected;
-        }
-        result
-    }
     /// Creation and retrieval share presentation; typed replay can retain hidden owners.
     fn complete_presentation(
         &mut self,
         attempt: &Attempt,
         view: View,
     ) -> Result<EvidenceDelta, AttemptError> {
-        let Some(presentation) = self.presentation.as_mut() else {
+        let Some(presentation) = self.envelope.presentation.as_mut() else {
             return Ok(EvidenceDelta::default());
         };
         let mut evidence = EvidenceDelta::default();
@@ -491,11 +409,14 @@ impl ResponseDelivery {
             Arc::make_mut(presentation),
             &response.semantic,
             self.client.protocol(),
-            self.input_estimate,
+            self.envelope.input_estimate,
         )?;
         if view != View::DownstreamSse
             || self.client.protocol() != ClientProtocol::Chat
-            || self.options.usage()
+            || self
+                .output
+                .stream()
+                .is_some_and(|stream| stream.options.usage())
         {
             evidence.extend(usage_evidence);
         }
@@ -522,7 +443,7 @@ impl ResponseDelivery {
             .enumerate()
             {
                 if missing {
-                    let change = if self.request_settings_present[index] {
+                    let change = if self.envelope.request_settings_present[index] {
                         crate::protocol::conversion::generation::Change::InferFromRequest
                     } else {
                         crate::protocol::conversion::generation::Change::Default(
@@ -539,331 +460,10 @@ impl ResponseDelivery {
             }
         }
         // A final presentation is new even if the source metadata did not change.
-        self.prepared_source = None;
+        if let OutputMode::Sse(stream) = &mut self.output {
+            stream.prepared_source = None;
+        }
         Ok(evidence)
-    }
-    #[cfg(test)]
-    pub fn snapshot(
-        &mut self,
-        attempt: &Attempt,
-    ) -> Result<(crate::protocol::DecodedResponse, Vec<u8>), AttemptError> {
-        let (response, bytes, evidence) = self.checked_snapshot(attempt, View::RetainedJson)?;
-        self.report.accept(View::RetainedJson, evidence);
-        Ok((response, bytes))
-    }
-    fn checked_snapshot(
-        &mut self,
-        attempt: &Attempt,
-        view: View,
-    ) -> Result<(crate::protocol::DecodedResponse, Vec<u8>, EvidenceDelta), AttemptError> {
-        let mut evidence = self.complete_presentation(attempt, view)?;
-        let mut response = self.client_response(attempt)?;
-        let source = response.clone();
-        if source
-            .semantic
-            .items()
-            .iter()
-            .any(|(_, item)| item.has_replay_attachment())
-        {
-            return Err(CodecError::Unsupported(CarrierReason::Replay).into());
-        }
-        if !self
-            .projection
-            .as_ref()
-            .is_some_and(|projection| projection.started())
-        {
-            let wire = crate::protocol::replay_projection::strip(&response, false)?;
-            self.project_events(attempt, &[], false)?;
-            let projection = self.projection.as_mut().expect("projection");
-            projection.update_fidelity(&wire.fidelity)?;
-            projection.metadata(&wire.metadata)?;
-            crate::adapter::emit_response_events(&wire, |event| {
-                projection.project(&[event]).map(|_| ())
-            })?;
-            projection.update_fidelity(&wire.fidelity)?;
-        } else if !self.projection.as_ref().expect("projection").finished() {
-            self.projection
-                .as_mut()
-                .expect("projection")
-                .metadata(&response.metadata)?;
-            self.project_events(attempt, &[attempt.terminal_event()?.clone()], false)?;
-        }
-        self.projection
-            .as_mut()
-            .expect("projection")
-            .update_fidelity(&source.fidelity)?;
-        response.semantic = self.projection.as_ref().expect("projection").snapshot()?;
-        response.metadata = self
-            .projection
-            .as_mut()
-            .expect("projection")
-            .snapshot_metadata(&response.metadata)?;
-        response.fidelity = self
-            .projection
-            .as_ref()
-            .expect("projection")
-            .fidelity()
-            .clone();
-        response.fidelity.retain_owners(response.semantic.items());
-        evidence.extend(
-            self.projection
-                .as_mut()
-                .expect("projection")
-                .take_evidence(),
-        );
-        let (decoded, mut value) = self.client.render_projected(response)?;
-        if let Some(notice) = self.report.preview_notice(view, &evidence) {
-            notice.attach(&mut value, self.limits.max_wire_bytes, false);
-        }
-        let body = serde_json::to_vec(&value).map_err(|_| {
-            AttemptError::Protocol(crate::execution::attempt::ProtocolReason::BodySerialization)
-        })?;
-        if body.len() > self.limits.max_wire_bytes {
-            return Err(AttemptError::Limit);
-        }
-        Ok((decoded, body, evidence))
-    }
-    pub fn encode_events(
-        &mut self,
-        attempt: &Attempt,
-        events: &[StreamEvent],
-    ) -> Result<EncodedBatch, AttemptError> {
-        match self.prepare_events(attempt, events)? {
-            Some(prepared) => self.encode_prepared(prepared),
-            None => Ok(EncodedBatch::empty()),
-        }
-    }
-    /// Freeze nonterminal projection before intake can advance metadata or fidelity.
-    pub fn prepare_events(
-        &mut self,
-        attempt: &Attempt,
-        events: &[StreamEvent],
-    ) -> Result<Option<PreparedEvents>, AttemptError> {
-        let result = (|| {
-            self.ready()?;
-            if events.is_empty() {
-                return Ok(None);
-            }
-            if events
-                .iter()
-                .any(|e| matches!(e, StreamEvent::Terminal { .. }))
-            {
-                return Err(AttemptError::Delivery(
-                    crate::execution::attempt::DeliveryReason::TerminalRequiresValidatedUpstreamEOF,
-                ));
-            }
-            self.prepare(attempt, events).map(Some)
-        })();
-        if result.is_err() {
-            self.phase = ProjectionPhase::Rejected;
-        }
-        result
-    }
-    /// Encode the terminal only after the upstream framing/body has closed cleanly.
-    pub fn finish_stream(&mut self, attempt: &Attempt) -> Result<EncodedBatch, AttemptError> {
-        let result = (|| {
-            self.ready()?;
-            if self.flush_deadline().is_some() {
-                return Err(AttemptError::Delivery(
-                    crate::execution::attempt::DeliveryReason::PendingContentNeedsDrain,
-                ));
-            }
-            let terminal = attempt.terminal_event()?.clone();
-            let evidence = self.complete_presentation(attempt, View::DownstreamSse)?;
-            if self.is_messages() {
-                crate::protocol::anthropic::messages::client::validate_tool_calls(
-                    attempt.response()?,
-                )?;
-            }
-            if attempt
-                .response()?
-                .semantic
-                .items()
-                .iter()
-                .any(|(_, item)| item.has_replay_attachment())
-            {
-                return Err(CodecError::Unsupported(CarrierReason::Replay).into());
-            }
-            let terminal_events = [terminal];
-            let mut prepared = self.prepare(attempt, &terminal_events)?;
-            prepared.evidence.extend(evidence);
-            let (frames, evidence) = self.encode_prepared_raw(prepared)?;
-            self.encoder
-                .as_ref()
-                .ok_or(AttemptError::Delivery(
-                    crate::execution::attempt::DeliveryReason::MissingStreamEncoder,
-                ))?
-                .finish()?;
-            self.phase = ProjectionPhase::Finalized;
-            if let Some(c) = &mut self.coalescer {
-                c.close();
-            }
-            Ok(self.checked_output(frames, evidence))
-        })();
-        if result.is_err() {
-            self.phase = ProjectionPhase::Rejected;
-        }
-        result
-    }
-
-    fn prepare(
-        &mut self,
-        attempt: &Attempt,
-        events: &[StreamEvent],
-    ) -> Result<PreparedEvents, AttemptError> {
-        self.bind(attempt)?;
-        let barrier = events.iter().any(|event| {
-            !matches!(
-                event, StreamEvent::Delta { fragment, logprobs, .. }
-                    if !fragment.is_empty() && logprobs.is_empty()
-            )
-        });
-        let metadata = attempt.metadata().ok_or(AttemptError::Protocol(
-            crate::execution::attempt::ProtocolReason::MissingResponseMetadata,
-        ))?;
-        let fidelity = attempt.fidelity().ok_or(AttemptError::Protocol(
-            crate::execution::attempt::ProtocolReason::MissingResponseFidelity,
-        ))?;
-        if self.prepared_source.as_ref().is_none_or(|source| {
-            source.metadata != *metadata || source.fidelity.as_ref() != fidelity
-        }) {
-            let fidelity = Arc::new(fidelity.clone());
-            self.prepared_source = Some(PreparedSource {
-                metadata: metadata.clone(),
-                fidelity: fidelity.clone(),
-                context: Arc::new(EventContext {
-                    metadata: self.metadata(attempt)?,
-                    fidelity,
-                    accounted_bytes: Default::default(),
-                    frame_bytes: Default::default(),
-                }),
-            });
-        }
-        let mut context = self
-            .prepared_source
-            .as_ref()
-            .expect("preparation context initialized")
-            .context
-            .clone();
-        self.project_events(attempt, &[], true)?;
-        let metadata = self
-            .projection
-            .as_mut()
-            .expect("projection")
-            .metadata(&context.metadata)?;
-        if self.encoder.is_none() {
-            let padding = self.padding.take().ok_or(AttemptError::Delivery(
-                crate::execution::attempt::DeliveryReason::PaddingConsumed,
-            ))?;
-            self.encoder = Some(self.client.stream_encoder(
-                metadata,
-                self.limits,
-                self.options.clone(),
-                padding,
-            )?);
-        }
-        if events.iter().any(|event| match event {
-            StreamEvent::PartReplay { .. } => true,
-            StreamEvent::ItemStarted {
-                kind: crate::semantic::task::generation::ItemKind::ToolCall { .. },
-                replay: Some(_),
-                ..
-            } => true,
-            StreamEvent::ItemFinished {
-                item,
-                replay: Some(_),
-                ..
-            } => context.fidelity.is_call_replay(*item),
-            _ => false,
-        }) {
-            return Err(CodecError::Unsupported(CarrierReason::Replay).into());
-        }
-        let wire_events: Vec<_> = events
-            .iter()
-            .filter_map(|event| {
-                crate::protocol::replay_projection::wire_event(event, &context.fidelity)
-            })
-            .collect();
-        self.projection
-            .as_mut()
-            .expect("projection")
-            .update_fidelity(&context.fidelity)?;
-        let sealed = wire_events
-            .into_iter()
-            .map(|event| {
-                super::replay::seal_event(
-                    event,
-                    &crate::protocol::replay_envelope::CLIENT_ORIGIN,
-                    &context.fidelity,
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let projected = self.project_events(attempt, &sealed, true)?;
-        self.projection
-            .as_mut()
-            .expect("projection")
-            .update_fidelity(&context.fidelity)?;
-        let events = &projected;
-        if self.client.protocol() != ClientProtocol::Messages
-            && (self.client.protocol() == ClientProtocol::Responses || attempt.is_native())
-        {
-            for event in events {
-                if let StreamEvent::ItemStarted { item, kind, .. } = event
-                    && context.fidelity.response_item_id(*item).is_none()
-                {
-                    let id = delivery_item_id(
-                        &self.public_label,
-                        context.metadata.required_id()?,
-                        *item,
-                        if matches!(kind, ItemKind::Message { .. }) {
-                            "msg"
-                        } else {
-                            "item"
-                        },
-                    );
-                    let context = Arc::make_mut(&mut context);
-                    context.accounted_bytes = Default::default();
-                    Arc::make_mut(&mut context.fidelity).record_response_item_id(*item, &id)?;
-                }
-            }
-        }
-        self.projection
-            .as_mut()
-            .expect("projection")
-            .update_fidelity(&context.fidelity)?;
-        let events = events.clone();
-        let mut evidence = self
-            .encoder
-            .as_mut()
-            .expect("encoder initialized")
-            .take_evidence();
-        evidence.extend(
-            self.projection
-                .as_mut()
-                .expect("projection")
-                .take_evidence(),
-        );
-        let metadata = self
-            .projection
-            .as_mut()
-            .expect("projection")
-            .metadata(&context.metadata)?;
-        if context.metadata != metadata {
-            let updated = Arc::make_mut(&mut context);
-            updated.metadata = metadata;
-            updated.accounted_bytes = Default::default();
-            updated.frame_bytes = Default::default();
-        }
-        self.prepared_source
-            .as_mut()
-            .expect("preparation context initialized")
-            .context = context.clone();
-        Ok(PreparedEvents {
-            events,
-            context,
-            barrier,
-            evidence,
-        })
     }
     fn project_events(
         &mut self,
@@ -873,6 +473,7 @@ impl ResponseDelivery {
     ) -> Result<Vec<StreamEvent>, AttemptError> {
         let projected = self
             .projection
+            .adapter
             .get_or_insert_with(|| {
                 crate::adapter::ClientProjection::new(
                     self.client.clone(),
@@ -882,159 +483,18 @@ impl ResponseDelivery {
                 .with_limits(self.limits)
                 .with_grouping(attempt.is_native() || attempt.is_responses())
                 .with_messages_terminal(
-                    self.messages_without_stops,
-                    self.messages_ambiguous_stops,
-                    self.messages_terminal,
+                    self.projection.messages_without_stops,
+                    self.projection.messages_ambiguous_stops,
+                    self.projection.messages_terminal,
                 )
             })
             .project(events)?;
-        self.content_ready |= projected.iter().any(content_event);
+        self.projection.content_ready |= projected.iter().any(content_event);
         Ok(projected)
-    }
-    pub fn observe_events(
-        &mut self,
-        attempt: &Attempt,
-        events: &[StreamEvent],
-    ) -> Result<(), AttemptError> {
-        self.ready()?;
-        self.bind(attempt)?;
-        let fidelity = attempt.fidelity().ok_or(AttemptError::Protocol(
-            crate::execution::attempt::ProtocolReason::MissingResponseFidelity,
-        ))?;
-        let events = events
-            .iter()
-            .filter_map(|event| crate::protocol::replay_projection::wire_event(event, fidelity))
-            .map(|event| {
-                super::replay::seal_event(
-                    event,
-                    &crate::protocol::replay_envelope::CLIENT_ORIGIN,
-                    fidelity,
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        self.project_events(attempt, &[], false)?;
-        let metadata = self.metadata(attempt)?;
-        let projection = self.projection.as_mut().expect("projection");
-        projection.update_fidelity(fidelity)?;
-        projection.metadata(&metadata)?;
-        self.project_events(attempt, &events, false)?;
-        Ok(())
-    }
-    /// Encoding uses only the prepared context; it never reads or reprojects intake.
-    pub fn encode_prepared(
-        &mut self,
-        prepared: PreparedEvents,
-    ) -> Result<EncodedBatch, AttemptError> {
-        let (frames, evidence) = self.encode_prepared_raw(prepared)?;
-        Ok(self.checked_output(frames, evidence))
-    }
-    fn encode_prepared_raw(
-        &mut self,
-        prepared: PreparedEvents,
-    ) -> Result<(Vec<Bytes>, EvidenceDelta), AttemptError> {
-        let result = (|| {
-            self.ready()?;
-            let encoder = self.encoder.as_mut().ok_or(AttemptError::Delivery(
-                crate::execution::attempt::DeliveryReason::MissingStreamEncoder,
-            ))?;
-            let mut evidence = prepared.evidence;
-            encoder.update_metadata(prepared.context.metadata.clone())?;
-            evidence.extend(encoder.take_evidence());
-            if prepared
-                .events
-                .iter()
-                .any(|e| matches!(e, StreamEvent::Terminal { .. }))
-            {
-                let mut current = evidence.clone();
-                current.extend(self.deferred_evidence.clone());
-                encoder.set_notice(
-                    self.report
-                        .preview_notice(View::DownstreamSse, &current)
-                        .unwrap_or_default(),
-                );
-            }
-            let mut frames = Vec::new();
-            for event in &prepared.events {
-                frames.extend(encoder.encode(event, &prepared.context.fidelity)?);
-            }
-            evidence.extend(encoder.take_evidence());
-            if self.client.protocol() == ClientProtocol::Chat && !self.options.usage() {
-                evidence.retain(|effect| {
-                    !effect.semantic_field().is_usage()
-                        || effect.change() == crate::protocol::conversion::generation::Change::Omit
-                });
-                if prepared
-                    .events
-                    .iter()
-                    .any(|e| matches!(e, StreamEvent::Usage(_) | StreamEvent::UsageReport(_)))
-                {
-                    evidence.push(Effect::new(
-                        "chat.omit-unrequested-usage.v1",
-                        crate::protocol::conversion::generation::Field::UsageReports,
-                        crate::protocol::conversion::generation::ConversionBoundary::EventEncode,
-                        crate::protocol::conversion::generation::Change::Omit,
-                    ));
-                }
-            }
-            self.rendered |= !frames.is_empty();
-            Ok((frames, evidence))
-        })();
-        if result.is_err() {
-            self.phase = ProjectionPhase::Rejected;
-            if let Some(e) = &mut self.encoder {
-                let _ = e.take_evidence();
-            }
-        }
-        result
-    }
-    fn checked_output(&mut self, frames: Vec<Bytes>, mut evidence: EvidenceDelta) -> EncodedBatch {
-        evidence.extend(std::mem::take(&mut self.deferred_evidence));
-        if frames.is_empty() {
-            let (completed, deferred) = evidence.partition_omissions();
-            self.deferred_evidence = deferred;
-            if completed.is_empty() {
-                EncodedBatch::empty()
-            } else {
-                self.report.batch(View::DownstreamSse, frames, completed)
-            }
-        } else {
-            self.report.batch(View::DownstreamSse, frames, evidence)
-        }
-    }
-
-    /// End a stream with a classified protocol error, never a fabricated Response
-    /// or successful terminal. Chat gets an error chunk without `[DONE]`.
-    pub fn fail_stream(&mut self, error: &serde_json::Value) -> Result<EncodedBatch, AttemptError> {
-        let result = (|| {
-            self.ready()?;
-            if self.flush_deadline().is_some() {
-                return Err(AttemptError::Delivery(
-                    crate::execution::attempt::DeliveryReason::PendingContentNeedsDrain,
-                ));
-            }
-            let notice = self.report.notice(View::ErrorDelivery);
-            let frames = self.client.failure_frames(
-                self.encoder.as_mut(),
-                error,
-                self.limits,
-                notice.as_ref(),
-            )?;
-            if let Some(c) = &mut self.coalescer {
-                c.close();
-            }
-            self.phase = ProjectionPhase::Rejected;
-            Ok(self
-                .report
-                .batch(View::ErrorDelivery, frames, EvidenceDelta::default()))
-        })();
-        if result.is_err() {
-            self.phase = ProjectionPhase::Rejected;
-        }
-        result
     }
     /// Call at the external visibility boundary, not when bytes are merely encoded.
     pub fn commit(&mut self) -> Result<(), AttemptError> {
-        if self.phase == ProjectionPhase::Rejected || !self.rendered {
+        if self.projection.phase == ProjectionPhase::Rejected || !self.projection.rendered {
             return Err(AttemptError::Delivery(
                 crate::execution::attempt::DeliveryReason::NoDeliverableOutput,
             ));
@@ -1045,7 +505,9 @@ impl ResponseDelivery {
     pub fn complete(&mut self, attempt: &Attempt) -> Result<(), AttemptError> {
         self.bind(attempt)?;
         attempt.response()?;
-        if self.phase != ProjectionPhase::Finalized || self.lifecycle.may_retry_or_fallback() {
+        if self.projection.phase != ProjectionPhase::Finalized
+            || self.lifecycle.may_retry_or_fallback()
+        {
             return Err(AttemptError::Delivery(
                 crate::execution::attempt::DeliveryReason::DeliveryNotComplete,
             ));
@@ -1054,14 +516,11 @@ impl ResponseDelivery {
         Ok(())
     }
     pub fn cancel(&mut self) {
-        self.phase = ProjectionPhase::Rejected;
-        self.encoder = None;
-        self.prepared_source = None;
-        if let Some(coalescer) = &mut self.coalescer {
-            coalescer.close();
+        self.projection.phase = ProjectionPhase::Rejected;
+        if let OutputMode::Sse(stream) = &mut self.output {
+            stream.cancel();
         }
-        self.padding = None;
-        self.source = None;
+        self.projection.source = None;
         let _ = self.lifecycle.terminal();
     }
 }

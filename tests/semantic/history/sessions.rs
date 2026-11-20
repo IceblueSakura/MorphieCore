@@ -281,6 +281,7 @@ fn delivery(api: Api) -> ResponseDelivery {
         Default::default(),
         Default::default(),
         Obfuscation::Disabled,
+        false,
     )
 }
 fn append_delivery(api: Api, body: &mut Value, value: Value) {

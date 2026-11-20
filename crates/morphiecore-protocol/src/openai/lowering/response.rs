@@ -79,7 +79,7 @@ pub fn validate_response(
         check_usage(usage, profile, &c.adaptation.rules)?;
     }
     if profile == GenerationApi::Chat
-        && !c.adaptation.rules.readable_reasoning
+        && !c.adaptation.rules.reasoning.readable_reasoning
         && r.items()
             .iter()
             .any(|(_, item)| matches!(item, Item::Reasoning(_)))
@@ -117,7 +117,7 @@ pub fn validate_response(
     };
     if profile == GenerationApi::Chat
         && r.items().iter().any(|(_, item)| {
-            let completed_replay_owner = c.adaptation.rules.structured_chat_reasoning
+            let completed_replay_owner = c.adaptation.rules.reasoning.structured_chat_reasoning
                 && chat_status == ItemLifecycle::Incomplete
                 && matches!(item, Item::Reasoning(r) if r.status == ItemLifecycle::Completed
                     && r.replay.as_ref().and_then(ReplayValue::replay_token).is_some());

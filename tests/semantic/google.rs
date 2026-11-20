@@ -1333,7 +1333,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
         rules.iter().map(|r| r.name()).collect::<Vec<_>>(),
         ["gemini.omit-schema-name.v1"]
     );
-    let mut endpoint = morphiecore::topology::catalog::GOOGLE_BINDINGS[0].endpoint();
+    let mut endpoint = morphiecore::topology::catalog::google_bindings()[0].endpoint();
     assert!(endpoint.encode_request_with_rules(&source).is_err());
     endpoint.representation = morphiecore::protocol::google::generate_content::TargetContract {
         dispositions: morphiecore::protocol::google::generate_content::representation_contract(),

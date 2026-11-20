@@ -45,11 +45,11 @@ fn auto_uses_native_default_without_losing_images_or_mutating_source() {
         let request = decode(true);
         let before = request.clone();
         let mut native = vec![
-            catalog::MESSAGES_BINDINGS[0].endpoint(),
-            catalog::GOOGLE_BINDINGS[0].interactions_endpoint(),
+            catalog::messages_bindings()[0].endpoint(),
+            catalog::google_bindings()[0].interactions_endpoint(),
         ];
         if !tool {
-            native.push(catalog::GOOGLE_BINDINGS[0].endpoint());
+            native.push(catalog::google_bindings()[0].endpoint());
         }
         for endpoint in native {
             let (projected, rules) = endpoint.encode_request_with_rules(&request).unwrap();

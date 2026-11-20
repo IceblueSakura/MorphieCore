@@ -140,7 +140,7 @@ impl EventDecoder {
         out: &mut Vec<StreamEvent>,
     ) -> Result<(), CodecError> {
         if !choices.is_empty() {
-            if !self.adaptation.rules.repeated_finish_usage || choices.len() != 1 {
+            if !self.adaptation.rules.stream.repeated_finish_usage || choices.len() != 1 {
                 return Err(CodecError::Invalid(ShapeReason::AfterFinish));
             }
             let choice = object(&choices[0])?;
@@ -171,13 +171,20 @@ impl EventDecoder {
             if [
                 (
                     "reasoning_content",
-                    self.adaptation.rules.readable_reasoning,
+                    self.adaptation.rules.reasoning.readable_reasoning,
                 ),
-                ("reasoning", self.adaptation.rules.accept_reasoning_alias),
+                (
+                    "reasoning",
+                    self.adaptation.rules.reasoning.accept_reasoning_alias,
+                ),
                 (
                     "reasoning_details",
-                    self.adaptation.rules.structured_chat_reasoning
-                        || self.adaptation.rules.unversioned_chat_reasoning_view,
+                    self.adaptation.rules.reasoning.structured_chat_reasoning
+                        || self
+                            .adaptation
+                            .rules
+                            .reasoning
+                            .unversioned_chat_reasoning_view,
                 ),
             ]
             .into_iter()
@@ -221,8 +228,12 @@ impl EventDecoder {
                 .first()
                 .map(|p| p.kind)
         });
-        let details = if self.adaptation.rules.structured_chat_reasoning
-            || self.adaptation.rules.unversioned_chat_reasoning_view
+        let details = if self.adaptation.rules.reasoning.structured_chat_reasoning
+            || self
+                .adaptation
+                .rules
+                .reasoning
+                .unversioned_chat_reasoning_view
         {
             crate::openai::chat::reasoning::parse(
                 delta,
@@ -240,7 +251,7 @@ impl EventDecoder {
             .unwrap_or(PartKind::ReasoningText);
         let fragment = if let Some((_, s)) = details.as_ref().and_then(|d| d.part.as_ref()) {
             Some(s.as_str())
-        } else if self.adaptation.rules.readable_reasoning {
+        } else if self.adaptation.rules.reasoning.readable_reasoning {
             delta
                 .get("reasoning_content")
                 .filter(|v| !v.is_null())
@@ -554,7 +565,7 @@ impl EventDecoder {
                         return Err(CodecError::invalid());
                     };
                     // Only the selected Provider sentinel permits an empty continuation ID.
-                    if !(self.adaptation.rules.empty_continuation_call_id
+                    if !(self.adaptation.rules.stream.empty_continuation_call_id
                         && call.get("id").and_then(Value::as_str) == Some(""))
                     {
                         check_identity(call.get("id"), Some(call_id.as_str()))?;

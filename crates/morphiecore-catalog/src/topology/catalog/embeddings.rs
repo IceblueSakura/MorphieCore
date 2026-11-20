@@ -4,21 +4,21 @@ use crate::{
     protocol::embedding::projection::{
         Contract, DimensionSupport, EncodingSupport, ReportPolicy, UserPolicy,
     },
-    provider::{
-        CredentialBindingId, CredentialKind, ProviderDefinition, ProviderOperation, catalog,
-    },
+    provider::{CredentialBindingId, CredentialKind, ProviderOperation},
     semantic::task::embedding::TokenizerScope,
     topology::{
         EndpointId, EndpointTarget, ExecutionContract, ModelId, ModelMetadata, RouteId,
         embeddings::{EmbeddingEndpoint, EmbeddingRoute, ProviderEntry},
     },
 };
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EmbeddingBinding {
     pub model: &'static str,
     pub upstream: &'static str,
-    pub provider: fn() -> ProviderDefinition,
+    pub(super) provider: &'static str,
     pub max_inputs: usize,
-    pub dimensions: &'static [usize],
+    pub dimensions: Box<[usize]>,
     pub max_dimensions: usize,
     pub min_dimensions: usize,
     pub default_dimensions: usize,
@@ -30,74 +30,20 @@ pub struct EmbeddingBinding {
     pub released_at: u64,
     pub developer: &'static str,
 }
-pub const EMBEDDING_BINDINGS: &[EmbeddingBinding] = &[
-    // Selected existing trusted origin; workspace migration is a separate operator action.
-    // https://help.aliyun.com/en/model-studio/text-embedding-synchronous-api
-    EmbeddingBinding {
-        model: "qwen3.7-text-embedding",
-        upstream: "qwen3.7-text-embedding",
-        provider: catalog::aliyun_dashscope_cn,
-        max_inputs: 20,
-        dimensions: &[256, 512, 768, 1024, 1536, 2048, 2560],
-        max_dimensions: 2560,
-        min_dimensions: 1,
-        default_dimensions: 1024,
-        encodings: EncodingSupport::Float,
-        user: UserPolicy::Omit,
-        tokenizer: None,
-        profile: UpstreamAdapter::DashScope,
-        max_input_tokens: None,
-        // https://platform.qianwenai.com/docs/changelog/models#2026年7月15日
-        released_at: 1_784_073_600,
-        developer: "Alibaba",
-    },
-    // https://openrouter.ai/docs/api/api-reference/embeddings/create-embeddings
-    EmbeddingBinding {
-        model: "text-embedding-3-small",
-        upstream: "openai/text-embedding-3-small",
-        provider: catalog::openrouter,
-        max_inputs: 128,
-        dimensions: &[],
-        max_dimensions: 1536,
-        min_dimensions: 1,
-        default_dimensions: 1536,
-        encodings: EncodingSupport::Both,
-        user: UserPolicy::Forward,
-        tokenizer: Some(TokenizerScope::Cl100kBase),
-        profile: UpstreamAdapter::OpenRouter,
-        max_input_tokens: Some(8192),
-        // https://openai.com/index/new-embedding-models-and-api-updates/ (2024-01-25).
-        released_at: 1_706_140_800,
-        developer: "OpenAI",
-    },
-    // https://ai.google.dev/api/embeddings; GA date from the official changelog.
-    EmbeddingBinding {
-        model: "gemini-embedding-2",
-        upstream: "gemini-embedding-2",
-        provider: catalog::google,
-        max_inputs: 100,
-        dimensions: &[],
-        min_dimensions: 128,
-        max_dimensions: 3072,
-        default_dimensions: 3072,
-        encodings: EncodingSupport::Float,
-        user: UserPolicy::Omit,
-        tokenizer: None,
-        profile: UpstreamAdapter::Google,
-        max_input_tokens: Some(8192),
-        released_at: 1_776_816_000,
-        developer: "Google",
-    },
-];
+
 impl EmbeddingBinding {
+    pub fn provider(&self) -> crate::provider::ProviderDefinition {
+        super::data::provider(self.provider).clone()
+    }
+
     pub fn credential(&self) -> CredentialBindingId {
-        CredentialBindingId::new((self.provider)().id.as_str()).expect("catalog Provider identity")
+        CredentialBindingId::new(self.provider().id.as_str()).expect("catalog Provider identity")
     }
     pub fn metadata(&self) -> ModelMetadata {
         ModelMetadata::new(self.released_at, self.developer).expect("static publication")
     }
     pub fn operation(&self) -> ProviderEntry {
-        let provider = (self.provider)();
+        let provider = self.provider();
         let path = provider
             .entry(ProviderOperation::Embeddings)
             .expect("embedding entry")
@@ -109,7 +55,7 @@ impl EmbeddingBinding {
         }
     }
     pub fn route(&self) -> EmbeddingRoute {
-        let provider = (self.provider)();
+        let provider = self.provider();
         let canonical = ModelId::new(self.model).expect("static model");
         let id = format!("{}-{}-embeddings", provider.id.as_str(), self.model);
         EmbeddingRoute {

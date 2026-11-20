@@ -14,8 +14,19 @@ pub enum ReasoningPresence {
     Null,
     Present,
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq, strum::EnumString, strum::IntoStaticStr)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    strum::EnumString,
+    strum::IntoStaticStr,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 #[strum(serialize_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum EffortLevel {
     Minimal,
     Low,
@@ -24,7 +35,8 @@ pub enum EffortLevel {
     XHigh,
     Max,
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EffortScope {
     Reasoning,
     Response,

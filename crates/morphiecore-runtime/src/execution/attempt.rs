@@ -742,7 +742,7 @@ mod identity_tests {
         let (_, events) = attempt.push(wire.as_bytes()).unwrap();
         attempt.finish().unwrap();
         let observed = attempt.response().unwrap().clone();
-        let delivery = || {
+        let delivery = |streaming| {
             ResponseDelivery::new(
                 crate::adapter::ClientAdapter::openai(
                     GenerationCodec::new(GenerationApi::Responses, Dialect::MorphieCore, None),
@@ -752,9 +752,10 @@ mod identity_tests {
                 SseLimits::default(),
                 StreamOptions::default(),
                 Obfuscation::Disabled,
+                streaming,
             )
         };
-        let mut stream = delivery();
+        let mut stream = delivery(true);
         let mut frames = stream
             .encode_events(&attempt, &events)
             .map(|batch| batch.into_bytes())
@@ -778,7 +779,7 @@ mod identity_tests {
         let id = responses[0]["id"].as_str().unwrap();
         assert!(id.starts_with("resp_"));
         assert!(responses.iter().all(|r| r["id"] == id));
-        let mut json_delivery = delivery();
+        let mut json_delivery = delivery(false);
         let body: Value =
             serde_json::from_slice(&json_delivery.encode_json(&attempt).unwrap()).unwrap();
         assert!(body["id"].as_str().unwrap().starts_with("resp_"));

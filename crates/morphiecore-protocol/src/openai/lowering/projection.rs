@@ -132,17 +132,17 @@ pub fn responses_usage(
     for (value, carrier, rule) in [
         (
             &mut usage.input_image_tokens,
-            rules.responses_image_usage,
+            rules.accounting.responses_image_usage,
             Rule::OMIT_RESPONSES_INPUT_IMAGE_TOKENS,
         ),
         (
             &mut usage.input_text_tokens,
-            rules.responses_text_usage,
+            rules.accounting.responses_text_usage,
             Rule::OMIT_RESPONSES_INPUT_TEXT_TOKENS,
         ),
         (
             &mut usage.output_text_tokens,
-            rules.responses_text_usage,
+            rules.accounting.responses_text_usage,
             Rule::OMIT_RESPONSES_OUTPUT_TEXT_TOKENS,
         ),
         (

@@ -485,7 +485,7 @@ fn removed_sampling_omits_advisory_controls_without_changing_the_source() {
             && !contract.native(morphiecore::semantic::task::generation::Feature::TopP)
             && !contract.native(morphiecore::semantic::task::generation::Feature::TopK)
     );
-    let binding = &morphiecore::topology::catalog::MESSAGES_BINDINGS[0];
+    let binding = &morphiecore::topology::catalog::messages_bindings()[0];
     assert!(
         binding
             .public_model()

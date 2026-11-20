@@ -13,21 +13,17 @@ use crate::{
         task::generation::*,
         value::{ReplayOrigin, json_size},
     },
-    sse::{SseDecoder, SseEvent},
-    stream::{SseError, SseLimits, validate_http},
+    sse::SseEvent,
+    stream::{SseError, SseIntake, SseLimits, validate_http},
 };
 use bytes::Bytes;
 use serde_json::{Value, json};
 pub struct ResponsesSseDecoder {
-    framing: SseDecoder,
+    intake: SseIntake,
     codec: EventDecoder,
     limits: SseLimits,
-    wire_bytes: usize,
-    events: usize,
     obfuscation_bytes: usize,
     done_marker: bool,
-    closed: bool,
-    rejected: bool,
     last_event: Option<crate::stream::SourceEvent>,
 }
 impl ResponsesSseDecoder {
@@ -50,15 +46,11 @@ impl ResponsesSseDecoder {
             codec = codec.with_replay_origin(origin);
         }
         Ok(Self {
-            framing: SseDecoder::new(limits.max_event_bytes),
+            intake: SseIntake::new(limits),
             codec,
             limits,
-            wire_bytes: 0,
-            events: 0,
             obfuscation_bytes: 0,
             done_marker: false,
-            closed: false,
-            rejected: false,
             last_event: None,
         })
     }
@@ -77,17 +69,9 @@ impl ResponsesSseDecoder {
     }
     /// The caller retains and revisits unconsumed bytes, respecting downstream backpressure.
     pub fn consume(&mut self, chunk: &[u8]) -> Result<(usize, Vec<StreamEvent>), SseError> {
-        if self.closed || self.rejected {
-            return Err(SseError::Closed);
-        }
+        self.intake.open()?;
         let result = (|| {
-            let remaining = self.limits.max_wire_bytes.saturating_sub(self.wire_bytes);
-            let available = chunk.len().min(remaining.saturating_add(1));
-            let (event, n) = self.framing.push_until_event(&chunk[..available])?;
-            self.wire_bytes = self.wire_bytes.checked_add(n).ok_or(SseError::Limit)?;
-            if self.wire_bytes > self.limits.max_wire_bytes {
-                return Err(SseError::Limit);
-            }
+            let (event, n) = self.intake.pull(chunk)?;
             let events = if let Some(event) = event {
                 self.frame(event)?
             } else {
@@ -96,23 +80,20 @@ impl ResponsesSseDecoder {
             Ok((n, events))
         })();
         if result.is_err() {
-            self.rejected = true;
+            self.intake.reject();
         }
         result
     }
     fn frame(&mut self, frame: SseEvent) -> Result<Vec<StreamEvent>, SseError> {
         self.last_event = Some(crate::stream::SourceEvent {
-            ordinal: self.events.saturating_add(1),
+            ordinal: self.intake.next_ordinal(),
             kind: event_kind(frame.event()),
             sequence: None,
         });
         if self.done_marker {
             return Err(SseError::Closed);
         }
-        self.events += 1;
-        if self.events > self.limits.max_events {
-            return Err(SseError::Limit);
-        }
+        self.intake.charge_frame()?;
         if frame.data().is_empty() {
             return Ok(vec![]);
         }
@@ -178,22 +159,20 @@ impl ResponsesSseDecoder {
     }
     /// A clean socket EOF is successful only after both framing and the typed terminal validate.
     pub fn finish(&mut self) -> Result<(), SseError> {
-        if self.closed || self.rejected {
-            return Err(SseError::Closed);
-        }
-        self.closed = true;
+        self.intake.open()?;
+
         let result = (|| {
-            self.framing.finish_strict()?;
+            self.intake.finish_framing()?;
             self.codec.finish()?;
             Ok(())
         })();
         if result.is_err() {
-            self.rejected = true;
+            self.intake.reject();
         }
         result
     }
     pub fn materialize(&self) -> Result<DecodedResponse, SseError> {
-        if !self.closed || self.rejected {
+        if !self.intake.completed() {
             return Err(SseError::Closed);
         }
         Ok(self.codec.materialize()?)

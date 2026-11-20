@@ -4,7 +4,7 @@ use crate::morphiecore::{
     gateway::{Entry, Gateway, Limits, TaskEntries},
     protocol::{ClientProtocol, openai::GenerationApi},
     provider::{SecretMaterial, TrustedOrigin},
-    topology::{self, catalog::GOOGLE_BINDINGS},
+    topology::{self, catalog::google_bindings},
 };
 use axum::{
     Json, Router,
@@ -165,7 +165,7 @@ pub async fn start_messages(api: Api) -> Fixture {
     start_with(GenerationApi::Chat, api, true, false).await
 }
 async fn start_with(profile: GenerationApi, api: Api, messages: bool, strict: bool) -> Fixture {
-    let binding = &GOOGLE_BINDINGS[0];
+    let binding = &google_bindings()[0];
     let seen = Arc::new(Mutex::new(Vec::new()));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let origin =

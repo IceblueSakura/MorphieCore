@@ -2,73 +2,36 @@
 use crate::{
     adapter::speech::UpstreamAdapter,
     protocol::speech::projection::SpeechCapabilities,
-    provider::{CredentialBindingId, CredentialKind, ProviderOperation, catalog},
+    provider::{CredentialBindingId, CredentialKind, ProviderOperation},
     semantic::value::AudioEncoding,
     topology::{
         EndpointId, EndpointTarget, ExecutionContract, ModelId, ModelMetadata, RouteId,
         speech::{ProviderEntry, SpeechEndpoint, SpeechRoute},
     },
 };
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SpeechBinding {
-    pub provider: fn() -> crate::provider::ProviderDefinition,
+    pub(super) provider: &'static str,
     pub identity: &'static str,
     pub profile: UpstreamAdapter,
     pub model: &'static str,
     pub upstream: &'static str,
-    pub voices: &'static [&'static str],
+    pub voices: Box<[&'static str]>,
     pub released_at: u64,
     pub developer: &'static str,
 }
-// Operation: https://openrouter.ai/docs/api/api-reference/tts/create-speech.md
-// Endpoint: https://openrouter.ai/api/v1/models/qwen/qwen-audio-3.0-tts-flash-20260723/endpoints
-// Named voices: https://openrouter.ai/api/v1/models?output_modalities=speech
-pub const SPEECH_BINDINGS: &[SpeechBinding] = &[
-    SpeechBinding {
-        provider: catalog::xiaomi,
-        identity: "xiaomi-speech",
-        profile: UpstreamAdapter::Xiaomi,
-        model: "mimo-v2.5-tts",
-        upstream: "mimo-v2.5-tts",
-        voices: crate::protocol::xiaomi_audio::VOICES,
-        // https://mimo.mi.com/docs/updates/model (2026-04-23).
-        released_at: 1_776_902_400,
-        developer: "Xiaomi",
-    },
-    SpeechBinding {
-        provider: catalog::openrouter,
-        identity: "openrouter-qwen-speech",
-        profile: UpstreamAdapter::OpenRouterMp3,
-        model: "qwen-audio-3.0-tts-flash",
-        upstream: "qwen/qwen-audio-3.0-tts-flash",
-        voices: &["loongjohn", "longanhuan_v3.6"],
-        // Developer release announcement (2026-07-21), UTC midnight, not router listing time.
-        // https://www.alibabacloud.com/blog/qwen-audio-3-0-tts-more-multilingual-easier-to-direct_603379
-        released_at: 1_784_592_000,
-        developer: "Alibaba",
-    },
-    SpeechBinding {
-        provider: catalog::aliyun_tokenplan_cn,
-        identity: "tokenplan-qwen-speech",
-        profile: UpstreamAdapter::AliyunMp3,
-        model: "qwen-audio-3.0-tts-plus",
-        upstream: "qwen-audio-3.0-tts-plus",
-        // https://help.aliyun.com/en/model-studio/qwen-audio-tts-voice-list
-        voices: &["longanlingxin", "longanlufeng"],
-        // Developer announcement, shared family release; not plan registration time.
-        // https://www.alibabacloud.com/blog/qwen-audio-3-0-tts-more-multilingual-easier-to-direct_603379
-        released_at: 1_784_592_000,
-        developer: "Alibaba",
-    },
-];
+
 impl SpeechBinding {
+    pub fn provider(&self) -> crate::provider::ProviderDefinition {
+        super::data::provider(self.provider).clone()
+    }
+
     pub fn credential(&self) -> CredentialBindingId {
         CredentialBindingId::new(self.provider().id.as_str()).expect("catalog Provider identity")
     }
     pub fn metadata(&self) -> ModelMetadata {
         ModelMetadata::new(self.released_at, self.developer).expect("static publication")
-    }
-    pub fn provider(&self) -> crate::provider::ProviderDefinition {
-        (self.provider)()
     }
     pub fn operation(&self) -> ProviderEntry {
         let provider = self.provider();

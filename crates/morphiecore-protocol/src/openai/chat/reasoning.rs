@@ -25,7 +25,9 @@ pub(in crate::openai) fn parse(
     let Some(value) = m.get("reasoning_details") else {
         return Ok(None);
     };
-    if !a.rules.structured_chat_reasoning && !a.rules.unversioned_chat_reasoning_view {
+    if !a.rules.reasoning.structured_chat_reasoning
+        && !a.rules.reasoning.unversioned_chat_reasoning_view
+    {
         return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
     if value.is_null() {
@@ -47,10 +49,11 @@ pub(in crate::openai) fn parse(
         let format = string(o, "format")?;
         let kind = string(o, "type")?;
         // An unversioned readable view cannot carry summaries, identities or ciphertext.
-        let readable_view = a.rules.unversioned_chat_reasoning_view
+        let readable_view = a.rules.reasoning.unversioned_chat_reasoning_view
             && format == "unknown"
             && kind == "reasoning.text";
-        if !readable_view && (!a.rules.structured_chat_reasoning || format != "openai-responses-v1")
+        if !readable_view
+            && (!a.rules.reasoning.structured_chat_reasoning || format != "openai-responses-v1")
         {
             return Err(CodecError::Unsupported(CarrierReason::Reasoning));
         }
@@ -128,7 +131,9 @@ fn parse_message(
     let Some(value) = m.get("reasoning_details") else {
         return Ok(vec![]);
     };
-    if !a.rules.structured_chat_reasoning && !a.rules.unversioned_chat_reasoning_view {
+    if !a.rules.reasoning.structured_chat_reasoning
+        && !a.rules.reasoning.unversioned_chat_reasoning_view
+    {
         return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
     let values = match value {
@@ -146,12 +151,12 @@ fn parse_message(
         let format = string(o, "format")?;
         let kind = string(o, "type")?;
         // An unversioned readable view cannot carry summaries, identities or ciphertext.
-        let readable_view = a.rules.unversioned_chat_reasoning_view
+        let readable_view = a.rules.reasoning.unversioned_chat_reasoning_view
             && format == "unknown"
             && kind == "reasoning.text";
         if !client
             && !readable_view
-            && (!a.rules.structured_chat_reasoning || format != "openai-responses-v1")
+            && (!a.rules.reasoning.structured_chat_reasoning || format != "openai-responses-v1")
         {
             return Err(CodecError::Unsupported(CarrierReason::Reasoning));
         }
@@ -226,18 +231,19 @@ pub(in crate::openai) fn decode_static(
     a: &Adaptation,
 ) -> Result<Map<String, Value>, CodecError> {
     let mut clean = m.clone();
-    if a.rules.readable_reasoning
+    if a.rules.reasoning.readable_reasoning
         && m.contains_key("reasoning_content")
         && string(m, "role")? != "assistant"
     {
         return Err(CodecError::invalid());
     }
     for (key, admitted) in [
-        ("reasoning_content", a.rules.readable_reasoning),
-        ("reasoning", a.rules.accept_reasoning_alias),
+        ("reasoning_content", a.rules.reasoning.readable_reasoning),
+        ("reasoning", a.rules.reasoning.accept_reasoning_alias),
         (
             "reasoning_details",
-            a.rules.structured_chat_reasoning || a.rules.unversioned_chat_reasoning_view,
+            a.rules.reasoning.structured_chat_reasoning
+                || a.rules.reasoning.unversioned_chat_reasoning_view,
         ),
     ] {
         if !admitted && let Some(value) = clean.shift_remove(key) {
@@ -245,7 +251,7 @@ pub(in crate::openai) fn decode_static(
                 .fields(&Map::from_iter([(key.into(), value)]), &[])?;
         }
     }
-    if a.rules.accept_reasoning_alias {
+    if a.rules.reasoning.accept_reasoning_alias {
         crate::openai::dialect::adapter_shapes::decode_message(&mut clean)?;
     }
     let groups = parse_message(&clean, a, b.direction)?;
@@ -292,7 +298,9 @@ pub(in crate::openai) fn decode_static(
             .record_replay(id, &item, a.reasoning_origin(a.scope.as_ref()).cloned())?;
         b.items.push((id, Item::Reasoning(item)));
     }
-    if a.rules.structured_chat_reasoning || a.rules.unversioned_chat_reasoning_view {
+    if a.rules.reasoning.structured_chat_reasoning
+        || a.rules.reasoning.unversioned_chat_reasoning_view
+    {
         clean.shift_remove("reasoning_details");
     }
     Ok(clean)

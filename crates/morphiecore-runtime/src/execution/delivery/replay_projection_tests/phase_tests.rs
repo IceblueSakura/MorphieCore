@@ -189,6 +189,7 @@ fn phase_stream_preserves_return_carrier_at_eof_without_changing_terminal_policy
                     ..Default::default()
                 },
                 Obfuscation::Disabled,
+                true,
             );
             let mut output = vec![];
             for (sequence, mut frame) in frames().into_iter().enumerate() {
@@ -445,6 +446,7 @@ fn unphased_plain_text_uses_the_same_selected_chat_grouping() {
                 ..Default::default()
             },
             Obfuscation::Disabled,
+            true,
         );
         let mut output = vec![];
         for (sequence, mut event) in events.into_iter().enumerate() {
@@ -608,6 +610,7 @@ fn unselected_item_status_loss_rejects_before_chat_stream_terminal() {
             ..Default::default()
         },
         Obfuscation::Disabled,
+        true,
     );
     let mut output = vec![];
     for (sequence, mut event) in events.into_iter().enumerate() {

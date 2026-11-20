@@ -615,7 +615,7 @@ impl EventDecoder {
     ) -> Result<(ItemId, PartId, PartKind), CodecError> {
         let item = self.owner(o)?;
         let t = string(o, "type")?;
-        let summary_alias = self.adaptation.rules.responses_summary_text_alias
+        let summary_alias = self.adaptation.rules.reasoning.responses_summary_text_alias
             && t.starts_with("response.reasoning_text.");
         let (kind, key) = if t.starts_with("response.custom_tool_call_input.") {
             (PartKind::CustomInput, None)
@@ -711,7 +711,14 @@ impl EventDecoder {
         let logprobs = if kind == PartKind::Text {
             match o.get("logprobs") {
                 Some(value) => crate::openai::content::text::read_logprobs(value)?,
-                None if self.adaptation.rules.responses_unreported_text_logprobs => vec![],
+                None if self
+                    .adaptation
+                    .rules
+                    .stream
+                    .responses_unreported_text_logprobs =>
+                {
+                    vec![]
+                }
                 None => {
                     return Err(CodecError::Invalid(ShapeReason::Probabilities));
                 }
@@ -808,7 +815,11 @@ impl EventDecoder {
         }
         if kind == PartKind::Text
             && !o.contains_key("logprobs")
-            && (!self.adaptation.rules.responses_unreported_text_logprobs
+            && (!self
+                .adaptation
+                .rules
+                .stream
+                .responses_unreported_text_logprobs
                 || !self.state()?.part(item, part)?.logprobs.is_none())
         {
             return Err(CodecError::Invalid(ShapeReason::Probabilities));
@@ -838,7 +849,7 @@ impl EventDecoder {
             kind,
             PartKind::Arguments | PartKind::StructuredArguments | PartKind::CustomInput
         ) || (kind == PartKind::Summary
-            && self.adaptation.rules.responses_summary_text_alias
+            && self.adaptation.rules.reasoning.responses_summary_text_alias
             && string(o, "type")? == "response.reasoning_text.done")
         {
             // The alias has an explicit value.done but no separate part.done.
@@ -1163,7 +1174,7 @@ impl EventDecoder {
         event_fields(o, &["type", "response"])?;
         let r = o.get("response").ok_or(CodecError::invalid())?;
         let mut summary;
-        let r = if self.adaptation.rules.responses_event_owned_output
+        let r = if self.adaptation.rules.stream.responses_event_owned_output
             && r.get("status").and_then(Value::as_str) == Some("completed")
             && r.get("output")
                 .and_then(Value::as_array)
@@ -1210,7 +1221,7 @@ impl EventDecoder {
         if let Some(metadata) = &mut self.metadata {
             metadata.source_failure = decoded.metadata.source_failure;
         }
-        if self.adaptation.rules.responses_terminal_reasoning
+        if self.adaptation.rules.reasoning.responses_terminal_reasoning
             && terminal == StreamTerminal::Completed
         {
             self.close_terminal_reasoning(p, out)?;
@@ -1258,7 +1269,7 @@ impl EventDecoder {
         // OpenRouter can send one failed snapshot without ever opening a response.
         // Use the existing stream-error transition after normal snapshot validation
         // rather than inventing response.created or relaxing the semantic reducer.
-        if self.adaptation.rules.responses_initial_failed
+        if self.adaptation.rules.stream.responses_initial_failed
             && self.events == 1
             && terminal == StreamTerminal::Failed
         {

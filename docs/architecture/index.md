@@ -70,11 +70,13 @@ Generation topology types are task-specific; they carry no constant task discrim
 - **Diagnostic Extensions:** Optional namespaced response fields (`morphiecore`) provide safe-to-ignore telemetry and loss reporting. Standard SDK agent loops operate without parsing or returning these extensions.
 - **Messages Version Policy:** Downstream Messages requires exactly one `anthropic-version` header, either `2023-06-01` or `2026-10-21` (including `?beta=true`), over the same current body grammar. Missing, duplicate, combined and unsupported versions reject before body collection. Legacy sampling fields (`temperature`, `top_p`, `top_k`) are validated then omitted under `messages.omit-removed-sampling.v1`; null defaults need no loss receipt. `anthropic-beta` is ignored as a header and never selects body semantics or trusted upstream headers.
 
-Provider metadata resides in [providers.json](../../src/provider/providers.json). Public models and bindings are defined in [topology/catalog.rs](../../src/topology/catalog.rs) and assembled at [gateway startup](../../src/gateway/startup/bootstrap.rs).
+See [shared Provider metadata](#shared-provider-metadata) for the trusted catalog inputs.
 
 ### Shared Provider metadata
 
-`src/provider/providers.json` owns default origins, operation paths, override suffixes and authentication. It is embedded at compile time via `include_bytes!`, validated once, and immutable at runtime. Private `accounts.json` declarations bind named credentials and API-key target overrides through `src/account.rs`; secret material and verified OAuth identities stay in the credential store.
+[Provider data](../../crates/morphiecore-catalog/src/provider/providers.json) owns default origins, operation paths, override suffixes and authentication. [Topology data](../../crates/morphiecore-catalog/src/topology/catalog/topology.json) owns models, ordered binding members, binding limits, effort maps and standalone tasks. Both are embedded with `include_bytes!`; strict parsing and validated references precede topology compilation. Adding a standard model using existing carriers requires only catalog data. Native codec qualifications, including [Bailian model policies](../../crates/morphiecore-protocol/src/openai/dialect/bailian/models.rs), are separate from deployment bindings and apply to direct native codecs too.
+
+Private `accounts.json` declarations bind named credentials and API-key target overrides at [gateway startup](../../crates/morphiecore-gateway/src/startup/bootstrap.rs); secret material and verified OAuth identities stay in the credential store.
 
 Each Provider denotes one service access contract and fixes one credential kind and, for OAuth, one profile. Accounts reference managed instances by alias without repeating those facts. Separate `openai` API-key and `chatgpt` SIWC Providers may share codecs without sharing model catalogs, request restrictions or replay provenance. Endpoint header placement is independent: OpenCode Go can use bearer auth for Chat and `x-api-key` for Messages with the same key.
 
@@ -107,12 +109,12 @@ Downstream HTTP intake (authenticate and bound body collection)
 | Module | Core Responsibility | Invariant Boundary |
 |---|---|---|
 | `semantic` | Task definitions, validation, invariants, and stream reduction | No protocol, Provider, or network dependencies |
-| `protocol` | Wire codecs, dialects, envelopes, and target projections | No I/O, credential, or runtime execution dependencies |
-| `lowering` | Cross-protocol target dispatch and representation checks | Protocols own their specific task projections |
+| `protocol` | Wire codecs, dialects, envelope preparation, and carrier-specific admission | No I/O, credential, or runtime execution dependencies |
+| `lowering` | Typed dispositions and candidate-local semantic transformations | No model lookup, envelope or wire grammar in semantic projection |
 | `adapter` | Protocol codec dispatch based on target binding rules | Pure transformations; no I/O or publication state |
 | `topology` | Model routing table: public model → route → endpoints | Endpoints define fixed origins, paths, and credential scopes |
 | `execution` | Candidate attempt planning, lifecycle, and delivery state | No agent loop, tool execution, or prompt planning |
-| `transport` | HTTP client execution and SSE framing | Executes prepared trusted requests only |
+| `transport` | HTTP client execution and body I/O | Executes prepared trusted requests only |
 | `account` | Named account declarations and effective target/credential binding | No secret duplication or caller-controlled target selection |
 | `credential` | Credential store, API keys and managed OAuth registrations | Credentials never enter semantic IR |
 | `gateway` | Ingress listener, startup, budgets, routing, and cancellation | Ingress binds loopback only |

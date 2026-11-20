@@ -11,8 +11,7 @@ use crate::{
         task::generation::*,
         value::{JsonLimits, Text, parse_json},
     },
-    sse::SseDecoder,
-    stream::{SseError, SseLimits},
+    stream::{SseError, SseIntake, SseLimits},
 };
 use serde_json::{Map, Value};
 
@@ -30,10 +29,7 @@ struct Open {
     signature: Option<String>,
 }
 pub struct GenerationSseDecoder {
-    framing: SseDecoder,
-    limits: SseLimits,
-    bytes: usize,
-    frames: usize,
+    intake: SseIntake,
     scope: LocalScope,
     target: ReplayTarget,
     metadata: Option<ResponseMetadata>,
@@ -47,8 +43,6 @@ pub struct GenerationSseDecoder {
     calls: Vec<String>,
     completed: bool,
     done: bool,
-    closed: bool,
-    rejected: bool,
 }
 pub(super) fn invalid(reason: ShapeReason) -> SseError {
     CodecError::Invalid(reason).into()
@@ -122,10 +116,7 @@ impl GenerationSseDecoder {
         limits.validate()?;
         crate::stream::validate_http(status, media)?;
         Ok(Self {
-            framing: SseDecoder::new(limits.max_event_bytes),
-            limits,
-            bytes: 0,
-            frames: 0,
+            intake: SseIntake::new(limits),
             scope,
             target,
             metadata: None,
@@ -138,8 +129,6 @@ impl GenerationSseDecoder {
             calls: vec![],
             completed: false,
             done: false,
-            closed: false,
-            rejected: false,
         })
     }
     pub fn metadata(&self) -> Option<&ResponseMetadata> {
@@ -149,27 +138,12 @@ impl GenerationSseDecoder {
         &self.fidelity
     }
     pub fn consume(&mut self, chunk: &[u8]) -> Result<(usize, Vec<StreamEvent>), SseError> {
-        if self.closed || self.rejected {
-            return Err(SseError::Closed);
-        }
+        self.intake.open()?;
         let result = (|| {
-            let available = chunk.len().min(
-                self.limits
-                    .max_wire_bytes
-                    .saturating_sub(self.bytes)
-                    .saturating_add(1),
-            );
-            let (frame, n) = self.framing.push_until_event(&chunk[..available])?;
-            self.bytes = self.bytes.checked_add(n).ok_or(SseError::Limit)?;
-            if self.bytes > self.limits.max_wire_bytes {
-                return Err(SseError::Limit);
-            }
+            let (frame, n) = self.intake.pull(chunk)?;
             let mut out = vec![];
             if let Some(frame) = frame {
-                self.frames = self.frames.checked_add(1).ok_or(SseError::Limit)?;
-                if self.frames > self.limits.max_events {
-                    return Err(SseError::Limit);
-                }
+                self.intake.charge_frame()?;
                 if self.done {
                     return Err(invalid(ShapeReason::AfterFinish));
                 }
@@ -203,7 +177,7 @@ impl GenerationSseDecoder {
             Ok((n, out))
         })();
         if result.is_err() {
-            self.rejected = true;
+            self.intake.reject();
         }
         result
     }
@@ -833,15 +807,11 @@ impl GenerationSseDecoder {
         Ok(())
     }
     pub fn finish(&mut self) -> Result<DecodedResponse, SseError> {
-        if self.closed || self.rejected {
-            return Err(SseError::Closed);
-        }
-        self.closed = true;
+        self.intake.open()?;
+
         let result = (|| {
-            self.framing.finish_strict()?;
-            if !self.completed {
-                return Err(CodecError::Event(EventError::EofBeforeTerminal).into());
-            }
+            self.intake.finish_framing()?;
+            crate::stream::require_terminal(self.completed)?;
             Ok(DecodedResponse {
                 evidence: Default::default(),
                 semantic: materialize(&self.state).map_err(CodecError::from)?,
@@ -853,7 +823,7 @@ impl GenerationSseDecoder {
             })
         })();
         if result.is_err() {
-            self.rejected = true;
+            self.intake.reject();
         }
         result
     }

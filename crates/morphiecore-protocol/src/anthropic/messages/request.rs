@@ -38,7 +38,6 @@ impl Profile {
         let projected = crate::lowering::request::project(
             &request,
             crate::lowering::request::Target::Messages(&contract),
-            target.model(),
             Some(target),
         )?;
         let mut wire = self.encode_request_envelope(

@@ -183,7 +183,7 @@ pub fn encode_request(
     {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
-    if target.adaptation.rules.bailian_requests {
+    if target.adaptation.rules.hooks.bailian_requests {
         crate::openai::dialect::bailian::check_semantic(
             target.semantic(),
             crate::openai::GenerationApi::Chat,
@@ -207,7 +207,7 @@ pub fn encode_request(
     if let Some(store) = context.store {
         o.insert("store".into(), json!(store));
     }
-    if target.adaptation.rules.bailian_requests {
+    if target.adaptation.rules.hooks.bailian_requests {
         if let Some(options) = context.stream_options.value()
             && let Some(include_usage) = options.include_usage
         {

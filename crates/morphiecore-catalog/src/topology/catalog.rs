@@ -1,37 +1,65 @@
 //! Compile explicit model declarations and deployment bindings. No alias inference.
+mod data;
+pub use data::{
+    api_key_bindings, embedding_bindings, google_bindings, image_bindings, messages_bindings,
+    speech_bindings, subscription_bindings, transcription_bindings,
+};
 mod bindings;
 mod messages;
-pub use messages::{MESSAGES_BINDINGS, MessagesBinding};
+pub use messages::MessagesBinding;
 mod embeddings;
-pub use embeddings::{EMBEDDING_BINDINGS, EmbeddingBinding};
+pub use embeddings::EmbeddingBinding;
 mod google;
-pub use google::{GOOGLE_BINDINGS, GoogleBinding};
+pub use google::GoogleBinding;
 mod images;
 mod models;
-pub use images::{IMAGE_BINDINGS, ImageBinding};
+pub use images::ImageBinding;
 mod speech;
-pub use speech::{SPEECH_BINDINGS, SpeechBinding};
+pub use speech::SpeechBinding;
 mod transcription;
-pub use transcription::{TRANSCRIPTION_BINDINGS, TranscriptionBinding};
+pub use transcription::TranscriptionBinding;
 mod subscriptions;
 use crate::{
     protocol::openai::{GenerationCodec, TargetContract},
     provider::{CredentialBindingId, CredentialKind, catalog},
     topology::*,
 };
-pub use bindings::{API_KEY_BINDINGS, ApiKeyBinding};
+pub use bindings::ApiKeyBinding;
 // Agent sessions resend whole histories and may stream long turns; these only
 // bound memory and time per exchange. Upstreams enforce their own maximums.
 const GENERATION_REQUEST_BYTES: usize = 32 << 20;
 const GENERATION_RESPONSE_BYTES: usize = 64 << 20;
 const GENERATION_TIMEOUT_MS: u64 = 60 * 60 * 1000;
-pub use subscriptions::{SUBSCRIPTION_BINDINGS, SubscriptionBinding};
+pub use subscriptions::SubscriptionBinding;
+
+fn task_entries<T>(
+    entries: impl Iterator<Item = T>,
+    provider: impl Fn(&T) -> &crate::provider::ProviderId,
+) -> Vec<T> {
+    // Each family looks up exactly one declared operation per Provider.
+    let mut seen = std::collections::BTreeSet::new();
+    entries
+        .filter(|entry| seen.insert(provider(entry).clone()))
+        .collect()
+}
+
 /// The catalog with each public model's bindings in catalog order.
 pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
+    static TOPOLOGY: std::sync::OnceLock<Result<CompiledTopology, TopologyError>> =
+        std::sync::OnceLock::new();
+    TOPOLOGY
+        .get_or_init(|| {
+            data::checked()?;
+            compile_catalog()
+        })
+        .clone()
+}
+
+fn compile_catalog() -> Result<CompiledTopology, TopologyError> {
     let mut endpoints = vec![];
     let mut routes = vec![];
     let mut public_models: Vec<PublicModel> = vec![];
-    for binding in API_KEY_BINDINGS {
+    for binding in api_key_bindings() {
         endpoints.extend(
             binding
                 .protocols
@@ -42,7 +70,7 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
         if public_models.iter().any(|p| p.id.as_str() == binding.model) {
             continue;
         }
-        let group: Vec<_> = API_KEY_BINDINGS
+        let group: Vec<_> = api_key_bindings()
             .iter()
             .filter(|b| b.model == binding.model)
             .collect();
@@ -64,7 +92,7 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
         });
         public_models.push(public);
     }
-    for binding in SUBSCRIPTION_BINDINGS {
+    for binding in subscription_bindings() {
         let public = binding.public_model();
         routes.push(Route {
             id: public.route.clone(),
@@ -75,13 +103,13 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
         public_models.push(public);
     }
     let mut canonical_models = models::canonical_models();
-    for binding in MESSAGES_BINDINGS {
+    for binding in messages_bindings() {
         endpoints.push(binding.endpoint());
         routes.push(binding.route());
         public_models.push(binding.public_model());
         canonical_models.push(binding.canonical_model());
     }
-    for binding in GOOGLE_BINDINGS {
+    for binding in google_bindings() {
         endpoints.push(binding.endpoint());
         endpoints.push(binding.interactions_endpoint());
         routes.push(binding.route());
@@ -115,26 +143,32 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
     }
     compile(catalog::all(), endpoints, routes, merged, canonical_models)?
         .with_images(
-            IMAGE_BINDINGS.iter().map(|b| b.operation()).collect(),
-            IMAGE_BINDINGS.iter().map(|b| b.route()).collect(),
+            task_entries(image_bindings().iter().map(|b| b.operation()), |e| {
+                &e.provider
+            }),
+            image_bindings().iter().map(|b| b.route()).collect(),
         )?
         .with_speech(
-            SPEECH_BINDINGS.iter().map(|b| b.operation()).collect(),
-            SPEECH_BINDINGS.iter().map(|b| b.route()).collect(),
+            task_entries(speech_bindings().iter().map(|b| b.operation()), |e| {
+                &e.provider
+            }),
+            speech_bindings().iter().map(|b| b.route()).collect(),
         )?
         .with_transcriptions(
-            TRANSCRIPTION_BINDINGS
-                .iter()
-                .map(|b| b.operation())
-                .collect(),
-            TRANSCRIPTION_BINDINGS.iter().map(|b| b.route()).collect(),
+            task_entries(
+                transcription_bindings().iter().map(|b| b.operation()),
+                |e| &e.provider,
+            ),
+            transcription_bindings().iter().map(|b| b.route()).collect(),
         )?
         .with_embeddings(
-            EMBEDDING_BINDINGS.iter().map(|b| b.operation()).collect(),
-            EMBEDDING_BINDINGS.iter().map(|b| b.route()).collect(),
+            task_entries(embedding_bindings().iter().map(|b| b.operation()), |e| {
+                &e.provider
+            }),
+            embedding_bindings().iter().map(|b| b.route()).collect(),
         )?
         .with_model_metadata(
-            models::MODELS
+            data::models()
                 .iter()
                 .map(|m| {
                     (
@@ -142,47 +176,36 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
                         ModelMetadata::new(m.released_at, m.developer).expect("static publication"),
                     )
                 })
-                .chain(MESSAGES_BINDINGS.iter().map(|b| {
+                .chain(messages_bindings().iter().map(|b| {
                     (
                         ModelId::new(b.model).expect("static messages id"),
                         b.metadata(),
                     )
                 }))
-                .chain(GOOGLE_BINDINGS.iter().map(|b| {
+                .chain(google_bindings().iter().map(|b| {
                     (
                         ModelId::new(b.model).expect("static google id"),
                         b.metadata(),
                     )
                 }))
-                .chain(IMAGE_BINDINGS.iter().map(|b| {
+                .chain(image_bindings().iter().map(|b| {
                     (
                         ModelId::new(b.model).expect("static image id"),
                         b.metadata(),
                     )
                 }))
-                .chain(SPEECH_BINDINGS.iter().map(|b| {
+                .chain(speech_bindings().iter().map(|b| {
                     (
                         ModelId::new(b.model).expect("static speech id"),
                         b.metadata(),
                     )
                 }))
-                .chain(EMBEDDING_BINDINGS.iter().map(|b| {
+                .chain(embedding_bindings().iter().map(|b| {
                     (
                         ModelId::new(b.model).expect("static embedding id"),
                         b.metadata(),
                     )
                 }))
-                // Provider bindings share one canonical publication.
-                .chain(
-                    TRANSCRIPTION_BINDINGS
-                        .iter()
-                        .map(|b| {
-                            (
-                                ModelId::new(b.canonical_model).expect("static transcription id"),
-                                b.metadata(),
-                            )
-                        })
-                        .collect::<std::collections::BTreeMap<_, _>>(),
-                ),
+                .chain(data::transcription_metadata()),
         )
 }

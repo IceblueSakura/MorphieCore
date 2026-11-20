@@ -1,10 +1,13 @@
 //! Authenticated text embeddings use one bounded static exchange and the shared handoff owner.
+use super::{
+    exchange::Receiver,
+    lifecycle::{Admission, TaskOutput},
+};
 use crate::{
     ApiError, Credentials, EmbeddingEntry, Runtime, StartupError,
     adapter::embeddings::UpstreamAdapter,
     body,
     diagnostics::{Stage, Trace},
-    execution::embeddings::PreparedEmbedding,
     ingress::{admission, capabilities},
     protocol::{
         embedding::{Encoding, Response as EmbeddingResponse},
@@ -17,8 +20,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
-use tokio::time::Instant;
+use std::{collections::BTreeMap, sync::Arc};
 
 pub(crate) type BoundEmbedding = super::BoundTask<EmbeddingRoute>;
 pub(crate) fn bind(
@@ -40,16 +42,11 @@ pub(crate) async fn handle(State(runtime): State<Arc<Runtime>>, request: Request
         .unwrap_or_else(IntoResponse::into_response)
 }
 async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, ApiError> {
-    let started = Instant::now();
-    let mut trace = Trace::for_request(runtime.diagnostics.as_ref(), &request);
-    let permit = admission::acquire_permit(&runtime)?;
-    admission::headers(request.headers(), runtime.limits.request_bytes)?;
-    let bytes = crate::ingress::http::read_body(
+    let (admitted, _, bytes) = Admission::upload(
         &runtime,
-        request.into_body(),
+        request,
         runtime.limits.request_bytes,
-        started + runtime.limits.exchange_timeout,
-        &mut trace,
+        admission::headers,
     )
     .await?;
     let parsed = codec::parse_request(&bytes).map_err(|_| ApiError::invalid())?;
@@ -66,106 +63,96 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
         .map_err(|_| ApiError::invalid())?;
     let prepared = crate::execution::embeddings::prepare(&entry.route, &entry.provider, &request)
         .map_err(|_| ApiError::invalid())?;
-    let deadline = started
-        + runtime.limits.exchange_timeout.min(Duration::from_millis(
-            entry.route.endpoint.execution.timeout_ms,
-        ));
-    if Instant::now() >= deadline {
-        return Err(ApiError::timeout());
-    }
-    body::respond_producer(
-        Exchange {
-            runtime: runtime.clone(),
+    admitted
+        .respond(
+            runtime,
             entry,
-            prepared,
-        },
-        body::ResponseType::Json,
-        runtime.limits.clone(),
-        deadline,
-        runtime.shutdown.clone(),
-        permit,
-        trace,
-    )
-    .await
-    .map(capabilities::notice)
+            prepared.request,
+            Output {
+                expectation: prepared.expectation,
+                delivery: prepared.delivery,
+            },
+        )
+        .await
+        .map(capabilities::notice)
 }
-pub(crate) async fn receive(
-    upstream: reqwest::Response,
-    limit: usize,
+async fn decode(
+    receiver: Receiver,
     trace: &mut Trace,
     profile: UpstreamAdapter,
     encoding: Encoding,
 ) -> Result<EmbeddingResponse, ApiError> {
-    let receiver = super::exchange::Receiver::new(
-        upstream,
-        limit.min(crate::semantic::value::JsonLimits::ENVELOPE.bytes),
-        trace,
-    )?;
     receiver.require_media("application/json")?;
     let bytes = receiver.collect(trace).await?;
     profile
         .decode_response_as(&bytes, encoding)
         .map_err(|_| ApiError::upstream())
 }
-/// One bounded upstream exchange behind the response body.
-struct Exchange {
-    runtime: Arc<Runtime>,
-    entry: Arc<BoundEmbedding>,
-    prepared: PreparedEmbedding,
+#[cfg(test)]
+pub(crate) async fn receive_for_test(
+    upstream: reqwest::Response,
+    limit: usize,
+    trace: &mut Trace,
+    profile: UpstreamAdapter,
+    encoding: Encoding,
+) -> Result<EmbeddingResponse, ApiError> {
+    decode(
+        Receiver::new(
+            upstream,
+            limit.min(crate::semantic::value::JsonLimits::ENVELOPE.bytes),
+            trace,
+        )?,
+        trace,
+        profile,
+        encoding,
+    )
+    .await
 }
-impl body::Produce for Exchange {
-    async fn produce(
+struct Output {
+    expectation: crate::protocol::embedding::projection::Expectation,
+    delivery: crate::protocol::embedding::projection::DeliveryPolicy,
+}
+impl TaskOutput for Output {
+    type Route = EmbeddingRoute;
+    const RESPONSE: body::ResponseType = body::ResponseType::Json;
+
+    fn receive_limit(&self, _: &BoundEmbedding, _: &crate::Limits, wire_limit: usize) -> usize {
+        wire_limit.min(crate::semantic::value::JsonLimits::ENVELOPE.bytes)
+    }
+
+    async fn publish(
         self,
-        _: &crate::Limits,
-        deadline: Instant,
+        receiver: Receiver,
+        entry: &BoundEmbedding,
+        limits: &crate::Limits,
         lane: &body::Lane<'_>,
         trace: &mut Trace,
     ) -> Result<(), ApiError> {
         let Self {
-            runtime,
-            entry,
-            prepared,
+            expectation,
+            delivery,
         } = self;
-        trace.begin_candidate(1);
-        trace.models(
-            entry.route.model.as_str(),
-            &entry.route.endpoint.upstream_model,
-        );
-        let result: Result<(), ApiError> = async {
-            let expectation = prepared.expectation;
-            let delivery = prepared.delivery;
+        let response = decode(
+            receiver,
+            trace,
+            entry.route.endpoint.profile,
+            expectation.upstream_encoding,
+        )
+        .await?;
+        expectation
+            .validate_response(&response)
+            .map_err(|_| ApiError::upstream())?;
+        trace.stage(Stage::Projection);
+        let projected =
+            crate::protocol::embedding::projection::project_response(&response, &delivery)
+                .map_err(|_| ApiError::upstream())?;
 
-            let upstream =
-                super::exchange::send(&runtime, &entry, prepared.request, deadline, trace).await?;
-            let response = receive(
-                upstream,
-                runtime
-                    .limits
-                    .response_bytes
-                    .min(entry.route.endpoint.execution.response_body_limit),
-                trace,
-                entry.route.endpoint.profile,
-                expectation.upstream_encoding,
-            )
-            .await?;
-            expectation
-                .validate_response(&response)
-                .map_err(|_| ApiError::upstream())?;
-            trace.stage(Stage::Projection);
-            let projected =
-                crate::protocol::embedding::projection::project_response(&response, &delivery)
-                    .map_err(|_| ApiError::upstream())?;
-
-            let value = codec::encode_response_as(&projected.response, delivery.encoding)
-                .map_err(|_| ApiError::upstream())?;
-            crate::semantic::value::json_size(&value, runtime.limits.response_bytes)
-                .map_err(|_| ApiError::upstream())?;
-            let output = serde_json::to_vec(&value).map_err(|_| ApiError::upstream())?;
-            body::send_final_frame(lane, output.into(), trace).await?;
-            Ok(())
-        }
-        .await;
-        trace.end_candidate(result.as_ref().err().map(|e| e.diagnostic_code()), false);
-        result
+        let value = codec::encode_response_as(&projected.response, delivery.encoding)
+            .map_err(|_| ApiError::upstream())?;
+        crate::semantic::value::json_size(&value, limits.response_bytes)
+            .map_err(|_| ApiError::upstream())?;
+        let output = serde_json::to_vec(&value).map_err(|_| ApiError::upstream())?;
+        body::send_final_frame(lane, output.into(), trace).await?;
+        Ok(())
     }
 }

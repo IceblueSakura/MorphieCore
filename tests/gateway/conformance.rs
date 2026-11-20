@@ -341,16 +341,16 @@ async fn observe_intake(
         (upstream == Api::Messages && profile == Profile::Reasoning)
             .then_some(ReasoningShape::Signed)
     });
-    let subscription = morphiecore::topology::catalog::SUBSCRIPTION_BINDINGS
+    let subscription = morphiecore::topology::catalog::subscription_bindings()
         .iter()
         .find(|entry| entry.endpoint_id().as_str() == binding);
     let oauth = subscription.map(|entry| entry.profile);
-    let bailian = morphiecore::topology::catalog::API_KEY_BINDINGS
+    let bailian = morphiecore::topology::catalog::api_key_bindings()
         .iter()
         .any(|entry| {
             entry.model == model
                 && entry.dialect == morphiecore::protocol::openai::Dialect::Bailian
-                && (entry.provider)().id.as_str() == provider
+                && entry.provider().id.as_str() == provider
         });
     let parameters = (client == Api::Responses && profile != Profile::Text).then(|| {
         wire::request(client, profile, model, stream)["tools"]
@@ -843,7 +843,7 @@ async fn native_reports_project_without_changing_content_or_terminal_outcome() {
 
 #[tokio::test]
 async fn representative_dialects_preserve_text_and_tool_workflows() {
-    use morphiecore::topology::{GenerationProtocol, catalog::API_KEY_BINDINGS};
+    use morphiecore::topology::{GenerationProtocol, catalog::api_key_bindings};
     // Exercise wire dialects and distinct tool/history policies, not catalog membership.
     for prefix in [
         "openai-terra",
@@ -858,13 +858,13 @@ async fn representative_dialects_preserve_text_and_tool_workflows() {
         "opencode-go-minimax",
         "zhipu",
     ] {
-        let entry = API_KEY_BINDINGS
+        let entry = api_key_bindings()
             .iter()
             .find(|entry| entry.endpoint_prefix == prefix)
             .unwrap();
-        let provider = (entry.provider)();
+        let provider = entry.provider();
         let credential = entry.credential();
-        for protocol in entry.protocols {
+        for protocol in &entry.protocols {
             let endpoint = entry.endpoint(*protocol).unwrap();
             let upstream = match protocol {
                 GenerationProtocol::OpenAiChat => Api::Chat,
@@ -954,13 +954,13 @@ async fn chat_json_only_facts_block_unconditional_streaming_intake() {
 
 #[tokio::test]
 async fn subscription_dialects_preserve_text_tools_and_reasoning() {
-    use morphiecore::topology::catalog::SUBSCRIPTION_BINDINGS;
+    use morphiecore::topology::catalog::subscription_bindings;
     for identity in ["chatgpt", "grok"] {
-        let entry = SUBSCRIPTION_BINDINGS
+        let entry = subscription_bindings()
             .iter()
             .find(|entry| entry.identity == identity)
             .unwrap();
-        let provider = (entry.provider)();
+        let provider = entry.provider();
         let endpoint = entry.endpoint_id();
         let credential = entry.credential();
         let binding = (

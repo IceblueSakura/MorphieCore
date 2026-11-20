@@ -14,7 +14,7 @@ async fn transcription_adapters_decode_only_after_eof() {
     ] {
     let (tx, response, dropped) = source(200, "application/json");
     tx.send(Ok(Bytes::copy_from_slice(result))).await.unwrap();
-    let mut pending = Box::pin(transcription::receive(
+    let mut pending = Box::pin(transcription::receive_for_test(
         response,
         profile,
         4096,
@@ -30,7 +30,7 @@ async fn transcription_adapters_decode_only_after_eof() {
 async fn cancelled_transcription_releases_upstream() {
     let mut trace = Trace::new(None);
     let (_tx, response, dropped) = source(200, "application/json");
-    let mut pending = Box::pin(transcription::receive(
+    let mut pending = Box::pin(transcription::receive_for_test(
         response,
         UpstreamAdapter::Xiaomi,
         4096,

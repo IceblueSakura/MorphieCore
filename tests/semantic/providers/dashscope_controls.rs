@@ -35,7 +35,7 @@ fn native_history_reading_has_independent_input_and_output_oracles() {
             .decode_client_request(wire.to_string().as_bytes())
             .unwrap();
         assert_eq!(public.task.semantic.reasoning().read_history, Some(enabled));
-        let endpoint = morphiecore::topology::catalog::API_KEY_BINDINGS
+        let endpoint = morphiecore::topology::catalog::api_key_bindings()
             .iter()
             .find(|binding| binding.endpoint_prefix == "dashscope-flash")
             .unwrap()

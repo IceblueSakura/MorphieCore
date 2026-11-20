@@ -56,7 +56,8 @@ impl EventDecoder {
         self.ignored
     }
     pub fn permits_responses_done(&self) -> bool {
-        self.profile == GenerationApi::Responses && self.adaptation.rules.responses_done_marker
+        self.profile == GenerationApi::Responses
+            && self.adaptation.rules.stream.responses_done_marker
     }
     pub fn validate_stream_payload(&self, value: &Value) -> Result<(), CodecError> {
         crate::openai::responses::envelope::validate_stream_payload_with(
@@ -92,16 +93,28 @@ impl EventDecoder {
             bounded(payload)?;
             let (normalized, extras) = if self.profile == GenerationApi::Responses {
                 if let Some(snapshot) = payload.get("response")
-                    && (self.adaptation.rules.routing_extras
-                        || self.adaptation.rules.responses_billing_view
-                        || self.adaptation.rules.responses_access_programs
-                        || self.adaptation.rules.responses_zero_tool_accounting
-                        || self.adaptation.rules.responses_inactive_reports
-                        || self.adaptation.rules.responses_usage_attribution
-                        || self.adaptation.rules.responses_context_accounting
-                        || self.adaptation.rules.responses_inactive_state
-                        || self.adaptation.rules.qwen4_responses_reasoning
-                        || self.adaptation.rules.responses_reasoning_text_shorthand)
+                    && (self.adaptation.rules.metadata.routing_extras
+                        || self.adaptation.rules.accounting.responses_billing_view
+                        || self.adaptation.rules.metadata.responses_access_programs
+                        || self
+                            .adaptation
+                            .rules
+                            .accounting
+                            .responses_zero_tool_accounting
+                        || self.adaptation.rules.metadata.responses_inactive_reports
+                        || self.adaptation.rules.accounting.responses_usage_attribution
+                        || self
+                            .adaptation
+                            .rules
+                            .accounting
+                            .responses_context_accounting
+                        || self.adaptation.rules.metadata.responses_inactive_state
+                        || self.adaptation.rules.reasoning.qwen4_responses_reasoning
+                        || self
+                            .adaptation
+                            .rules
+                            .reasoning
+                            .responses_reasoning_text_shorthand)
                 {
                     let (snapshot, extras) = crate::openai::dialect::adapter_shapes::decode(
                         snapshot,
@@ -112,7 +125,7 @@ impl EventDecoder {
                     let mut mapped = payload.clone();
                     mapped["response"] = snapshot.into_owned();
                     (std::borrow::Cow::Owned(mapped), extras)
-                } else if self.adaptation.rules.qwen4_responses_reasoning
+                } else if self.adaptation.rules.reasoning.qwen4_responses_reasoning
                     && payload.get("type").and_then(Value::as_str)
                         == Some("response.output_item.added")
                     && payload.pointer("/item/type").and_then(Value::as_str) == Some("reasoning")
@@ -126,8 +139,12 @@ impl EventDecoder {
                     let mut mapped = payload.clone();
                     mapped["item"]["encrypted_content"] = Value::Null;
                     (std::borrow::Cow::Owned(mapped), Default::default())
-                } else if (self.adaptation.rules.responses_reasoning_format
-                    || self.adaptation.rules.responses_reasoning_text_shorthand)
+                } else if (self.adaptation.rules.reasoning.responses_reasoning_format
+                    || self
+                        .adaptation
+                        .rules
+                        .reasoning
+                        .responses_reasoning_text_shorthand)
                     && payload.get("item").is_some()
                 {
                     let mut mapped = payload.clone();
@@ -331,7 +348,7 @@ impl EventDecoder {
             self.responses.native_reports = Some(crate::reports::observe(
                 self.responses.native_reports.as_ref(),
                 &native.reports,
-                self.adaptation.rules.responses_lifecycle_reports,
+                self.adaptation.rules.metadata.responses_lifecycle_reports,
             )?);
         }
         let mut m = crate::openai::context::metadata(
@@ -352,8 +369,8 @@ impl EventDecoder {
                 return Err(CodecError::Invalid(ShapeReason::MetadataModelChanged));
             }
             if old.created != m.created {
-                if !(self.adaptation.rules.chunk_metadata_drift
-                    || self.adaptation.rules.chunk_created_drift)
+                if self.adaptation.rules.metadata.chunk
+                    == crate::openai::dialect::adaptation::ChunkMetadata::Strict
                 {
                     return Err(CodecError::Invalid(ShapeReason::MetadataCreatedChanged));
                 }
@@ -363,7 +380,7 @@ impl EventDecoder {
                 m.context.reports = crate::reports::observe(
                     Some(&old.context.reports),
                     &m.context.reports,
-                    self.adaptation.rules.responses_lifecycle_reports,
+                    self.adaptation.rules.metadata.responses_lifecycle_reports,
                 )?;
             } else if !old.context.service_class().is_none() {
                 if !m.context.service_class().is_none()
@@ -380,7 +397,8 @@ impl EventDecoder {
             if !old.context.system_fingerprint.is_none() {
                 if !m.context.system_fingerprint.is_none()
                     && old.context.system_fingerprint != m.context.system_fingerprint
-                    && !self.adaptation.rules.chunk_metadata_drift
+                    && self.adaptation.rules.metadata.chunk
+                        != crate::openai::dialect::adaptation::ChunkMetadata::StableCreatedAndFingerprint
                 {
                     return Err(CodecError::Invalid(ShapeReason::Metadata));
                 }

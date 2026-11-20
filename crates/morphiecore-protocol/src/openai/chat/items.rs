@@ -61,7 +61,7 @@ pub(in crate::openai) fn decode_whole(
     side: MessageSide,
 ) -> Result<(), CodecError> {
     let message = crate::openai::chat::reasoning::decode_static(b, m, adaptation)?;
-    decode_message(b, &message, side, adaptation.rules.chat_video_url)
+    decode_message(b, &message, side, adaptation.rules.request.chat_video_url)
 }
 
 fn decode_message(

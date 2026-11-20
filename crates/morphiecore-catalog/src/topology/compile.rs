@@ -8,6 +8,8 @@ use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum TopologyError {
+    #[error("invalid embedded topology catalog")]
+    InvalidCatalog,
     #[error("duplicate provider")]
     DuplicateProvider,
     #[error("duplicate endpoint")]
@@ -69,6 +71,7 @@ pub struct CompiledTopology {
     pub(super) image_routes: BTreeMap<String, super::images::ImageRoute>,
     pub(super) speech_routes: BTreeMap<String, super::speech::SpeechRoute>,
     pub(super) transcription_routes: BTreeMap<String, super::transcription::TranscriptionRoute>,
+    pub(super) transcription_models: BTreeMap<String, Vec<EndpointId>>,
     pub(super) embedding_routes: BTreeMap<String, super::embeddings::EmbeddingRoute>,
     pub(super) model_metadata: BTreeMap<String, super::ModelMetadata>,
 }
@@ -118,6 +121,7 @@ impl CompiledTopology {
         compiled.image_routes = self.image_routes;
         compiled.speech_routes = self.speech_routes;
         compiled.transcription_routes = self.transcription_routes;
+        compiled.transcription_models = self.transcription_models;
         compiled.embedding_routes = self.embedding_routes;
         compiled.model_metadata = self.model_metadata;
         Ok(compiled)
@@ -296,6 +300,7 @@ fn compile_deployments(
         image_routes: BTreeMap::new(),
         speech_routes: BTreeMap::new(),
         transcription_routes: BTreeMap::new(),
+        transcription_models: BTreeMap::new(),
         embedding_routes: BTreeMap::new(),
         model_metadata: BTreeMap::new(),
     })

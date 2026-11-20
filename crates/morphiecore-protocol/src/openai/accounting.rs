@@ -39,11 +39,12 @@ pub(super) fn usage(
         input_details,
         output_details,
     ];
-    let cache_aliases = profile == GenerationApi::Chat && adaptation.rules.chat_cache_usage_aliases;
+    let cache_aliases =
+        profile == GenerationApi::Chat && adaptation.rules.accounting.chat_cache_usage_aliases;
     if cache_aliases {
         allowed.extend(["prompt_cache_hit_tokens", "prompt_cache_miss_tokens"]);
     }
-    if profile == GenerationApi::Chat && adaptation.rules.chat_reasoning_usage_alias {
+    if profile == GenerationApi::Chat && adaptation.rules.accounting.chat_reasoning_usage_alias {
         allowed.push("reasoning_tokens");
     }
     DecodeDirection::Upstream.fields(usage, &allowed)?;
@@ -56,7 +57,7 @@ pub(super) fn usage(
         total_tokens: Some(count(usage, "total_tokens")?),
         cached_input_tokens: detail(usage, input_details, "cached_tokens")?,
         input_image_tokens: if profile == GenerationApi::Chat
-            || adaptation.rules.responses_image_usage
+            || adaptation.rules.accounting.responses_image_usage
         {
             detail(usage, input_details, "image_tokens")?
         } else {
@@ -75,14 +76,14 @@ pub(super) fn usage(
         input_cache_write_tokens: detail(usage, input_details, "cache_write_tokens")?,
         reasoning_tokens: detail(usage, output_details, "reasoning_tokens")?,
         input_text_tokens: if profile == GenerationApi::Chat
-            || adaptation.rules.responses_text_usage
+            || adaptation.rules.accounting.responses_text_usage
         {
             detail(usage, input_details, "text_tokens")?
         } else {
             None
         },
         output_text_tokens: if profile == GenerationApi::Chat
-            || adaptation.rules.responses_text_usage
+            || adaptation.rules.accounting.responses_text_usage
         {
             detail(usage, output_details, "text_tokens")?
         } else {
@@ -100,7 +101,7 @@ pub(super) fn usage(
         },
     };
     if profile == GenerationApi::Chat
-        && adaptation.rules.chat_reasoning_usage_alias
+        && adaptation.rules.accounting.chat_reasoning_usage_alias
         && let Some(value) = usage.get("reasoning_tokens")
     {
         let reported = if value.is_null() {
@@ -152,7 +153,8 @@ pub(super) fn usage(
             return Err(CodecError::Invalid(ShapeReason::Usage));
         }
     }
-    if parsed.input_cache_write_tokens.is_none() && adaptation.rules.default_cache_write {
+    if parsed.input_cache_write_tokens.is_none() && adaptation.rules.accounting.default_cache_write
+    {
         parsed.input_cache_write_tokens = Some(0);
         evidence.record_cache_write_default(adaptation.profile_id, boundary);
     }
@@ -253,14 +255,14 @@ pub(super) fn encode_usage(
                 "input_tokens_details"
             })
             .or_insert_with(|| json!({}));
-        details[if profile == GenerationApi::Chat && rules.chat_inference_response_shape {
+        details[if profile == GenerationApi::Chat && rules.hooks.chat_inference_response_shape {
             "created_cache_tokens"
         } else {
             "cache_write_tokens"
         }] = json!(written);
     }
     if let Some(reasoning) = usage.reasoning_tokens {
-        if profile == GenerationApi::Chat && rules.chat_reasoning_usage_alias {
+        if profile == GenerationApi::Chat && rules.accounting.chat_reasoning_usage_alias {
             object.insert("reasoning_tokens".into(), json!(reasoning));
         } else {
             let key = if profile == GenerationApi::Chat {
@@ -279,7 +281,7 @@ pub(super) fn encode_usage(
             "input_tokens_details"
         };
         let details = object.entry(key).or_insert_with(|| json!({}));
-        if profile == GenerationApi::Chat && rules.chat_inference_response_shape {
+        if profile == GenerationApi::Chat && rules.hooks.chat_inference_response_shape {
             details["multimodal_tokens"] = json!({"image":images});
         } else {
             details["image_tokens"] = json!(images);
@@ -334,7 +336,7 @@ pub(super) fn encode_usage(
         }
     }
     if profile == GenerationApi::Responses
-        && rules.responses_billing_view
+        && rules.accounting.responses_billing_view
         && (usage.input_image_tokens.is_some()
             || usage.input_text_tokens.is_some()
             || usage.output_text_tokens.is_some())

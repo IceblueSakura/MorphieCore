@@ -120,7 +120,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         GenerationApi::Responses,
     )?;
     target.semantic.validate()?;
-    if target.adaptation.rules.bailian_requests {
+    if target.adaptation.rules.hooks.bailian_requests {
         crate::openai::dialect::bailian::check_semantic(
             &target.semantic,
             GenerationApi::Responses,
@@ -169,7 +169,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         ) {
             continue;
         }
-        if target.adaptation.rules.responses_typed_messages
+        if target.adaptation.rules.request.responses_typed_messages
             && matches!(
                 item.get("role").and_then(Value::as_str),
                 Some("system" | "developer" | "user" | "assistant")
@@ -177,18 +177,20 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         {
             item["type"] = json!("message");
         }
-        if target.adaptation.rules.system_instruction_messages
+        if target.adaptation.rules.request.system_instruction_messages
             && item.get("role").and_then(Value::as_str) == Some("developer")
         {
             item["role"] = json!("system");
         }
     }
     let mut v = json!({ "input": input });
-    if target.adaptation.rules.bailian_requests || target.adaptation.rules.thinking_controls {
+    if target.adaptation.rules.hooks.bailian_requests
+        || target.adaptation.rules.reasoning.thinking_controls
+    {
         let mut standard = encoded_settings.clone();
         standard.reasoning = ReasoningRequest::absent();
         standard.effort = None;
-        if target.adaptation.rules.bailian_requests {
+        if target.adaptation.rules.hooks.bailian_requests {
             standard.tools = None;
             standard.tool_choice = None;
             standard.parallel_tool_calls = None;
@@ -200,7 +202,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
             o,
             GenerationApi::Responses,
         )?;
-        if target.adaptation.rules.bailian_requests {
+        if target.adaptation.rules.hooks.bailian_requests {
             crate::openai::dialect::bailian::write_tools(
                 target.semantic.settings(),
                 o,

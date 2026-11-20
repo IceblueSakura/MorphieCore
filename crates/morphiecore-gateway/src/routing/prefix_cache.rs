@@ -162,9 +162,9 @@ fn lookup_profile(
     let adapter = adapter.openai().map_err(|_| None)?;
     let mut cache = endpoint.representation.cache();
     cache.intersect(adapter.adaptation.cache);
-    if !cache.key && !adapter.adaptation.rules.opencode_go_headers
+    if !cache.key && !adapter.adaptation.rules.hooks.opencode_go_headers
         || cache.key
-            && !adapter.adaptation.rules.opencode_go_headers
+            && !adapter.adaptation.rules.hooks.opencode_go_headers
             && !request.context.cache.prompt_cache_key.is_none()
     {
         return Err(Some("explicit_or_unmapped"));

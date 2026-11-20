@@ -3,12 +3,16 @@
 use crate::{
     openai::{
         GenerationApi,
-        dialect::adaptation::{Adaptation, ChatFinishReason, WireRules},
+        dialect::adaptation::{
+            AccountingRules, Adaptation, ChatFinishReason, ChunkMetadata, HooksRules,
+            MetadataRules, ReasoningRules, RequestRules, StreamRules, WireRules,
+        },
     },
     semantic::value::ReplayOrigin,
 };
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Dialect {
     #[default]
     Standard,
@@ -35,98 +39,167 @@ impl Dialect {
             Self::Siwc => (
                 "openai-responses",
                 WireRules {
-                    responses_siwc: true,
-                    responses_access_programs: true,
-                    responses_zero_tool_accounting: true,
-                    responses_inactive_reports: true,
-                    responses_usage_attribution: true,
-                    responses_event_owned_output: true,
-                    responses_sse_without_content_type: true,
+                    hooks: HooksRules {
+                        responses_siwc: true,
+                        ..Default::default()
+                    },
+                    metadata: MetadataRules {
+                        responses_access_programs: true,
+                        responses_inactive_reports: true,
+                        ..Default::default()
+                    },
+                    accounting: AccountingRules {
+                        responses_zero_tool_accounting: true,
+                        responses_usage_attribution: true,
+                        ..Default::default()
+                    },
+                    stream: StreamRules {
+                        responses_event_owned_output: true,
+                        responses_sse_without_content_type: true,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
             ),
             Self::Grok => (
                 "grok-v1",
                 WireRules {
-                    response_extras: true,
-                    responses_context_accounting: true,
+                    metadata: MetadataRules {
+                        response_extras: true,
+                        ..Default::default()
+                    },
+                    accounting: AccountingRules {
+                        responses_context_accounting: true,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
             ),
             Self::MorphieCore => (
                 "morphiecore-v1",
                 WireRules {
-                    chat_video_url: true,
-                    readable_reasoning: true,
-                    chat_preserve_thinking: true,
-                    thinking_controls: true,
-                    structured_chat_reasoning: true,
-                    accept_reasoning_alias: true,
-                    responses_image_usage: true,
-                    responses_text_usage: true,
+                    request: RequestRules {
+                        chat_video_url: true,
+                        ..Default::default()
+                    },
+                    reasoning: ReasoningRules {
+                        readable_reasoning: true,
+                        chat_preserve_thinking: true,
+                        thinking_controls: true,
+                        structured_chat_reasoning: true,
+                        accept_reasoning_alias: true,
+                        ..Default::default()
+                    },
+                    accounting: AccountingRules {
+                        responses_image_usage: true,
+                        responses_text_usage: true,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
             ),
             Self::DeepSeek => (
                 "deepseek-v1",
                 WireRules {
-                    deepseek_chat_requests: profile == GenerationApi::Chat,
-                    deepseek_responses_reasoning: profile == GenerationApi::Responses,
-                    legacy_max_tokens: profile == GenerationApi::Chat,
-                    chat_finish_reasons: &[
-                        (
-                            "insufficient_system_resource",
-                            ChatFinishReason::ResourceFailure,
-                        ),
-                        ("aborted", ChatFinishReason::Interrupted),
-                    ],
-                    system_instruction_messages: true,
-                    responses_developer_is_user: profile == GenerationApi::Responses,
-                    parallel_tools_always_enabled: true,
-                    chat_cache_usage_aliases: true,
-                    readable_reasoning: true,
-                    chat_original_image_detail: true,
-                    default_cache_write: true,
-                    response_extras: true,
-                    chunk_metadata_drift: true,
+                    hooks: HooksRules {
+                        deepseek_chat_requests: profile == GenerationApi::Chat,
+                        ..Default::default()
+                    },
+                    reasoning: ReasoningRules {
+                        deepseek_responses_reasoning: profile == GenerationApi::Responses,
+                        readable_reasoning: true,
+                        ..Default::default()
+                    },
+                    request: RequestRules {
+                        legacy_max_tokens: profile == GenerationApi::Chat,
+                        system_instruction_messages: true,
+                        responses_developer_is_user: profile == GenerationApi::Responses,
+                        parallel_tools_always_enabled: true,
+                        chat_original_image_detail: true,
+                        ..Default::default()
+                    },
+                    metadata: MetadataRules {
+                        chat_finish_reasons: &[
+                            (
+                                "insufficient_system_resource",
+                                ChatFinishReason::ResourceFailure,
+                            ),
+                            ("aborted", ChatFinishReason::Interrupted),
+                        ],
+                        response_extras: true,
+                        chunk: ChunkMetadata::StableCreatedAndFingerprint,
+                        ..Default::default()
+                    },
+                    accounting: AccountingRules {
+                        chat_cache_usage_aliases: true,
+                        default_cache_write: true,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
             ),
             Self::OpenRouter => (
                 "openrouter-v1",
                 WireRules {
-                    chat_finish_reasons: &[("error", ChatFinishReason::ServerFailure)],
-                    chat_video_url: true,
-                    responses_input_video: true,
-                    readable_reasoning: true,
-                    routing_extras: true,
-                    openrouter_session: true,
-                    response_extras: true,
-                    responses_reasoning_format: true,
-                    responses_access_programs: true,
-                    responses_done_marker: true,
-                    responses_initial_failed: profile == GenerationApi::Responses,
-                    accept_reasoning_alias: true,
-                    reasoning_alias: true,
-                    structured_chat_reasoning: true,
-                    // Non-OpenAI models (`z-ai/glm-5.3`) stream `format: "unknown"` text.
-                    unversioned_chat_reasoning_view: true,
-                    repeated_finish_usage: true,
-                    require_parameters: true,
+                    metadata: MetadataRules {
+                        chat_finish_reasons: &[("error", ChatFinishReason::ServerFailure)],
+                        routing_extras: true,
+                        response_extras: true,
+                        responses_access_programs: true,
+                        ..Default::default()
+                    },
+                    request: RequestRules {
+                        chat_video_url: true,
+                        responses_input_video: true,
+                        ..Default::default()
+                    },
+                    reasoning: ReasoningRules {
+                        readable_reasoning: true,
+                        responses_reasoning_format: true,
+                        accept_reasoning_alias: true,
+                        reasoning_alias: true,
+                        structured_chat_reasoning: true,
+                        // Non-OpenAI models (`z-ai/glm-5.3`) stream `format: "unknown"` text.
+                        unversioned_chat_reasoning_view: true,
+                        ..Default::default()
+                    },
+                    hooks: HooksRules {
+                        openrouter_session: true,
+                        require_parameters: true,
+                        ..Default::default()
+                    },
+                    stream: StreamRules {
+                        responses_done_marker: true,
+                        responses_initial_failed: profile == GenerationApi::Responses,
+                        repeated_finish_usage: true,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
             ),
             Self::OpenCodeGo => (
                 "opencode-go-v1",
                 WireRules {
-                    readable_reasoning: true,
-                    reject_reasoning_controls: true,
-                    accept_reasoning_alias: true,
-                    reasoning_alias: true,
-                    unversioned_chat_reasoning_view: true,
-                    repeated_finish_usage: true,
-                    legacy_max_tokens: true,
-                    opencode_go_headers: true,
+                    reasoning: ReasoningRules {
+                        readable_reasoning: true,
+                        accept_reasoning_alias: true,
+                        reasoning_alias: true,
+                        unversioned_chat_reasoning_view: true,
+                        ..Default::default()
+                    },
+                    request: RequestRules {
+                        reject_reasoning_controls: true,
+                        legacy_max_tokens: true,
+                        ..Default::default()
+                    },
+                    stream: StreamRules {
+                        repeated_finish_usage: true,
+                        ..Default::default()
+                    },
+                    hooks: HooksRules {
+                        opencode_go_headers: true,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
             ),
@@ -136,91 +209,162 @@ impl Dialect {
             Self::ModelBest => (
                 "modelbest-v1",
                 WireRules {
-                    chat_video_url: true,
-                    readable_reasoning: true,
-                    accept_reasoning_alias: true,
-                    reasoning_alias: true,
-                    chat_stop_diagnostics: true,
-                    chat_reasoning_usage_alias: true,
-                    chunk_created_drift: true,
-                    chat_inference_response_shape: true,
-                    legacy_max_tokens: true,
-                    chat_template_thinking: profile == GenerationApi::Chat,
-                    reject_reasoning_controls: profile != GenerationApi::Chat,
+                    request: RequestRules {
+                        chat_video_url: true,
+                        legacy_max_tokens: true,
+                        reject_reasoning_controls: profile != GenerationApi::Chat,
+                        ..Default::default()
+                    },
+                    reasoning: ReasoningRules {
+                        readable_reasoning: true,
+                        accept_reasoning_alias: true,
+                        reasoning_alias: true,
+                        chat_template_thinking: profile == GenerationApi::Chat,
+                        ..Default::default()
+                    },
+                    metadata: MetadataRules {
+                        chat_stop_diagnostics: true,
+                        chunk: ChunkMetadata::StableCreated,
+                        ..Default::default()
+                    },
+                    accounting: AccountingRules {
+                        chat_reasoning_usage_alias: true,
+                        ..Default::default()
+                    },
+                    hooks: HooksRules {
+                        chat_inference_response_shape: true,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
             ),
             Self::Nvidia => (
                 "nvidia-v1",
                 WireRules {
-                    readable_reasoning: true,
-                    legacy_max_tokens: true,
-                    response_extras: true,
-                    responses_reasoning_text_shorthand: true,
-                    responses_terminal_reasoning: true,
-                    responses_done_marker: true,
+                    reasoning: ReasoningRules {
+                        readable_reasoning: true,
+                        responses_reasoning_text_shorthand: true,
+                        responses_terminal_reasoning: true,
+                        ..Default::default()
+                    },
+                    request: RequestRules {
+                        legacy_max_tokens: true,
+                        ..Default::default()
+                    },
+                    metadata: MetadataRules {
+                        response_extras: true,
+                        ..Default::default()
+                    },
+                    stream: StreamRules {
+                        responses_done_marker: true,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
             ),
             Self::Bailian => (
                 "bailian-v1",
                 WireRules {
-                    system_instruction_messages: profile == GenerationApi::Chat,
-                    chat_string_instructions: profile == GenerationApi::Chat,
-                    chat_video_url: true,
-                    // Both billing plans use the same upstream wire dialect.
-                    chunk_created_drift: true,
-                    empty_continuation_call_id: true,
-                    responses_reported_schema_alias: true,
-                    readable_reasoning: true,
-                    chat_preserve_thinking: true,
-                    thinking_controls: true,
-                    bailian_requests: true,
-                    response_extras: true,
-                    responses_billing_view: true,
-                    responses_text_usage: true,
-                    responses_image_usage: true,
-                    responses_summary_text_alias: true,
-                    ..Default::default()
+                    request: RequestRules {
+                        system_instruction_messages: profile == GenerationApi::Chat,
+                        chat_string_instructions: profile == GenerationApi::Chat,
+                        chat_video_url: true,
+                        ..Default::default()
+                    },
+                    metadata: MetadataRules {
+                        // Both billing plans use the same upstream wire dialect.
+                        chunk: ChunkMetadata::StableCreated,
+                        responses_reported_schema_alias: true,
+                        response_extras: true,
+                        ..Default::default()
+                    },
+                    stream: StreamRules {
+                        empty_continuation_call_id: true,
+                        ..Default::default()
+                    },
+                    reasoning: ReasoningRules {
+                        readable_reasoning: true,
+                        chat_preserve_thinking: true,
+                        thinking_controls: true,
+                        responses_summary_text_alias: true,
+                        ..Default::default()
+                    },
+                    hooks: HooksRules {
+                        bailian_requests: true,
+                        ..Default::default()
+                    },
+                    accounting: AccountingRules {
+                        responses_billing_view: true,
+                        responses_text_usage: true,
+                        responses_image_usage: true,
+                        ..Default::default()
+                    },
                 },
             ),
             Self::Zhipu => (
                 "zhipu-v1",
                 WireRules {
-                    chat_finish_reasons: &[
-                        ("sensitive", ChatFinishReason::ContentFilter),
-                        (
-                            "model_context_window_exceeded",
-                            ChatFinishReason::ContextWindow,
-                        ),
-                        ("network_error", ChatFinishReason::NetworkFailure),
-                    ],
-                    // Chat and Responses have different role and message-shape contracts.
-                    // https://docs.bigmodel.cn/api-reference/模型-api/对话补全
-                    // https://docs.bigmodel.cn/api-reference/response/创建-response
-                    system_instruction_messages: profile == GenerationApi::Chat,
-                    chat_string_instructions: profile == GenerationApi::Chat,
-                    responses_typed_messages: profile == GenerationApi::Responses,
-                    chat_video_url: true,
-                    readable_reasoning: true,
-                    reject_disabled_reasoning: true,
-                    legacy_max_tokens: true,
-                    reported_request_id: true,
-                    responses_inactive_state: true,
-                    responses_unreported_text_logprobs: true,
-                    // Optional transport trailer, never a replacement for a real terminal.
-                    responses_done_marker: true,
+                    metadata: MetadataRules {
+                        chat_finish_reasons: &[
+                            ("sensitive", ChatFinishReason::ContentFilter),
+                            (
+                                "model_context_window_exceeded",
+                                ChatFinishReason::ContextWindow,
+                            ),
+                            ("network_error", ChatFinishReason::NetworkFailure),
+                        ],
+                        reported_request_id: true,
+                        responses_inactive_state: true,
+                        ..Default::default()
+                    },
+                    request: RequestRules {
+                        // Chat and Responses have different role and message-shape contracts.
+                        // https://docs.bigmodel.cn/api-reference/模型-api/对话补全
+                        // https://docs.bigmodel.cn/api-reference/response/创建-response
+                        system_instruction_messages: profile == GenerationApi::Chat,
+                        chat_string_instructions: profile == GenerationApi::Chat,
+                        responses_typed_messages: profile == GenerationApi::Responses,
+                        chat_video_url: true,
+                        reject_disabled_reasoning: true,
+                        legacy_max_tokens: true,
+                        ..Default::default()
+                    },
+                    reasoning: ReasoningRules {
+                        readable_reasoning: true,
+                        ..Default::default()
+                    },
+                    stream: StreamRules {
+                        responses_unreported_text_logprobs: true,
+                        // Optional transport trailer, never a replacement for a real terminal.
+                        responses_done_marker: true,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
             ),
             Self::Xiaomi => (
                 "xiaomi-v1",
                 WireRules {
-                    chat_finish_reasons: &[("repetition_truncation", ChatFinishReason::Repetition)],
-                    omit_image_detail: true,
-                    readable_reasoning: true,
-                    responses_unreported_text_logprobs: true,
-                    chunk_metadata_drift: true,
+                    metadata: MetadataRules {
+                        chat_finish_reasons: &[(
+                            "repetition_truncation",
+                            ChatFinishReason::Repetition,
+                        )],
+                        chunk: ChunkMetadata::StableCreatedAndFingerprint,
+                        ..Default::default()
+                    },
+                    request: RequestRules {
+                        omit_image_detail: true,
+                        ..Default::default()
+                    },
+                    reasoning: ReasoningRules {
+                        readable_reasoning: true,
+                        ..Default::default()
+                    },
+                    stream: StreamRules {
+                        responses_unreported_text_logprobs: true,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
             ),
@@ -267,8 +411,8 @@ impl Dialect {
             cache.key = false;
         }
         if self == Self::Bailian && profile != GenerationApi::Chat {
-            rules.chunk_created_drift = false;
-            rules.empty_continuation_call_id = false;
+            rules.metadata.chunk = ChunkMetadata::Strict;
+            rules.stream.empty_continuation_call_id = false;
         }
         Adaptation {
             rules,

@@ -1,5 +1,9 @@
 //! Authenticated Speech admission and bounded static binary delivery.
 pub(crate) mod aliyun;
+use crate::tasks::{
+    exchange::Receiver,
+    lifecycle::{Admission, TaskOutput},
+};
 use crate::{
     ApiError, Credentials, Runtime, SpeechEntry, StartupError, body,
     diagnostics::{Stage, Trace},
@@ -16,8 +20,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
-use tokio::time::Instant;
+use std::{collections::BTreeMap, sync::Arc};
 
 pub(crate) type BoundSpeech = crate::tasks::BoundTask<SpeechRoute>;
 pub(crate) fn bind(
@@ -39,16 +42,11 @@ pub(crate) async fn handle(State(runtime): State<Arc<Runtime>>, request: Request
         .unwrap_or_else(IntoResponse::into_response)
 }
 async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, ApiError> {
-    let started = Instant::now();
-    let mut trace = Trace::for_request(runtime.diagnostics.as_ref(), &request);
-    let permit = admission::acquire_permit(&runtime)?;
-    admission::headers(request.headers(), runtime.limits.request_bytes)?;
-    let bytes = crate::ingress::http::read_body(
+    let (admitted, _, bytes) = Admission::upload(
         &runtime,
-        request.into_body(),
+        request,
         runtime.limits.request_bytes,
-        started + runtime.limits.exchange_timeout,
-        &mut trace,
+        admission::headers,
     )
     .await?;
     let envelope = crate::protocol::json::decode(&bytes).map_err(|_| ApiError::invalid())?;
@@ -67,37 +65,16 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
     let request = codec::decode_request(&bytes).map_err(|_| ApiError::invalid())?;
     let prepared = crate::execution::speech::prepare(&entry.route, &entry.provider, &request)
         .map_err(|_| ApiError::invalid())?;
-    let deadline = started
-        + runtime.limits.exchange_timeout.min(Duration::from_millis(
-            entry.route.endpoint.execution.timeout_ms,
-        ));
-    if Instant::now() >= deadline {
-        return Err(ApiError::timeout());
-    }
-    body::respond_producer(
-        Exchange {
-            runtime: runtime.clone(),
-            entry,
-            request,
-            prepared,
-        },
-        body::ResponseType::Audio,
-        runtime.limits.clone(),
-        deadline,
-        runtime.shutdown.clone(),
-        permit,
-        trace,
-    )
-    .await
+    admitted
+        .respond(runtime, entry, prepared, Output(request))
+        .await
 }
-pub(crate) async fn receive(
-    upstream: reqwest::Response,
+async fn decode(
+    receiver: Receiver,
     task: &SpeechRequest,
     profile: crate::adapter::speech::UpstreamAdapter,
-    limit: usize,
     trace: &mut Trace,
 ) -> Result<AudioArtifact, ApiError> {
-    let receiver = super::exchange::Receiver::new(upstream, limit.min(MAX_AUDIO_BYTES), trace)?;
     let encoding = profile
         .reported_encoding(receiver.media_type(), task)
         .map_err(|_| ApiError::upstream())?;
@@ -112,73 +89,70 @@ pub(crate) async fn receive(
         AudioArtifact::new(bytes.into(), encoding).map_err(|_| ApiError::upstream())
     }
 }
-/// One bounded upstream exchange behind the response body.
-struct Exchange {
-    runtime: Arc<Runtime>,
-    entry: Arc<BoundSpeech>,
-    prepared: crate::execution::task::PreparedTaskRequest,
-    request: crate::protocol::speech::Request,
+#[cfg(test)]
+pub(crate) async fn receive_for_test(
+    upstream: reqwest::Response,
+    task: &SpeechRequest,
+    profile: crate::adapter::speech::UpstreamAdapter,
+    limit: usize,
+    trace: &mut Trace,
+) -> Result<AudioArtifact, ApiError> {
+    decode(
+        Receiver::new(upstream, limit.min(MAX_AUDIO_BYTES), trace)?,
+        task,
+        profile,
+        trace,
+    )
+    .await
 }
-impl body::Produce for Exchange {
-    async fn produce(
+struct Output(crate::protocol::speech::Request);
+impl TaskOutput for Output {
+    type Route = SpeechRoute;
+    const RESPONSE: body::ResponseType = body::ResponseType::Audio;
+
+    fn receive_limit(
+        &self,
+        entry: &BoundSpeech,
+        limits: &crate::Limits,
+        wire_limit: usize,
+    ) -> usize {
+        if entry.route.endpoint.profile.upstream_sse() {
+            wire_limit
+        } else {
+            limits.speech_bytes.min(wire_limit).min(MAX_AUDIO_BYTES)
+        }
+    }
+
+    async fn publish(
         self,
-        _: &crate::Limits,
-        deadline: Instant,
+        receiver: Receiver,
+        entry: &BoundSpeech,
+        limits: &crate::Limits,
         lane: &body::Lane<'_>,
         trace: &mut Trace,
     ) -> Result<(), ApiError> {
-        let Self {
-            runtime,
-            entry,
-            request,
-            prepared,
-        } = self;
-        trace.begin_candidate(1);
-        trace.models(
-            entry.route.model.as_str(),
-            &entry.route.endpoint.upstream_model,
-        );
-        let result: Result<(), ApiError> = async {
-            let upstream =
-                super::exchange::send(&runtime, &entry, prepared, deadline, trace).await?;
-            let limit = runtime
-                .limits
-                .speech_bytes
-                .min(runtime.limits.response_bytes)
-                .min(entry.route.endpoint.execution.response_body_limit)
-                .min(MAX_AUDIO_BYTES);
-            let audio = if entry.route.endpoint.profile.upstream_sse() {
-                let result = crate::tasks::speech::aliyun::receive(
-                    upstream,
-                    limit,
-                    runtime
-                        .limits
-                        .response_bytes
-                        .min(entry.route.endpoint.execution.response_body_limit),
-                    runtime.limits.event_bytes,
-                    runtime.limits.max_events,
-                    trace,
-                )
-                .await?;
-                codec::project_result(&result)
-                    .map_err(|_| ApiError::upstream())?
-                    .audio
-            } else {
-                receive(
-                    upstream,
-                    &request.task,
-                    entry.route.endpoint.profile,
-                    limit,
-                    trace,
-                )
-                .await?
-            };
-            trace.stage(Stage::Projection);
-            body::send_final_audio(lane, audio, trace).await?;
-            Ok(())
-        }
-        .await;
-        trace.end_candidate(result.as_ref().err().map(|e| e.diagnostic_code()), false);
-        result
+        let wire_limit = limits
+            .response_bytes
+            .min(entry.route.endpoint.execution.response_body_limit);
+        let audio_limit = limits.speech_bytes.min(wire_limit).min(MAX_AUDIO_BYTES);
+        let audio = if entry.route.endpoint.profile.upstream_sse() {
+            let result = aliyun::decode(
+                receiver,
+                audio_limit,
+                wire_limit,
+                limits.event_bytes,
+                limits.max_events,
+                trace,
+            )
+            .await?;
+            codec::project_result(&result)
+                .map_err(|_| ApiError::upstream())?
+                .audio
+        } else {
+            decode(receiver, &self.0.task, entry.route.endpoint.profile, trace).await?
+        };
+        trace.stage(Stage::Projection);
+        body::send_final_audio(lane, audio, trace).await?;
+        Ok(())
     }
 }

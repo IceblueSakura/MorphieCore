@@ -15,7 +15,7 @@ use morphiecore::{
     gateway::{Entry, Gateway, Limits},
     protocol::{openai::GenerationApi, replay_envelope},
     provider::{CredentialBindingId, SecretMaterial, TrustedOrigin},
-    topology::{self, ModelMetadata, catalog::MESSAGES_BINDINGS},
+    topology::{self, ModelMetadata, catalog::messages_bindings},
 };
 use serde_json::{Value, json};
 use std::{
@@ -325,7 +325,7 @@ async fn native_fixture() -> NativeFixture {
     let upstream = Guard(tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap()
     }));
-    let binding = &MESSAGES_BINDINGS[0];
+    let binding = &messages_bindings()[0];
     let mut provider = binding.provider();
     provider.origin = TrustedOrigin::parse(&origin).unwrap();
     let mut endpoint = binding.endpoint();
@@ -434,13 +434,13 @@ async fn incomplete_native_tool_prefixes_survive_stateless_json_and_sse() {
                 tool["type"] = json!("function");
                 (
                     "/v1/responses",
-                    json!({"model":MESSAGES_BINDINGS[0].model,
+                    json!({"model":messages_bindings()[0].model,
                     "max_output_tokens":64,"store":false,"input":"partial-tool","tools":[tool]}),
                 )
             } else {
                 (
                     "/v1/chat/completions",
-                    json!({"model":MESSAGES_BINDINGS[0].model,
+                    json!({"model":messages_bindings()[0].model,
                     "max_completion_tokens":64,"messages":[{"role":"user","content":"partial-tool"}],
                     "tools":[{"type":"function","function":function}],
                     "stream_options":{"include_usage":true,"include_obfuscation":false}}),
@@ -545,7 +545,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
     let seen = &fixture.seen;
     let replay_origin = fixture.replay_origin.clone();
     let client = &fixture.client;
-    let binding = &MESSAGES_BINDINGS[0];
+    let binding = &messages_bindings()[0];
     for profile in [GenerationApi::Responses, GenerationApi::Chat] {
         for stream in [false, true] {
             let responses = profile == GenerationApi::Responses;
@@ -1025,7 +1025,7 @@ async fn native_tool_publication_waits_for_eof_and_releases_upstream_without_rep
     let seen = &fixture.seen;
     let control = &fixture.control;
     let client = &fixture.client;
-    let binding = &MESSAGES_BINDINGS[0];
+    let binding = &messages_bindings()[0];
     for profile in [
         Some(GenerationApi::Responses),
         Some(GenerationApi::Chat),

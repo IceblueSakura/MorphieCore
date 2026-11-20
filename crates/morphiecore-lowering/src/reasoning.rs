@@ -25,7 +25,8 @@ use std::borrow::Cow;
 
 /// Endpoint history behavior, independent of wire carriers and replay identity.
 /// An absent declaration is unassessed, not an inferred behavior.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ReasoningHistory {
     Unsupported,
     Ignored,

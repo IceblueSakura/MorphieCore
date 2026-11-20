@@ -289,22 +289,25 @@ pub fn decode<'a>(
     direction: DecodeDirection,
 ) -> Result<(Cow<'a, Value>, Extras), CodecError> {
     bounded(value)?;
-    if !adaptation.rules.routing_extras
-        && !adaptation.rules.accept_reasoning_alias
-        && !adaptation.rules.responses_reasoning_format
-        && !adaptation.rules.responses_reasoning_text_shorthand
-        && !adaptation.rules.qwen4_responses_reasoning
-        && !adaptation.rules.chat_stop_diagnostics
-        && !adaptation.rules.reported_request_id
-        && !adaptation.rules.chat_inference_response_shape
-        && !adaptation.rules.responses_billing_view
-        && !adaptation.rules.responses_inactive_state
-        && !adaptation.rules.responses_reported_schema_alias
-        && !adaptation.rules.responses_access_programs
-        && !adaptation.rules.responses_zero_tool_accounting
-        && !adaptation.rules.responses_inactive_reports
-        && !adaptation.rules.responses_usage_attribution
-        && !adaptation.rules.responses_context_accounting
+    if !adaptation.rules.metadata.routing_extras
+        && !adaptation.rules.reasoning.accept_reasoning_alias
+        && !adaptation.rules.reasoning.responses_reasoning_format
+        && !adaptation
+            .rules
+            .reasoning
+            .responses_reasoning_text_shorthand
+        && !adaptation.rules.reasoning.qwen4_responses_reasoning
+        && !adaptation.rules.metadata.chat_stop_diagnostics
+        && !adaptation.rules.metadata.reported_request_id
+        && !adaptation.rules.hooks.chat_inference_response_shape
+        && !adaptation.rules.accounting.responses_billing_view
+        && !adaptation.rules.metadata.responses_inactive_state
+        && !adaptation.rules.metadata.responses_reported_schema_alias
+        && !adaptation.rules.metadata.responses_access_programs
+        && !adaptation.rules.accounting.responses_zero_tool_accounting
+        && !adaptation.rules.metadata.responses_inactive_reports
+        && !adaptation.rules.accounting.responses_usage_attribution
+        && !adaptation.rules.accounting.responses_context_accounting
     {
         return Ok((Cow::Borrowed(value), Extras::new()));
     }
@@ -314,7 +317,7 @@ pub fn decode<'a>(
         .ok_or(CodecError::Invalid(ShapeReason::Object))?;
     if profile == GenerationApi::Responses
         && matches!(direction, DecodeDirection::Upstream)
-        && adaptation.rules.qwen4_responses_reasoning
+        && adaptation.rules.reasoning.qwen4_responses_reasoning
         && let Some(reasoning) = o.get_mut("reasoning").and_then(Value::as_object_mut)
         && reasoning
             .get("summary")
@@ -326,7 +329,7 @@ pub fn decode<'a>(
         reasoning.shift_remove("generate_summary");
     }
     if profile == GenerationApi::Responses
-        && adaptation.rules.responses_reported_schema_alias
+        && adaptation.rules.metadata.responses_reported_schema_alias
         && let Some(format) = o
             .get_mut("text")
             .and_then(|text| text.get_mut("format"))
@@ -341,10 +344,10 @@ pub fn decode<'a>(
         let schema = format.shift_remove("schema_").expect("checked alias");
         format.insert("schema".into(), schema);
     }
-    if profile == GenerationApi::Chat && adaptation.rules.chat_inference_response_shape {
+    if profile == GenerationApi::Chat && adaptation.rules.hooks.chat_inference_response_shape {
         crate::openai::dialect::inference_shapes::decode(o, direction)?;
     }
-    if profile == GenerationApi::Responses && adaptation.rules.responses_inactive_state {
+    if profile == GenerationApi::Responses && adaptation.rules.metadata.responses_inactive_state {
         if o.get("previous_response_id").and_then(Value::as_str) == Some("") {
             o.insert("previous_response_id".into(), Value::Null);
         }
@@ -355,28 +358,28 @@ pub fn decode<'a>(
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     }
-    if profile == GenerationApi::Responses && adaptation.rules.responses_billing_view {
+    if profile == GenerationApi::Responses && adaptation.rules.accounting.responses_billing_view {
         response_billing_view(o, direction)?;
     }
-    let mut extras = if adaptation.rules.routing_extras {
+    let mut extras = if adaptation.rules.metadata.routing_extras {
         extract(o, profile)?
     } else {
         Extras::new()
     };
     if profile == GenerationApi::Responses {
-        if adaptation.rules.responses_access_programs {
+        if adaptation.rules.metadata.responses_access_programs {
             crate::openai::dialect::accounting_shapes::programs(o, &mut extras, direction)?;
         }
-        if adaptation.rules.responses_zero_tool_accounting {
+        if adaptation.rules.accounting.responses_zero_tool_accounting {
             crate::openai::dialect::accounting_shapes::zero_tools(o, &mut extras)?;
         }
-        if adaptation.rules.responses_context_accounting {
+        if adaptation.rules.accounting.responses_context_accounting {
             crate::openai::dialect::accounting_shapes::context(o, &mut extras, direction)?;
         }
-        if adaptation.rules.responses_inactive_reports {
+        if adaptation.rules.metadata.responses_inactive_reports {
             crate::openai::dialect::accounting_shapes::inactive_reports(o, &mut extras)?;
         }
-        if adaptation.rules.responses_usage_attribution {
+        if adaptation.rules.accounting.responses_usage_attribution {
             crate::openai::dialect::accounting_shapes::usage_attribution(
                 o,
                 &mut extras,
@@ -386,7 +389,7 @@ pub fn decode<'a>(
         check_budget(extras.values())?;
     }
     if profile == GenerationApi::Chat {
-        if adaptation.rules.reported_request_id {
+        if adaptation.rules.metadata.reported_request_id {
             if o.get("request_id")
                 .is_some_and(|v| !v.is_null() && !v.as_str().is_some_and(|s| !s.is_empty()))
             {
@@ -394,7 +397,7 @@ pub fn decode<'a>(
             }
             take(o, "request_id", "/request_id", &mut extras);
         }
-        if adaptation.rules.chat_stop_diagnostics {
+        if adaptation.rules.metadata.chat_stop_diagnostics {
             // lastOne is advisory framing metadata, never a semantic terminal.
             if let Some(marker) = o.shift_remove("lastOne")
                 && !marker.is_boolean()
@@ -429,7 +432,7 @@ pub fn decode<'a>(
     }
     check_budget(extras.values())?;
     if profile == GenerationApi::Chat
-        && adaptation.rules.accept_reasoning_alias
+        && adaptation.rules.reasoning.accept_reasoning_alias
         && let Some(choices) = o.get_mut("choices").and_then(Value::as_array_mut)
     {
         for choice in choices {
@@ -441,8 +444,11 @@ pub fn decode<'a>(
         }
     }
     if profile == GenerationApi::Responses
-        && (adaptation.rules.responses_reasoning_format
-            || adaptation.rules.responses_reasoning_text_shorthand)
+        && (adaptation.rules.reasoning.responses_reasoning_format
+            || adaptation
+                .rules
+                .reasoning
+                .responses_reasoning_text_shorthand)
         && let Some(items) = o.get_mut("output").and_then(Value::as_array_mut)
     {
         for item in items {
@@ -452,10 +458,10 @@ pub fn decode<'a>(
     Ok((Cow::Owned(value), extras))
 }
 pub fn normalize_responses_item(value: &mut Value, rules: &WireRules) -> Result<(), CodecError> {
-    if rules.responses_reasoning_format {
+    if rules.reasoning.responses_reasoning_format {
         reasoning_marker(value)?;
     }
-    if rules.responses_reasoning_text_shorthand {
+    if rules.reasoning.responses_reasoning_text_shorthand {
         reasoning_text_shorthand(value)?;
     }
     Ok(())

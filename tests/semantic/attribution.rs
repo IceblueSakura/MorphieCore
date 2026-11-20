@@ -8,7 +8,7 @@ use morphiecore::{
         native::ReplayTarget,
         openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
     },
-    topology::catalog::GOOGLE_BINDINGS,
+    topology::catalog::google_bindings,
 };
 use serde_json::{Value, json};
 
@@ -180,7 +180,7 @@ fn single_carriers_preserve_priority_presence_and_separate_legacy_cache_loss() {
             fields.get("user").is_some()
         );
         assert!(projected.value.get("prompt_cache_key").is_none());
-        let (wire, rules) = GOOGLE_BINDINGS[0]
+        let (wire, rules) = google_bindings()[0]
             .endpoint()
             .encode_request_with_rules(&request)
             .unwrap();
@@ -228,7 +228,7 @@ fn single_carriers_preserve_priority_presence_and_separate_legacy_cache_loss() {
         assert!(!evidence.contains(private));
     }
     // Interactions has no selected identity carrier; do not invent labels/metadata.
-    let (wire, rules) = GOOGLE_BINDINGS[0]
+    let (wire, rules) = google_bindings()[0]
         .interactions_endpoint()
         .encode_request_with_rules(&request)
         .unwrap();
@@ -239,7 +239,7 @@ fn single_carriers_preserve_priority_presence_and_separate_legacy_cache_loss() {
     let native = morphiecore::protocol::anthropic::messages::client::decode_client_request(
         r#"{"model":"m","max_tokens":4096,"metadata":{"user_id":"native_用户"},"messages":[{"role":"user","content":"go"}]}"#.as_bytes()
     ).unwrap();
-    let (wire, rules) = GOOGLE_BINDINGS[0]
+    let (wire, rules) = google_bindings()[0]
         .endpoint()
         .encode_request_with_rules(&native)
         .unwrap();

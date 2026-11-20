@@ -3,68 +3,30 @@
 //! https://help.aliyun.com/en/model-studio/fun-asr-flash-recorded-speech-recognition-http-api
 use crate::{
     adapter::transcription::UpstreamAdapter,
-    provider::{
-        CredentialBindingId, CredentialKind, ProviderDefinition, ProviderOperation, catalog,
-    },
+    provider::{CredentialBindingId, CredentialKind, ProviderOperation},
     topology::{
-        EndpointId, EndpointTarget, ExecutionContract, ModelId, ModelMetadata, RouteId,
+        EndpointId, EndpointTarget, ExecutionContract, ModelId, RouteId,
         transcription::{ProviderEntry, TranscriptionEndpoint, TranscriptionRoute},
     },
 };
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TranscriptionBinding {
     pub model: &'static str,
     pub canonical_model: &'static str,
     pub upstream: &'static str,
-    pub provider: fn() -> ProviderDefinition,
+    pub(super) provider: &'static str,
     pub endpoint_id: &'static str,
-    pub released_at: u64,
-    pub developer: &'static str,
     pub profile: UpstreamAdapter,
 }
-pub const TRANSCRIPTION_BINDINGS: &[TranscriptionBinding] = &[
-    TranscriptionBinding {
-        model: "mimo-v2.5-asr",
-        canonical_model: "mimo-v2.5-asr",
-        upstream: "mimo-v2.5-asr",
-        provider: catalog::xiaomi,
-        endpoint_id: "xiaomi-asr",
-        // https://mimo.mi.com/docs/updates/model (2026-06-02).
-        released_at: 1_780_358_400,
-        developer: "Xiaomi",
-        profile: UpstreamAdapter::Xiaomi,
-    },
-    TranscriptionBinding {
-        model: "qwen-audio-3.0-asr-flash",
-        canonical_model: "qwen-audio-3.0-asr-flash",
-        upstream: "qwen-audio-3.0-asr-flash",
-        provider: catalog::aliyun_tokenplan_cn,
-        endpoint_id: "tokenplan-qwen-asr",
-        // Developer release notes, 2026-07-30 UTC midnight, not plan registration.
-        // https://help.aliyun.com/zh/model-studio/newly-released-models
-        released_at: 1_785_369_600,
-        developer: "Alibaba",
-        profile: UpstreamAdapter::AliyunFlash,
-    },
-    TranscriptionBinding {
-        model: "qwen-audio-3.0-asr-flash",
-        canonical_model: "qwen-audio-3.0-asr-flash",
-        upstream: "qwen-audio-3.0-asr-flash",
-        provider: catalog::aliyun_dashscope_cn,
-        endpoint_id: "dashscope-qwen-asr",
-        released_at: 1_785_369_600,
-        developer: "Alibaba",
-        profile: UpstreamAdapter::AliyunFlash,
-    },
-];
+
 impl TranscriptionBinding {
+    pub fn provider(&self) -> crate::provider::ProviderDefinition {
+        super::data::provider(self.provider).clone()
+    }
+
     pub fn credential(&self) -> CredentialBindingId {
         CredentialBindingId::new(self.provider().id.as_str()).expect("catalog Provider identity")
-    }
-    pub fn provider(&self) -> ProviderDefinition {
-        (self.provider)()
-    }
-    pub fn metadata(&self) -> ModelMetadata {
-        ModelMetadata::new(self.released_at, self.developer).expect("static publication")
     }
     pub fn operation(&self) -> ProviderEntry {
         let provider = self.provider();

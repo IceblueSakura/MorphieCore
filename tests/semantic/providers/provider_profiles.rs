@@ -19,8 +19,8 @@ fn body() -> Value {
 
 #[test]
 fn nvidia_replacement_sends_the_hosted_model_and_retains_ordered_chat_instructions() {
-    use morphiecore::topology::{GenerationProtocol, catalog::API_KEY_BINDINGS};
-    let binding = API_KEY_BINDINGS
+    use morphiecore::topology::{GenerationProtocol, catalog::api_key_bindings};
+    let binding = api_key_bindings()
         .iter()
         .find(|binding| binding.endpoint_prefix == "nvidia")
         .unwrap();
@@ -59,7 +59,7 @@ fn nvidia_replacement_sends_the_hosted_model_and_retains_ordered_chat_instructio
 
 #[test]
 fn deepseek_chat_preserves_the_native_cap_and_standard_thinking_off_control() {
-    use morphiecore::topology::{GenerationProtocol, catalog::API_KEY_BINDINGS};
+    use morphiecore::topology::{GenerationProtocol, catalog::api_key_bindings};
     let source = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
         .decode_client_request(
             br#"{"model":"public","messages":[{"role":"user","content":"go"}],
@@ -67,7 +67,7 @@ fn deepseek_chat_preserves_the_native_cap_and_standard_thinking_off_control() {
         )
         .unwrap();
     let before = source.clone();
-    let endpoint = API_KEY_BINDINGS
+    let endpoint = api_key_bindings()
         .iter()
         .find(|b| b.endpoint_prefix == "deepseek")
         .unwrap()
@@ -88,12 +88,12 @@ fn deepseek_chat_preserves_the_native_cap_and_standard_thinking_off_control() {
 
 #[test]
 fn deepseek_responses_omits_unsupported_summary_and_encrypted_output_controls() {
-    use morphiecore::topology::{GenerationProtocol, catalog::API_KEY_BINDINGS};
+    use morphiecore::topology::{GenerationProtocol, catalog::api_key_bindings};
     let client = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     let input = br#"{"model":"public","input":"go","reasoning":{"effort":"high","summary":"auto"},
         "include":["reasoning.encrypted_content"]}"#;
     let source = client.decode_client_request(input).unwrap();
-    let endpoint = API_KEY_BINDINGS
+    let endpoint = api_key_bindings()
         .iter()
         .find(|b| b.endpoint_prefix == "deepseek")
         .unwrap()
@@ -118,7 +118,7 @@ fn deepseek_responses_omits_unsupported_summary_and_encrypted_output_controls() 
 fn go_standard_effort_controls_survive_model_scoped_projection() {
     use morphiecore::{
         semantic::context::ConversationContext,
-        topology::{GenerationProtocol, catalog::API_KEY_BINDINGS},
+        topology::{GenerationProtocol, catalog::api_key_bindings},
     };
     for (prefix, protocol, levels, supports_off) in [
         (
@@ -134,7 +134,7 @@ fn go_standard_effort_controls_survive_model_scoped_projection() {
             false,
         ),
     ] {
-        let endpoint = API_KEY_BINDINGS
+        let endpoint = api_key_bindings()
             .iter()
             .find(|b| b.endpoint_prefix == prefix)
             .unwrap()
@@ -185,10 +185,10 @@ fn deepseek_chat_rejects_schema_and_thinking_forcing_without_restricting_respons
     use morphiecore::{
         protocol::{ConversionCause, conversion::generation::RepresentationError},
         semantic::task::generation::Feature,
-        topology::{GenerationProtocol, catalog::API_KEY_BINDINGS},
+        topology::{GenerationProtocol, catalog::api_key_bindings},
     };
     let client = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
-    let binding = API_KEY_BINDINGS
+    let binding = api_key_bindings()
         .iter()
         .find(|b| b.endpoint_prefix == "deepseek")
         .unwrap();
@@ -363,7 +363,7 @@ fn generated_message_id_collisions_are_checked_only_on_responses_wire() {
 fn gpt_strict_namespaced_tools_reach_native_subscription_and_router_writers() {
     use morphiecore::topology::{
         GenerationProtocol,
-        catalog::{API_KEY_BINDINGS, SUBSCRIPTION_BINDINGS},
+        catalog::{api_key_bindings, subscription_bindings},
     };
     let source = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
         .decode_client_request(br#"{"model":"public","input":"go","tools":[{
@@ -371,7 +371,7 @@ fn gpt_strict_namespaced_tools_reach_native_subscription_and_router_writers() {
             "parameters":{"type":"object","properties":{},"required":[],"additionalProperties":false}}]}]}"#)
         .unwrap();
     let before = source.clone();
-    let endpoints = API_KEY_BINDINGS
+    let endpoints = api_key_bindings()
         .iter()
         .filter(|b| {
             matches!(
@@ -381,7 +381,7 @@ fn gpt_strict_namespaced_tools_reach_native_subscription_and_router_writers() {
         })
         .map(|b| b.endpoint(GenerationProtocol::OpenAiResponses).unwrap())
         .chain(
-            SUBSCRIPTION_BINDINGS
+            subscription_bindings()
                 .iter()
                 .filter(|b| {
                     matches!(
@@ -413,7 +413,7 @@ fn gpt_strict_namespaced_tools_reach_native_subscription_and_router_writers() {
 
 #[test]
 fn siwc_flat_tools_keep_names_schemas_choices_and_call_history() {
-    use morphiecore::topology::catalog::SUBSCRIPTION_BINDINGS;
+    use morphiecore::topology::catalog::subscription_bindings;
     let client = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     let tools = json!([
         {"type":"function","name":"lookup","strict":true,
@@ -439,7 +439,7 @@ fn siwc_flat_tools_keep_names_schemas_choices_and_call_history() {
             .decode_client_request(body.to_string().as_bytes())
             .unwrap();
         let before = source.clone();
-        for binding in SUBSCRIPTION_BINDINGS
+        for binding in subscription_bindings()
             .iter()
             .filter(|b| b.profile == "openai")
         {
@@ -473,9 +473,9 @@ fn siwc_flat_tools_keep_names_schemas_choices_and_call_history() {
 
 #[test]
 fn native_binding_reasoning_controls_match_model_activation_and_effort() {
-    use morphiecore::topology::catalog::SUBSCRIPTION_BINDINGS;
+    use morphiecore::topology::catalog::subscription_bindings;
     let client = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
-    for binding in SUBSCRIPTION_BINDINGS {
+    for binding in subscription_bindings() {
         let endpoint = binding.endpoint();
         let off = client
             .decode_client_request(
@@ -543,13 +543,13 @@ fn application_instruction_carriers_are_dialect_local_and_never_become_user() {
         execution::attempt::prepare_with_rules,
         provider::SecretMaterial,
         semantic::task::generation::{Item, MessageRole},
-        topology::{GenerationProtocol, catalog::API_KEY_BINDINGS},
+        topology::{GenerationProtocol, catalog::api_key_bindings},
     };
     let standard = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     let source = standard.decode_client_request(br#"{"model":"public","instructions":"R","input":[
         {"role":"system","content":"A"},{"role":"user","content":"U"},{"role":"developer","content":"B"}]}"#).unwrap();
     let original = source.clone();
-    let binding = API_KEY_BINDINGS
+    let binding = api_key_bindings()
         .iter()
         .find(|b| b.endpoint_prefix == "deepseek")
         .unwrap();
@@ -564,7 +564,7 @@ fn application_instruction_carriers_are_dialect_local_and_never_become_user() {
         let (wire, rules) = endpoint.encode_request_with_rules(&source).unwrap();
         let (prepared, prepared_rules) = prepare_with_rules(
             &endpoint,
-            &(binding.provider)(),
+            &binding.provider(),
             &SecretMaterial::new("synthetic-key").unwrap(),
             &source,
         )
@@ -642,7 +642,7 @@ fn application_instruction_carriers_are_dialect_local_and_never_become_user() {
 fn binding_parallel_omission_preserves_serial_guarantees_and_source() {
     use morphiecore::{
         semantic::task::generation::Feature,
-        topology::{GenerationProtocol, catalog::API_KEY_BINDINGS},
+        topology::{GenerationProtocol, catalog::api_key_bindings},
     };
     let client = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     for prefix in [
@@ -650,11 +650,11 @@ fn binding_parallel_omission_preserves_serial_guarantees_and_source() {
         "opencode-go-mimo-pro",
         "opencode-go-mimo-flash",
     ] {
-        let binding = API_KEY_BINDINGS
+        let binding = api_key_bindings()
             .iter()
             .find(|b| b.endpoint_prefix == prefix)
             .unwrap();
-        for &protocol in binding.protocols {
+        for &protocol in &binding.protocols {
             if !matches!(
                 protocol,
                 GenerationProtocol::OpenAiChat | GenerationProtocol::OpenAiResponses
@@ -711,9 +711,9 @@ fn deepseek_never_forwards_parallel_control_or_weakens_serial_intent() {
     use morphiecore::{
         execution::attempt::prepare_with_rules,
         provider::SecretMaterial,
-        topology::{GenerationProtocol, catalog::API_KEY_BINDINGS},
+        topology::{GenerationProtocol, catalog::api_key_bindings},
     };
-    let binding = API_KEY_BINDINGS
+    let binding = api_key_bindings()
         .iter()
         .find(|b| b.endpoint_prefix == "deepseek")
         .unwrap();
@@ -743,7 +743,7 @@ fn deepseek_never_forwards_parallel_control_or_weakens_serial_intent() {
             let encoded = endpoint.encode_request_with_rules(&request);
             let prepared = prepare_with_rules(
                 &endpoint,
-                &(binding.provider)(),
+                &binding.provider(),
                 &SecretMaterial::new("synthetic-deepseek-key").unwrap(),
                 &request,
             );
@@ -807,8 +807,8 @@ fn deepseek_never_forwards_parallel_control_or_weakens_serial_intent() {
 
 #[test]
 fn zhipu_effort_lands_on_its_three_levels_by_a_named_rule() {
-    use morphiecore::topology::{GenerationProtocol, catalog::API_KEY_BINDINGS};
-    let endpoint = API_KEY_BINDINGS
+    use morphiecore::topology::{GenerationProtocol, catalog::api_key_bindings};
+    let endpoint = api_key_bindings()
         .iter()
         .find(|binding| binding.endpoint_prefix == "zhipu")
         .unwrap()
@@ -865,9 +865,9 @@ fn zhipu_effort_lands_on_its_three_levels_by_a_named_rule() {
 fn messages_only_controls_leave_chat_targets_by_named_rules() {
     use morphiecore::{
         protocol::anthropic::messages::client::decode_client_request,
-        topology::{GenerationProtocol, catalog::API_KEY_BINDINGS},
+        topology::{GenerationProtocol, catalog::api_key_bindings},
     };
-    let endpoint = API_KEY_BINDINGS
+    let endpoint = api_key_bindings()
         .iter()
         .find(|binding| binding.endpoint_prefix == "dashscope-flash")
         .unwrap()
@@ -1205,7 +1205,7 @@ fn reasoning_event_alias_cannot_reclassify_content_snapshots_as_summary() {
     ));
     assert!(decoder.materialize().is_err());
 
-    let endpoint = morphiecore::topology::catalog::API_KEY_BINDINGS
+    let endpoint = morphiecore::topology::catalog::api_key_bindings()
         .iter()
         .find(|binding| binding.endpoint_prefix == "dashscope-deepseek")
         .unwrap()
@@ -1230,7 +1230,7 @@ fn reasoning_event_alias_cannot_reclassify_content_snapshots_as_summary() {
         morphiecore::semantic::task::generation::ReasoningContent::Text(text)
             if text.as_str() == "brief"
     ));
-    let endpoint = morphiecore::topology::catalog::API_KEY_BINDINGS
+    let endpoint = morphiecore::topology::catalog::api_key_bindings()
         .iter()
         .find(|binding| binding.endpoint_prefix == "dashscope-flash")
         .unwrap()
@@ -1514,11 +1514,13 @@ fn request_diagnostics_are_source_bound_not_public_facts() {
 }
 #[test]
 fn bailian_created_drift_is_chat_only_and_preserves_identity() {
-    assert!(
-        !GenerationCodec::new(GenerationApi::Responses, Dialect::Bailian, None)
+    assert_eq!(
+        GenerationCodec::new(GenerationApi::Responses, Dialect::Bailian, None)
             .adaptation
             .rules
-            .chunk_created_drift
+            .metadata
+            .chunk,
+        morphiecore::protocol::openai::dialect::adaptation::ChunkMetadata::Strict
     );
     let first = json!({"id":"r","object":"chat.completion.chunk","model":"synthetic","created":1,
         "choices":[{"index":0,"delta":{"role":"assistant","content":"pong"},"finish_reason":null}]});

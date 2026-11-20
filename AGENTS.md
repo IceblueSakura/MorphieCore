@@ -3,7 +3,7 @@
 ## Project and sources of truth
 
 - MorphieCore hides Provider differences behind one typed IR (`src/semantic`). `pi` and OpenCode are the primary clients. Routing is request-boundary cache-affine selection with at most one pre-publication same-target retry (no post-dispatch target switching or load balancing).
-- [README](README.md#documentation-map) is the single documentation map. Code and tests describe current behavior, not authority over official protocols; read [providers.json](src/provider/providers.json), [topology catalog](src/topology/catalog.rs), and [startup bootstrap](src/gateway/startup/bootstrap.rs) for current Providers, models, and bindings.
+- [README](README.md#documentation-map) is the single documentation map. Code and tests describe current behavior, not authority over official protocols; see [trusted catalog inputs](docs/architecture/index.md#shared-provider-metadata) for current Providers, models, and bindings.
 
 ## Security
 

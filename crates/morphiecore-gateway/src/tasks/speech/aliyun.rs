@@ -7,15 +7,14 @@ use crate::{
     transport::sse::SseDecoder,
 };
 
-pub(crate) async fn receive(
-    upstream: reqwest::Response,
+pub(super) async fn decode(
+    mut receiver: super::Receiver,
     audio_limit: usize,
     wire_limit: usize,
     event_limit: usize,
     event_count: usize,
     trace: &mut Trace,
 ) -> Result<SpeechResult, ApiError> {
-    let mut receiver = crate::tasks::exchange::Receiver::new(upstream, wire_limit, trace)?;
     receiver.require_media("text/event-stream")?;
     let mut framer = SseDecoder::new(event_limit);
     let mut decoder = Decoder::new(audio_limit, wire_limit, event_count);
@@ -47,4 +46,25 @@ pub(crate) async fn receive(
     trace.stage(Stage::Terminal);
     framer.finish_strict().map_err(|_| ApiError::upstream())?;
     decoder.finish().map_err(|_| ApiError::upstream())
+}
+
+#[cfg(test)]
+pub(crate) async fn receive_for_test(
+    upstream: reqwest::Response,
+    audio_limit: usize,
+    wire_limit: usize,
+    event_limit: usize,
+    event_count: usize,
+    trace: &mut Trace,
+) -> Result<SpeechResult, ApiError> {
+    let receiver = super::Receiver::new(upstream, wire_limit, trace)?;
+    decode(
+        receiver,
+        audio_limit,
+        wire_limit,
+        event_limit,
+        event_count,
+        trace,
+    )
+    .await
 }

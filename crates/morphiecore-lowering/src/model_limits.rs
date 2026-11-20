@@ -2,7 +2,8 @@
 use crate::CodecError;
 use morphiecore_semantic::task::generation::EffortLevel;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct ModelLimits {
     /// A known always-thinking target cannot satisfy an explicit disabled request.
     pub reject_disabled_reasoning: bool,

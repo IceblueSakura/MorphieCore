@@ -1,13 +1,18 @@
-//! One candidate-local request projection. Codecs render its output; they do not select losses.
+//! Carrier-specific admission and envelope preparation around semantic projection.
+use morphiecore_lowering::request::{
+    self as semantic_projection, apply_option, apply_presence, omit_option,
+};
 use std::borrow::Cow;
 
 use crate::{
     CodecError, ConversionFailure, GenerationRequestEnvelope as Request,
-    conversion::generation::{Conversion, ConversionBoundary, EvidenceDelta, Owner},
-    failure::CarrierReason,
-    lowering::disposition::{Disposition, Dispositions},
+    conversion::generation::{Conversion, ConversionBoundary, EvidenceDelta},
+    lowering::{
+        capabilities::{Presentation, TargetCapabilities},
+        disposition::{Disposition, Dispositions},
+    },
     openai::{GenerationApi, TargetContract as OpenAiContract},
-    semantic::{task::generation::*, value::Presence},
+    semantic::task::generation::*,
 };
 
 /// Borrow the existing target declaration rather than maintaining another capability object.
@@ -34,7 +39,7 @@ impl<'a> Target<'a> {
     fn retains_configuration(self, source: &GenerationRequest) -> bool {
         let boundary = match self {
             Self::OpenAi(GenerationApi::Responses, c)
-                if !c.adaptation.rules.bailian_requests && self.has_effort() =>
+                if !c.adaptation.rules.hooks.bailian_requests && self.has_effort() =>
             {
                 Some(ConfigurationBoundary::FollowingResponse)
             }
@@ -96,7 +101,7 @@ impl<'a> Target<'a> {
         match self {
             Self::OpenAi(_, c) => {
                 c.dispositions.native(Feature::Reasoning)
-                    && !c.adaptation.rules.reject_reasoning_controls
+                    && !c.adaptation.rules.request.reject_reasoning_controls
             }
             Self::Messages(c) => c.dispositions.native(Feature::ResponseEffort),
             Self::GenerateContent(c) => c.dispositions.native(Feature::Reasoning),
@@ -105,15 +110,7 @@ impl<'a> Target<'a> {
     }
     fn has_budget(self) -> bool {
         match self {
-            Self::OpenAi(GenerationApi::Chat, c) => {
-                c.adaptation.rules.thinking_controls
-                    && !c.adaptation.effort_mapping.is_some_and(|mapping| {
-                        matches!(
-                            mapping.canonical_model,
-                            "glm-5.3" | "glm-5.3-prime" | "kimi-k3.1-pro"
-                        )
-                    })
-            }
+            Self::OpenAi(GenerationApi::Chat, c) => c.has_numeric_budget(),
             Self::Messages(c) => c.dispositions.native(Feature::ReasoningBudget),
             Self::GenerateContent(c) => {
                 c.dispositions.native(Feature::ReasoningBudget)
@@ -135,25 +132,6 @@ impl<'a> Target<'a> {
             Self::Interactions(c) => c.reasoning_policy.as_ref(),
         }
     }
-    fn budget_fits(self, settings: &GenerationSettings) -> bool {
-        if !self.has_budget() {
-            return false;
-        }
-        let Some(budget) = settings.reasoning.budget_tokens else {
-            return true;
-        };
-        let output = settings.controls.max_output_tokens.or(match self {
-            Self::Messages(c) => c.default_output_tokens,
-            _ => None,
-        });
-        let ceiling = match (output, self.limits().maximum_output_tokens) {
-            (Some(output), Some(maximum)) => Some(output.min(maximum)),
-            (output, maximum) => output.or(maximum),
-        };
-        ceiling.is_none_or(|ceiling| {
-            budget < ceiling || !matches!(self, Self::Messages(_)) && budget == ceiling
-        })
-    }
     fn cache(self) -> crate::cache::CacheTargetPolicy {
         match self {
             Self::OpenAi(_, c) => c.cache,
@@ -162,45 +140,82 @@ impl<'a> Target<'a> {
             Self::Interactions(c) => c.cache,
         }
     }
-    fn levels(self) -> Vec<EffortLevel> {
-        let native = if let Self::OpenAi(_, c) = self
-            && let Some(mapping) = c.adaptation.effort_mapping
-        {
-            mapping.native_levels
-        } else {
-            self.effort_levels()
-        };
-        native
-            .iter()
-            .copied()
-            .filter(|level| {
-                self.limits()
-                    .allowed_effort
-                    .as_ref()
-                    .is_none_or(|allowed| allowed.contains(level))
-            })
-            .collect()
-    }
-    fn map_effort(
-        self,
-        mut effort: EffortControl,
-        levels: &[EffortLevel],
-    ) -> Result<(EffortControl, &'static str), CodecError> {
-        effort.scope = self.effort_scope();
-        let mapping = match self {
-            Self::OpenAi(_, c) => c.adaptation.effort_mapping,
+    fn capabilities(self) -> TargetCapabilities<'a> {
+        use super::{disposition::*, tool_set::OrderedCarrier};
+        let messages = match self {
+            Self::Messages(c) => Some(c),
             _ => None,
         };
-        if let Some(mapping) = mapping {
-            effort.level = mapping.encode(effort.level)?;
+        let openai = match self {
+            Self::OpenAi(api, c) => Some((api, c)),
+            _ => None,
+        };
+        let rules = openai.map(|(_, c)| &c.adaptation.rules);
+        let bailian = rules.is_some_and(|r| r.hooks.bailian_requests);
+        let presentation = match self {
+            Self::OpenAi(GenerationApi::Responses, c)
+                if c.adaptation.rules.reasoning.qwen4_responses_reasoning =>
+            {
+                Presentation::ExplicitAuto
+            }
+            Self::OpenAi(GenerationApi::Responses, c)
+                if c.adaptation.rules.reasoning.deepseek_responses_reasoning =>
+            {
+                Presentation::Unavailable
+            }
+            Self::OpenAi(GenerationApi::Responses, _) if !bailian => Presentation::Native,
+            Self::OpenAi(_, _) => Presentation::Absent,
+            Self::Messages(_) => Presentation::Summarize {
+                rule: MESSAGES_SUMMARY,
+                only_when_allocated: true,
+            },
+            Self::GenerateContent(_) => Presentation::Summarize {
+                rule: GENERATE_CONTENT_SUMMARY,
+                only_when_allocated: false,
+            },
+            Self::Interactions(_) => Presentation::Summarize {
+                rule: INTERACTIONS_SUMMARY,
+                only_when_allocated: false,
+            },
+        };
+        TargetCapabilities {
+            limits: self.limits(),
+            effort_scope: self.effort_scope(),
+            effort_levels: self.effort_levels(),
+            effort_mapping: openai.and_then(|(_, c)| c.adaptation.effort_mapping),
+            reasoning_policy: self.policy(),
+            effort: self.has_effort(),
+            budget: self.has_budget(),
+            adaptive_budget: messages.is_some(),
+            presentation,
+            reject_hidden_reasoning: openai.is_some(),
+            omit_unavailable_allocation_mode: openai.is_some(),
+            require_output_ceiling: messages.is_some(),
+            default_output_tokens: messages.and_then(|c| c.default_output_tokens),
+            automatic_cache_default: messages.and_then(|c| c.automatic_cache_default),
+            named_tool_subsets: openai.is_some(),
+            whole_inventory_choice: matches!(openai, Some((GenerationApi::Chat, c)) if c.adaptation.rules.hooks.deepseek_chat_requests),
+            omit_explicit_text_format: bailian,
+            require_tool_description: bailian,
+            ordered_tools: match self {
+                Self::OpenAi(GenerationApi::Responses, _) => OrderedCarrier::Batches,
+                Self::Messages(c) if c.dispositions.native(Feature::ToolChanges) => {
+                    OrderedCarrier::Changes
+                }
+                _ => OrderedCarrier::None,
+            },
+            filter_allowed_inventory: messages.is_some(),
+            filter_singleton_inventory: matches!(openai, Some((GenerationApi::Responses, _)))
+                && bailian,
+            image_details: openai
+                .filter(|(_, c)| !c.adaptation.rules.request.omit_image_detail)
+                .map_or(&[], |(_, c)| c.images.details.as_slice()),
+            original_image_detail: openai.is_some_and(|(api, c)| {
+                api != GenerationApi::Chat || c.adaptation.rules.request.chat_original_image_detail
+            }),
         }
-        effort.level = crate::reasoning::nearest_effort(effort.level, levels)?;
-        Ok((
-            effort,
-            mapping.map_or(super::disposition::EFFORT.id, |mapping| mapping.rule),
-        ))
     }
-    fn table(self, source: &GenerationRequest, model: &str) -> Dispositions {
+    fn table(self, source: &GenerationRequest) -> Dispositions {
         use Feature::*;
         let mut table = self.declared().clone();
         table.set(
@@ -234,7 +249,9 @@ impl<'a> Target<'a> {
                     );
                 }
                 let rules = &c.adaptation.rules;
-                if rules.thinking_controls || rules.bailian_requests || rules.chat_template_thinking
+                if rules.reasoning.thinking_controls
+                    || rules.hooks.bailian_requests
+                    || rules.reasoning.chat_template_thinking
                 {
                     table.set(ReasoningActivation, Disposition::Native);
                 }
@@ -244,7 +261,7 @@ impl<'a> Target<'a> {
                 {
                     table.set(ReasoningActivation, Disposition::Native);
                 }
-                if api == GenerationApi::Chat && rules.chat_preserve_thinking {
+                if api == GenerationApi::Chat && rules.reasoning.chat_preserve_thinking {
                     table.set(ReasoningHistoryRead, Disposition::Native);
                 }
                 for feature in [
@@ -259,14 +276,17 @@ impl<'a> Target<'a> {
                 ] {
                     table.set_native(feature, c.dispositions.native(feature));
                 }
-                table.set_native(TopK, api == GenerationApi::Chat && rules.thinking_controls);
+                table.set_native(
+                    TopK,
+                    api == GenerationApi::Chat && rules.reasoning.thinking_controls,
+                );
                 c.sampling.apply(source, &mut table);
                 table.set_native(
                     ToolBudget,
                     api == GenerationApi::Responses
                         && c.dispositions.native(ToolBudget)
-                        && !rules.bailian_requests
-                        && !rules.responses_siwc,
+                        && !rules.hooks.bailian_requests
+                        && !rules.hooks.responses_siwc,
                 );
                 table.set(
                     CachedContext,
@@ -291,7 +311,7 @@ impl<'a> Target<'a> {
                 } else {
                     omit(&mut table, Truncation);
                 }
-                if rules.responses_siwc {
+                if rules.hooks.responses_siwc {
                     for feature in [
                         MaxOutputTokens,
                         Temperature,
@@ -303,37 +323,12 @@ impl<'a> Target<'a> {
                         omit(&mut table, feature);
                     }
                 }
-                if rules.bailian_requests {
-                    table.set(
-                        StrictTools,
-                        crate::openai::dialect::bailian::function_strictness(model, api),
-                    );
-                    if matches!(model, "glm-5.3" | "glm-5.3-prime")
-                        && source.reasoning().activation.as_ref()
-                            == Some(
-                                &crate::semantic::task::generation::ReasoningActivation::Disabled,
-                            )
+                if rules.hooks.bailian_requests {
+                    c.model_policy.apply(source, &mut table);
+                    if api == GenerationApi::Responses
+                        && controls.max_output_tokens.is_some_and(|n| n < 16)
                     {
-                        table.set(
-                            ReasoningActivation,
-                            Disposition::Reject("this model has no thinking-off carrier"),
-                        );
-                    }
-                    if api == GenerationApi::Responses {
-                        if controls.max_output_tokens.is_some_and(|n| n < 16) {
-                            omit(&mut table, MaxOutputTokens);
-                        } else if !model.is_empty()
-                            && !crate::openai::dialect::bailian::total_output_ceiling(model, api)
-                            && source.reasoning().activation.as_ref()
-                                != Some(&crate::semantic::task::generation::ReasoningActivation::Disabled)
-                        {
-                            table.set(
-                                MaxOutputTokens,
-                                Disposition::Approximate(
-                                    super::disposition::REPLY_ONLY_OUTPUT_CEILING,
-                                ),
-                            );
-                        }
+                        omit(&mut table, MaxOutputTokens);
                     }
                     for feature in [Metadata, ServicePolicy, Verbosity] {
                         omit(&mut table, feature);
@@ -380,7 +375,7 @@ impl<'a> Target<'a> {
                 {
                     omit(&mut table, FrequencyPenalty);
                 }
-                if api == GenerationApi::Chat || rules.bailian_requests {
+                if api == GenerationApi::Chat || rules.hooks.bailian_requests {
                     table.set(
                         MessagePhase,
                         Disposition::Omit(super::disposition::OMIT_PHASE),
@@ -395,12 +390,12 @@ impl<'a> Target<'a> {
                 table.set_native(
                     RequestLifetimeCache,
                     api == GenerationApi::Responses
-                        && !rules.bailian_requests
-                        && !rules.responses_siwc,
+                        && !rules.hooks.bailian_requests
+                        && !rules.hooks.responses_siwc,
                 );
                 omit(&mut table, ExplicitCache);
                 omit(&mut table, AutomaticPrefixCache);
-                if rules.parallel_tools_always_enabled {
+                if rules.request.parallel_tools_always_enabled {
                     table.set(ParallelTools, Disposition::Equivalent);
                     table.set(
                         SerialTools,
@@ -542,7 +537,8 @@ impl<'a> Target<'a> {
                 Disposition::Approximate(super::disposition::TOOL_CHANGES),
             );
         }
-        self.presentation_rows(source.settings(), &mut table);
+        self.capabilities()
+            .presentation_rows(source.settings(), &mut table);
         table.set(
             Effort,
             if self.has_effort() {
@@ -571,7 +567,7 @@ impl<'a> Target<'a> {
             );
         }
         if matches!(self, Target::OpenAi(GenerationApi::Chat, contract)
-            if contract.adaptation.rules.thinking_controls)
+            if contract.adaptation.rules.reasoning.thinking_controls)
             && source.reasoning().mode.value()
                 == Some(&crate::semantic::task::generation::ReasoningMode::Adaptive)
             && source.reasoning().budget_tokens.is_none()
@@ -617,12 +613,13 @@ impl<'a> Target<'a> {
         }
         if let Target::OpenAi(api, contract) = self {
             table.set(SchemaName, Disposition::Native);
-            if api == GenerationApi::Responses && !contract.adaptation.rules.bailian_requests {
+            if api == GenerationApi::Responses && !contract.adaptation.rules.hooks.bailian_requests
+            {
                 table.set(ReasoningContext, Disposition::Native);
             }
-            if !contract.adaptation.rules.thinking_controls
-                && !contract.adaptation.rules.bailian_requests
-                && !contract.adaptation.rules.chat_template_thinking
+            if !contract.adaptation.rules.reasoning.thinking_controls
+                && !contract.adaptation.rules.hooks.bailian_requests
+                && !contract.adaptation.rules.reasoning.chat_template_thinking
                 && source.reasoning().activation.as_ref()
                     == Some(&crate::semantic::task::generation::ReasoningActivation::Enabled)
                 && (!self.has_effort()
@@ -649,7 +646,7 @@ impl<'a> Target<'a> {
             }
         }
         if (self.limits().reject_disabled_reasoning
-            || matches!(self, Target::OpenAi(_, contract) if contract.adaptation.rules.reject_disabled_reasoning)
+            || matches!(self, Target::OpenAi(_, contract) if contract.adaptation.rules.request.reject_disabled_reasoning)
             || matches!(self, Target::GenerateContent(_) | Target::Interactions(_)))
             && (source.reasoning().activation.as_ref() == Some(&crate::semantic::task::generation::ReasoningActivation::Disabled)
                 || source.items().iter().any(|(_, item)| matches!(item, Item::ConfigurationUpdate(update)
@@ -667,13 +664,7 @@ impl<'a> Target<'a> {
         );
         table
     }
-    fn projected_rows(
-        self,
-        source: &GenerationRequest,
-        model: &str,
-        streaming: bool,
-        table: &mut Dispositions,
-    ) {
+    fn projected_rows(self, source: &GenerationRequest, streaming: bool, table: &mut Dispositions) {
         let Target::OpenAi(api, contract) = self else {
             return;
         };
@@ -709,7 +700,7 @@ impl<'a> Target<'a> {
                 Disposition::Reject("Chat streaming has no selected custom-call output carrier"),
             );
         }
-        if contract.adaptation.rules.reject_reasoning_controls
+        if contract.adaptation.rules.request.reject_reasoning_controls
             && (source.reasoning().presence() == ReasoningPresence::Present
                 || source.reasoning().encrypted_output()
                 || settings.effort.is_some())
@@ -731,7 +722,7 @@ impl<'a> Target<'a> {
                 );
             }
         }
-        if contract.adaptation.rules.responses_siwc
+        if contract.adaptation.rules.hooks.responses_siwc
             && (source.tool_declarations().any(|(owner, tool)| {
                 owner.is_none() && !matches!(tool, ToolDeclaration::Namespace(_))
                     || !tool.dispatch_inactive()
@@ -775,7 +766,7 @@ impl<'a> Target<'a> {
         {
             table.set(Feature::Tools, Disposition::Reject("the selected native tool contract requires inactive namespaces and namespace-qualified direct calls"));
         }
-        if contract.adaptation.rules.auto_tool_choice_only
+        if contract.adaptation.rules.request.auto_tool_choice_only
             && source
                 .tool_choice()
                 .is_some_and(|choice| !matches!(choice, ToolChoice::Auto))
@@ -785,7 +776,7 @@ impl<'a> Target<'a> {
                 Disposition::Reject("this target only supports automatic tool selection"),
             );
         }
-        if contract.adaptation.rules.deepseek_chat_requests && api == GenerationApi::Chat {
+        if contract.adaptation.rules.hooks.deepseek_chat_requests && api == GenerationApi::Chat {
             if matches!(source.tool_choice(), Some(ToolChoice::Allowed { .. })) {
                 table.set(
                     Feature::ToolChoice,
@@ -822,15 +813,11 @@ impl<'a> Target<'a> {
                 );
             }
         }
-        if contract.adaptation.rules.bailian_requests {
-            let qwen = matches!(model, "qwen3.8-flash" | "qwen3.8-max");
-            let glm = matches!(model, "glm-5.3" | "glm-5.3-prime");
+        if contract.adaptation.rules.hooks.bailian_requests {
+            let policy = contract.model_policy;
             let disabled =
                 settings.reasoning.activation.as_ref() == Some(&ReasoningActivation::Disabled);
-            if api == GenerationApi::Chat
-                && glm
-                && !matches!(source.output(), OutputConstraint::Text)
-            {
+            if policy.text_output_only && !matches!(source.output(), OutputConstraint::Text) {
                 table.set(
                     Feature::StructuredOutput,
                     Disposition::Reject(
@@ -874,7 +861,8 @@ impl<'a> Target<'a> {
                             | ToolChoice::Custom(_)
                             | ToolChoice::Qualified(_)
                     )
-                ) || qwen && matches!(choice, Some(ToolChoice::Required))
+                ) || policy.reject_required_tools
+                    && matches!(choice, Some(ToolChoice::Required))
                     || !disabled && matches!(choice, Some(ToolChoice::Specific(_))))
                 || api == GenerationApi::Responses
                     && matches!(
@@ -886,10 +874,7 @@ impl<'a> Target<'a> {
                         )
                     )
                     && (source.available_tool_count() != Ok(1)
-                        || crate::openai::dialect::bailian::responses_forcing_unavailable(
-                            model,
-                            &settings.reasoning,
-                        ))
+                        || policy.forced_tools_unavailable(&settings.reasoning))
             {
                 table.set(
                     Feature::ToolChoice,
@@ -939,86 +924,6 @@ impl<'a> Target<'a> {
                 }
             }
         }
-    }
-    fn presentation_rows(self, settings: &GenerationSettings, table: &mut Dispositions) {
-        if let Self::OpenAi(GenerationApi::Responses, contract) = self
-            && let Some(rows) = contract
-                .adaptation
-                .rules
-                .responses_reasoning_presentation(&settings.reasoning)
-        {
-            for (feature, disposition) in rows {
-                table.set(feature, disposition);
-            }
-            return;
-        }
-        let presentation = &settings.reasoning.presentation;
-        let auto = presentation.summary.as_ref() == Some(&ReasoningSummary::Auto);
-        let summary_carrier = matches!(self, Self::OpenAi(GenerationApi::Responses, c)
-            if !c.adaptation.rules.bailian_requests);
-        let native_summary = match self {
-            Self::Messages(_) => Some(super::disposition::MESSAGES_SUMMARY),
-            Self::GenerateContent(_) => Some(super::disposition::GENERATE_CONTENT_SUMMARY),
-            Self::Interactions(_) => Some(super::disposition::INTERACTIONS_SUMMARY),
-            Self::OpenAi(_, _) => None,
-        };
-        let omission = Disposition::Omit(super::disposition::OMIT_REASONING_SUMMARY);
-        let display = if matches!(self, Self::OpenAi(_, _))
-            && presentation.visibility.as_ref() == Some(&ReasoningDisplay::Omitted)
-        {
-            Disposition::Reject("the selected carrier cannot guarantee hidden reasoning display")
-        } else if summary_carrier || native_summary.is_some() {
-            Disposition::Native
-        } else if auto {
-            Disposition::Equivalent
-        } else {
-            omission
-        };
-        table.set(Feature::ReasoningDisplay, display);
-        let summary = if let Some(rule) = native_summary {
-            match &presentation.summary {
-                Some(ReasoningSummary::Auto) => {
-                    if matches!(self, Self::Messages(_))
-                        && presentation.visibility.as_ref() == Some(&ReasoningDisplay::Summary)
-                    {
-                        table.set(Feature::ReasoningDisplay, Disposition::Equivalent);
-                    }
-                    Disposition::Equivalent
-                }
-                Some(ReasoningSummary::Concise | ReasoningSummary::Detailed) => {
-                    let no_thinking = matches!(self, Self::Messages(_))
-                        && settings.reasoning.activation.as_ref()
-                            != Some(&ReasoningActivation::Enabled)
-                        && settings.reasoning.mode.value() != Some(&ReasoningMode::Adaptive)
-                        && settings.reasoning.budget_tokens.is_none();
-                    if no_thinking {
-                        table.set(Feature::ReasoningDisplay, omission);
-                        omission
-                    } else {
-                        Disposition::Approximate(rule)
-                    }
-                }
-                None => Disposition::Native,
-            }
-        } else if summary_carrier {
-            Disposition::Native
-        } else if auto {
-            Disposition::Equivalent
-        } else {
-            omission
-        };
-        table.set(Feature::ReasoningSummary, summary);
-        table.set(
-            Feature::EncryptedReasoning,
-            if summary_carrier {
-                Disposition::Native
-            } else if settings.reasoning.activation.as_ref() == Some(&ReasoningActivation::Disabled)
-            {
-                Disposition::Equivalent
-            } else {
-                Disposition::Omit(super::disposition::OMIT_REASONING_INCLUDE)
-            },
-        );
     }
     fn context_rows(self, source: &Request, table: &mut Dispositions) -> Result<(), CodecError> {
         use crate::semantic::context::{CacheOptions, CacheRetention};
@@ -1086,83 +991,13 @@ impl<'a> Target<'a> {
     }
 }
 
-fn omit_option<T>(
-    value: &mut Option<T>,
-    feature: Feature,
-    table: &Dispositions,
-    evidence: &mut EvidenceDelta,
-) {
-    if let Disposition::Omit(rule) = table.get(feature)
-        && value.take().is_some()
-    {
-        evidence.push(rule.effect(ConversionBoundary::RequestProject));
-    }
-}
-fn apply_option<T>(
-    value: &mut Option<T>,
-    feature: Feature,
-    table: &Dispositions,
-    evidence: &mut EvidenceDelta,
-) -> Result<(), ConversionFailure> {
-    if value.is_none() {
-        return Ok(());
-    }
-    match table.get(feature) {
-        Disposition::Omit(rule) => {
-            *value = None;
-            evidence.push(rule.effect(ConversionBoundary::RequestProject));
-        }
-        Disposition::Equivalent => *value = None,
-        Disposition::Reject(_) => {
-            return Err(
-                crate::conversion::generation::RepresentationError::Admission(feature).into(),
-            );
-        }
-        _ => {}
-    }
-    Ok(())
-}
-fn apply_presence<T>(
-    value: &mut Presence<T>,
-    feature: Feature,
-    table: &Dispositions,
-    evidence: &mut EvidenceDelta,
-) -> Result<(), ConversionFailure> {
-    if value.is_absent() {
-        return Ok(());
-    }
-    match table.get(feature) {
-        Disposition::Omit(rule) => {
-            if value.value().is_some() {
-                evidence.push(rule.effect(ConversionBoundary::RequestProject));
-            }
-            *value = Presence::Absent;
-        }
-        Disposition::Equivalent => *value = Presence::Absent,
-        Disposition::Reject(_) => {
-            return Err(
-                crate::conversion::generation::RepresentationError::Admission(feature).into(),
-            );
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
-fn ordered_tool_declarations(items: &[(ItemId, Item)]) -> bool {
-    items
-        .iter()
-        .any(|(_, item)| matches!(item, Item::ToolBatch(_) | Item::ToolChange(_)))
-}
-
 pub fn project_semantic<'a>(
     source: &'a GenerationRequest,
     target: Target<'_>,
-    model: &str,
 ) -> Result<Conversion<Cow<'a, GenerationRequest>>, ConversionFailure> {
-    let mut table = target.table(source, model);
-    let projected = project_semantic_with_table(source, source, target, model, &mut table)?;
-    target.projected_rows(projected.value.as_ref(), model, false, &mut table);
+    let mut table = target.table(source);
+    let projected = project_semantic_with_table(source, source, target, &mut table)?;
+    target.projected_rows(projected.value.as_ref(), false, &mut table);
     table
         .check(projected.value.as_ref())
         .map_err(crate::conversion::generation::RepresentationError::Admission)?;
@@ -1173,7 +1008,6 @@ fn project_semantic_with_table<'a>(
     source: &'a GenerationRequest,
     original: &GenerationRequest,
     target: Target<'_>,
-    model: &str,
     table: &mut Dispositions,
 ) -> Result<Conversion<Cow<'a, GenerationRequest>>, ConversionFailure> {
     source.validate().map_err(CodecError::from)?;
@@ -1203,775 +1037,35 @@ fn project_semantic_with_table<'a>(
         );
         evidence.extend(groups.evidence);
     }
+    let capabilities = target.capabilities();
     if !target.retains_configuration(source) || !original.configuration_timing_matches(source) {
-        // Carrier-dependent history omission cannot redefine source timing.
-        // Even a native marker must collapse if its activation interval changed.
-        let resolved = original.resolved_configuration().active;
-        let mut settings = source.settings().clone();
-        settings.effort = resolved.effort;
-        settings.reasoning.activation = resolved.activation;
-        if resolved.activation.is_some() || resolved.effort.is_some() {
-            settings.reasoning.presence = ReasoningPresence::Present;
-        }
-        if resolved.activation == Some(ReasoningActivation::Disabled) {
-            settings.reasoning.mode = Presence::Absent;
-            settings.reasoning.budget_tokens = None;
-            if settings.reasoning.presentation.visibility == Some(ReasoningDisplay::Summary) {
-                settings.reasoning.presentation = ReasoningPresentation::default();
-            }
-        }
-        let items = source
-            .items()
-            .iter()
-            .filter(|(_, item)| !matches!(item, Item::ConfigurationUpdate(_)))
-            .cloned()
-            .collect();
-        semantic = Cow::Owned(
-            semantic
-                .into_owned()
-                .with_items_and_settings(items, settings)
-                .map_err(CodecError::from)?,
-        );
-        evidence.push(super::disposition::CONFIGURATION.effect(ConversionBoundary::RequestProject));
-        evidence.push(
-            super::disposition::CONFIGURATION_PREFIX.effect(ConversionBoundary::RequestProject),
-        );
-        // Admission of current controls sees source-effective values, not root
-        // defaults or pending/superseded historical controls.
-        *table = target.table(semantic.as_ref(), model);
+        semantic =
+            semantic_projection::collapse_configuration(source, original, semantic, &mut evidence)?;
+        *table = target.table(&semantic);
     }
-    let mut initial = semantic.settings().clone();
-    if !table.accepts(Feature::ReasoningActivation)
-        && semantic
-            .features()
-            .contains_key(&Feature::ReasoningActivation)
-    {
-        return Err(
-            crate::conversion::generation::RepresentationError::Admission(
-                Feature::ReasoningActivation,
-            )
-            .into(),
-        );
-    }
-    if initial.reasoning.replay_mismatch.is_some() && !table.accepts(Feature::ReplayMismatch) {
-        return Err(
-            crate::conversion::generation::RepresentationError::Admission(Feature::ReplayMismatch)
-                .into(),
-        );
-    }
-    omit_option(
-        &mut initial.reasoning.replay_mismatch,
-        Feature::ReplayMismatch,
-        table,
-        &mut evidence,
-    );
-    if initial.reasoning.budget_tokens.is_some()
-        && initial.effort.is_some()
-        && (!matches!(target, Target::Messages(_)) || !target.budget_fits(&initial))
-    {
-        initial.reasoning.budget_tokens = None;
-        if initial.reasoning.mode.value() == Some(&ReasoningMode::Budgeted) {
-            initial.reasoning.mode = if matches!(target, Target::Messages(_)) {
-                Presence::Value(ReasoningMode::Adaptive)
-            } else {
-                Presence::Absent
-            };
-        }
-        evidence.push(
-            super::disposition::BUDGET_WITH_EFFORT.effect(ConversionBoundary::RequestProject),
-        );
-    }
-    if initial.reasoning.activation.as_ref() == Some(&ReasoningActivation::Disabled)
-        && initial.effort.is_some()
-        && target.effort_scope() == EffortScope::Reasoning
-    {
-        initial.effort = None;
-        evidence.push(
-            super::disposition::unsupported(Feature::Effort)
-                .rule()
-                .expect("effort omission rule")
-                .effect(ConversionBoundary::RequestProject),
-        );
-    }
-    if &initial != semantic.settings() {
-        semantic = Cow::Owned(
-            semantic
-                .into_owned()
-                .with_settings(initial)
-                .map_err(CodecError::from)?,
-        );
-    }
-    let mut applied_policy = None;
-    if let Some(policy) = target.policy()
-        && let Some(copy) = policy.project_request(&semantic, |s| {
-            if s.reasoning.budget_tokens.is_some() {
-                target.budget_fits(s)
-                    || s.effort.is_some()
-                        && matches!(
-                            policy.conversion,
-                            crate::reasoning::ReasoningConversion::BudgetToEffort { .. }
-                        )
-            } else {
-                s.effort
-                    .as_ref()
-                    .is_some_and(|e| target.has_effort() && e.scope == target.effort_scope())
-            }
-        })?
-    {
-        applied_policy = Some(policy);
-        semantic = Cow::Owned(copy);
-    }
-    let mut settings = semantic.settings().clone();
-    if matches!(target, Target::OpenAi(_, _)) && settings.parallel_tool_calls != Some(false) {
-        let reference = match &settings.tool_choice {
-            Some(ToolChoice::Specific(name)) => Some((ToolKind::Function, name)),
-            Some(ToolChoice::Custom(name)) => Some((ToolKind::Custom, name)),
-            _ => None,
-        };
-        if let Some((kind, name)) = reference {
-            // Resolve the one-or-more carrier before target admission. Writers
-            // must not introduce an unchecked allowed-subset spelling.
-            settings.tool_choice = Some(ToolChoice::Allowed {
-                required: true,
-                tools: vec![ToolReference {
-                    kind,
-                    name: name.clone(),
-                    namespace: None,
-                }],
-            });
-            if table.get(Feature::ToolChoice) == Disposition::Native {
-                table.set(Feature::ToolChoice, Disposition::Equivalent);
-            }
-            evidence.push(
-                super::disposition::NAMED_TOOL_SUBSET.effect(ConversionBoundary::RequestProject),
-            );
-        }
-    }
-    // Selecting the entire inventory needs no subset carrier or visibility loss.
-    if matches!(target, Target::OpenAi(GenerationApi::Chat, contract)
-        if contract.adaptation.rules.deepseek_chat_requests)
-        && let Some(ToolChoice::Allowed { required, tools }) = &settings.tool_choice
-        && semantic.available_tool_count() == Ok(tools.len())
-        && tools
-            .iter()
-            .all(|r| r.kind == ToolKind::Function && r.namespace.is_none())
-    {
-        settings.tool_choice = Some(if *required {
-            ToolChoice::Required
-        } else {
-            ToolChoice::Auto
-        });
-        evidence.push(
-            super::disposition::FULL_TOOL_INVENTORY_CHOICE
-                .effect(ConversionBoundary::RequestProject),
-        );
-    }
-    if matches!(target, Target::OpenAi(_, contract) if contract.adaptation.rules.bailian_requests)
-        && settings.text.format == Some(OutputConstraint::Text)
-    {
-        settings.text.format = None;
-    }
-    if table.get(Feature::ReasoningMode) == Disposition::Equivalent {
-        settings.reasoning.mode = Presence::Absent;
-    }
-    if matches!(target, Target::Messages(_))
-        && !target.has_budget()
-        && source.reasoning().budget_tokens.is_some()
-        && settings.reasoning.budget_tokens.is_none()
-    {
-        settings.reasoning.mode = Presence::Value(ReasoningMode::Adaptive);
-    }
-    let original_controls = settings.controls.clone();
-    let mut controls = original_controls
-        .clone()
-        .without_sampling()
-        .without_penalties();
-    for (feature, value) in [
-        (Feature::Temperature, original_controls.temperature()),
-        (Feature::TopP, original_controls.top_p()),
-        (
-            Feature::PresencePenalty,
-            original_controls.presence_penalty(),
-        ),
-        (
-            Feature::FrequencyPenalty,
-            original_controls.frequency_penalty(),
-        ),
-    ] {
-        if let Some(value) = value {
-            if let Disposition::Omit(rule) = table.get(feature) {
-                evidence.push(rule.effect(ConversionBoundary::RequestProject));
-            } else {
-                controls = match feature {
-                    Feature::Temperature => controls.with_temperature(value),
-                    Feature::TopP => controls.with_top_p(value),
-                    Feature::PresencePenalty => controls.with_presence_penalty(value),
-                    Feature::FrequencyPenalty => controls.with_frequency_penalty(value),
-                    _ => unreachable!(),
-                }
-                .map_err(CodecError::from)?;
-            }
-        }
-    }
-    omit_option(&mut controls.top_k, Feature::TopK, table, &mut evidence);
-    omit_option(&mut controls.seed, Feature::Seed, table, &mut evidence);
-    if controls.logprobs == Some(false)
-        && controls.top_logprobs.is_none()
-        && matches!(table.get(Feature::Logprobs), Disposition::Omit(_))
-    {
-        controls.logprobs = None;
-    }
-    omit_option(
-        &mut controls.logprobs,
-        Feature::Logprobs,
-        table,
-        &mut evidence,
-    );
-    if matches!(table.get(Feature::Logprobs), Disposition::Omit(_))
-        && controls.top_logprobs.take().is_some()
-        && let Some(rule) = table.get(Feature::Logprobs).rule()
-    {
-        evidence.push(rule.effect(ConversionBoundary::RequestProject));
-    }
-    omit_option(
-        &mut controls.truncation,
-        Feature::Truncation,
-        table,
-        &mut evidence,
-    );
-    omit_option(
-        &mut settings.text.verbosity,
-        Feature::Verbosity,
-        table,
-        &mut evidence,
-    );
-    omit_option(
-        &mut settings.prediction,
-        Feature::Prediction,
-        table,
-        &mut evidence,
-    );
-    omit_option(
-        &mut settings.automatic_prefix_cache,
-        Feature::AutomaticPrefixCache,
-        table,
-        &mut evidence,
-    );
-    if settings.parallel_tool_calls == Some(true) {
-        match table.get(Feature::ParallelTools) {
-            Disposition::Equivalent => settings.parallel_tool_calls = None,
-            Disposition::Omit(rule) => {
-                settings.parallel_tool_calls = None;
-                evidence.push(rule.effect(ConversionBoundary::RequestProject));
-            }
-            _ => {}
-        }
-    }
-    if settings.parallel_tool_calls == Some(false) && !table.accepts(Feature::SerialTools) {
-        return Err(crate::conversion::generation::RepresentationError::Tools.into());
-    }
-    if settings.reasoning.presence == ReasoningPresence::Null {
-        settings.reasoning.presence = ReasoningPresence::Absent;
-    }
-    if !target.has_budget() && settings.reasoning.budget_tokens.is_some() {
-        let budget = settings
-            .reasoning
-            .budget_tokens
-            .take()
-            .expect("present budget");
-        let rule = if settings.effort.as_ref().is_some() {
-            super::disposition::BUDGET_WITH_EFFORT
-        } else {
-            super::disposition::BUDGET_TO_EFFORT
-        };
-        if settings.effort.is_none() && target.has_effort() {
-            let (level, _) = crate::reasoning::SHARED_BUDGETS.nearest(budget)?;
-            settings.effort = Some(EffortControl {
-                scope: target.effort_scope(),
-                level,
-            });
-        }
-        settings.reasoning.mode = if matches!(target, Target::Messages(_)) {
-            Presence::Value(ReasoningMode::Adaptive)
-        } else {
-            Presence::Absent
-        };
-        evidence.push(rule.effect(ConversionBoundary::RequestProject));
-    }
-    let effort_levels = std::cell::LazyCell::new(|| target.levels());
-    let mut effort_rule = None;
-    if let Some(effort) = settings.effort {
-        if target.has_effort() {
-            if matches!(target, Target::OpenAi(_, _))
-                && !target.has_budget()
-                && matches!(
-                    settings.reasoning.mode.value(),
-                    Some(ReasoningMode::Adaptive | ReasoningMode::Budgeted)
-                )
-            {
-                settings.reasoning.mode = Presence::Absent;
-                effort_rule = Some(super::disposition::EFFORT.id);
-            }
-            let (mapped, rule) = target.map_effort(effort, &effort_levels)?;
-            settings.effort = Some(mapped);
-            if mapped != effort {
-                effort_rule = Some(rule);
-            }
-        } else {
-            settings.effort = None;
-            if let Some(rule) = table.get(Feature::Effort).rule() {
-                evidence.push(rule.effect(ConversionBoundary::RequestProject));
-            }
-        }
-    }
-    apply_option(
-        &mut settings.reasoning.activation,
-        Feature::ReasoningActivation,
+    let controls =
+        semantic_projection::project_controls(semantic, source, capabilities, table, evidence)?;
+    let mut evidence = controls.evidence;
+    let mut semantic = semantic_projection::project_tool_inventory(
+        controls.value,
+        capabilities,
         table,
         &mut evidence,
     )?;
-    apply_presence(
-        &mut settings.reasoning.mode,
-        Feature::ReasoningMode,
-        table,
-        &mut evidence,
-    )?;
-    // Allocation conversion may change whether a native summarizer is active.
-    target.presentation_rows(&settings, table);
-    apply_option(
-        &mut settings.reasoning.presentation.visibility,
-        Feature::ReasoningDisplay,
-        table,
-        &mut evidence,
-    )?;
-    if let Disposition::Approximate(rule) = table.get(Feature::ReasoningSummary) {
-        settings.reasoning.presentation.summary = None;
-        evidence.push(rule.effect(ConversionBoundary::RequestProject));
-    } else {
-        apply_option(
-            &mut settings.reasoning.presentation.summary,
-            Feature::ReasoningSummary,
-            table,
-            &mut evidence,
-        )?;
-    }
-    if settings.reasoning.encrypted_output() {
-        match table.get(Feature::EncryptedReasoning) {
-            Disposition::Equivalent => {
-                settings.reasoning = settings.reasoning.with_encrypted_output(false);
-            }
-            Disposition::Omit(rule) => {
-                settings.reasoning = settings.reasoning.with_encrypted_output(false);
-                evidence.push(rule.effect(ConversionBoundary::RequestProject));
-            }
-            _ => {}
-        }
-    }
-    if let Target::Messages(contract) = target {
-        if controls.max_output_tokens.is_none() {
-            let default = contract
-                .default_output_tokens
-                .ok_or(CodecError::Unsupported(CarrierReason::Unavailable))?;
-            controls.max_output_tokens = Some(
-                contract
-                    .model_limits
-                    .maximum_output_tokens
-                    .map_or(default, |maximum| default.min(maximum)),
-            );
-        }
-        if settings.automatic_prefix_cache.is_none()
-            && !settings
-                .instructions
-                .as_ref()
-                .is_some_and(|root| root.parts.iter().any(|part| part.cache.is_some()))
-            && !semantic
-                .items()
-                .iter()
-                .any(|(_, item)| item.has_cache_breakpoints())
-            && !semantic
-                .tools()
-                .iter()
-                .flat_map(ToolDefinition::leaves)
-                .any(|tool| matches!(tool, ToolDefinition::Function(t) if t.cache.is_some()))
-        {
-            settings.automatic_prefix_cache = contract.automatic_cache_default;
-        }
-    }
-    if let Some(maximum) = target.limits().maximum_output_tokens
-        && controls.max_output_tokens.is_some_and(|n| n > maximum)
-    {
-        controls.max_output_tokens = Some(maximum);
-        evidence.push(super::disposition::CLAMP_OUTPUT.effect(ConversionBoundary::RequestProject));
-    }
-    omit_option(
-        &mut controls.max_output_tokens,
-        Feature::MaxOutputTokens,
-        table,
-        &mut evidence,
-    );
-    if controls.max_output_tokens.is_some()
-        && let Disposition::Approximate(rule) = table.get(Feature::MaxOutputTokens)
-    {
-        evidence.push(rule.effect(ConversionBoundary::RequestProject));
-    }
-    if settings
-        .reasoning
-        .budget_tokens
-        .zip(controls.max_output_tokens)
-        .is_some_and(|(budget, ceiling)| {
-            budget > ceiling || matches!(target, Target::Messages(_)) && budget == ceiling
-        })
-    {
-        return Err(
-            crate::conversion::generation::RepresentationError::Admission(Feature::ReasoningBudget)
-                .into(),
-        );
-    }
-    settings.controls = controls;
-    {
-        let mut reasoning = settings.reasoning.clone();
-        reasoning.presence = ReasoningPresence::Absent;
-        if reasoning == ReasoningRequest::default() {
-            settings.reasoning = reasoning;
-        }
-    }
-    if settings.text.format.is_none() && settings.text.verbosity.is_none() {
-        settings.text.presence = None;
-    }
-    let mut items = semantic.items().to_vec();
-    if let Disposition::Omit(rule) = table.get(Feature::EagerToolInput) {
-        let mut owners = std::collections::BTreeSet::new();
-        for_each_function_tool_mut(&mut settings, &mut items, |owner, tool| {
-            if tool.eager_input.take().is_some() {
-                owners.insert(owner);
-            }
-        });
-        for owner in owners {
-            let mut effect = rule.effect(ConversionBoundary::RequestProject);
-            if let Some(id) = owner {
-                effect = effect.at(Owner::item(id));
-            }
-            evidence.push(effect);
-        }
-    }
-    for (id, item) in &mut items {
-        if let Item::ConfigurationUpdate(update) = item
-            && let Some(effort) = update.effort
-        {
-            if !target.has_effort() {
-                update.effort = None;
-                if let Some(rule) = table.get(Feature::Effort).rule() {
-                    evidence.push(
-                        rule.effect(ConversionBoundary::RequestProject)
-                            .at(crate::conversion::generation::Owner::item(*id)),
-                    );
-                }
-                continue;
-            }
-            let (mapped, rule) = target.map_effort(effort, &effort_levels)?;
-            if mapped != effort {
-                update.effort = Some(mapped);
-                evidence.push(
-                    crate::conversion::generation::Effect::new(
-                        rule,
-                        crate::conversion::generation::Field::Effort,
-                        ConversionBoundary::RequestProject,
-                        crate::conversion::generation::Change::Approximate,
-                    )
-                    .at(crate::conversion::generation::Owner::item(*id)),
-                );
-            }
-        }
-    }
-    if let Disposition::Omit(rule) = table.get(Feature::ToolExecutionReport) {
-        for (id, item) in &mut items {
-            if let Item::ToolResult(result) | Item::CustomResult(result) = item
-                && result.execution.take().is_some()
-            {
-                evidence.push(
-                    rule.effect(ConversionBoundary::RequestProject)
-                        .at(crate::conversion::generation::Owner::item(*id)),
-                );
-            }
-        }
-    }
-    let bailian =
-        matches!(target, Target::OpenAi(_, contract) if contract.adaptation.rules.bailian_requests);
-    if bailian {
-        for_each_function_tool_mut(&mut settings, &mut items, |_, tool| {
-            tool.description.get_or_insert_with(String::new);
-        });
-    }
-    for (_, item) in &mut items {
-        fn detail(use_: &mut ResourceUse, target: Target<'_>, evidence: &mut EvidenceDelta) {
-            let ResourceDescription::Image { detail, .. } = &mut use_.description else {
-                return;
-            };
-            let Some(value) = *detail else { return };
-            let carried = match target {
-                Target::OpenAi(api, c) => {
-                    c.images.details.contains(&value)
-                        && !c.adaptation.rules.omit_image_detail
-                        && (api != GenerationApi::Chat
-                            || value != ImageDetail::Original
-                            || c.adaptation.rules.chat_original_image_detail)
-                }
-                _ => false,
-            };
-            if !carried {
-                *detail = None;
-                let rule = if value == ImageDetail::Auto {
-                    super::disposition::IMAGE_AUTO_DEFAULT
-                } else {
-                    super::disposition::OMIT_IMAGE_DETAIL
-                };
-                evidence.push(rule.effect(ConversionBoundary::RequestProject));
-            }
-        }
-        match item {
-            Item::Message(message) => {
-                for part in &mut message.parts {
-                    if let ContentPart::Resource(use_) = &mut part.content {
-                        detail(use_, target, &mut evidence);
-                    }
-                }
-            }
-            Item::ToolResult(result) | Item::CustomResult(result) => {
-                if let ToolOutput::Parts(parts) = &mut result.output {
-                    for part in parts {
-                        if let InputPart::Resource(use_) = &mut part.content {
-                            detail(use_, target, &mut evidence);
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    project_cache(&mut settings, &mut items, table, &mut evidence);
-    if let Disposition::Omit(rule) = table.get(Feature::MessagePhase) {
-        let mut changed = false;
-        for (_, item) in &mut items {
-            if let Item::Message(message) = item {
-                changed |= message.phase.take().is_some();
-            }
-        }
-        if changed {
-            evidence.push(rule.effect(ConversionBoundary::RequestProject));
-        }
-    }
-    if &settings != semantic.settings() || items != semantic.items() {
-        let envelopes = if items.len() != semantic.items().len() {
-            semantic
-                .clone()
-                .into_owned()
-                .with_items(items.clone())
-                .map_err(CodecError::from)?
-                .message_envelopes()
-                .to_vec()
-        } else {
-            semantic.message_envelopes().to_vec()
-        };
-        semantic = Cow::Owned(
-            GenerationRequest::from_resources_and_envelopes(
-                items,
-                settings,
-                semantic.resources().clone(),
-                envelopes,
-            )
-            .map_err(CodecError::from)?
-            .with_cached_context(semantic.cached_context().cloned())
-            .map_err(CodecError::from)?,
-        );
-    }
-    // The selected bounded tool-set projections share one owner: retained
-    // native additions, the effective active-set collapse and allowed-set
-    // inventory filtering. Projections act on this candidate copy only.
-    let ordered = ordered_tool_declarations(semantic.items());
-    let allowed_choice = matches!(semantic.tool_choice(), Some(ToolChoice::Allowed { .. }));
-    // Bailian's required carrier needs a singleton request inventory, not only
-    // a singleton allowed list. Reuse the selected declaration-visibility loss.
-    let bailian_subset = matches!(target, Target::OpenAi(GenerationApi::Responses, contract)
-        if contract.adaptation.rules.bailian_requests)
-        && semantic.available_tool_count().is_ok_and(|count| count > 1)
-        && match semantic.tool_choice() {
-            Some(ToolChoice::Specific(_)) => true,
-            Some(ToolChoice::Allowed {
-                required: true,
-                tools,
-            }) => {
-                matches!(tools.as_slice(), [reference]
-                    if reference.kind == ToolKind::Function && reference.namespace.is_none())
-            }
-            _ => false,
-        };
-    if ordered && !table.accepts(Feature::ToolChanges) {
-        return Err(
-            crate::conversion::generation::RepresentationError::Admission(Feature::ToolChanges)
-                .into(),
-        );
-    }
-    if ordered || matches!(target, Target::Messages(_)) && allowed_choice || bailian_subset {
-        let carrier = match target {
-            Target::OpenAi(GenerationApi::Chat, _) => super::tool_set::OrderedCarrier::None,
-            Target::OpenAi(GenerationApi::Responses, _) if !bailian_subset => {
-                super::tool_set::OrderedCarrier::Batches
-            }
-            Target::Messages(c) => {
-                let native = c.dispositions.native(Feature::ToolChanges);
-                if native && !allowed_choice {
-                    super::tool_set::OrderedCarrier::Changes
-                } else {
-                    super::tool_set::OrderedCarrier::None
-                }
-            }
-            _ => super::tool_set::OrderedCarrier::None,
-        };
-        let projection = match super::tool_set::project(carrier, semantic.tools(), semantic.items())
-        {
-            Ok(projection) => projection,
-            Err(super::tool_set::Rejection::Collision) => {
-                table.set(
-                    Feature::ToolChanges,
-                    Disposition::Reject(
-                        "an ordered redeclaration needs an unknown same-name winner",
-                    ),
-                );
-                return Err(
-                    crate::conversion::generation::RepresentationError::Admission(
-                        Feature::ToolChanges,
-                    )
-                    .into(),
-                );
-            }
-            Err(super::tool_set::Rejection::UnknownChange) => {
-                return Err(CodecError::invalid().into());
-            }
-        };
-        let mut settings = semantic.settings().clone();
-        let mut items = Cow::Borrowed(semantic.items());
-        match projection {
-            super::tool_set::Projection::Native => {}
-            super::tool_set::Projection::Retained {
-                items: projected,
-                root_additions,
-            } => {
-                items = Cow::Owned(projected);
-                if !root_additions.is_empty() {
-                    let mut tools = semantic.tools().to_vec();
-                    tools.extend(root_additions);
-                    settings.tools = Some(tools);
-                }
-                evidence.push(
-                    super::disposition::RETAIN_ORDERED_ADDITIONS
-                        .effect(ConversionBoundary::RequestProject),
-                );
-            }
-            super::tool_set::Projection::ActiveSet {
-                items: projected,
-                tools,
-            } => {
-                items = Cow::Owned(projected);
-                settings.tools = (!tools.is_empty()).then_some(tools);
-                evidence.push(
-                    super::disposition::TOOL_CHANGES.effect(ConversionBoundary::RequestProject),
-                );
-            }
-        }
-        if matches!(target, Target::Messages(_)) && allowed_choice || bailian_subset {
-            let (required, references) = match settings.tool_choice.as_ref() {
-                Some(ToolChoice::Specific(name)) => (
-                    true,
-                    vec![ToolReference {
-                        kind: ToolKind::Function,
-                        name: name.clone(),
-                        namespace: None,
-                    }],
-                ),
-                Some(ToolChoice::Allowed { required, tools }) => (*required, tools.clone()),
-                _ => unreachable!("inventory filtering requires a selected subset"),
-            };
-            if references.iter().any(|r| r.namespace.is_some()) {
-                return Err(
-                    crate::conversion::generation::RepresentationError::Admission(
-                        Feature::ToolChoice,
-                    )
-                    .into(),
-                );
-            }
-            // Allowed-set inventory filtering: the restriction and required
-            // invocation survive while filtered definitions lose visibility.
-            let filtered = super::tool_set::filter_allowed(
-                settings.tools.take().unwrap_or_default(),
-                &references,
-            );
-            settings.tools = (!filtered.is_empty()).then_some(filtered);
-            // An empty intersection keeps the required meaning instead of
-            // silently becoming `auto`; revalidation rejects it.
-            if matches!(target, Target::Messages(_)) {
-                settings.tool_choice = Some(if required {
-                    ToolChoice::Required
-                } else {
-                    ToolChoice::Auto
-                });
-            }
-            evidence.push(
-                super::disposition::FILTER_ALLOWED_INVENTORY
-                    .effect(ConversionBoundary::RequestProject),
-            );
-        }
-        if semantic.items() != items.as_ref() || *semantic.settings() != settings {
-            let items = items.into_owned();
-            semantic = Cow::Owned(
-                semantic
-                    .into_owned()
-                    .with_items_and_settings(items, settings)
-                    .map_err(CodecError::from)?,
-            );
-        }
-    }
     if matches!(target, Target::OpenAi(GenerationApi::Responses, contract)
-        if contract.adaptation.rules.responses_siwc)
+        if contract.adaptation.rules.hooks.responses_siwc)
         && let Some(projected) =
             super::tool_set::inline_root_tools(&semantic).map_err(CodecError::from)?
     {
         semantic = Cow::Owned(projected);
-        table.set(
-            Feature::Tools,
-            target.table(&semantic, model).get(Feature::Tools),
-        );
+        table.set(Feature::Tools, target.table(&semantic).get(Feature::Tools));
         evidence
             .push(super::disposition::INLINE_ROOT_TOOLS.effect(ConversionBoundary::RequestProject));
     }
     if matches!(target, Target::Messages(_)) {
         semantic = Cow::Owned(crate::native::group_client_history(&semantic, true)?);
     }
-    if let Disposition::Approximate(rule) = table.get(Feature::StrictTools)
-        && semantic
-            .function_tools()
-            .any(|tool| tool.strict != FunctionStrictness::Omitted(StrictDefault::NonStrict))
-    {
-        let mut settings = semantic.settings().clone();
-        let mut items = semantic.items().to_vec();
-        let mut relaxed = false;
-        for_each_function_tool_mut(&mut settings, &mut items, |_, tool| {
-            relaxed |= matches!(
-                tool.strict,
-                FunctionStrictness::Explicit(true)
-                    | FunctionStrictness::Omitted(StrictDefault::Conditional)
-            );
-            tool.strict = FunctionStrictness::Omitted(StrictDefault::NonStrict);
-        });
-        semantic = Cow::Owned(
-            semantic
-                .into_owned()
-                .with_items_and_settings(items, settings)
-                .map_err(CodecError::from)?,
-        );
-        if relaxed {
-            evidence.push(rule.effect(ConversionBoundary::RequestProject));
-        }
-    }
+    semantic = semantic_projection::relax_tool_strictness(semantic, table, &mut evidence)?;
     if matches!(
         table.get(Feature::ConditionalToolStrictness),
         Disposition::Approximate(_)
@@ -2046,142 +1140,17 @@ fn project_semantic_with_table<'a>(
             evidence.push(rule.effect(ConversionBoundary::RequestProject));
         }
     }
-    if matches!(
-        table.get(Feature::ToolResultError),
-        Disposition::Approximate(_)
-    ) {
-        let (copy, changed) = with_tool_error_status(semantic)?;
-        semantic = copy;
-        if changed && let Some(rule) = table.get(Feature::ToolResultError).rule() {
-            evidence.push(rule.effect(ConversionBoundary::RequestProject));
-        }
-    }
-    let mut changed_prefix = false;
-    for (id, item) in source.items() {
-        match item {
-            Item::ConfigurationUpdate(_) => {
-                changed_prefix |= !semantic
-                    .items()
-                    .iter()
-                    .any(|(owner, projected)| owner == id && projected == item);
-            }
-            Item::Reasoning(reasoning)
-                if changed_prefix
-                    && reasoning.replay.as_ref().is_some_and(|value| {
-                        matches!(
-                            value.format(),
-                            ReplayFormat::AnthropicMessagesThinking
-                                | ReplayFormat::AnthropicMessagesRedactedThinking
-                        )
-                    }) =>
-            {
-                // A message-local marker belongs to subsequent thinking's prefix.
-                // A root-parameter change alone does not invalidate that prefix.
-                return Err(CodecError::Unsupported(CarrierReason::Reasoning).into());
-            }
-            _ => {}
-        }
-    }
-    if let Some(policy) = applied_policy {
-        evidence.push(policy.receipt(source, &semantic)?);
-    }
-    if let Some(rule) = effort_rule {
-        evidence.push(crate::conversion::generation::Effect::Reasoning {
-            rule: crate::conversion::generation::RuleId::new(rule),
-            input: crate::conversion::generation::ReasoningControls::request(source),
-            output: crate::conversion::generation::ReasoningControls::request(&semantic),
-            preset_tokens: None,
-            owner: crate::conversion::generation::Owner::Root,
-        });
-    }
+    let semantic =
+        semantic_projection::finish(semantic, source, table, &mut evidence, controls.reasoning)?;
     Ok(Conversion {
         value: semantic,
         evidence,
     })
 }
 
-fn project_cache(
-    settings: &mut GenerationSettings,
-    items: &mut [(ItemId, Item)],
-    table: &Dispositions,
-    evidence: &mut EvidenceDelta,
-) {
-    let ttl = matches!(table.get(Feature::ExplicitCache), Disposition::Omit(_));
-    let lifetime = matches!(
-        table.get(Feature::RequestLifetimeCache),
-        Disposition::Omit(_)
-    );
-    let mut omitted_ttl = false;
-    let mut omitted_lifetime = false;
-    let mut boundary = |value: &mut Option<PrefixCacheBoundary>| match *value {
-        Some(PrefixCacheBoundary::Ttl(_)) if ttl => {
-            *value = None;
-            omitted_ttl = true;
-        }
-        Some(PrefixCacheBoundary::RequestLifetime) if lifetime => {
-            *value = None;
-            omitted_lifetime = true;
-        }
-        _ => {}
-    };
-    if let Some(root) = &mut settings.instructions {
-        for part in &mut root.parts {
-            boundary(&mut part.cache);
-        }
-    }
-    for (_, item) in items.iter_mut() {
-        match item {
-            Item::Instruction(instruction) => {
-                for part in &mut instruction.parts {
-                    boundary(&mut part.cache);
-                }
-            }
-            Item::Message(message) => {
-                for part in &mut message.parts {
-                    boundary(&mut part.cache);
-                }
-            }
-            Item::ToolResult(result) | Item::CustomResult(result) => {
-                if let ToolOutput::Parts(parts) = &mut result.output {
-                    for part in parts {
-                        boundary(&mut part.cache);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    if ttl {
-        for_each_function_tool_mut(settings, items, |_, tool| {
-            omitted_ttl |= tool.cache.take().is_some();
-        });
-        for (_, item) in items {
-            match item {
-                Item::ToolCall(call) => omitted_ttl |= call.cache.take().is_some(),
-                Item::ToolResult(result) | Item::CustomResult(result) => {
-                    omitted_ttl |= result.cache.take().is_some()
-                }
-                Item::ToolChange(change) => {
-                    omitted_ttl |= change.cache.take().is_some();
-                }
-                _ => {}
-            }
-        }
-    }
-    for (feature, changed) in [
-        (Feature::ExplicitCache, omitted_ttl),
-        (Feature::RequestLifetimeCache, omitted_lifetime),
-    ] {
-        if changed && let Some(rule) = table.get(feature).rule() {
-            evidence.push(rule.effect(ConversionBoundary::RequestProject));
-        }
-    }
-}
-
 pub fn project<'a>(
     source: &'a Request,
     target: Target<'_>,
-    model: &str,
     native_target: Option<&crate::native::ReplayTarget>,
 ) -> Result<Conversion<Cow<'a, Request>>, ConversionFailure> {
     source.check_grouping()?;
@@ -2203,7 +1172,7 @@ pub fn project<'a>(
         source.without_uncarried_reasoning(issuer, reasoning_issuer, |reasoning, following| {
             let carries = match target {
                 Target::OpenAi(GenerationApi::Responses, contract) => {
-                    if contract.adaptation.rules.bailian_requests {
+                    if contract.adaptation.rules.hooks.bailian_requests {
                         crate::openai::dialect::bailian::responses_reasoning_carrier(
                             reasoning,
                             &contract.adaptation.rules,
@@ -2343,12 +1312,11 @@ pub fn project<'a>(
         transferred |= changed;
     }
     let input = stripped.as_ref().unwrap_or(source);
-    let mut table = target.table(&input.task.semantic, model);
+    let mut table = target.table(&input.task.semantic);
     let semantic = project_semantic_with_table(
         &input.task.semantic,
         &source.task.semantic,
         target,
-        model,
         &mut table,
     )?;
     target.context_rows(source, &mut table)?;
@@ -2389,14 +1357,15 @@ pub fn project<'a>(
     }
     let mut context = source.context.clone();
     if !matches!(target, Target::OpenAi(_, contract)
-        if !contract.adaptation.rules.responses_siwc && !contract.adaptation.rules.bailian_requests)
+        if !contract.adaptation.rules.hooks.responses_siwc && !contract.adaptation.rules.hooks.bailian_requests)
     {
         crate::native::normalize_stateless_defaults(&mut context);
     }
     use crate::attribution::{self, Carrier};
     let carrier = match target {
         Target::OpenAi(_, contract)
-            if table.native(Feature::Identity) && !contract.adaptation.rules.responses_siwc =>
+            if table.native(Feature::Identity)
+                && !contract.adaptation.rules.hooks.responses_siwc =>
         {
             Carrier::OpenAi
         }
@@ -2475,7 +1444,6 @@ pub fn project<'a>(
     }
     target.projected_rows(
         &projected.task.semantic,
-        model,
         projected.delivery.streaming(),
         &mut table,
     );
@@ -2515,63 +1483,6 @@ fn with_schema_name(
     };
     *name = Some(Text::new("response", "schema name", 64).expect("static name"));
     let request = request.into_owned().with_settings(settings)?;
-    Ok((Cow::Owned(request), true))
-}
-
-fn with_tool_error_status(
-    request: Cow<'_, crate::semantic::task::generation::GenerationRequest>,
-) -> Result<
-    (
-        Cow<'_, crate::semantic::task::generation::GenerationRequest>,
-        bool,
-    ),
-    CodecError,
-> {
-    use crate::semantic::{task::generation::*, value::Text};
-    if !request
-            .items()
-            .iter()
-            .any(|(_, item)| matches!(item, Item::ToolResult(result) | Item::CustomResult(result) if result.is_error.is_some()))
-    {
-        return Ok((request, false));
-    }
-    let mut next = request
-        .items()
-        .iter()
-        .flat_map(|(_, item)| item.part_ids())
-        .filter(|id| id.scope() == LocalScope::DERIVED)
-        .map(PartId::get)
-        .max()
-        .unwrap_or(0);
-    let mut items = request.items().to_vec();
-    for (_, item) in &mut items {
-        if let Item::ToolResult(result) | Item::CustomResult(result) = item
-            && let Some(is_error) = result.is_error.take()
-        {
-            // This reports the supplied flag, not an inferred execution conclusion.
-            let prefix = format!("[tool result is_error={is_error}]\n");
-            match &mut result.output {
-                ToolOutput::Text(text) => text.insert_str(0, &prefix),
-                ToolOutput::Structured(value) => {
-                    result.output = ToolOutput::Text(format!("{prefix}{}", value.value()));
-                }
-                ToolOutput::Parts(parts) => {
-                    next = next.checked_add(1).ok_or(CodecError::Limit)?;
-                    parts.insert(
-                        0,
-                        Part::new(
-                            PartId::scoped(LocalScope::DERIVED, next),
-                            InputPart::Text(
-                                Text::new(prefix, "tool error status", 64)
-                                    .map_err(|_| CodecError::Limit)?,
-                            ),
-                        ),
-                    );
-                }
-            }
-        }
-    }
-    let request = request.into_owned().with_items(items)?;
     Ok((Cow::Owned(request), true))
 }
 
@@ -2703,7 +1614,7 @@ mod tests {
                     "messages":[{"role":"user","content":"hello"}]}));
                 let original = source.clone();
                 let contract = OpenAiContract::full();
-                let table = Target::OpenAi(api, &contract).table(&source.task.semantic, "m");
+                let table = Target::OpenAi(api, &contract).table(&source.task.semantic);
                 let result = codec.encode_request_with_evidence(&source, "m", &contract);
                 if display == "omitted" {
                     assert!(matches!(

@@ -112,11 +112,11 @@ async fn produce(
     attempt: &mut Attempt,
     delivery: &mut ResponseDelivery,
     lane: &Lane<'_>,
-    stream: bool,
     hold: bool,
     limit: usize,
     trace: &mut Trace,
 ) -> Result<Completion, ApiError> {
+    let stream = delivery.is_streaming();
     let retry_after = crate::error::retry_after(upstream.headers());
     let json = attempt.static_body().is_some();
     let mut capture = trace.capture.as_ref().map(|capture| {
@@ -553,7 +553,12 @@ pub(crate) async fn produce_candidate(
                 .endpoint
                 .representation
                 .openai()
-                .is_some_and(|caps| caps.adaptation.rules.responses_sse_without_content_type) =>
+                .is_some_and(|caps| {
+                    caps.adaptation
+                        .rules
+                        .stream
+                        .responses_sse_without_content_type
+                }) =>
         {
             "text/event-stream"
         }
@@ -613,6 +618,7 @@ pub(crate) async fn produce_candidate(
         sse,
         options,
         padding,
+        stream,
     )
     .with_report(trace.report.clone())
     .with_request(&candidate.endpoint, request, original)
@@ -623,7 +629,6 @@ pub(crate) async fn produce_candidate(
         &mut attempt,
         &mut delivery,
         lane,
-        stream,
         hold,
         limit,
         trace,
@@ -696,6 +701,7 @@ mod tests {
             SseLimits::default(),
             Default::default(),
             Obfuscation::Disabled,
+            false,
         );
         let state = crate::body::Status::default();
         let (tx, _rx) = tokio::sync::mpsc::channel(1);
@@ -714,7 +720,6 @@ mod tests {
             &mut attempt,
             &mut delivery,
             &lane,
-            false,
             true,
             1 << 20,
             &mut trace,
@@ -902,6 +907,7 @@ mod tests {
                 SseLimits::default(),
                 Default::default(),
                 Obfuscation::Disabled,
+                false,
             );
             let state = crate::body::Status::default();
             let (tx, _rx) = tokio::sync::mpsc::channel(1);
@@ -920,7 +926,6 @@ mod tests {
                     &mut attempt,
                     &mut delivery,
                     &lane,
-                    false,
                     false,
                     1 << 20,
                     &mut trace,

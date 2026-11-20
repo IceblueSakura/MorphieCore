@@ -77,7 +77,7 @@ fn interface_preference_uses_qualified_primary_native_contract_without_loss_rank
     );
     entry.candidates.truncate(1);
     let mut candidate = entry.candidates[0].as_ref().clone();
-    candidate.endpoint = crate::topology::catalog::GOOGLE_BINDINGS[0].endpoint();
+    candidate.endpoint = crate::topology::catalog::google_bindings()[0].endpoint();
     candidate.endpoint.bound_replay_scope = entry.candidates[0].endpoint.bound_replay_scope.clone();
     entry.candidates = vec![Arc::new(candidate)];
     assert_eq!(
@@ -474,7 +474,7 @@ fn model_efforts_expose_native_glm_and_deepseek_levels_without_removing_compatib
             };
             if native {
                 let scope = candidate.endpoint.bound_replay_scope.clone();
-                candidate.endpoint = crate::topology::catalog::API_KEY_BINDINGS
+                candidate.endpoint = crate::topology::catalog::api_key_bindings()
                     .iter()
                     .find(|binding| binding.endpoint_prefix == "deepseek")
                     .unwrap()
@@ -635,7 +635,7 @@ fn tool_discovery_reports_selected_history_loss_and_inventory_filtering() {
         json!({"state":"approved_adaptation","rules":["generation.collapse-tool-set.v1"]})
     );
     let mut candidate = entry.candidates[0].as_ref().clone();
-    candidate.endpoint = crate::topology::catalog::MESSAGES_BINDINGS[0].endpoint();
+    candidate.endpoint = crate::topology::catalog::messages_bindings()[0].endpoint();
     candidate.endpoint.bound_replay_scope = entry.candidates[0].endpoint.bound_replay_scope.clone();
     entry.candidates = vec![Arc::new(candidate)];
     let value = descriptor(entry);
@@ -656,7 +656,7 @@ fn text_reasoning_uses_source_scopes_and_never_advertises_noop_activation_or_def
         .as_ref()
         .clone();
     let mut candidate = entry.candidates[0].as_ref().clone();
-    candidate.endpoint = crate::topology::catalog::GOOGLE_BINDINGS[0].endpoint();
+    candidate.endpoint = crate::topology::catalog::google_bindings()[0].endpoint();
     candidate.endpoint.bound_replay_scope = entry.candidates[0].endpoint.bound_replay_scope.clone();
     entry.candidates = vec![Arc::new(candidate.clone())];
     let value = descriptor(entry.clone());
@@ -680,7 +680,7 @@ fn text_reasoning_uses_source_scopes_and_never_advertises_noop_activation_or_def
             .as_array()
             .is_some_and(|values| values.contains(&json!("adaptive")))
     );
-    candidate.endpoint = crate::topology::catalog::MESSAGES_BINDINGS[0].endpoint();
+    candidate.endpoint = crate::topology::catalog::messages_bindings()[0].endpoint();
     candidate.endpoint.bound_replay_scope = entry.candidates[0].endpoint.bound_replay_scope.clone();
     entry.candidates = vec![Arc::new(candidate)];
     let value = descriptor(entry);

@@ -104,7 +104,6 @@ impl TargetContract {
             let request_projection = crate::lowering::request::project(
                 request,
                 crate::lowering::request::Target::Interactions(self),
-                target.model(),
                 Some(target),
             )?;
             let request = request_projection.value.as_ref();

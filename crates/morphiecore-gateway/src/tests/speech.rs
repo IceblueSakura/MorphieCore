@@ -17,7 +17,9 @@ async fn cancelling_binary_collection_drops_unfinished_upstream() {
     ] {
         let mut trace = diagnostics::Trace::new(None);
         let (_tx, response, dropped) = source(200, media);
-        let mut pending = Box::pin(speech::receive(response, &task, profile, 4, &mut trace));
+        let mut pending = Box::pin(speech::receive_for_test(
+            response, &task, profile, 4, &mut trace,
+        ));
         assert!(futures_util::poll!(&mut pending).is_pending());
         drop(pending);
         tokio::time::timeout(std::time::Duration::from_secs(1), dropped)
@@ -32,7 +34,7 @@ async fn json_speech_waits_for_eof_before_decoding_audio() {
     let mut trace = diagnostics::Trace::new(None);
     let (tx, response, dropped) = source(200, "application/json");
     tx.send(Ok(Bytes::from_static(br#"{"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","audio":{"data":"YWJj"}}}]}"#))).await.unwrap();
-    let mut pending = Box::pin(speech::receive(
+    let mut pending = Box::pin(speech::receive_for_test(
         response,
         &task,
         UpstreamAdapter::Xiaomi,
@@ -65,7 +67,7 @@ async fn native_speech_uses_strict_sse_and_eof_not_just_stop() {
     let mut trace = diagnostics::Trace::new(None);
     let (tx, response, dropped) = source(200, "text/event-stream");
     tx.send(Ok(Bytes::from(native_sse()))).await.unwrap();
-    let mut pending = Box::pin(aliyun_speech::receive(
+    let mut pending = Box::pin(aliyun_speech::receive_for_test(
         response, 64, 8192, 2048, 16, &mut trace,
     ));
     assert!(futures_util::poll!(&mut pending).is_pending());
@@ -98,7 +100,7 @@ async fn native_speech_uses_strict_sse_and_eof_not_just_stop() {
         }
         drop(tx);
         assert!(
-            aliyun_speech::receive(
+            aliyun_speech::receive_for_test(
                 response,
                 if case == 4 { 2 } else { 64 },
                 8192,

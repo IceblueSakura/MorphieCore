@@ -3,6 +3,7 @@
 pub(crate) mod embeddings;
 mod exchange;
 pub(crate) mod images;
+mod lifecycle;
 pub(crate) mod speech;
 pub(crate) mod transcription;
 
@@ -28,12 +29,16 @@ pub(crate) struct BoundTask<R> {
 pub(crate) trait TaskRoute: Clone {
     fn target(&self) -> (&ProviderId, &CredentialBindingId);
     fn retarget(&mut self, provider: &ProviderDefinition) -> Result<(), StartupError>;
+    fn delivery(&self) -> (&str, &str, &crate::topology::ExecutionContract);
 }
 macro_rules! task_route {
     ($($route:ty => $operation:ident),*) => {$(
         impl TaskRoute for $route {
             fn target(&self) -> (&ProviderId, &CredentialBindingId) {
                 (&self.endpoint.provider, &self.endpoint.credential)
+            }
+            fn delivery(&self) -> (&str, &str, &crate::topology::ExecutionContract) {
+                (self.model.as_str(), &self.endpoint.upstream_model, &self.endpoint.execution)
             }
             fn retarget(&mut self, provider: &ProviderDefinition) -> Result<(), StartupError> {
                 if provider.id != self.endpoint.provider {

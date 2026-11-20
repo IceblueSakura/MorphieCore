@@ -7,7 +7,7 @@ use crate::{
         openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
     },
     semantic::{task::generation::*, value::Presence},
-    topology::{Endpoint, catalog::GOOGLE_BINDINGS},
+    topology::{Endpoint, catalog::google_bindings},
 };
 use serde_json::{Value, json};
 
@@ -19,7 +19,7 @@ fn fixture(
     crate::protocol::GenerationRequestEnvelope,
     Vec<Value>,
 ) {
-    let binding = &GOOGLE_BINDINGS[0];
+    let binding = &google_bindings()[0];
     let endpoint = if interactions {
         binding.interactions_endpoint()
     } else {
@@ -73,6 +73,7 @@ fn fixture(
 fn delivery(
     endpoint: &Endpoint,
     request: &crate::protocol::GenerationRequestEnvelope,
+    stream: bool,
 ) -> ResponseDelivery {
     ResponseDelivery::new(
         ClientAdapter::Messages,
@@ -80,6 +81,7 @@ fn delivery(
         Default::default(),
         Default::default(),
         Obfuscation::Disabled,
+        stream,
     )
     .with_request(endpoint, request, request)
 }
@@ -172,6 +174,7 @@ fn stateless_clients_reject_hidden_signatures_without_fabricated_reasoning() {
                             ..Default::default()
                         },
                         Obfuscation::Disabled,
+                        stream,
                     )
                     .with_request(&endpoint, &request, &request);
                     let mut all_events = vec![];
@@ -240,7 +243,7 @@ fn google_messages_terminals_keep_source_facts_and_ordered_calls() {
         for calls in [false, true] {
             for stream in [false, true] {
                 let (endpoint, request, frames) = fixture(interactions, calls);
-                let mut delivery = delivery(&endpoint, &request);
+                let mut delivery = delivery(&endpoint, &request, stream);
                 let mut attempt =
                     Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
                 attempt.begin(200, "text/event-stream").unwrap();
@@ -374,6 +377,7 @@ fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_recei
                     include_obfuscation: Some(false),
                 },
                 Obfuscation::Disabled,
+                stream,
             )
             .with_request(&endpoint, &request, &request);
             let mut attempt = Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
@@ -474,6 +478,7 @@ fn google_service_reports_keep_processing_meaning_and_omit_uncarried_capacity_re
                         include_obfuscation: Some(false),
                     },
                     Obfuscation::Disabled,
+                    stream,
                 )
                 .with_request(&endpoint, &request, &request);
                 let mut body = feed(&mut source, &mut client, &frames, stream, interactions);
@@ -499,7 +504,7 @@ fn google_service_reports_keep_processing_meaning_and_omit_uncarried_capacity_re
                     original.metadata.context.service_class(),
                     &Some(crate::semantic::context::ServiceClass::PriorityProcessing)
                 );
-                let mut incompatible = delivery(&endpoint, &request);
+                let mut incompatible = delivery(&endpoint, &request, false);
                 let wire: Value =
                     serde_json::from_slice(&incompatible.encode_json(&source).unwrap()).unwrap();
                 assert!(wire["usage"].get("service_tier").is_none());
@@ -509,7 +514,7 @@ fn google_service_reports_keep_processing_meaning_and_omit_uncarried_capacity_re
                         .iter()
                         .any(|effect| effect.rule() == "messages.omit-reported-service-class.v1")
                 );
-                let mut incompatible = delivery(&endpoint, &request);
+                let mut incompatible = delivery(&endpoint, &request, true);
                 let mut message_source =
                     Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
                 message_source.begin(200, "text/event-stream").unwrap();
@@ -556,7 +561,7 @@ fn google_tool_stop_requires_its_separate_projection_policy() {
     attempt.begin(200, "text/event-stream").unwrap();
     feed(
         &mut attempt,
-        &mut delivery(&endpoint, &request),
+        &mut delivery(&endpoint, &request, false),
         &frames,
         false,
         false,
@@ -569,16 +574,19 @@ fn google_tool_stop_requires_its_separate_projection_policy() {
         unreachable!()
     };
     contract.messages_terminal_projection = false;
-    let error = delivery(&disabled, &request)
+    let error = delivery(&disabled, &request, false)
         .encode_json(&attempt)
         .unwrap_err();
     assert!(matches!(
         error.codec(),
         Some(CodecError::Unsupported(CarrierReason::Terminal))
     ));
-    let wire: Value =
-        serde_json::from_slice(&delivery(&endpoint, &request).encode_json(&attempt).unwrap())
-            .unwrap();
+    let wire: Value = serde_json::from_slice(
+        &delivery(&endpoint, &request, false)
+            .encode_json(&attempt)
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(wire["stop_reason"], "tool_use");
 }
 
@@ -590,7 +598,7 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
         attempt.begin(200, "text/event-stream").unwrap();
         feed(
             &mut attempt,
-            &mut delivery(&endpoint, &request),
+            &mut delivery(&endpoint, &request, false),
             &frames,
             false,
             interactions,
@@ -609,12 +617,13 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
             Default::default(),
             Default::default(),
             Obfuscation::Disabled,
+            false,
         )
         .with_request(&endpoint, &request, &request);
-        assert!(chat.messages_terminal.is_none());
+        assert!(chat.projection.messages_terminal.is_none());
         let (other, _, _) = fixture(!interactions, false);
         assert!(matches!(
-            delivery(&other, &request).encode_json(&attempt),
+            delivery(&other, &request, false).encode_json(&attempt),
             Err(AttemptError::Delivery(
                 crate::execution::attempt::DeliveryReason::TerminalProjectionSourceChanged
             ))
@@ -648,11 +657,12 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
                     Default::default(),
                     Default::default(),
                     Obfuscation::Disabled,
+                    false,
                 )
             } else {
-                delivery(&selected, &request)
+                delivery(&selected, &request, false)
             };
-            assert!(d.messages_terminal.is_none());
+            assert!(d.projection.messages_terminal.is_none());
             if guard == "disabled" || guard == "stops" {
                 // Generic call-free derivation uses admitted request context;
                 // the Google-only flag still owns its separate tool-stop rule.
@@ -736,7 +746,7 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
             frames[0]["candidates"][0]["finishReason"] = json!("MAX_TOKENS");
             let mut attempt = Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
             attempt.begin(200, "text/event-stream").unwrap();
-            let mut d = delivery(&endpoint, &request);
+            let mut d = delivery(&endpoint, &request, false);
             feed(&mut attempt, &mut d, &frames, false, false);
             attempt.finish().unwrap();
             let value: Value = serde_json::from_slice(&d.encode_json(&attempt).unwrap()).unwrap();
@@ -752,7 +762,7 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
     for premature in [true, false] {
         let mut attempt = Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
         attempt.begin(200, "text/event-stream").unwrap();
-        let mut d = delivery(&endpoint, &request);
+        let mut d = delivery(&endpoint, &request, true);
         feed(&mut attempt, &mut d, &frames, true, true);
         if !premature {
             attempt.finish().unwrap();
@@ -771,7 +781,7 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
         .remove("total_cached_tokens");
     let mut attempt = Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
     attempt.begin(200, "text/event-stream").unwrap();
-    let mut d = delivery(&endpoint, &request);
+    let mut d = delivery(&endpoint, &request, false);
     feed(&mut attempt, &mut d, &frames, false, true);
     attempt.finish().unwrap();
     let source = attempt.response().unwrap().clone();
@@ -785,7 +795,7 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
         && effect.change() == crate::protocol::conversion::generation::Change::Estimate));
 }
 
-fn stateless_google_responses_setup() -> (Attempt, ResponseDelivery) {
+fn stateless_google_responses_setup(stream: bool) -> (Attempt, ResponseDelivery) {
     let target =
         crate::protocol::native::ReplayTarget::new("synthetic-google", "synthetic-model").unwrap();
     let mut attempt = Attempt::new(
@@ -805,11 +815,12 @@ fn stateless_google_responses_setup() -> (Attempt, ResponseDelivery) {
         SseLimits::default(),
         StreamOptions::default(),
         Obfuscation::Disabled,
+        stream,
     );
     let request = codec
         .decode_client_request(br#"{"model":"public","input":"go","max_output_tokens":32}"#)
         .unwrap();
-    let delivery = delivery.with_request(&GOOGLE_BINDINGS[0].endpoint(), &request, &request);
+    let delivery = delivery.with_request(&google_bindings()[0].endpoint(), &request, &request);
     (attempt, delivery)
 }
 
@@ -817,7 +828,7 @@ fn stateless_google_responses_setup() -> (Attempt, ResponseDelivery) {
 fn missing_and_late_google_ids_keep_delivery_identity_in_json_sse_and_retained_views() {
     for late in [false, true] {
         for stream in [false, true] {
-            let (mut attempt, mut delivery) = stateless_google_responses_setup();
+            let (mut attempt, mut delivery) = stateless_google_responses_setup(stream);
             let mut frames = [
                 json!({"modelVersion":"synthetic-model",
                     "candidates":[{"content":{"role":"model","parts":[{"text":"O"}]}}]}),
@@ -844,7 +855,7 @@ fn missing_and_late_google_ids_keep_delivery_identity_in_json_sse_and_retained_v
                 } else {
                     delivery.observe_events(&attempt, &events).unwrap();
                 }
-                id.get_or_insert_with(|| delivery.generated_id.clone().unwrap());
+                id.get_or_insert_with(|| delivery.envelope.generated_id.clone().unwrap());
             }
             let id = id.unwrap();
             assert_ne!(id, "late-upstream");
@@ -901,7 +912,7 @@ fn stateless_responses_reject_hidden_signatures_and_poison_delivery() {
             ]},"finishReason":"MAX_TOKENS"}],
             "usageMetadata":{"promptTokenCount":10,"cachedContentTokenCount":0,"candidatesTokenCount":5,"thoughtsTokenCount":1,"totalTokenCount":16}})
     );
-    let (mut attempt, _) = stateless_google_responses_setup();
+    let (mut attempt, _) = stateless_google_responses_setup(false);
     let (n, _) = attempt.push(signed_wire.as_bytes()).unwrap();
     assert_eq!(n, signed_wire.len());
     attempt.finish().unwrap();
@@ -928,7 +939,7 @@ fn stateless_responses_reject_hidden_signatures_and_poison_delivery() {
         "reported storage does not authorize execution-owned retention"
     );
     for stream in [false, true] {
-        let (mut attempt, mut delivery) = stateless_google_responses_setup();
+        let (mut attempt, mut delivery) = stateless_google_responses_setup(stream);
         let (n, events) = attempt.push(signed_wire.as_bytes()).unwrap();
         assert_eq!(n, signed_wire.len());
         let result = if stream {

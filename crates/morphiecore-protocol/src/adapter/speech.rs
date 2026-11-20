@@ -3,7 +3,8 @@ use crate::{
     failure::ShapeReason, semantic::task::speech_synthesis::SpeechRequest, speech::Request,
 };
 /// Trusted upstream wire contract, independent of the standard client boundary.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum UpstreamAdapter {
     Standard,
     OpenRouterMp3,

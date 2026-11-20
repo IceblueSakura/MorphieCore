@@ -6,7 +6,7 @@ use serde_json::Number;
 pub struct EmbeddingError;
 
 /// A logical vocabulary contract, not a model alias or a tokenizer implementation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TokenizerScope {
     Cl100kBase,

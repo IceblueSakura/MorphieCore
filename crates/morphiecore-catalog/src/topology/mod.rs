@@ -57,7 +57,8 @@ ident!(RouteId, ident_ok);
 
 /// Wire protocol profile an endpoint speaks. Kept separate from codec types so
 /// topology stays free of protocol implementation internals.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum GenerationProtocol {
     OpenAiChat,
     OpenAiResponses,

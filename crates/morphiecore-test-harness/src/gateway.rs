@@ -85,7 +85,11 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
                     ..Default::default()
                 },
                 rules: crate::morphiecore::protocol::openai::dialect::adaptation::WireRules {
-                    responses_image_usage: protocol == GenerationProtocol::OpenAiResponses,
+                    accounting:
+                        crate::morphiecore::protocol::openai::dialect::adaptation::AccountingRules {
+                            responses_image_usage: protocol == GenerationProtocol::OpenAiResponses,
+                            ..Default::default()
+                        },
                     ..Default::default()
                 },
                 ..Default::default()

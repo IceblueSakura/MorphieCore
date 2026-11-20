@@ -1,0 +1,1174 @@
+{
+  "api_key": [
+    {
+      "provider": "openai",
+      "dialect": "standard",
+      "endpoint_prefix": "openai-sol",
+      "model": "gpt-6.2-sol",
+      "canonical_model": "gpt-6.2-sol",
+      "upstream": "gpt-6.2-sol",
+      "protocols": ["open_ai_responses"],
+      "effort_mappings": [],
+      "reasoning_history": [["open_ai_responses", "accepted"]],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical",
+      "limits": {
+        "reject_disabled_reasoning": true,
+        "allowed_effort": ["low", "medium", "high", "xhigh", "max"],
+        "context_window_tokens": 1050000,
+        "maximum_input_tokens": 922000
+      }
+    },
+    {
+      "provider": "openai",
+      "dialect": "standard",
+      "endpoint_prefix": "openai-astra",
+      "model": "gpt-6.2-astra",
+      "canonical_model": "gpt-6.2-astra",
+      "upstream": "gpt-6.2-astra",
+      "protocols": ["open_ai_responses"],
+      "effort_mappings": [],
+      "reasoning_history": [["open_ai_responses", "accepted"]],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical",
+      "limits": {
+        "reject_disabled_reasoning": true,
+        "allowed_effort": ["low", "medium", "high", "xhigh", "max"],
+        "context_window_tokens": 1050000,
+        "maximum_input_tokens": 922000
+      }
+    },
+    {
+      "provider": "openai",
+      "dialect": "standard",
+      "endpoint_prefix": "openai-luna",
+      "model": "gpt-6-luna",
+      "canonical_model": "gpt-6-luna",
+      "upstream": "gpt-6-luna",
+      "protocols": ["open_ai_responses"],
+      "effort_mappings": [],
+      "reasoning_history": [["open_ai_responses", "accepted"]],
+      "public_slice": "restricted_luna",
+      "endpoint_slice": "canonical",
+      "limits": {
+        "allowed_effort": ["low", "medium", "high", "xhigh", "max"],
+        "context_window_tokens": 1050000,
+        "maximum_input_tokens": 922000
+      }
+    },
+    {
+      "provider": "xiaomi",
+      "dialect": "xiaomi",
+      "endpoint_prefix": "xiaomi-ultraspeed",
+      "model": "mimo-v2.6-pro-ultraspeed",
+      "canonical_model": "mimo-v2.6-pro-ultraspeed",
+      "upstream": "mimo-v2.6-pro-ultraspeed",
+      "protocols": ["open_ai_responses", "open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [["open_ai_chat", "accepted"], ["open_ai_responses", "accepted"]],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical"
+    },
+    {
+      "provider": "opencode-go",
+      "dialect": "open_code_go",
+      "endpoint_prefix": "opencode-go-minimax",
+      "model": "minimax-m3.1-flash",
+      "canonical_model": "minimax-m3.1-flash",
+      "upstream": "minimax-m3.1-flash",
+      "protocols": ["open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [["open_ai_chat", "accepted"]],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical",
+      "wire_overrides": [
+        [
+          "open_ai_chat",
+          {
+            "reject_reasoning_controls": false,
+            "chat_video_url": true,
+            "auto_tool_choice_only": true,
+            "reasoning_alias": false
+          }
+        ]
+      ],
+      "limits": {
+        "reject_disabled_reasoning": true,
+        "allowed_effort": ["low", "medium", "high", "xhigh", "max"],
+        "context_window_tokens": 1000000,
+        "maximum_output_tokens": 512000
+      }
+    },
+    {
+      "provider": "opencode-go",
+      "dialect": "open_code_go",
+      "endpoint_prefix": "opencode-go-mimo-pro",
+      "model": "mimo-v2.6-pro",
+      "canonical_model": "mimo-v2.6-pro",
+      "upstream": "mimo-v2.6-pro",
+      "protocols": ["open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [],
+      "public_slice": "canonical",
+      "endpoint_slice": "limited_controls",
+      "limits": {
+        "context_window_tokens": 1048576,
+        "maximum_output_tokens": 131072
+      }
+    },
+    {
+      "provider": "opencode-go",
+      "dialect": "open_code_go",
+      "endpoint_prefix": "opencode-go-mimo-flash",
+      "model": "mimo-v2.6-flash",
+      "canonical_model": "mimo-v2.6-flash",
+      "upstream": "mimo-v2.6-flash",
+      "protocols": ["open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [],
+      "public_slice": "canonical",
+      "endpoint_slice": "limited_controls",
+      "limits": {
+        "context_window_tokens": 1048576,
+        "maximum_output_tokens": 131072
+      }
+    },
+    {
+      "provider": "aliyun-dashscope-cn",
+      "dialect": "bailian",
+      "endpoint_prefix": "dashscope-flash",
+      "model": "qwen3.8-flash",
+      "canonical_model": "qwen3.8-flash",
+      "upstream": "qwen3.8-flash",
+      "protocols": ["open_ai_responses", "open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [["open_ai_chat", "accepted"], ["open_ai_responses", "accepted"]],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical",
+      "limits": {
+        "context_window_tokens": 1000000
+      }
+    },
+    {
+      "provider": "aliyun-dashscope-cn",
+      "dialect": "bailian",
+      "endpoint_prefix": "dashscope-kimi",
+      "model": "kimi-k3.1-pro",
+      "canonical_model": "kimi-k3.1-pro",
+      "upstream": "kimi-k3.1-pro",
+      "protocols": ["open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical",
+      "limits": {
+        "context_window_tokens": 1048576,
+        "maximum_input_tokens": 1048576,
+        "maximum_output_tokens": 1048576
+      }
+    },
+    {
+      "provider": "aliyun-dashscope-cn",
+      "dialect": "bailian",
+      "endpoint_prefix": "dashscope-glm",
+      "model": "glm-5.3",
+      "canonical_model": "glm-5.3",
+      "upstream": "glm-5.3",
+      "protocols": ["open_ai_responses", "open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical",
+      "limits": {
+        "context_window_tokens": 1048576,
+        "maximum_input_tokens": 1048576
+      }
+    },
+    {
+      "provider": "aliyun-dashscope-cn",
+      "dialect": "bailian",
+      "endpoint_prefix": "dashscope-glm-prime",
+      "model": "glm-5.3-prime",
+      "canonical_model": "glm-5.3",
+      "upstream": "glm-5.3-prime",
+      "protocols": ["open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical",
+      "limits": {
+        "context_window_tokens": 1048576,
+        "maximum_input_tokens": 1048576
+      }
+    },
+    {
+      "provider": "aliyun-tokenplan-cn",
+      "dialect": "bailian",
+      "endpoint_prefix": "tokenplan-max",
+      "model": "qwen3.8-max",
+      "canonical_model": "qwen3.8-max",
+      "upstream": "qwen3.8-max",
+      "protocols": ["open_ai_responses", "open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical"
+    },
+    {
+      "provider": "aliyun-tokenplan-cn",
+      "dialect": "bailian",
+      "endpoint_prefix": "tokenplan-glm",
+      "model": "glm-5.3",
+      "canonical_model": "glm-5.3",
+      "upstream": "glm-5.3",
+      "protocols": ["open_ai_responses"],
+      "effort_mappings": [],
+      "reasoning_history": [],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical"
+    },
+    {
+      "provider": "deepseek",
+      "dialect": "deep_seek",
+      "endpoint_prefix": "deepseek",
+      "model": "deepseek-v4.1-flash-1017",
+      "canonical_model": "deepseek-flash",
+      "upstream": "deepseek-flash",
+      "protocols": ["open_ai_responses", "open_ai_chat"],
+      "effort_mappings": [["open_ai_chat", "deepseek.deepseek-flash.effort.v1"], ["open_ai_responses", "deepseek.deepseek-flash.effort.v1"]],
+      "reasoning_history": [["open_ai_chat", "required_with_tools"], ["open_ai_responses", "accepted"]],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical",
+      "limits": {
+        "context_window_tokens": 1048576,
+        "maximum_output_tokens": 393216
+      }
+    },
+    {
+      "provider": "aliyun-dashscope-cn",
+      "dialect": "bailian",
+      "endpoint_prefix": "dashscope-deepseek",
+      "model": "deepseek-v4.1-flash-1017",
+      "canonical_model": "deepseek-flash",
+      "upstream": "deepseek-v4.1-flash-1017",
+      "protocols": ["open_ai_responses", "open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [],
+      "public_slice": "canonical",
+      "endpoint_slice": "non_strict_tools",
+      "wire_overrides": [
+        [
+          "open_ai_responses",
+          {
+            "responses_summary_text_alias": false
+          }
+        ]
+      ]
+    },
+    {
+      "provider": "xiaomi",
+      "dialect": "xiaomi",
+      "endpoint_prefix": "xiaomi",
+      "model": "mimo-v2.6-pro",
+      "canonical_model": "mimo-v2.6-pro",
+      "upstream": "mimo-v2.6-pro",
+      "protocols": ["open_ai_responses", "open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [["open_ai_chat", "accepted"], ["open_ai_responses", "accepted"]],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical"
+    },
+    {
+      "provider": "xiaomi",
+      "dialect": "xiaomi",
+      "endpoint_prefix": "xiaomi-flash",
+      "model": "mimo-v2.6-flash",
+      "canonical_model": "mimo-v2.6-flash",
+      "upstream": "mimo-v2.6-flash",
+      "protocols": ["open_ai_responses", "open_ai_chat"],
+      "effort_mappings": [["open_ai_responses", "mimo-v2.6-flash.responses.effort.v1"]],
+      "reasoning_history": [["open_ai_chat", "accepted"], ["open_ai_responses", "accepted"]],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical"
+    },
+    {
+      "provider": "openrouter",
+      "dialect": "open_router",
+      "endpoint_prefix": "openrouter",
+      "model": "gpt-6-luna",
+      "canonical_model": "gpt-6-luna",
+      "upstream": "openai/gpt-6-luna",
+      "protocols": ["open_ai_responses", "open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [],
+      "public_slice": "restricted_luna",
+      "endpoint_slice": "restricted_luna",
+      "wire_overrides": [
+        [
+          "open_ai_responses",
+          {
+            "responses_lifecycle_reports": true,
+            "delegate_strict_tools": true
+          }
+        ],
+        [
+          "open_ai_chat",
+          {
+            "delegate_strict_tools": true
+          }
+        ]
+      ],
+      "limits": {
+        "allowed_effort": ["low", "medium", "high", "xhigh", "max"],
+        "context_window_tokens": 1050000,
+        "maximum_output_tokens": 128000
+      }
+    },
+    {
+      "provider": "nvidia",
+      "dialect": "nvidia",
+      "endpoint_prefix": "nvidia",
+      "model": "nemotron-3.5-super-vl-120b-a12b",
+      "canonical_model": "nemotron-3.5-super-vl-120b-a12b",
+      "upstream": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "protocols": ["open_ai_responses", "open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical"
+    },
+    {
+      "provider": "nvidia",
+      "dialect": "nvidia",
+      "endpoint_prefix": "nvidia-lightning",
+      "model": "nemotron-3.5-lightning-30b-a3b",
+      "canonical_model": "nemotron-3.5-lightning-30b-a3b",
+      "upstream": "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "protocols": ["open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical"
+    },
+    {
+      "provider": "aliyun-dashscope-cn",
+      "dialect": "bailian",
+      "endpoint_prefix": "aliyun-dashscope-cn",
+      "model": "qwen3.8-max",
+      "canonical_model": "qwen3.8-max",
+      "upstream": "qwen3.8-max",
+      "protocols": ["open_ai_responses", "open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [["open_ai_chat", "accepted"], ["open_ai_responses", "accepted"]],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical",
+      "limits": {
+        "context_window_tokens": 1000000
+      }
+    },
+    {
+      "provider": "aliyun-tokenplan-cn",
+      "dialect": "bailian",
+      "endpoint_prefix": "aliyun-tokenplan-cn",
+      "model": "qwen3.8-flash",
+      "canonical_model": "qwen3.8-flash",
+      "upstream": "qwen3.8-flash",
+      "protocols": ["open_ai_responses", "open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical"
+    },
+    {
+      "provider": "modelbest",
+      "dialect": "model_best",
+      "endpoint_prefix": "modelbest-minicpm5-1b",
+      "model": "minicpm5-1b",
+      "canonical_model": "minicpm5-1b",
+      "upstream": "MiniCPM5-1B",
+      "protocols": ["open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical",
+      "wire_overrides": [
+        [
+          "open_ai_chat",
+          {
+            "reasoning_alias": false
+          }
+        ]
+      ],
+      "limits": {
+        "context_window_tokens": 128000
+      }
+    },
+    {
+      "provider": "modelbest",
+      "dialect": "model_best",
+      "endpoint_prefix": "modelbest-minicpm5-2b",
+      "model": "minicpm5-2b",
+      "canonical_model": "minicpm5-2b",
+      "upstream": "MiniCPM5-2B",
+      "protocols": ["open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical",
+      "wire_overrides": [
+        [
+          "open_ai_chat",
+          {
+            "reasoning_alias": false
+          }
+        ]
+      ],
+      "limits": {
+        "context_window_tokens": 128000
+      }
+    },
+    {
+      "provider": "modelbest",
+      "dialect": "model_best",
+      "endpoint_prefix": "modelbest-minicpm-v-4.7-1b",
+      "model": "MiniCPM-V-4.7-1B",
+      "canonical_model": "MiniCPM-V-4.7-1B",
+      "upstream": "MiniCPM-V-4.7-1B",
+      "protocols": ["open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical",
+      "limits": {
+        "context_window_tokens": 256000
+      }
+    },
+    {
+      "provider": "modelbest",
+      "dialect": "model_best",
+      "endpoint_prefix": "modelbest-minicpm-v-4.7-35b-a3b",
+      "model": "MiniCPM-V-4.7-35B-A3B",
+      "canonical_model": "MiniCPM-V-4.7-35B-A3B",
+      "upstream": "MiniCPM-V-4.7-35B-A3B",
+      "protocols": ["open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical",
+      "limits": {
+        "context_window_tokens": 256000
+      }
+    },
+    {
+      "provider": "opencode-go",
+      "dialect": "open_code_go",
+      "endpoint_prefix": "opencode-go",
+      "model": "hy4",
+      "canonical_model": "hy4",
+      "upstream": "hy4",
+      "protocols": ["open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [["open_ai_chat", "accepted"]],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical",
+      "wire_overrides": [
+        [
+          "open_ai_chat",
+          {
+            "reject_reasoning_controls": false,
+            "reasoning_alias": false
+          }
+        ]
+      ],
+      "limits": {
+        "allowed_effort": ["high"],
+        "context_window_tokens": 1048576,
+        "maximum_input_tokens": 983010,
+        "maximum_output_tokens": 65536
+      }
+    },
+    {
+      "provider": "zhipu",
+      "dialect": "zhipu",
+      "endpoint_prefix": "zhipu",
+      "model": "glm-5.3",
+      "canonical_model": "glm-5.3",
+      "upstream": "glm-5.3",
+      "protocols": ["open_ai_responses", "open_ai_chat"],
+      "effort_mappings": [["open_ai_chat", "zhipu.glm-5.3.effort.v1"], ["open_ai_responses", "zhipu.glm-5.3.effort.v1"]],
+      "reasoning_history": [["open_ai_chat", "required_with_tools"], ["open_ai_responses", "accepted"]],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical"
+    },
+    {
+      "provider": "openrouter",
+      "dialect": "open_router",
+      "endpoint_prefix": "openrouter-haiku",
+      "model": "claude-haiku-5-5",
+      "canonical_model": "claude-haiku-5-5",
+      "upstream": "anthropic/claude-haiku-5.5",
+      "protocols": ["open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical"
+    },
+    {
+      "provider": "zhipu",
+      "dialect": "zhipu",
+      "endpoint_prefix": "zhipu-flash",
+      "model": "glm-5.3-flash",
+      "canonical_model": "glm-5.3-flash",
+      "upstream": "glm-5.3-flash",
+      "protocols": ["open_ai_responses", "open_ai_chat"],
+      "effort_mappings": [["open_ai_chat", "zhipu.glm-5.3-flash.effort.v1"], ["open_ai_responses", "zhipu.glm-5.3-flash.effort.v1"]],
+      "reasoning_history": [["open_ai_chat", "required_with_tools"], ["open_ai_responses", "accepted"]],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical"
+    },
+    {
+      "provider": "openrouter",
+      "dialect": "open_router",
+      "endpoint_prefix": "openrouter-glm-5.3-flash",
+      "model": "glm-5.3-flash",
+      "canonical_model": "glm-5.3-flash",
+      "upstream": "z-ai/glm-5.3-flash",
+      "protocols": ["open_ai_responses", "open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical"
+    },
+    {
+      "provider": "openai",
+      "dialect": "standard",
+      "endpoint_prefix": "openai-terra",
+      "model": "gpt-6.1-terra",
+      "canonical_model": "gpt-6.1-terra",
+      "upstream": "gpt-6.1-terra",
+      "protocols": ["open_ai_responses"],
+      "effort_mappings": [],
+      "reasoning_history": [["open_ai_responses", "accepted"]],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical",
+      "sampling_requires_reasoning_off": true,
+      "limits": {
+        "allowed_effort": ["low", "medium", "high", "xhigh", "max"],
+        "context_window_tokens": 1050000,
+        "maximum_input_tokens": 922000,
+        "maximum_output_tokens": 128000
+      }
+    },
+    {
+      "provider": "openrouter",
+      "dialect": "open_router",
+      "endpoint_prefix": "openrouter-step",
+      "model": "step-5-preview",
+      "canonical_model": "step-5-preview",
+      "upstream": "stepfun/step-5-preview",
+      "protocols": ["open_ai_responses", "open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [["open_ai_chat", "accepted"], ["open_ai_responses", "accepted"]],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical",
+      "limits": {
+        "reject_disabled_reasoning": true,
+        "allowed_effort": ["low", "medium", "high"]
+      }
+    },
+    {
+      "provider": "aliyun-tokenplan-cn",
+      "dialect": "bailian",
+      "endpoint_prefix": "tokenplan-qwen4",
+      "model": "qwen4-max",
+      "canonical_model": "qwen4-max",
+      "upstream": "qwen4-max",
+      "protocols": ["open_ai_responses", "open_ai_chat"],
+      "effort_mappings": [],
+      "reasoning_history": [["open_ai_chat", "accepted"], ["open_ai_responses", "accepted"]],
+      "public_slice": "canonical",
+      "endpoint_slice": "canonical",
+      "wire_overrides": [
+        [
+          "open_ai_responses",
+          {
+            "responses_summary_text_alias": false,
+            "qwen4_responses_reasoning": true
+          }
+        ]
+      ],
+      "limits": {
+        "maximum_output_tokens": 262144
+      }
+    }
+  ],
+  "subscriptions": [
+    {
+      "profile": "openai",
+      "identity": "chatgpt-terra",
+      "model": "gpt-6.1-terra",
+      "upstream": "gpt-6.1-terra",
+      "dialect": "siwc",
+      "reasoning_history": "accepted",
+      "provider": "chatgpt",
+      "limits": {
+        "allowed_effort": ["low", "medium", "high", "xhigh", "max"],
+        "context_window_tokens": 1050000
+      }
+    },
+    {
+      "profile": "openai",
+      "identity": "chatgpt",
+      "model": "gpt-6.2-sol",
+      "upstream": "gpt-6.2-sol",
+      "dialect": "siwc",
+      "reasoning_history": "accepted",
+      "provider": "chatgpt",
+      "limits": {
+        "reject_disabled_reasoning": true,
+        "allowed_effort": ["low", "medium", "high", "xhigh", "max"],
+        "context_window_tokens": 1050000
+      }
+    },
+    {
+      "profile": "openai",
+      "identity": "chatgpt-astra",
+      "model": "gpt-6.2-astra",
+      "upstream": "gpt-6.2-astra",
+      "dialect": "siwc",
+      "reasoning_history": "accepted",
+      "provider": "chatgpt",
+      "limits": {
+        "reject_disabled_reasoning": true,
+        "allowed_effort": ["low", "medium", "high", "xhigh", "max"],
+        "context_window_tokens": 1050000
+      }
+    },
+    {
+      "profile": "openai",
+      "identity": "chatgpt-luna",
+      "model": "gpt-6-luna",
+      "upstream": "gpt-6-luna",
+      "dialect": "siwc",
+      "reasoning_history": "accepted",
+      "provider": "chatgpt",
+      "limits": {
+        "allowed_effort": ["low", "medium", "high", "xhigh", "max"],
+        "context_window_tokens": 1050000
+      }
+    },
+    {
+      "profile": "grok",
+      "identity": "grok",
+      "model": "grok-4.7",
+      "upstream": "grok-4.7",
+      "dialect": "grok",
+      "reasoning_history": "accepted",
+      "provider": "grok",
+      "limits": {
+        "reject_disabled_reasoning": true,
+        "allowed_effort": ["low", "medium", "high", "xhigh"],
+        "context_window_tokens": 500000
+      }
+    }
+  ],
+  "messages": [
+    {
+      "model": "claude-haiku-5-5",
+      "upstream": "claude-haiku-5-5",
+      "released_at": 1791331200,
+      "developer": "Anthropic",
+      "provider": "opencode-go",
+      "limits": {
+        "context_window_tokens": 1000000,
+        "maximum_output_tokens": 128000
+      }
+    }
+  ],
+  "google": [
+    {
+      "model": "gemini-3.8-flash",
+      "upstream": "gemini-3.8-flash",
+      "released_at": 1788307200,
+      "developer": "Google",
+      "provider": "google",
+      "scope_effort": {
+        "rule": "google.gemini-3.8-flash.response-effort-to-thinking.v1",
+        "from": "response",
+        "to": "reasoning",
+        "levels": [["low", "low"], ["medium", "medium"], ["high", "high"]]
+      },
+      "messages_terminal_projection": true,
+      "limits": {
+        "allowed_effort": ["low", "medium", "high"],
+        "maximum_input_tokens": 1048576,
+        "maximum_output_tokens": 65536
+      }
+    },
+    {
+      "model": "gemini-4-argon",
+      "upstream": "gemini-4-argon",
+      "released_at": 1791849600,
+      "developer": "Google",
+      "provider": "google",
+      "scope_effort": {
+        "rule": "google.gemini-4-argon.response-effort-to-thinking.v1",
+        "from": "response",
+        "to": "reasoning",
+        "levels": [["low", "low"], ["medium", "medium"], ["high", "high"]]
+      },
+      "limits": {
+        "reject_disabled_reasoning": true,
+        "allowed_effort": ["low", "medium", "high"],
+        "context_window_tokens": 1048576,
+        "maximum_output_tokens": 65536
+      }
+    },
+    {
+      "model": "gemini-4-hydrogen",
+      "upstream": "gemini-4-hydrogen",
+      "released_at": 1794441600,
+      "developer": "Google",
+      "provider": "google",
+      "scope_effort": {
+        "rule": "google.gemini-4-hydrogen.response-effort-to-thinking.v1",
+        "from": "response",
+        "to": "reasoning",
+        "levels": [["low", "low"], ["medium", "medium"], ["high", "high"], ["xhigh", "xhigh"]]
+      },
+      "limits": {
+        "reject_disabled_reasoning": true,
+        "allowed_effort": ["low", "medium", "high", "xhigh"],
+        "context_window_tokens": 1048576,
+        "maximum_output_tokens": 65536
+      }
+    },
+    {
+      "model": "gemini-4-carbon",
+      "upstream": "gemini-4-carbon",
+      "released_at": 1794268800,
+      "developer": "Google",
+      "provider": "google",
+      "scope_effort": {
+        "rule": "google.gemini-4-carbon.response-effort-to-thinking.v1",
+        "from": "response",
+        "to": "reasoning",
+        "levels": [["low", "low"], ["medium", "medium"], ["high", "high"]]
+      },
+      "limits": {
+        "reject_disabled_reasoning": true,
+        "allowed_effort": ["low", "medium", "high"],
+        "context_window_tokens": 1048576,
+        "maximum_output_tokens": 65536
+      }
+    }
+  ],
+  "images": [
+    {
+      "model": "gpt-image-2.5-flare",
+      "upstream": "openai/gpt-image-2.5-flare",
+      "released_at": 1788825600,
+      "developer": "OpenAI",
+      "provider": "openrouter"
+    }
+  ],
+  "speech": [
+    {
+      "provider": "xiaomi",
+      "identity": "xiaomi-speech",
+      "profile": "xiaomi",
+      "model": "mimo-v2.5-tts",
+      "upstream": "mimo-v2.5-tts",
+      "voices": ["mimo_default", "冰糖", "茉莉", "苏打", "白桦", "Mia", "Chloe", "Milo", "Dean"],
+      "released_at": 1776902400,
+      "developer": "Xiaomi"
+    },
+    {
+      "provider": "openrouter",
+      "identity": "openrouter-qwen-speech",
+      "profile": "open_router_mp3",
+      "model": "qwen-audio-3.0-tts-flash",
+      "upstream": "qwen/qwen-audio-3.0-tts-flash",
+      "voices": ["loongjohn", "longanhuan_v3.6"],
+      "released_at": 1784592000,
+      "developer": "Alibaba"
+    },
+    {
+      "provider": "aliyun-tokenplan-cn",
+      "identity": "tokenplan-qwen-speech",
+      "profile": "aliyun_mp3",
+      "model": "qwen-audio-3.0-tts-plus",
+      "upstream": "qwen-audio-3.0-tts-plus",
+      "voices": ["longanlingxin", "longanlufeng"],
+      "released_at": 1784592000,
+      "developer": "Alibaba"
+    }
+  ],
+  "transcription_models": [
+    {
+      "model": "mimo-v2.5-asr",
+      "released_at": 1780358400,
+      "developer": "Xiaomi"
+    },
+    {
+      "model": "qwen-audio-3.0-asr-flash",
+      "released_at": 1785369600,
+      "developer": "Alibaba"
+    }
+  ],
+  "transcriptions": [
+    {
+      "model": "mimo-v2.5-asr",
+      "canonical_model": "mimo-v2.5-asr",
+      "upstream": "mimo-v2.5-asr",
+      "provider": "xiaomi",
+      "endpoint_id": "xiaomi-asr",
+      "profile": "xiaomi"
+    },
+    {
+      "model": "qwen-audio-3.0-asr-flash",
+      "canonical_model": "qwen-audio-3.0-asr-flash",
+      "upstream": "qwen-audio-3.0-asr-flash",
+      "provider": "aliyun-tokenplan-cn",
+      "endpoint_id": "tokenplan-qwen-asr",
+      "profile": "aliyun_flash"
+    },
+    {
+      "model": "qwen-audio-3.0-asr-flash",
+      "canonical_model": "qwen-audio-3.0-asr-flash",
+      "upstream": "qwen-audio-3.0-asr-flash",
+      "provider": "aliyun-dashscope-cn",
+      "endpoint_id": "dashscope-qwen-asr",
+      "profile": "aliyun_flash"
+    }
+  ],
+  "embeddings": [
+    {
+      "model": "qwen3.7-text-embedding",
+      "upstream": "qwen3.7-text-embedding",
+      "provider": "aliyun-dashscope-cn",
+      "max_inputs": 20,
+      "dimensions": [256, 512, 768, 1024, 1536, 2048, 2560],
+      "max_dimensions": 2560,
+      "min_dimensions": 1,
+      "default_dimensions": 1024,
+      "encodings": "float",
+      "user": "omit",
+      "tokenizer": null,
+      "max_input_tokens": null,
+      "profile": "dash_scope",
+      "released_at": 1784073600,
+      "developer": "Alibaba"
+    },
+    {
+      "model": "text-embedding-3-small",
+      "upstream": "openai/text-embedding-3-small",
+      "provider": "openrouter",
+      "max_inputs": 128,
+      "dimensions": [],
+      "max_dimensions": 1536,
+      "min_dimensions": 1,
+      "default_dimensions": 1536,
+      "encodings": "both",
+      "user": "forward",
+      "tokenizer": "cl100k_base",
+      "max_input_tokens": 8192,
+      "profile": "open_router",
+      "released_at": 1706140800,
+      "developer": "OpenAI"
+    },
+    {
+      "model": "gemini-embedding-2",
+      "upstream": "gemini-embedding-2",
+      "provider": "google",
+      "max_inputs": 100,
+      "dimensions": [],
+      "max_dimensions": 3072,
+      "min_dimensions": 128,
+      "default_dimensions": 3072,
+      "encodings": "float",
+      "user": "omit",
+      "tokenizer": null,
+      "max_input_tokens": 8192,
+      "profile": "google",
+      "released_at": 1776816000,
+      "developer": "Google"
+    }
+  ],
+  "models": [
+    {
+      "id": "gpt-6.2-astra",
+      "images": true,
+      "files": true,
+      "strict_tools": true,
+      "released_at": 1788393600,
+      "developer": "OpenAI",
+      "custom_tools": true,
+      "video": false
+    },
+    {
+      "id": "mimo-v2.6-pro-ultraspeed",
+      "images": true,
+      "files": false,
+      "strict_tools": false,
+      "released_at": 1790035200,
+      "developer": "Xiaomi",
+      "custom_tools": false,
+      "video": false
+    },
+    {
+      "id": "minimax-m3.1-flash",
+      "images": true,
+      "files": false,
+      "strict_tools": false,
+      "released_at": 1792368000,
+      "developer": "MiniMax",
+      "custom_tools": false,
+      "video": true
+    },
+    {
+      "id": "kimi-k3.1-pro",
+      "images": true,
+      "files": false,
+      "strict_tools": false,
+      "released_at": 1792800000,
+      "developer": "Moonshot AI",
+      "custom_tools": false,
+      "video": false
+    },
+    {
+      "id": "gpt-6.2-sol",
+      "images": true,
+      "files": false,
+      "strict_tools": true,
+      "released_at": 1790640000,
+      "developer": "OpenAI",
+      "custom_tools": true,
+      "video": false
+    },
+    {
+      "id": "grok-4.7",
+      "images": true,
+      "files": false,
+      "strict_tools": false,
+      "released_at": 1789948800,
+      "developer": "SpaceXAI",
+      "custom_tools": false,
+      "video": false
+    },
+    {
+      "id": "deepseek-flash",
+      "images": true,
+      "files": false,
+      "strict_tools": true,
+      "released_at": 1788998400,
+      "developer": "DeepSeek",
+      "custom_tools": false,
+      "video": false
+    },
+    {
+      "id": "mimo-v2.6-pro",
+      "images": true,
+      "files": false,
+      "strict_tools": false,
+      "released_at": 1790035200,
+      "developer": "Xiaomi",
+      "custom_tools": false,
+      "video": false
+    },
+    {
+      "id": "mimo-v2.6-flash",
+      "images": true,
+      "files": false,
+      "strict_tools": false,
+      "released_at": 1790035200,
+      "developer": "Xiaomi",
+      "custom_tools": false,
+      "video": false
+    },
+    {
+      "id": "gpt-6-luna",
+      "images": true,
+      "files": true,
+      "strict_tools": true,
+      "released_at": 1790035200,
+      "developer": "OpenAI",
+      "custom_tools": true,
+      "video": false
+    },
+    {
+      "id": "nemotron-3.5-super-vl-120b-a12b",
+      "images": false,
+      "files": false,
+      "strict_tools": false,
+      "released_at": 1792022400,
+      "developer": "NVIDIA",
+      "custom_tools": false,
+      "video": false
+    },
+    {
+      "id": "nemotron-3.5-lightning-30b-a3b",
+      "images": false,
+      "files": false,
+      "strict_tools": false,
+      "released_at": 1786406400,
+      "developer": "NVIDIA",
+      "custom_tools": false,
+      "video": false
+    },
+    {
+      "id": "qwen3.8-max",
+      "images": true,
+      "files": false,
+      "strict_tools": true,
+      "released_at": 1785715200,
+      "developer": "Alibaba",
+      "custom_tools": false,
+      "video": false
+    },
+    {
+      "id": "qwen3.8-flash",
+      "images": false,
+      "files": false,
+      "strict_tools": true,
+      "released_at": 1787702400,
+      "developer": "Alibaba",
+      "custom_tools": false,
+      "video": false
+    },
+    {
+      "id": "minicpm5-1b",
+      "images": false,
+      "files": false,
+      "strict_tools": false,
+      "released_at": 1779148800,
+      "developer": "ModelBest",
+      "custom_tools": false,
+      "video": false
+    },
+    {
+      "id": "minicpm5-2b",
+      "images": false,
+      "files": false,
+      "strict_tools": false,
+      "released_at": 1788739200,
+      "developer": "ModelBest",
+      "custom_tools": false,
+      "video": false
+    },
+    {
+      "id": "MiniCPM-V-4.7-1B",
+      "images": true,
+      "files": false,
+      "strict_tools": false,
+      "released_at": 1791763200,
+      "developer": "ModelBest",
+      "custom_tools": false,
+      "video": true
+    },
+    {
+      "id": "MiniCPM-V-4.7-35B-A3B",
+      "images": true,
+      "files": false,
+      "strict_tools": false,
+      "released_at": 1791763200,
+      "developer": "ModelBest",
+      "custom_tools": false,
+      "video": true
+    },
+    {
+      "id": "hy4",
+      "images": true,
+      "files": false,
+      "strict_tools": false,
+      "released_at": 1793750400,
+      "developer": "Tencent",
+      "custom_tools": false,
+      "video": false
+    },
+    {
+      "id": "glm-5.3",
+      "images": false,
+      "files": false,
+      "strict_tools": false,
+      "released_at": 1787097600,
+      "developer": "Zhipu AI",
+      "custom_tools": false,
+      "video": false
+    },
+    {
+      "id": "glm-5.3-flash",
+      "images": true,
+      "files": false,
+      "strict_tools": false,
+      "released_at": 1787702400,
+      "developer": "Zhipu AI",
+      "custom_tools": false,
+      "video": true
+    },
+    {
+      "id": "gpt-6.1-terra",
+      "images": true,
+      "files": true,
+      "strict_tools": true,
+      "released_at": 1792972800,
+      "developer": "OpenAI",
+      "custom_tools": true,
+      "video": false
+    },
+    {
+      "id": "qwen4-max",
+      "images": true,
+      "files": false,
+      "strict_tools": true,
+      "released_at": 1794787200,
+      "developer": "Alibaba",
+      "custom_tools": false,
+      "video": true
+    },
+    {
+      "id": "step-5-preview",
+      "images": true,
+      "files": false,
+      "strict_tools": false,
+      "released_at": 1789862400,
+      "developer": "StepFun",
+      "custom_tools": false,
+      "video": true
+    }
+  ],
+  "effort_mappings": [
+    {
+      "canonical_model": "deepseek-flash",
+      "rule": "deepseek.deepseek-flash.effort.v1",
+      "scope": "reasoning",
+      "native_levels": ["low", "high", "max"],
+      "encode": [["minimal", "low"], ["low", "low"], ["medium", "high"], ["high", "high"], ["xhigh", "high"], ["max", "max"]],
+      "decode": [["low", "low"], ["high", "high"], ["max", "max"]]
+    },
+    {
+      "canonical_model": "mimo-v2.6-flash",
+      "rule": "mimo-v2.6-flash.responses.effort.v1",
+      "scope": "reasoning",
+      "native_levels": ["minimal", "low", "medium", "high", "xhigh", "max"],
+      "encode": [["minimal", "low"], ["low", "low"], ["medium", "medium"], ["high", "high"], ["xhigh", "high"], ["max", "high"]],
+      "decode": [["minimal", "low"], ["low", "low"], ["medium", "medium"], ["high", "high"], ["xhigh", "high"], ["max", "high"]]
+    },
+    {
+      "canonical_model": "glm-5.3-flash",
+      "rule": "zhipu.glm-5.3-flash.effort.v1",
+      "scope": "reasoning",
+      "native_levels": ["low", "high", "max"],
+      "encode": [["minimal", "low"], ["low", "low"], ["medium", "high"], ["high", "high"], ["xhigh", "max"], ["max", "max"]],
+      "decode": [["low", "low"], ["high", "high"], ["max", "max"]]
+    },
+    {
+      "canonical_model": "glm-5.3",
+      "rule": "zhipu.glm-5.3.effort.v1",
+      "scope": "reasoning",
+      "native_levels": ["low", "high", "max"],
+      "encode": [["minimal", "low"], ["low", "low"], ["medium", "high"], ["high", "high"], ["xhigh", "max"], ["max", "max"]],
+      "decode": [["low", "low"], ["high", "high"], ["max", "max"]]
+    }
+  ]
+}

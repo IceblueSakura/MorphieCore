@@ -160,7 +160,12 @@ impl EventEncoder {
                 // Chat summary chunks have not emitted a wire item identity yet.
                 // Bind the issuer's late identity before rendering encrypted replay.
                 if self.profile == GenerationApi::Chat
-                    && self.contract.adaptation.rules.structured_chat_reasoning
+                    && self
+                        .contract
+                        .adaptation
+                        .rules
+                        .reasoning
+                        .structured_chat_reasoning
                     && let StreamEvent::ItemFinished {
                         item,
                         replay: Some(_),

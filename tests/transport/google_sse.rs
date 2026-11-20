@@ -67,6 +67,7 @@ fn deliver(
             include_obfuscation: Some(false),
         },
         Obfuscation::Disabled,
+        stream,
     );
     attempt.begin(200, "text/event-stream").unwrap();
     let mut output = vec![];

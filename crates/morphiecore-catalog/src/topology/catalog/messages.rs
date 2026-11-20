@@ -2,24 +2,21 @@
 use crate::{
     lowering::disposition::Dispositions,
     protocol::anthropic::messages::{Dialect, Profile, TargetContract},
-    provider::{CredentialBindingId, CredentialKind, ProviderDefinition, catalog},
+    provider::{CredentialBindingId, CredentialKind, ProviderDefinition},
     topology::*,
 };
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MessagesBinding {
+    pub(super) provider: &'static str,
     pub model: &'static str,
     pub upstream: &'static str,
     pub released_at: u64,
     pub developer: &'static str,
+    #[serde(default)]
+    pub(super) limits: crate::protocol::model_limits::ModelLimits,
 }
-/// Selected development target; registration is not account or inference evidence.
-/// Sources: https://opencode.ai/docs/go/ and the pinned route in the reference guide.
-pub const MESSAGES_BINDINGS: &[MessagesBinding] = &[MessagesBinding {
-    model: "claude-haiku-5-5",
-    upstream: "claude-haiku-5-5",
-    // Source: https://www.anthropic.com/claude-haiku-5-5 (2026-10-07).
-    released_at: 1_791_331_200,
-    developer: "Anthropic",
-}];
+
 /// Reviewed native Haiku inputs and pi's ordered agent profile.
 fn haiku_contract(mut contract: Dispositions) -> Dispositions {
     contract.set_native(
@@ -53,7 +50,7 @@ impl MessagesBinding {
         CredentialBindingId::new(self.provider().id.as_str()).expect("catalog Provider identity")
     }
     pub fn provider(&self) -> ProviderDefinition {
-        catalog::opencode_go()
+        super::data::provider(self.provider).clone()
     }
     pub fn metadata(&self) -> ModelMetadata {
         ModelMetadata::new(self.released_at, self.developer).expect("static publication")
@@ -65,7 +62,7 @@ impl MessagesBinding {
         // Preserve the pinned OpenCode Messages fallback as binding policy.
         // https://github.com/anomalyco/opencode/blob/e5a557efeee02c94486d391afc48f24a49ebc9a5/packages/ai/src/protocols/anthropic-messages.ts
         representation.default_output_tokens = Some(32_000);
-        representation.model_limits = super::models::model_limits(self.model, provider.id.as_str());
+        representation.model_limits = self.limits.clone();
         representation.dispositions.set_native(
             crate::semantic::task::generation::Feature::ReasoningBudget,
             false,

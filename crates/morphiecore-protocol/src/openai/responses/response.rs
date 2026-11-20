@@ -83,7 +83,7 @@ pub fn decode_with(
     if let Some(error) = &semantic.details().error
         && let Some(code) = &error.code
         && !response_error_code(code.as_str())
-        && !(adaptation.rules.responses_siwc && coarsened_error_code(code.as_str()).is_some())
+        && !(adaptation.rules.hooks.responses_siwc && coarsened_error_code(code.as_str()).is_some())
     {
         return Err(CodecError::Unsupported(CarrierReason::Terminal));
     }

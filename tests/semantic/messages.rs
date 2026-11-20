@@ -497,7 +497,7 @@ mod phase {
                     })
                     .collect::<Vec<_>>();
                 let codec = |api| GenerationCodec::new(api, Dialect::Standard, None);
-                let delivery = || {
+                let delivery = |stream| {
                     ResponseDelivery::new(
                         ClientAdapter::openai(codec(GenerationApi::Chat), TargetContract::full()),
                         "public",
@@ -507,6 +507,7 @@ mod phase {
                             ..Default::default()
                         },
                         Obfuscation::Disabled,
+                        stream,
                     )
                 };
                 let mut attempt = Attempt::new(
@@ -515,7 +516,7 @@ mod phase {
                     SseLimits::default(),
                 );
                 attempt.begin(200, "text/event-stream").unwrap();
-                let mut stream = delivery();
+                let mut stream = delivery(true);
                 let mut output = vec![];
                 let mut rest = bytes.as_slice();
                 while !rest.is_empty() {
@@ -563,7 +564,8 @@ mod phase {
                     .collect();
                 assert_eq!(text, "ACB");
                 let snapshot: Value =
-                    serde_json::from_slice(&delivery().encode_json(&attempt).unwrap()).unwrap();
+                    serde_json::from_slice(&delivery(false).encode_json(&attempt).unwrap())
+                        .unwrap();
                 assert_eq!(snapshot["choices"][0]["message"]["content"], "ACB");
                 assert_eq!(snapshot["choices"][0].get("logprobs"), Some(&Value::Null));
                 if has_call {

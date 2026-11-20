@@ -3,7 +3,7 @@ use crate::{failure::CarrierReason, openai::events::*};
 use serde_json::json;
 impl EventEncoder {
     fn chunk(&self, mut delta: Value, finish: Value) -> Value {
-        if self.contract.adaptation.rules.reasoning_alias {
+        if self.contract.adaptation.rules.reasoning.reasoning_alias {
             crate::openai::dialect::adapter_shapes::encode_message(&mut delta);
         }
         let created = self
@@ -194,7 +194,7 @@ impl EventEncoder {
             .and_then(|d| d.usage)
             .or_else(|| response.usage())
         {
-            let mut v = if self.contract.adaptation.rules.repeated_finish_usage {
+            let mut v = if self.contract.adaptation.rules.stream.repeated_finish_usage {
                 self.chunk(json!({}), json!(finish))
             } else {
                 let mut v = self.chunk(json!({}), Value::Null);
@@ -224,7 +224,12 @@ impl EventEncoder {
         event: &StreamEvent,
         probabilities: Option<Value>,
     ) -> Result<Vec<Value>, CodecError> {
-        let structured = self.contract.adaptation.rules.structured_chat_reasoning;
+        let structured = self
+            .contract
+            .adaptation
+            .rules
+            .reasoning
+            .structured_chat_reasoning;
         let mut chunks = match event {
             StreamEvent::Started => vec![self.chunk(json!({"role": "assistant"}), Value::Null)],
             StreamEvent::AudioDelta { update, .. } => {

@@ -389,6 +389,7 @@ fn failed_stream(entry: &crate::BoundEntry, error: &ApiError) -> Result<Response
         Default::default(),
         Default::default(),
         crate::protocol::openai::obfuscation::Obfuscation::Disabled,
+        true,
     );
     let frames = delivery.fail_stream(&error.body()).map_err(|_| *error)?;
     Response::builder()

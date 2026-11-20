@@ -10,23 +10,19 @@ use crate::{
     },
     semantic::{
         context::StreamOptions,
-        task::generation::{EventError, MAX_TOTAL_BYTES, StreamEvent},
+        task::generation::{MAX_TOTAL_BYTES, StreamEvent},
     },
-    sse::{SseDecoder, SseEvent},
-    stream::{SseError, SseLimits, validate_http},
+    sse::SseEvent,
+    stream::{SseError, SseIntake, SseLimits, validate_http},
 };
 use bytes::Bytes;
 
 pub struct ChatSseDecoder {
-    framing: SseDecoder,
+    intake: SseIntake,
     codec: EventDecoder,
     limits: SseLimits,
-    wire_bytes: usize,
-    events: usize,
     padding_bytes: usize,
     done: bool,
-    closed: bool,
-    rejected: bool,
 }
 impl ChatSseDecoder {
     pub fn take_intake_evidence(&mut self) -> crate::conversion::generation::EvidenceDelta {
@@ -36,15 +32,11 @@ impl ChatSseDecoder {
         limits.validate()?;
         validate_http(status, content_type)?;
         Ok(Self {
-            framing: SseDecoder::new(limits.max_event_bytes),
+            intake: SseIntake::new(limits),
             codec: EventDecoder::new(GenerationApi::Chat),
             limits,
-            wire_bytes: 0,
-            events: 0,
             padding_bytes: 0,
             done: false,
-            closed: false,
-            rejected: false,
         })
     }
     pub fn with_decoder(
@@ -68,17 +60,9 @@ impl ChatSseDecoder {
     }
     /// Consume at most one event; the caller must revisit the unconsumed suffix.
     pub fn consume(&mut self, chunk: &[u8]) -> Result<(usize, Vec<StreamEvent>), SseError> {
-        if self.closed || self.rejected {
-            return Err(SseError::Closed);
-        }
+        self.intake.open()?;
         let result = (|| {
-            let remaining = self.limits.max_wire_bytes.saturating_sub(self.wire_bytes);
-            let available = chunk.len().min(remaining.saturating_add(1));
-            let (frame, n) = self.framing.push_until_event(&chunk[..available])?;
-            self.wire_bytes = self.wire_bytes.checked_add(n).ok_or(SseError::Limit)?;
-            if self.wire_bytes > self.limits.max_wire_bytes {
-                return Err(SseError::Limit);
-            }
+            let (frame, n) = self.intake.pull(chunk)?;
             let events = if let Some(frame) = frame {
                 self.frame(frame)?
             } else {
@@ -87,7 +71,7 @@ impl ChatSseDecoder {
             Ok((n, events))
         })();
         if result.is_err() {
-            self.rejected = true;
+            self.intake.reject();
         }
         result
     }
@@ -95,10 +79,7 @@ impl ChatSseDecoder {
         if self.done {
             return Err(SseError::Closed);
         }
-        self.events += 1;
-        if self.events > self.limits.max_events {
-            return Err(SseError::Limit);
-        }
+        self.intake.charge_frame()?;
         if frame
             .event()
             .is_some_and(|s| !s.is_empty() && s != "message")
@@ -133,24 +114,20 @@ impl ChatSseDecoder {
         Ok(self.codec.push(&payload)?)
     }
     pub fn finish(&mut self) -> Result<(), SseError> {
-        if self.closed || self.rejected {
-            return Err(SseError::Closed);
-        }
-        self.closed = true;
+        self.intake.open()?;
+
         let result = (|| {
-            self.framing.finish_strict()?;
-            if !self.done {
-                return Err(CodecError::Event(EventError::EofBeforeTerminal).into());
-            }
+            self.intake.finish_framing()?;
+            crate::stream::require_terminal(self.done)?;
             Ok(self.codec.finish()?)
         })();
         if result.is_err() {
-            self.rejected = true;
+            self.intake.reject();
         }
         result
     }
     pub fn materialize(&self) -> Result<DecodedResponse, SseError> {
-        if !self.closed || self.rejected {
+        if !self.intake.completed() {
             return Err(SseError::Closed);
         }
         Ok(self.codec.materialize()?)

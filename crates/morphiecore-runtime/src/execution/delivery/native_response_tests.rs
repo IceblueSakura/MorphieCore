@@ -141,6 +141,7 @@ fn native_stream_preparation_records_losses_and_rejects_unrepresentable_metadata
             Default::default(),
             Default::default(),
             Obfuscation::Disabled,
+            false,
         );
         delivery.encode_json(&attempt).unwrap();
         assert!(
@@ -166,6 +167,7 @@ fn native_stream_preparation_records_losses_and_rejects_unrepresentable_metadata
                 ..Default::default()
             },
             Obfuscation::Disabled,
+            true,
         );
         let (owner, call) = source
             .semantic

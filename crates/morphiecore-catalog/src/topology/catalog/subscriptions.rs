@@ -2,6 +2,8 @@
 use super::{models, *};
 use crate::lowering::disposition::Dispositions;
 use crate::protocol::openai::Dialect;
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SubscriptionBinding {
     pub profile: &'static str,
     pub identity: &'static str,
@@ -9,56 +11,16 @@ pub struct SubscriptionBinding {
     pub upstream: &'static str,
     pub dialect: Dialect,
     pub reasoning_history: Option<crate::protocol::reasoning::ReasoningHistory>,
-    pub provider: fn() -> crate::provider::ProviderDefinition,
+    pub(super) provider: &'static str,
+    #[serde(default)]
+    pub(super) limits: crate::protocol::model_limits::ModelLimits,
 }
-pub const SUBSCRIPTION_BINDINGS: &[SubscriptionBinding] = &[
-    SubscriptionBinding {
-        profile: "openai",
-        identity: "chatgpt-terra",
-        reasoning_history: Some(crate::protocol::reasoning::ReasoningHistory::Accepted),
-        model: "gpt-6.1-terra",
-        upstream: "gpt-6.1-terra",
-        dialect: Dialect::Siwc,
-        provider: catalog::chatgpt,
-    },
-    SubscriptionBinding {
-        profile: "openai",
-        identity: "chatgpt",
-        reasoning_history: Some(crate::protocol::reasoning::ReasoningHistory::Accepted),
-        model: "gpt-6.2-sol",
-        upstream: "gpt-6.2-sol",
-        dialect: Dialect::Siwc,
-        provider: catalog::chatgpt,
-    },
-    SubscriptionBinding {
-        profile: "openai",
-        identity: "chatgpt-astra",
-        reasoning_history: Some(crate::protocol::reasoning::ReasoningHistory::Accepted),
-        model: "gpt-6.2-astra",
-        upstream: "gpt-6.2-astra",
-        dialect: Dialect::Siwc,
-        provider: catalog::chatgpt,
-    },
-    SubscriptionBinding {
-        profile: "openai",
-        identity: "chatgpt-luna",
-        reasoning_history: Some(crate::protocol::reasoning::ReasoningHistory::Accepted),
-        model: "gpt-6-luna",
-        upstream: "gpt-6-luna",
-        dialect: Dialect::Siwc,
-        provider: catalog::chatgpt,
-    },
-    SubscriptionBinding {
-        profile: "grok",
-        identity: "grok",
-        reasoning_history: Some(crate::protocol::reasoning::ReasoningHistory::Accepted),
-        model: "grok-4.7",
-        upstream: "grok-4.7",
-        dialect: Dialect::Grok,
-        provider: catalog::grok,
-    },
-];
+
 impl SubscriptionBinding {
+    pub fn provider(&self) -> crate::provider::ProviderDefinition {
+        super::data::provider(self.provider).clone()
+    }
+
     fn contract(&self) -> Dispositions {
         let mut contract = models::contract(self.model);
         if self.profile == "openai" {
@@ -80,7 +42,7 @@ impl SubscriptionBinding {
         contract
     }
     pub fn credential(&self) -> CredentialBindingId {
-        CredentialBindingId::new((self.provider)().id.as_str()).expect("catalog Provider identity")
+        CredentialBindingId::new(self.provider().id.as_str()).expect("catalog Provider identity")
     }
     pub fn endpoint_id(&self) -> EndpointId {
         EndpointId::new(&format!("{}-responses", self.identity)).expect("static id")
@@ -92,7 +54,7 @@ impl SubscriptionBinding {
             route: RouteId::new(&format!("{}-generation", self.identity)).unwrap(),
             // An alternative keeps the existing public promise; SIWC restrictions
             // still apply to this endpoint during candidate preparation.
-            contract: API_KEY_BINDINGS
+            contract: api_key_bindings()
                 .iter()
                 .find(|binding| binding.model == self.model)
                 .map(|binding| binding.public_model().contract)
@@ -100,7 +62,7 @@ impl SubscriptionBinding {
         }
     }
     pub fn endpoint(&self) -> Endpoint {
-        let provider = (self.provider)();
+        let provider = self.provider();
         let scope = crate::protocol::replay_envelope::issuer(provider.id.as_str(), self.upstream);
         let adapter = GenerationCodec::new(
             crate::protocol::openai::GenerationApi::Responses,
@@ -108,7 +70,7 @@ impl SubscriptionBinding {
             Some(scope.clone()),
         );
         let contract = TargetContract {
-            model_limits: models::model_limits(self.model, provider.id.as_str()),
+            model_limits: self.limits.clone(),
             reasoning_history: self.reasoning_history,
             dispositions: self
                 .contract()

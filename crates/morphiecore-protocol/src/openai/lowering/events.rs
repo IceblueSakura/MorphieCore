@@ -229,7 +229,7 @@ pub fn check_event(
                         .dispositions
                         .native(crate::semantic::task::generation::Feature::Reasoning)
                         || (profile == GenerationApi::Chat
-                            && !contract.adaptation.rules.readable_reasoning) =>
+                            && !contract.adaptation.rules.reasoning.readable_reasoning) =>
                 {
                     return Err(RepresentationError::Reasoning);
                 }

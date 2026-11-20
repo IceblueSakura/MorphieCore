@@ -21,13 +21,13 @@ pub(super) fn check_usage(
     }
     if profile == GenerationApi::Responses
         && usage.input_image_tokens.is_some()
-        && !rules.responses_image_usage
+        && !rules.accounting.responses_image_usage
     {
         return Err(RepresentationError::UsageDetails);
     }
     if profile == GenerationApi::Responses
         && ((usage.input_text_tokens.is_some() || usage.output_text_tokens.is_some())
-            && !rules.responses_text_usage
+            && !rules.accounting.responses_text_usage
             || usage.accepted_prediction_tokens.is_some()
             || usage.rejected_prediction_tokens.is_some()
             || usage.input_audio_tokens.is_some()
@@ -44,7 +44,7 @@ pub fn chat_reasoning_carrier(
     next: Option<&Item>,
     rules: &crate::openai::dialect::adaptation::WireRules,
 ) -> bool {
-    let readable = rules.readable_reasoning
+    let readable = rules.reasoning.readable_reasoning
         && reasoning.replay.is_none()
         && (matches!(
             reasoning.parts.as_slice(),
@@ -56,7 +56,7 @@ pub fn chat_reasoning_carrier(
                 && matches!(next, Some(Item::ToolCall(_) | Item::CustomCall(_))));
     // Each retained reasoning owner must in turn have a carrier, so consecutive
     // structured owners ultimately share the following assistant message or call.
-    let structured = rules.structured_chat_reasoning
+    let structured = rules.reasoning.structured_chat_reasoning
         && (!reasoning.parts.is_empty() || reasoning.replay.is_some())
         && !reasoning.parts.iter().any(
             |(_, part)| matches!(part, ReasoningContent::Text(text) if text.as_str().is_empty()),
@@ -77,16 +77,16 @@ pub(super) fn represent_reasoning(
     adaptation: &crate::openai::dialect::adaptation::Adaptation,
     history: Option<&GenerationRequest>,
 ) -> Result<(), RepresentationError> {
-    let structured_chat = adaptation.rules.structured_chat_reasoning;
+    let structured_chat = adaptation.rules.reasoning.structured_chat_reasoning;
     let controls = &settings.reasoning;
     let request = history.is_some();
     if !controls.read_history.is_none()
-        && (profile != GenerationApi::Chat || !adaptation.rules.chat_preserve_thinking)
+        && (profile != GenerationApi::Chat || !adaptation.rules.reasoning.chat_preserve_thinking)
     {
         return Err(RepresentationError::Reasoning);
     }
     let standard;
-    let checked_settings = if request && adaptation.rules.chat_template_thinking {
+    let checked_settings = if request && adaptation.rules.reasoning.chat_template_thinking {
         standard = crate::openai::dialect::modelbest::standard_reasoning(settings);
         &standard
     } else {
@@ -95,7 +95,7 @@ pub(super) fn represent_reasoning(
     if crate::openai::dialect::bailian::extended(
         checked_settings,
         profile,
-        request && adaptation.rules.thinking_controls,
+        request && adaptation.rules.reasoning.thinking_controls,
     ) {
         return Err(RepresentationError::Reasoning);
     }
@@ -185,7 +185,7 @@ pub(super) fn represent_reasoning(
         .iter()
         .any(|(_, item)| matches!(item, Item::Reasoning(_)));
     let native_budget = request
-        && adaptation.rules.thinking_controls
+        && adaptation.rules.reasoning.thinking_controls
         && controls.budget_tokens.is_some()
         && controls.mode == crate::semantic::value::Presence::Value(ReasoningMode::Budgeted);
     if profile == GenerationApi::Chat

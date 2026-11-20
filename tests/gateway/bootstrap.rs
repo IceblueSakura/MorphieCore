@@ -460,7 +460,7 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
             .unwrap(),
         )
         .unwrap();
-    let binding = morphiecore::topology::catalog::API_KEY_BINDINGS
+    let binding = morphiecore::topology::catalog::api_key_bindings()
         .iter()
         .find(|b| b.model == "deepseek-v4.1-flash-1017")
         .unwrap()

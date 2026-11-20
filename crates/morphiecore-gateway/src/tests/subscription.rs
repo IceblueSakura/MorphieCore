@@ -301,6 +301,7 @@ async fn missing_media_is_not_enabled_for_standard_or_other_responses_profiles()
         )
         .adaptation
         .rules
+        .stream
         .responses_sse_without_content_type
     );
 }

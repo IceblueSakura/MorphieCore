@@ -46,7 +46,7 @@ impl GenerationCodec {
     ) -> Result<Request, CodecError> {
         let mut value = crate::json::decode(bytes)?;
         if self.protocol == GenerationApi::Responses
-            && self.adaptation.rules.responses_developer_is_user
+            && self.adaptation.rules.request.responses_developer_is_user
             && let Some(items) = value.get_mut("input").and_then(Value::as_array_mut)
         {
             // The trusted source dialect, never a requested target, defines this
@@ -72,11 +72,11 @@ impl GenerationCodec {
             }
         }
         let mut native_controls = serde_json::Map::new();
-        if self.adaptation.rules.thinking_controls {
+        if self.adaptation.rules.reasoning.thinking_controls {
             openai::dialect::bailian::source(
                 &value,
                 self.protocol,
-                self.adaptation.rules.bailian_requests,
+                self.adaptation.rules.hooks.bailian_requests,
             )?;
             if let Some(o) = value.as_object_mut() {
                 for name in openai::dialect::bailian::CONTROL_FIELDS {
@@ -86,7 +86,7 @@ impl GenerationCodec {
                 }
             }
         }
-        let template_thinking = if self.adaptation.rules.chat_template_thinking {
+        let template_thinking = if self.adaptation.rules.reasoning.chat_template_thinking {
             value
                 .as_object_mut()
                 .and_then(|o| o.shift_remove("chat_template_kwargs"))
@@ -148,7 +148,7 @@ impl GenerationCodec {
                     &value,
                     direction,
                     history,
-                    self.adaptation.rules.responses_input_video,
+                    self.adaptation.rules.request.responses_input_video,
                 )?;
                 let options = match decoded.context.delivery.options {
                     Presence::Absent | Presence::Null => None,
@@ -180,14 +180,14 @@ impl GenerationCodec {
             openai::dialect::modelbest::read(&template, &mut settings)?;
             request.task.semantic = request.task.semantic.with_settings(settings)?;
         }
-        if !native_controls.is_empty() || self.adaptation.rules.bailian_requests {
+        if !native_controls.is_empty() || self.adaptation.rules.hooks.bailian_requests {
             let mut settings = request.task.semantic.settings().clone();
             openai::dialect::bailian::read_controls(
                 &native_controls,
                 &mut settings,
                 self.protocol,
             )?;
-            if self.adaptation.rules.bailian_requests
+            if self.adaptation.rules.hooks.bailian_requests
                 && let Some(mapping) =
                     openai::dialect::bailian::effort_mapping(&request.model, self.protocol)
                 && let Some(control) = settings.effort.as_ref().copied()
@@ -210,7 +210,9 @@ impl GenerationCodec {
                     );
                 }
             }
-            if self.adaptation.rules.bailian_requests && self.protocol == GenerationApi::Responses {
+            if self.adaptation.rules.hooks.bailian_requests
+                && self.protocol == GenerationApi::Responses
+            {
                 for tool in settings.tools.iter_mut().flatten() {
                     if let crate::semantic::task::generation::ToolDefinition::Function(tool) = tool
                         && tool.strict
@@ -227,7 +229,7 @@ impl GenerationCodec {
             }
             request.task.semantic = request.task.semantic.with_settings(settings)?;
         }
-        if self.adaptation.rules.bailian_requests {
+        if self.adaptation.rules.hooks.bailian_requests {
             openai::dialect::bailian::check(
                 &request,
                 self.protocol,

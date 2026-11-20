@@ -1,5 +1,5 @@
 //! One adjacent prepared text run. Time is supplied by intake, never read here.
-use super::{EventContext, PreparedEvents};
+use super::{PreparedEvents, stream::EventContext};
 use crate::semantic::task::generation::{ItemId, PartId, PartKind, StreamEvent};
 use std::{
     sync::Arc,

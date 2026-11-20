@@ -1466,7 +1466,7 @@ fn projects_stateless_steps_tools_and_controls() {
         rules.iter().map(|r| r.name()).collect::<Vec<_>>(),
         ["interactions.join-instruction-parts.v1"]
     );
-    let mut endpoint = morphiecore::topology::catalog::GOOGLE_BINDINGS[0].interactions_endpoint();
+    let mut endpoint = morphiecore::topology::catalog::google_bindings()[0].interactions_endpoint();
     assert!(endpoint.encode_request_with_rules(&request).is_err());
     endpoint.representation = morphiecore::protocol::google::interactions::TargetContract {
         dispositions: morphiecore::protocol::google::interactions::representation_contract(),

@@ -119,6 +119,7 @@ async fn handle(
             include_obfuscation: Some(false),
         },
         Obfuscation::Disabled,
+        value["stream"] == true,
     );
     let streamed = value["stream"] == true;
     let mut output = vec![];
