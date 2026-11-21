@@ -161,7 +161,13 @@ async fn publication_case(
                 }
             }
         }
-        assert_eq!(failed, matches!(mode, "cut" | "terminal-cut"));
+        // A published failure ends with its protocol error frame, not an abort.
+        assert!(!failed, "{mode}");
+        assert_eq!(
+            morphiecore_test_support::sse_terminal::error_terminated(&received),
+            matches!(mode, "cut" | "terminal-cut"),
+            "{mode}"
+        );
         let body = String::from_utf8_lossy(&received);
         assert_eq!(
             body.contains(if chat { "[DONE]" } else { "response.completed" }),

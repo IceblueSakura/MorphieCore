@@ -223,7 +223,7 @@ fn native_stream_preparation_records_losses_and_rejects_unrepresentable_metadata
                 ..
             }
         )));
-        assert!(pending.lifecycle().may_retry_or_fallback());
+        assert!(pending.lifecycle().is_uncommitted());
         assert!(pending.commit().is_err(), "preparation is not rendering");
         let mut frames = pending
             .encode_prepared(opened)

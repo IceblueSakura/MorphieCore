@@ -170,7 +170,7 @@ Affinity is an advisory, success-updated preference scoped by authenticated Agen
 
 Delivery lifecycle and event streaming are coordinated by [`ResponseDelivery`](../../crates/morphiecore-runtime/src/execution/delivery.rs) under [`SseLimits`](../../crates/morphiecore-protocol/src/stream.rs):
 - **Pre-publication holding:** Bounded lifecycle-only frames wait for content while the one same-target retry remains possible.
-- **Publication freeze:** Flushing frames irreversibly prohibits another send; subsequent upstream failures abort the stream with terminal error events.
+- **Publication freeze:** Flushing frames irreversibly prohibits another send. Every later failure, including transport, malformed, byte-limit, attempt or exchange deadline and shutdown, drains validated pending content and then ends the stream with exactly one protocol error frame followed by a clean body end, which is never a success terminal. Deadline and shutdown framing is bounded to 2 s; when the frame cannot be encoded or handed off, the transport is aborted instead.
 - **Honest completion:** Validated upstream EOF gates the successful terminal, not earlier content frames.
 - **Final handoff:** Final-frame acceptance and cancellation share one fence. Before acceptance, cancellation revokes delivery; afterward only synchronous completion checks, health/affinity settlement and diagnostics remain. Acceptance alone never makes a failed or neutral operation successful.
 

@@ -256,8 +256,14 @@ async fn selected_target_never_changes_after_dispatch() {
                             cut_stream.notify_one();
                         }
                     }
-                    Ok(None) => panic!("truncated response must not finish normally"),
-                    Err(_) => break,
+                    Ok(None) => {
+                        assert!(
+                            crate::tests::support::error_terminated(&received),
+                            "truncated response must not finish normally"
+                        );
+                        break;
+                    }
+                    Err(_) => panic!("a published failure ends with its error frame"),
                 }
             }
             assert!(String::from_utf8_lossy(&received).contains("visible"));

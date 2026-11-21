@@ -460,12 +460,15 @@ pub(crate) async fn produce_chain(
                         result = &mut attempt => (result, None),
                         _ = recovery => {
                             if state.cancel() {
+                                state.expire_published(attempt.as_mut(), ApiError::timeout()).await;
                                 (Err(ApiError::timeout()), Some(crate::execution::attempt::DeadlineReason::Recovery))
                             } else { (attempt.await, None) }
                         },
                         _ = tokio::time::sleep_until(attempt_deadline) => {
                             if state.cancel() {
-                                (Err(state.timeout_error()), Some(crate::execution::attempt::DeadlineReason::Attempt))
+                                let error = state.timeout_error();
+                                state.expire_published(attempt.as_mut(), error).await;
+                                (Err(error), Some(crate::execution::attempt::DeadlineReason::Attempt))
                             } else { (attempt.await, None) }
                         },
                     }

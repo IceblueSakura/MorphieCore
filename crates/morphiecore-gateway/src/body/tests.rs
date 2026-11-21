@@ -923,9 +923,9 @@ async fn late_truncation_and_trailing_payload_never_emit_success_terminal() {
             }
         })
         .await;
-        assert!(failed);
+        assert!(!failed, "a framed failure ends the body cleanly");
         assert!(String::from_utf8_lossy(&seen).contains("🧪"));
-        assert!(!String::from_utf8_lossy(&seen).contains("[DONE]"));
+        assert!(crate::tests::support::error_terminated(&seen));
     }
     // Six downstream frames fit through pending text; a classified failure's
     // envelope then exceeds the event budget. The pending prefix still arrives.
@@ -986,6 +986,115 @@ async fn late_truncation_and_trailing_payload_never_emit_success_terminal() {
         .count();
     assert_eq!(pending, 1);
     assert!(!wire.contains("response.completed"));
+}
+#[tokio::test]
+async fn post_publication_failures_end_with_one_protocol_error_frame() {
+    let prefix: Bytes = frames()[..3].concat().into();
+    for protocol in [
+        ClientProtocol::Chat,
+        ClientProtocol::Responses,
+        ClientProtocol::Messages,
+    ] {
+        for case in ["reset", "malformed", "limit", "deadline"] {
+            let mut gate = gateway(Limits::default());
+            if case == "limit" {
+                // Startup documents must fit the default; only intake is narrowed.
+                Arc::get_mut(&mut gate.state).unwrap().limits.response_bytes = 4096;
+            }
+            let lookup = |protocol| gate.state.entries[&(protocol, "fixture-model".into())].clone();
+            let (entry, body) = match protocol {
+                ClientProtocol::Chat => (
+                    lookup(ClientProtocol::Chat),
+                    serde_json::json!({"model":"fixture-model","stream":true,
+                        "stream_options":{"include_obfuscation":false},
+                        "messages":[{"role":"user","content":"hello"}]}),
+                ),
+                ClientProtocol::Responses => {
+                    // Test-owned client codec over the fixture Chat target.
+                    let mut entry = lookup(ClientProtocol::Chat).as_ref().clone();
+                    entry.client = crate::adapter::ClientAdapter::openai(
+                        crate::protocol::openai::GenerationCodec::new(
+                            GenerationApi::Responses,
+                            crate::protocol::openai::Dialect::Standard,
+                            None,
+                        ),
+                        crate::protocol::openai::TargetContract::full(),
+                    );
+                    (
+                        Arc::new(entry),
+                        serde_json::json!({"model":"fixture-model","stream":true,"input":"hello"}),
+                    )
+                }
+                ClientProtocol::Messages => (
+                    lookup(ClientProtocol::Messages),
+                    serde_json::json!({"model":"fixture-model","stream":true,"max_tokens":32,
+                        "messages":[{"role":"user","content":"hello"}]}),
+                ),
+            };
+            let mut request = entry
+                .client
+                .decode_client_request(body.to_string().as_bytes())
+                .unwrap();
+            request.delivery.options = Some(crate::semantic::context::StreamOptions {
+                include_obfuscation: Some(false),
+                ..Default::default()
+            });
+            let (tx, source, dropped, _) = upstream(200, "text/event-stream");
+            tx.send(Ok(prefix.clone())).await.unwrap();
+            let deadline =
+                Instant::now() + Duration::from_millis(if case == "deadline" { 300 } else { 1500 });
+            let response = bounded(respond(
+                entry.clone(),
+                entry.candidates[0].clone(),
+                request,
+                source,
+                &gate.state.limits,
+                deadline,
+                gate.state.shutdown.clone(),
+                gate.state.permits.clone().acquire_owned().await.unwrap(),
+                super::Trace::new(None),
+            ))
+            .await
+            .unwrap();
+            let mut body = response.into_body().into_data_stream();
+            let mut seen = vec![];
+            while !String::from_utf8_lossy(&seen).contains("🧪") {
+                let chunk = bounded(body.next()).await.unwrap();
+                seen.extend_from_slice(&chunk.unwrap_or_else(|_| {
+                    panic!("{protocol:?} {case}: {}", String::from_utf8_lossy(&seen))
+                }));
+            }
+            match case {
+                "reset" => tx
+                    .send(Err(std::io::Error::other("synthetic reset")))
+                    .await
+                    .unwrap(),
+                "malformed" => tx
+                    .send(Ok(Bytes::from_static(b"data: not-json\n\n")))
+                    .await
+                    .unwrap(),
+                // SSE comments count toward upstream bytes, not downstream frames.
+                "limit" => tx
+                    .send(Ok(Bytes::from(
+                        [b":".repeat(4096), b"\n".to_vec()].concat(),
+                    )))
+                    .await
+                    .unwrap(),
+                _ => {}
+            }
+            while let Some(chunk) = bounded(body.next()).await {
+                let chunk =
+                    chunk.unwrap_or_else(|_| panic!("{protocol:?} {case}: transport abort"));
+                seen.extend_from_slice(&chunk);
+            }
+            assert!(
+                crate::tests::support::error_terminated(&seen),
+                "{protocol:?} {case}: {}",
+                String::from_utf8_lossy(&seen)
+            );
+            bounded(dropped).await.unwrap();
+        }
+    }
 }
 #[tokio::test]
 async fn queued_first_frame_timeout_preserves_the_final_public_error() {

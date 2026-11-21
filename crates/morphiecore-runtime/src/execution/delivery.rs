@@ -505,9 +505,7 @@ impl ResponseDelivery {
     pub fn complete(&mut self, attempt: &Attempt) -> Result<(), AttemptError> {
         self.bind(attempt)?;
         attempt.response()?;
-        if self.projection.phase != ProjectionPhase::Finalized
-            || self.lifecycle.may_retry_or_fallback()
-        {
+        if self.projection.phase != ProjectionPhase::Finalized || self.lifecycle.is_uncommitted() {
             return Err(AttemptError::Delivery(
                 crate::execution::attempt::DeliveryReason::DeliveryNotComplete,
             ));

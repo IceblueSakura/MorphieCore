@@ -68,7 +68,15 @@ pub(super) struct Status {
     pub(super) failures: Mutex<FailureState>,
     pub(super) recovery_ready: AtomicBool,
     pub(super) readiness: tokio::sync::Notify,
+    /// A protocol error frame was handed off; the body then ends without a
+    /// success terminal instead of aborting the transport.
+    error_delivered: AtomicBool,
+    /// Failure an outer deadline or shutdown asks a published attempt to frame.
+    expiry: Mutex<Option<ApiError>>,
+    expired: tokio_util::sync::CancellationToken,
 }
+/// Bounded handoff of the in-band failure frame after a published attempt fails.
+pub(crate) const FAILURE_HANDOFF: std::time::Duration = std::time::Duration::from_secs(2);
 impl Status {
     /// Serialize cancellation with final acceptance. After acceptance only the
     /// producer's synchronous completion/health/cache settlement may remain.
@@ -81,6 +89,43 @@ impl Status {
                 true
             }
             FinalHandoff::Open | FinalHandoff::Revoked => true,
+        }
+    }
+    /// No final frame was queued, so an error frame may still follow.
+    pub(super) fn final_open(&self) -> bool {
+        matches!(
+            *self.final_handoff.lock().expect("final handoff"),
+            FinalHandoff::Open
+        )
+    }
+    pub(super) fn error_delivered(&self) -> bool {
+        self.error_delivered.load(Ordering::Acquire)
+    }
+    pub(super) fn deliver_error(&self) {
+        self.error_delivered.store(true, Ordering::Release);
+    }
+    /// The first expiry wins; the attempt observes it through [`Self::expired`].
+    pub(super) fn expire(&self, error: ApiError) {
+        self.expiry.lock().expect("expiry").get_or_insert(error);
+        self.expired.cancel();
+    }
+    pub(super) async fn expired(&self) -> ApiError {
+        self.expired.cancelled().await;
+        self.expiry
+            .lock()
+            .expect("expiry")
+            .unwrap_or_else(ApiError::timeout)
+    }
+    /// Unpublished work is dropped at once. A published stream first gets a
+    /// bounded chance to frame `error` in-band before it is dropped.
+    pub(super) async fn expire_published<T>(
+        &self,
+        work: Pin<&mut impl std::future::Future<Output = T>>,
+        error: ApiError,
+    ) {
+        if self.published.load(Ordering::Acquire) {
+            self.expire(error);
+            let _ = tokio::time::timeout(FAILURE_HANDOFF, work).await;
         }
     }
     pub(super) fn final_accepted(&self) -> bool {
@@ -163,6 +208,14 @@ struct Output {
     abort: AbortHandle,
     ended: bool,
 }
+impl Output {
+    /// A handed-off protocol error frame is the honest terminal; without one
+    /// only a transport abort keeps the client from reading success.
+    fn failed(&self) -> Option<Result<Bytes, std::io::Error>> {
+        (!self.status.error_delivered())
+            .then(|| Err(std::io::Error::other("upstream stream failed")))
+    }
+}
 impl Stream for Output {
     type Item = Result<Bytes, std::io::Error>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -171,7 +224,7 @@ impl Stream for Output {
         }
         if self.status.error.lock().expect("delivery status").is_some() {
             self.ended = true;
-            return Poll::Ready(Some(Err(std::io::Error::other("upstream stream failed"))));
+            return Poll::Ready(self.failed());
         }
         let item = if let Some(first) = self.first.take() {
             Poll::Ready(Some(Message::Chunk(first)))
@@ -206,7 +259,7 @@ impl Stream for Output {
             }
             Poll::Ready(Some(Message::Error(_))) => {
                 self.ended = true;
-                Poll::Ready(Some(Err(std::io::Error::other("upstream stream failed"))))
+                Poll::Ready(self.failed())
             }
             Poll::Ready(None) => {
                 self.ended = true;
@@ -388,7 +441,10 @@ pub(super) async fn respond_producer(
             tokio::select! {
             biased;
             _ = shutdown.cancelled() => {
-                if worker_state.cancel() { Err(ApiError::shutdown()) } else { production.await }
+                if worker_state.cancel() {
+                    worker_state.expire_published(production.as_mut(), ApiError::shutdown()).await;
+                    Err(ApiError::shutdown())
+                } else { production.await }
             },
             _ = tx.closed() => {
                 if worker_state.cancel() {
@@ -402,6 +458,7 @@ pub(super) async fn respond_producer(
             _ = tokio::time::sleep_until(deadline) => {
                 if worker_state.cancel() {
                     interruption = Some(AttemptError::Deadline(DeadlineReason::Exchange));
+                    worker_state.expire_published(production.as_mut(), ApiError::timeout()).await;
                     Err(ApiError::timeout())
                 } else { production.await }
             }

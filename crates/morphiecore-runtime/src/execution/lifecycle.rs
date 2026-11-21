@@ -1,8 +1,8 @@
-//! Monotonic delivery lifecycle for one attempt chain.
+//! Monotonic delivery lifecycle for one attempt's rendered output.
 //!
-//! `Uncommitted -> Committed -> Terminal` is one-way. Retry or fallback is only
-//! legal while uncommitted; once any semantic output is visible, replaying or
-//! advancing to another candidate is forbidden.
+//! `Uncommitted -> Committed -> Terminal` is one-way. Completion requires
+//! committed output; retry and failover legality is owned by the gateway's
+//! publication flag, which freezes before a frame is queued for handoff.
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DeliveryState {
@@ -64,7 +64,7 @@ impl Lifecycle {
         }
     }
 
-    pub fn may_retry_or_fallback(&self) -> bool {
+    pub fn is_uncommitted(&self) -> bool {
         self.state == DeliveryState::Uncommitted
     }
 }

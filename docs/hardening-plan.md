@@ -8,7 +8,7 @@ This plan tracks repairs selected from the 2026-11-21 whole-project review at `b
 |---|---|---|
 | 1 | Quadratic stream metadata and history-edit checks | Done |
 | 2 | Unbounded connection heads and shutdown drain | Done |
-| 3 | Post-publication failures abort without protocol terminals | Planned |
+| 3 | Post-publication failures abort without protocol terminals | Done |
 | 4 | Data-less SSE blocks dispatched as events | Planned |
 | 5 | Chat-upstream calls withheld from Messages clients until finish | Planned |
 | 6 | Messages delivery rejects upstream call IDs after dispatch | Planned |
@@ -37,9 +37,9 @@ Every slice ends with focused tests at the responsible layer, the [offline basel
 
 **Defect.** After publication, transport, malformed, limit and timeout failures return errors without a protocol error frame, and even a delivered classified error frame is followed by a transport abort. This contradicts the [publication freeze](architecture/runtime-and-routing.md#streaming-and-delivery) contract.
 
-**Repair.** Route every post-publication failure through the in-band error frame path with its classified public error, then end the body cleanly after that frame is accepted. A clean end after an error frame is not a success terminal. Remove the unused runtime publication fence so the gateway flag is the single owner.
+**Repair.** Route every post-publication failure through one in-band error frame path, then end the body cleanly after that frame is accepted. Outer attempt, recovery and exchange deadlines and shutdown ask a published attempt to frame their error within a 2 s handoff bound before dropping it. The runtime delivery lifecycle now documents that it only gates completion; the gateway publication flag owns retry and failover legality.
 
-**Exit.** Tests for Chat, Responses and Messages streams show each post-publication failure class yields exactly one protocol error frame, no success terminal and a clean body end.
+**Result.** Chat, Responses and Messages clients each receive exactly one error frame and a clean end for transport reset, malformed SSE, byte limit and deadline after publication; disabling deadline framing fails the test. Integration oracles that expected a transport abort now require the error frame.
 
 ## Slice 4 — WHATWG SSE dispatch
 

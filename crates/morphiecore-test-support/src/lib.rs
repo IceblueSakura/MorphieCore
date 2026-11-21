@@ -11,6 +11,7 @@ pub mod messages_wire;
 pub mod properties;
 pub mod proxy_environment;
 pub mod responses_profile;
+pub mod sse_terminal;
 pub mod telemetry;
 pub mod tokenplan_audio;
 

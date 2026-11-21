@@ -620,7 +620,7 @@ fn scoped_accounting_preserves_opening_ttls_and_replaces_cumulative_tool_reports
                 .encode_events(&attempt, &events)
                 .map(|batch| batch.into_bytes())
                 .unwrap();
-            if !produced.is_empty() && delivery.lifecycle().may_retry_or_fallback() {
+            if !produced.is_empty() && delivery.lifecycle().is_uncommitted() {
                 delivery.commit().unwrap();
             }
             output.extend(produced.into_iter().flatten());
@@ -868,7 +868,7 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
                         .encode_events(&attempt, &events)
                         .map(|batch| batch.into_bytes())
                         .unwrap();
-                    if !produced.is_empty() && delivery.lifecycle().may_retry_or_fallback() {
+                    if !produced.is_empty() && delivery.lifecycle().is_uncommitted() {
                         delivery.commit().unwrap();
                     }
                     output.extend(produced.into_iter().flatten());
@@ -876,7 +876,7 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
                 if n == 8 {
                     assert!(String::from_utf8_lossy(&output).contains("ok"));
                     assert!(attempt.response().is_err());
-                    assert!(!delivery.lifecycle().may_retry_or_fallback());
+                    assert!(!delivery.lifecycle().is_uncommitted());
                 }
             }
             let early = String::from_utf8_lossy(&output);
@@ -1010,7 +1010,7 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
             .encode_events(&attempt, &events)
             .map(|batch| batch.into_bytes())
             .unwrap();
-        if !produced.is_empty() && delivery.lifecycle().may_retry_or_fallback() {
+        if !produced.is_empty() && delivery.lifecycle().is_uncommitted() {
             delivery.commit().unwrap();
         }
         output.extend(produced.into_iter().flatten());
@@ -1145,7 +1145,7 @@ fn eager_partial_arguments_keep_exact_bytes_only_on_incomplete_native_sse() {
                     .encode_events(&attempt, &events)
                     .map(|batch| batch.into_bytes())
                     .unwrap();
-                if !produced.is_empty() && delivery.lifecycle().may_retry_or_fallback() {
+                if !produced.is_empty() && delivery.lifecycle().is_uncommitted() {
                     delivery.commit().unwrap();
                 }
                 output.extend(produced.into_iter().flatten());

@@ -140,7 +140,7 @@ async fn consume(
                 }
             }
         }
-        Some(delivered)
+        (!crate::tests::support::error_terminated(&delivered)).then_some(delivered)
     })
     .await
     .expect("bounded synthetic response consumption");

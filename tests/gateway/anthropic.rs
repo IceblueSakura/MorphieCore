@@ -1120,7 +1120,13 @@ async fn native_tool_publication_waits_for_eof_and_releases_upstream_without_rep
                         }
                     }
                 }
-                assert_eq!(failed, mode == "cut");
+                // A published failure ends with its protocol error frame, not an abort.
+                assert!(!failed, "{mode}");
+                assert_eq!(
+                    morphiecore_test_support::sse_terminal::error_terminated(&output),
+                    mode == "cut",
+                    "{mode}"
+                );
                 let output = String::from_utf8(output).unwrap();
                 if mode == "hold" {
                     if let Some(profile) = profile {

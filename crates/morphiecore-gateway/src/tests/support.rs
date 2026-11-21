@@ -83,3 +83,4 @@ pub(crate) fn source(status: u16, media: &str) -> Probe {
         dropped,
     )
 }
+pub(crate) use morphiecore_test_support::sse_terminal::error_terminated;

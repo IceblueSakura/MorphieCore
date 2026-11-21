@@ -799,7 +799,7 @@ fn messages_end_turn_stream_waits_for_eof_and_final_metadata() {
                 match delivery.encode_events(&attempt, &events) {
                     Ok(batch) => {
                         output.extend(batch.into_bytes().into_iter().flatten());
-                        if !output.is_empty() && delivery.lifecycle().may_retry_or_fallback() {
+                        if !output.is_empty() && delivery.lifecycle().is_uncommitted() {
                             delivery.commit().unwrap();
                         }
                     }
@@ -971,7 +971,7 @@ fn messages_report_omissions_match_json_stream_and_retained_views() {
                                     Ok(batch) => {
                                         output.extend(batch.into_bytes().into_iter().flatten());
                                         if !output.is_empty()
-                                            && delivery.lifecycle().may_retry_or_fallback()
+                                            && delivery.lifecycle().is_uncommitted()
                                         {
                                             delivery.commit().unwrap();
                                         }
@@ -985,7 +985,7 @@ fn messages_report_omissions_match_json_stream_and_retained_views() {
                 assert!(!String::from_utf8_lossy(&output).contains("message_stop"));
                 if late {
                     assert!(String::from_utf8_lossy(&output).contains("partial"));
-                    assert!(!delivery.lifecycle().may_retry_or_fallback());
+                    assert!(!delivery.lifecycle().is_uncommitted());
                 }
             } else {
                 attempt.begin(200, "text/event-stream").unwrap();

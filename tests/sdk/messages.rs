@@ -260,7 +260,7 @@ async fn handle(
             .encode_events(&attempt, &events)
             .map(|batch| batch.into_bytes())
             .unwrap();
-        if !produced.is_empty() && delivery.lifecycle().may_retry_or_fallback() {
+        if !produced.is_empty() && delivery.lifecycle().is_uncommitted() {
             delivery.commit().unwrap();
         }
         output.extend(produced.into_iter().flatten());

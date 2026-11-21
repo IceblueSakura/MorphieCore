@@ -99,11 +99,11 @@ fn incremental_chain_emits_before_terminal_and_does_not_commit_by_encoding() {
         );
         assert!(intake.response().is_err());
         assert!(
-            output.lifecycle().may_retry_or_fallback(),
+            output.lifecycle().is_uncommitted(),
             "encoding is not I/O commit"
         );
         output.commit().unwrap();
-        assert!(!output.lifecycle().may_retry_or_fallback());
+        assert!(!output.lifecycle().is_uncommitted());
         let mut encoded: Vec<u8> = first.into_iter().flatten().collect();
         encoded.extend(consume(&mut intake, &mut output, &body[n..]).unwrap());
         assert!(output.complete(&intake).is_err());
@@ -227,7 +227,7 @@ fn delivery_cannot_switch_attempts_even_when_wire_identity_matches() {
             .map(|batch| batch.into_bytes())
             .is_err()
     );
-    assert!(!output.lifecycle().may_retry_or_fallback());
+    assert!(!output.lifecycle().is_uncommitted());
 }
 
 #[test]
@@ -280,7 +280,7 @@ fn terminal_is_withheld_on_truncated_eof_or_trailing_invalid_data() {
                     .map(|batch| batch.into_bytes())
                     .is_err()
             );
-            assert!(!output.lifecycle().may_retry_or_fallback());
+            assert!(!output.lifecycle().is_uncommitted());
             assert!(!String::from_utf8(encoded).unwrap().contains(
                 if profile == GenerationApi::Chat {
                     "[DONE]"
@@ -400,7 +400,7 @@ fn static_delivery_wraps_the_issuer_value_and_commit_is_explicit() {
     assert_eq!(issuer, scope);
     assert_eq!(format, ReplayFormat::ResponsesEncrypted);
     assert_eq!(payload.as_str(), "synthetic-token");
-    assert!(permitted.lifecycle().may_retry_or_fallback());
+    assert!(permitted.lifecycle().is_uncommitted());
     permitted.commit().unwrap();
     permitted.complete(&intake).unwrap();
     assert!(permitted.encode_json(&intake).is_err());
@@ -537,7 +537,7 @@ fn cancellation_closes_intake_and_delivery_without_success() {
                 .map(|batch| batch.into_bytes())
                 .is_err()
         );
-        assert!(!output.lifecycle().may_retry_or_fallback());
+        assert!(!output.lifecycle().is_uncommitted());
     }
 }
 #[test]

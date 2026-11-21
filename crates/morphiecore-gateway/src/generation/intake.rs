@@ -81,29 +81,45 @@ async fn flush_pending(
 async fn fail_classified(
     lane: &Lane<'_>,
     delivery: &mut ResponseDelivery,
-    stream: bool,
     failure: ApiError,
     trace: &mut Trace,
 ) -> Result<Completion, ApiError> {
     lane.state.observe_failure(failure);
-    let published = lane
-        .state
-        .published
-        .load(std::sync::atomic::Ordering::Acquire);
-    if stream && published {
-        flush_pending(lane, delivery, trace).await?;
-        let body = if delivery.is_messages() {
-            failure.messages_error().1
-        } else {
-            failure.body()
-        };
-        let frames = delivery.fail_stream(&body).map_err(|error| {
-            trace.projection_error(ConversionBoundary::EventEncode, &error);
-            failure
-        })?;
-        crate::body::send_error_frames(lane, frames, trace).await?;
-    }
+    deliver_failure(lane, delivery, failure, trace).await?;
     Err(failure)
+}
+/// After publication every failure ends with one protocol error frame, after
+/// any validated pending content. Unpublished, non-streaming, already framed
+/// or finalized deliveries send nothing here.
+async fn deliver_failure(
+    lane: &Lane<'_>,
+    delivery: &mut ResponseDelivery,
+    failure: ApiError,
+    trace: &mut Trace,
+) -> Result<(), ApiError> {
+    if !delivery.is_streaming()
+        || !lane
+            .state
+            .published
+            .load(std::sync::atomic::Ordering::Acquire)
+        || lane.state.error_delivered()
+        || !lane.state.final_open()
+    {
+        return Ok(());
+    }
+    flush_pending(lane, delivery, trace).await?;
+    let body = if delivery.is_messages() {
+        failure.messages_error().1
+    } else {
+        failure.body()
+    };
+    let frames = delivery.fail_stream(&body).map_err(|error| {
+        trace.projection_error(ConversionBoundary::EventEncode, &error);
+        failure
+    })?;
+    crate::body::send_error_frames(lane, frames, trace).await?;
+    lane.state.deliver_error();
+    Ok(())
 }
 #[allow(clippy::too_many_arguments)]
 async fn produce(
@@ -207,7 +223,7 @@ async fn produce(
                     }) else {
                         return Err(ApiError::malformed());
                     };
-                    return fail_classified(lane, delivery, stream, failure, trace).await;
+                    return fail_classified(lane, delivery, failure, trace).await;
                 }
             };
             if attempt.has_terminal() {
@@ -319,7 +335,7 @@ async fn produce(
                 false,
                 trace,
             );
-            return fail_classified(lane, delivery, stream, failure, trace).await;
+            return fail_classified(lane, delivery, failure, trace).await;
         }
         return Err(ApiError::malformed());
     }
@@ -358,7 +374,7 @@ async fn produce(
                 return Err(failure);
             }
             if !delivery.carries_failed_responses() {
-                return fail_classified(lane, delivery, stream, failure, trace).await;
+                return fail_classified(lane, delivery, failure, trace).await;
             }
         }
     }
@@ -629,29 +645,32 @@ pub(crate) async fn produce_candidate(
     .with_report(trace.report.clone())
     .with_request(&candidate.endpoint, request, original)
     .with_coalescing(stream.then_some(limits.delta_coalescing).flatten());
-    let result = produce(
-        upstream,
-        candidate.provider.id.as_str(),
-        &mut attempt,
-        &mut delivery,
-        lane,
-        hold,
-        limit,
-        trace,
-    )
-    .await;
-
-    if result.is_err() {
-        // An unpublished failed attempt must not acquire commitment by flushing.
-        if stream
-            && delivery.has_open_pending()
-            && lane
-                .state
-                .published
-                .load(std::sync::atomic::Ordering::Acquire)
-        {
-            let _ = flush_pending(lane, &mut delivery, trace).await;
+    let result = {
+        let production = produce(
+            upstream,
+            candidate.provider.id.as_str(),
+            &mut attempt,
+            &mut delivery,
+            lane,
+            hold,
+            limit,
+            trace,
+        );
+        tokio::pin!(production);
+        tokio::select! {
+            biased;
+            result = &mut production => result,
+            // An outer deadline or shutdown leaves this delivery to frame it.
+            error = lane.state.expired() => Err(error),
         }
+    };
+    if let Err(error) = result {
+        // An unpublished failed attempt must not acquire commitment by flushing.
+        let _ = tokio::time::timeout(
+            crate::body::FAILURE_HANDOFF,
+            deliver_failure(lane, &mut delivery, error, trace),
+        )
+        .await;
         attempt.cancel();
         delivery.cancel();
     }
