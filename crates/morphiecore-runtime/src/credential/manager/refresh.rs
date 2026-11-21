@@ -1,16 +1,19 @@
 //! Caller-owned renewal with off-worker, cancellation-drained filesystem phases.
 use super::*;
 use crate::credential::{
-    AccessBinding, Credential, Grant, Renewal,
+    AccessBinding, Grant, Renewal,
     storage::{fs::FileLock, store::Transaction},
 };
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use tokio_util::task::TaskTracker;
 
+type Restore = Box<dyn FnOnce() -> Result<(), Error> + Send>;
 #[derive(Default)]
 struct StorageState {
     cancelled: bool,
     account_lock: Option<FileLock>,
+    /// Reactivates published quarantine while no exchange has been dispatched.
+    restore: Option<Restore>,
 }
 struct RefreshStorage {
     state: Arc<Mutex<StorageState>>,
@@ -25,9 +28,13 @@ impl RefreshStorage {
     /// Runs a phase that precedes Provider I/O; it is skipped once the caller is gone.
     async fn prepare<T: Send + 'static>(
         &self,
-        phase: impl FnOnce(&mut Option<FileLock>) -> Result<T, Error> + Send + 'static,
+        phase: impl FnOnce(&mut StorageState) -> Result<T, Error> + Send + 'static,
     ) -> Result<T, Error> {
         self.run(false, phase).await
+    }
+    /// Ends the pre-dispatch window: once polled, an exchange may reach the authority.
+    fn dispatch(&self) {
+        state(&self.state).restore = None;
     }
     /// Publishes material the Provider may already have rotated. It completes
     /// after caller cancellation, and the account lock lives until it ends.
@@ -40,7 +47,7 @@ impl RefreshStorage {
     async fn run<T: Send + 'static>(
         &self,
         commit: bool,
-        phase: impl FnOnce(&mut Option<FileLock>) -> Result<T, Error> + Send + 'static,
+        phase: impl FnOnce(&mut StorageState) -> Result<T, Error> + Send + 'static,
     ) -> Result<T, Error> {
         let shared = self.state.clone();
         let dispatch = tracing::dispatcher::get_default(Clone::clone);
@@ -63,7 +70,7 @@ impl RefreshStorage {
                             span.record("morphiecore.outcome", "skipped");
                             return Err(Error::Superseded);
                         }
-                        let result = phase(&mut state.account_lock);
+                        let result = phase(&mut state);
                         span.record(
                             "morphiecore.outcome",
                             if result.is_ok() { "complete" } else { "failed" },
@@ -84,14 +91,32 @@ impl Drop for RefreshStorage {
         // started phase before releasing exclusivity or acknowledging cancellation;
         // queued preparation must never run after the caller has gone away. A
         // queued commit keeps the shared lock until its blocking task drops it.
-        let mut state = state(&self.state);
-        state.cancelled = true;
+        let restore = {
+            let mut state = state(&self.state);
+            state.cancelled = true;
+            state.restore.take()
+        };
+        // Preparation published quarantine, but its caller left before any
+        // exchange; the shared state keeps the account lock until restoration.
+        if let Some(restore) = restore {
+            let shared = self.state.clone();
+            let run = move || {
+                let _ = restore();
+                drop(shared);
+            };
+            if tokio::runtime::Handle::try_current().is_ok() {
+                self.tasks.spawn_blocking(run);
+            } else {
+                run();
+            }
+        }
     }
 }
 enum Prepared {
     Skip,
     Pending(Account),
-    Renew(Account, Credential),
+    /// Quarantined account whose credential still holds the refresh material.
+    Renew(Account),
 }
 impl CredentialManager {
     pub async fn refresh(&self, profile: &str, alias: &str) -> Result<AccountStatus, Error> {
@@ -123,12 +148,19 @@ impl CredentialManager {
         let alias = alias.to_owned();
         let automatic = automatic.map(|(binding, ahead)| (binding.clone(), ahead));
         let prepared = storage
-            .prepare(move |lock| {
-                *lock = Some(manager.store.account_lock(&profile, &alias)?);
-                manager.prepare_refresh(&profile, &alias, automatic.as_ref())
+            .prepare(move |state| {
+                state.account_lock = Some(manager.store.account_lock(&profile, &alias)?);
+                let prepared = manager.prepare_refresh(&profile, &alias, automatic.as_ref())?;
+                if let Prepared::Renew(account) = &prepared {
+                    let revision = account.revision;
+                    state.restore = Some(Box::new(move || {
+                        manager.restore_refresh(&profile, &alias, revision)
+                    }));
+                }
+                Ok(prepared)
             })
             .await?;
-        let (mut account, previous) = match prepared {
+        let mut account = match prepared {
             Prepared::Skip => return Ok(None),
             Prepared::Pending(account) => {
                 return self
@@ -136,12 +168,28 @@ impl CredentialManager {
                     .await
                     .map(Some);
             }
-            Prepared::Renew(account, previous) => (account, previous),
+            Prepared::Renew(account) => account,
         };
+        storage.dispatch();
         let expected = account.identity.as_ref().ok_or(Error::Storage)?;
-        let renewed = driver
-            .renew(&account.client_id, expected, &previous)
-            .await?;
+        let previous = account.credential.as_ref().ok_or(Error::Storage)?;
+        let renewed = match driver.renew(&account.client_id, expected, previous).await {
+            Ok(renewed) => renewed,
+            Err(Error::Unreachable) => {
+                // Nothing reached the authority, so the old refresh is still unspent.
+                let manager = self.clone();
+                let (profile, alias, revision) = (
+                    account.profile.clone(),
+                    account.alias.clone(),
+                    account.revision,
+                );
+                storage
+                    .commit(move || manager.restore_refresh(&profile, &alias, revision))
+                    .await?;
+                return Err(Error::Unreachable);
+            }
+            Err(error) => return Err(error),
+        };
         let grant = match renewed {
             Renewal::Verified(grant) => grant,
             Renewal::Pending(pending) => {
@@ -150,6 +198,7 @@ impl CredentialManager {
                     .commit(move || {
                         let tx = manager.store.transaction()?;
                         manager.check_current(&tx, &account)?;
+                        account.replace_credential(None)?;
                         account.pending_renewal = Some(pending);
                         account.advance()?;
                         publish_renewal(&tx, account)
@@ -216,15 +265,36 @@ impl CredentialManager {
         if account.pending_renewal.is_some() {
             return Ok(Prepared::Pending(account));
         }
-        let previous = account.credential.take().ok_or(Error::LoginRequired)?;
-        if previous.refresh.is_none() {
+        // A quarantined refresh may already be spent and is never resent.
+        if account.state != AccountState::Active
+            || !account
+                .credential
+                .as_ref()
+                .is_some_and(|credential| credential.refresh.is_some())
+        {
             return Err(Error::LoginRequired);
         }
-        account.replace_credential(None)?;
+        // Quarantine only stops refresh reuse; unexpired access stays borrowable.
         account.state = AccountState::NeedsReauthorization;
         account.login_attempt = None;
         account.advance()?;
-        Ok(Prepared::Renew(tx.publish(account)?, previous))
+        Ok(Prepared::Renew(tx.publish(account)?))
+    }
+    /// Reactivates a quarantined refresh that provably never reached the authority.
+    fn restore_refresh(&self, profile: &str, alias: &str, revision: u64) -> Result<(), Error> {
+        let tx = self.store.transaction()?;
+        let loaded = self.load(&tx, profile, alias)?;
+        let mut account = loaded.account.ok_or(Error::Superseded)?;
+        if loaded.recovery
+            || account.revision != revision
+            || account.state != AccountState::NeedsReauthorization
+            || account.credential.is_none()
+        {
+            return Err(Error::Superseded);
+        }
+        account.state = AccountState::Active;
+        account.advance()?;
+        publish_renewal(&tx, account).map(|_| ())
     }
     /// Post-network publication applies only to the record this renewal prepared.
     fn check_current(&self, tx: &Transaction<'_>, account: &Account) -> Result<(), Error> {
@@ -258,7 +328,8 @@ impl CredentialManager {
         let pending = account.pending_renewal.as_ref().ok_or(Error::Storage)?;
         let manual = pending.requires_manual_verification;
         if let Err(error) = verify_pending(driver, &account).await {
-            let requires_manual = !matches!(error, Error::Network | Error::Timeout);
+            let requires_manual =
+                !matches!(error, Error::Network | Error::Unreachable | Error::Timeout);
             if requires_manual != manual {
                 let manager = self.clone();
                 storage

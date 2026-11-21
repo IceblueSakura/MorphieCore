@@ -615,7 +615,10 @@ async fn uncertain_refresh_never_reuses_the_consumed_refresh_token() {
         manager.refresh("openai", "personal").await.unwrap_err(),
         CredentialError::LoginRequired
     );
-    assert!(read_account(&dir.path, "openai", "personal")["credential"].is_null());
+    assert_eq!(
+        read_account(&dir.path, "openai", "personal")["state"],
+        "needs_reauthorization"
+    );
     authority.done();
 }
 

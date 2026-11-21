@@ -113,7 +113,9 @@ impl Gateway {
                             Err(_) | Ok(Err(Error::Timeout)) => {
                                 (Severity::Warn, "oauth.renewal_timeout")
                             }
-                            Ok(Err(Error::Network)) => (Severity::Warn, "oauth.renewal_network"),
+                            Ok(Err(Error::Network | Error::Unreachable)) => {
+                                (Severity::Warn, "oauth.renewal_network")
+                            }
                             Ok(Err(Error::IdentityMismatch)) => {
                                 (Severity::Error, "oauth.identity_mismatch")
                             }

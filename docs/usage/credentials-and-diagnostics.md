@@ -188,7 +188,7 @@ Automatic renewal runs in the background when running `morphiecore` (`Gateway::s
 - Spaces successful short-grant renewals with `oauth.minimum_renewal_interval_ms` (default 60000). Failed eligible work uses `oauth.failed_renewal_delay_ms` (default 60000), not an exponential retry loop.
 - Persists rotated tokens in the private credential store.
 
-All settings belong to `gateway.json`. Zero scan interval keeps the startup check but disables periodic scanning. Timing never restores uncertain refresh material. Current SIWC/Grok network and temporary-service failures provide no safe-consumption proof, so ambiguous dispatched refresh remains quarantined; the delay alone authorizes no retry.
+All settings belong to `gateway.json`. Zero scan interval keeps the startup check but disables periodic scanning. Timing never restores uncertain refresh material. While an exchange runs, the account reports `needs_reauthorization` and its refresh token is quarantined, but unexpired access stays usable. A connection that fails before any request is sent (`authority could not be reached`) or a renewal cancelled before its exchange restores the account to `active`. Current SIWC/Grok network and temporary-service failures after dispatch provide no safe-consumption proof, so that refresh stays quarantined and is never resent; the delay alone authorizes no retry. Access remains usable until it expires; then log in again.
 
 Use `status --provider ID` for redacted state and `refresh --provider ID --account NAME` for manual renewal, with the same explicit account/store paths.
 

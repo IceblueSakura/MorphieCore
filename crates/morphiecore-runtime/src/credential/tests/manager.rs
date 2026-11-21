@@ -149,7 +149,7 @@ fn cancelled_caller_cannot_discard_material_rotated_by_the_provider() {
     assert_eq!(ended["state"], "active");
     assert_eq!(
         ended["generation"].as_u64().unwrap(),
-        original["generation"].as_u64().unwrap() + 2
+        original["generation"].as_u64().unwrap() + 1
     );
     drop(manager.store.account_lock("third", "one").unwrap());
 }

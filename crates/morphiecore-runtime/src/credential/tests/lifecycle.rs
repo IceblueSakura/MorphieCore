@@ -405,10 +405,136 @@ async fn cancelled_rotation_and_lock_contention_fail_closed_across_pool_handles(
         other.list(None).unwrap()[0].state,
         AccountState::NeedsReauthorization
     );
+    let binding = other.bind_access("grok", "alice").unwrap();
+    assert_eq!(
+        binding.borrow().unwrap().access.expose(),
+        "synthetic-access"
+    );
     assert_eq!(
         other.refresh("grok", "alice").await.unwrap_err(),
         CredentialError::LoginRequired
     );
+    authority.done();
+}
+
+fn expire_access(pool: &CredentialManager) {
+    let tx = pool.store.transaction().unwrap();
+    let mut account = tx.load("grok", "alice").unwrap().account.unwrap();
+    account.credential.as_mut().unwrap().expires_at = Some(1);
+    tx.publish(account).unwrap();
+}
+
+#[tokio::test]
+async fn dispatched_refresh_failure_quarantines_refresh_but_keeps_access_until_expiry() {
+    let gate = Arc::new(Notify::new());
+    let mut steps = login_steps("person-a");
+    let mut unavailable = step(
+        "/oauth2/token",
+        vec![("refresh_token", "synthetic-refresh")],
+        json!({"error":"temporarily_unavailable"}),
+    );
+    unavailable.status = StatusCode::SERVICE_UNAVAILABLE;
+    unavailable.gate = Some(gate.clone());
+    steps.push(unavailable);
+    let authority = Authority::new(steps).await;
+    let dir = Directory::new();
+    let pool = authority.pool(&dir);
+    login(&pool, "alice").await;
+    let binding = pool.bind_access("grok", "alice").unwrap();
+    let mut refresh = Box::pin(pool.refresh("grok", "alice"));
+    while !authority.steps.lock().unwrap().is_empty() {
+        tokio::select! { _ = &mut refresh => panic!("exchange blocked by server"),
+        _ = authority.entered.notified() => {} }
+    }
+    // The exchange is in flight: refresh is quarantined, access is not.
+    let renewing = pool.list(None).unwrap().remove(0);
+    assert_eq!(renewing.state, AccountState::NeedsReauthorization);
+    assert_eq!(renewing.access, AccessState::Valid);
+    assert_eq!(
+        binding.borrow().unwrap().access.expose(),
+        "synthetic-access"
+    );
+    gate.notify_one();
+    assert_eq!(refresh.await.unwrap_err(), CredentialError::Network);
+    assert_eq!(
+        binding.borrow().unwrap().access.expose(),
+        "synthetic-access"
+    );
+    // No safe-consumption proof: the old refresh is never resent.
+    assert_eq!(
+        pool.refresh("grok", "alice").await.unwrap_err(),
+        CredentialError::LoginRequired
+    );
+    assert!(
+        !binding
+            .refresh_if_due(120, &tokio_util::task::TaskTracker::new())
+            .await
+            .unwrap()
+    );
+    expire_access(&pool);
+    assert_eq!(binding.borrow().unwrap_err(), CredentialError::Expired);
+    authority.done();
+}
+
+#[tokio::test]
+async fn unreachable_authority_restores_the_unspent_refresh() {
+    let authority = Authority::new(login_steps("person-a")).await;
+    let dir = Directory::new();
+    let pool = authority.pool(&dir);
+    login(&pool, "alice").await;
+    let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}", closed.local_addr().unwrap());
+    drop(closed);
+    let unreachable = CredentialManager::synthetic(&dir.path, &origin).unwrap();
+    assert_eq!(
+        unreachable.refresh("grok", "alice").await.unwrap_err(),
+        CredentialError::Unreachable
+    );
+    assert_eq!(pool.list(None).unwrap()[0].state, AccountState::Active);
+    authority.steps.lock().unwrap().extend([
+        step(
+            "/oauth2/token",
+            vec![("refresh_token", "synthetic-refresh")],
+            token("new-access", Some("new-refresh")),
+        ),
+        step(
+            "/oauth2/userinfo",
+            vec![("authorization", "Bearer new-access")],
+            json!({"sub":"person-a"}),
+        ),
+    ]);
+    pool.refresh("grok", "alice").await.unwrap();
+    let binding = pool.bind_access("grok", "alice").unwrap();
+    assert_eq!(binding.borrow().unwrap().access.expose(), "new-access");
+    authority.done();
+}
+
+#[tokio::test]
+async fn cancelled_preparation_restores_the_unspent_refresh() {
+    let authority = Authority::new(login_steps("person-a")).await;
+    let dir = Directory::new();
+    let pool = authority.pool(&dir);
+    login(&pool, "alice").await;
+    let state = || read_account(&dir.path, "grok", "alice")["state"].clone();
+    let mut refresh = Box::pin(pool.refresh("grok", "alice"));
+    assert!(futures_util::poll!(&mut refresh).is_pending());
+    // Leave the caller unpolled until preparation has published quarantine,
+    // then cancel it before any exchange can start.
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while state() != "needs_reauthorization" {
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
+    drop(refresh);
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while state() != "active" {
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("unspent refresh restored");
     authority.done();
 }
 

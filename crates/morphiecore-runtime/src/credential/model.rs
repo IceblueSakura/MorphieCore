@@ -246,6 +246,12 @@ impl Account {
                 Ok(())
             }
             (AccountState::SignedOut | AccountState::NeedsReauthorization, None) => Ok(()),
+            // Quarantined refresh: access stays borrowable until it expires.
+            (AccountState::NeedsReauthorization, Some(c))
+                if self.identity.is_some() && c.valid() && self.generation > 0 =>
+            {
+                Ok(())
+            }
             (AccountState::Removed, None)
                 if self.identity.is_none() && self.login_attempt.is_none() =>
             {

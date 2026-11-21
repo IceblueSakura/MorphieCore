@@ -12,7 +12,7 @@ This plan tracks repairs selected from the 2026-11-21 whole-project review at `b
 | 4 | Data-less SSE blocks dispatched as events | Done |
 | 5 | Chat-upstream calls withheld from Messages clients until finish | Done |
 | 6 | Messages delivery rejects upstream call IDs after dispatch | Done |
-| 7 | OAuth renewal withdraws valid access and over-quarantines | Planned |
+| 7 | OAuth renewal withdraws valid access and over-quarantines | Done |
 | 8 | Low-impact contract mismatches | Planned |
 
 Every slice ends with focused tests at the responsible layer, the [offline baseline](development.md#offline-baseline), contract documentation updates where behavior changes, and one commit.
@@ -71,7 +71,7 @@ Every slice ends with focused tests at the responsible layer, the [offline basel
 
 **Repair.** Keep the [quarantine of dispatched, uncertain refresh](usage/credentials-and-diagnostics.md#oauth) unchanged. Quarantine only the refresh material during the exchange, keep unexpired access borrowable until expiry, and restore the refresh material when the exchange provably did not dispatch.
 
-**Exit.** Lifecycle tests cover borrowing during renewal, connect failure before dispatch, cancellation during preparation, and post-dispatch network failure retaining quarantine while access stays usable until expiry.
+**Result.** Preparation keeps the credential and marks the account `needs_reauthorization`; borrowing ignores account state, so access stays usable until expiry. OAuth connector failures surface as `CredentialError::Unreachable` and restore `active`, as does cancellation between published preparation and dispatch. Lifecycle tests cover borrowing during an in-flight exchange, a dispatched 503 keeping quarantine until expiry, an unreachable authority, and cancelled preparation; disabling either restoration path or gating borrowing on account state fails them.
 
 ## Slice 8 — Low-impact contract mismatches
 

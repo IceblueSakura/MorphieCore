@@ -89,6 +89,8 @@ pub enum CredentialError {
     Protocol,
     #[error("authority request failed; no automatic retry")]
     Network,
+    #[error("authority could not be reached; no request was sent")]
+    Unreachable,
     #[error("authority request timed out")]
     Timeout,
     #[error("authorization was denied")]

@@ -146,7 +146,14 @@ impl AuthHttp {
         };
         let request = request.header("accept", "application/json");
         let read = async {
-            let response = request.send().await.map_err(|_| Error::Network)?;
+            // Connector failures (DNS, TCP, TLS, proxy tunnel) precede any request bytes.
+            let response = request.send().await.map_err(|error| {
+                if error.is_connect() {
+                    Error::Unreachable
+                } else {
+                    Error::Network
+                }
+            })?;
             let status = response.status().as_u16();
             trace.span.record("http.response.status_code", status);
             if (300..400).contains(&status) {
@@ -176,6 +183,7 @@ impl AuthHttp {
             Ok(_) => "eof",
             Err(Error::Timeout) => "timeout",
             Err(Error::Network) => "network_error",
+            Err(Error::Unreachable) => "connect_error",
             Err(_) => "rejected",
         };
         result
