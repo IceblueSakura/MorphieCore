@@ -513,10 +513,9 @@ pub(crate) async fn produce_chain(
                         return Ok(());
                     }
                     Err(mut error) => {
-                        if ordinal == 2
-                            && !send_started
-                            && error.kind == crate::error::ErrorKind::CredentialUnavailable
-                        {
+                        // A retry that never reached the upstream adds no evidence;
+                        // the client sees the failure that triggered it.
+                        if ordinal == 2 && !send_started {
                             error = initial_failure.expect("retained initial failure");
                         }
 

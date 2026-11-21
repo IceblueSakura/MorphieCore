@@ -12,6 +12,7 @@ See [Roadmap Main](index.md) for current sprint priorities and execution gates; 
   - [Content and client qualification](#content-and-client-qualification)
   - [Protocol boundaries](#protocol-boundaries)
   - [Routing qualification](#routing-qualification)
+  - [Maintainability](#maintainability)
 - [Deferred protocol follow-ups](#deferred-protocol-follow-ups)
   - [Conditional Stage-3 follow-ups](#conditional-stage-3-follow-ups)
     - [Tool verification and scope gates](#tool-verification-and-scope-gates)
@@ -44,6 +45,7 @@ Generation uses standard downstream APIs only. Uncarriable ordinary signatures f
 |---|---|---|
 | Google ordinary-signature boundary (R02/R06) | Standard stateless delivery rejects ordinary text/call signatures without a lawful carrier. The selected Gemini 3.8 Flash generateContent text stream decodes successfully but has ordinary-owned replay, so Responses rejection or published-stream abort is expected. Experimental managed Responses remains disabled; [fields and reasons](../architecture/history-and-replay.md#stateless-api-boundaries) own the limitation. | Reopen only with an official standard carrier and concrete client need; no private replay profile or client adaptation is scheduled |
 | Real Haiku protected output (R01) | Current OpenCode's original Chat loop and an explicit adaptive/medium discriminator produce no protected owners; existing carrier repair remains verified. | Resume when the same profile actually yields protected output. Missing activation alone does not justify another repair or automatic effort-to-activation mapping. |
+| Candidate `reasoning_as_text` has no effect | Lowering omits unsealed readable reasoning for every native target under the visible-history transfer rule before the `reasoning_as_text` disposition is evaluated, so neither the documented rejection (default `false`) nor the conversion (`true`) occurs. Direct native encoders now reject such input instead of rendering it as text. | User decision: remove the option and its as-text rules, or implement the conversion through the existing `GenerationRequest::with_reasoning_as_text` before omission. Removing the option breaks configurations that set it |
 | Interactions signed-call authority | Existing scoped decoding recognizes a call signature, but pinned ordinary-call types and observed issuance do not establish a current official carrier. | Select current primary schema and an actual sample before expanding qualification; if observed, standard stateless delivery retains its explicit attachment rejection |
 
 ### Content and client qualification
@@ -93,6 +95,19 @@ The routing freeze and credential-lifecycle authorization remain unchanged. Addi
 | OAuth primary-path qualification | Synthetic authorities cover verification, rotation, uncertain-state quarantine, queued publication and graceful shutdown. OpenAI/SIWC and Grok login/verify → bounded request → refresh → request, including use of replacement material, remain unqualified against real authorities. | Authorize lifecycle operations for named accounts, define request/output/time bounds, then verify through the project loader and redacted receipts. Include interrupted-renewal restart state; never inspect or reuse uncertain token material |
 | **R09 — Real account-compatible failover** | [Real stateless JSON/SSE replay isolation passes](../development.md#overall-acceptance-status). Loader evidence reports one enabled declared account per Provider; no independent compatible pair is qualified. Unscheduled; does not gate Stage 4. | With independent compatible accounts on one authorized same-model route, verify A success/affinity, a bounded A failure without switching inside that request, B selection on a new request with A-private replay omitted, then B success/stickiness. Define fault injection and budgets first; provisioning new credentials requires separate approval. Same-key aliases, different-model switching and synthetic authorities do not qualify this real-account gate |
 | Optional affinity restart continuity | Unselected; current bounded success-updated affinity is in-memory. It does not make Responses history durable | Select opt-in, bounded private hashed keys/target fingerprints, corruption handling, stale-identity rejection, privacy and shutdown behavior before implementation |
+
+### Maintainability
+
+These structural observations from the 2026-11-21 review need a design selection; none is a known behavior defect.
+
+| Issue | Current boundary | Re-entry / decision |
+|---|---|---|
+| Standalone task topology types | Images, speech, transcription and embedding routes repeat endpoint/route/entry shapes. | Select one shared task topology type when a new task or a second binding per task is scheduled |
+| Standalone task request construction | Task requests are assembled field by field and validated at use. | Introduce validated constructors with the next task-request change |
+| Derived local scopes | `LocalScope::DERIVED` identities are allocated at several call sites. | Centralize allocation when a new derived owner is added |
+| Rule identifiers | Disposition rule IDs are spread across codec modules and the lowering table. | Select a single registry if rule drift or duplicate IDs are observed |
+| Credential reads | Borrowing takes the store's exclusive brief lock for read-only access. | Introduce shared-lock reads if contention is measured under renewal or many accounts |
+| Catalog order in tests | Some tests index catalog bindings by position (for example `messages_bindings()[0]`). | Look bindings up by identity when the catalog gains another entry of that kind |
 
 ## Deferred protocol follow-ups
 

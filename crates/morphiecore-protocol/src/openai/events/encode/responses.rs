@@ -227,10 +227,7 @@ impl EventEncoder {
             StreamEvent::PartStarted { item, part, kind } => {
                 if matches!(
                     kind,
-                    PartKind::Arguments
-                        | PartKind::StructuredArguments
-                        | PartKind::CustomInput
-                        | PartKind::ReasoningText
+                    PartKind::Arguments | PartKind::StructuredArguments | PartKind::CustomInput
                 ) {
                     vec![]
                 } else {
@@ -281,10 +278,7 @@ impl EventEncoder {
                 let p = self.state()?.part(*item, *part)?;
                 if matches!(
                     p.kind,
-                    PartKind::Arguments
-                        | PartKind::StructuredArguments
-                        | PartKind::CustomInput
-                        | PartKind::ReasoningText
+                    PartKind::Arguments | PartKind::StructuredArguments | PartKind::CustomInput
                 ) {
                     vec![]
                 } else {

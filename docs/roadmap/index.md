@@ -31,8 +31,6 @@ Stateful upstream/downstream APIs remain [experimental and disabled](../architec
 
 Existing static carriers do not activate new public APIs.
 
-The [hardening plan](../hardening-plan.md) tracks verified review repairs ahead of Stage-4 selection; it changes no frozen scope or public API activation.
-
 Other limitations and prerequisites share the [issue register](unscheduled-issues.md#unscheduled-issues); R09 real-account failover, remaining model-service qualification and Agent session storage retain separate scheduling decisions and are not implicit Stage-4 prerequisites.
 
 [Development](../development.md#overall-acceptance-status) owns overall acceptance.

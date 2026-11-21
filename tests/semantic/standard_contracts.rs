@@ -843,3 +843,34 @@ fn messages_accepts_direct_only_function_tools() {
         );
     }
 }
+
+#[test]
+fn direct_native_encoders_never_move_unsealed_reasoning_into_text() {
+    use morphiecore::protocol::{
+        anthropic::messages::Profile as Messages,
+        google::{generate_content, interactions},
+        native::ReplayTarget,
+    };
+    // Lowering owns omission; a direct encoder given readable unsealed reasoning
+    // fails instead of presenting it as an assistant answer.
+    let wire = json!({"model":"public","max_output_tokens":32,"store":false,"input":[
+        {"role":"user","content":"go"},
+        {"type":"reasoning","id":"rs","summary":[{"type":"summary_text","text":"private plan"}]},
+        {"role":"assistant","content":"done"},
+        {"role":"user","content":"next"}
+    ]});
+    let request = adapter(GenerationApi::Responses)
+        .decode_client_request(wire.to_string().as_bytes())
+        .unwrap();
+    let (semantic, fidelity) = (&request.task.semantic, &request.task.fidelity);
+    let native = ReplayTarget::new("synthetic", "model").unwrap();
+    // The Messages entry lowers first, so the reasoning is omitted there.
+    let messages = Messages::AdaptiveTextTools
+        .encode_generation_request(semantic, fidelity, &native)
+        .unwrap();
+    assert!(!messages.value.to_string().contains("private plan"));
+    assert!(
+        generate_content::encode_generation_request(semantic, fidelity, &native, None).is_err()
+    );
+    assert!(interactions::encode_generation_request(semantic, fidelity, &native).is_err());
+}

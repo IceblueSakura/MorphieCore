@@ -18,7 +18,6 @@ pub enum RequestRule {
     OmitMessagePhase,
     SummarizeReasoning,
     TransferVisibleHistory,
-    ReasoningAsText,
     OmitSchemaName,
     JoinInstructionParts,
 }
@@ -34,7 +33,6 @@ impl RequestRule {
             Self::OmitSampling => (Field::Sampling, Change::Omit),
             Self::OmitSchemaName => (Field::SchemaName, Change::Omit),
             Self::OmitVerbosity => (Field::Verbosity, Change::Omit),
-            Self::ReasoningAsText => (Field::ReportedReasoning, Change::Approximate),
             Self::SummarizeReasoning => (Field::ReasoningSummary, Change::Approximate),
             Self::TransferVisibleHistory => (Field::Replay, Change::Omit),
         };
@@ -58,9 +56,6 @@ impl RequestRule {
             Self::SummarizeReasoning => crate::lowering::disposition::INTERACTIONS_SUMMARY.id,
             Self::TransferVisibleHistory => {
                 crate::lowering::disposition::TRANSFER_INTERACTIONS_HISTORY.id
-            }
-            Self::ReasoningAsText => {
-                crate::lowering::disposition::INTERACTIONS_REASONING_AS_TEXT.id
             }
             Self::OmitSchemaName => crate::lowering::disposition::INTERACTIONS_SCHEMA_NAME.id,
             Self::JoinInstructionParts => "interactions.join-instruction-parts.v1",

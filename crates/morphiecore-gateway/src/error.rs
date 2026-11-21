@@ -92,7 +92,8 @@ pub(super) struct ApiError {
     pub kind: ErrorKind,
     /// Pure policy decision, independent of protocol presentation.
     pub recovery: RecoveryDecision,
-    /// Upstream wait in seconds; Generation replaces downstream hints with route availability.
+    /// Upstream wait in seconds; Generation replaces downstream hints with route
+    /// availability, and standalone tasks bound them by kind and horizon.
     pub retry_after: Option<u64>,
 }
 impl ApiError {
@@ -215,6 +216,16 @@ impl ApiError {
     }
 }
 impl ApiError {
+    /// Standalone tasks have no route availability to report, so only a
+    /// rate-limit or overload hint within the horizon reaches the client.
+    pub fn bound_task_retry_hint(mut self, horizon: std::time::Duration) -> Self {
+        self.retry_after = self.retry_after.filter(|seconds| {
+            matches!(self.kind, ErrorKind::RateLimit | ErrorKind::Overloaded)
+                && *seconds > 0
+                && std::time::Duration::from_secs(*seconds) <= horizon
+        });
+        self
+    }
     /// Classified request failures returned as standard Responses error events.
     pub fn streams_as_failed(&self) -> bool {
         matches!(self.kind, ErrorKind::ContextOverflow | ErrorKind::Quota)
@@ -373,12 +384,15 @@ impl ApiError {
                 "Invalid or missing authentication credentials.".into(),
             ),
             _ => {
+                // https://platform.claude.com/docs/en/api/errors
                 let kind = match self.status.as_u16() {
                     401 => "authentication_error",
                     403 => "permission_error",
                     404 => "not_found_error",
+                    413 => "request_too_large",
                     429 => "rate_limit_error",
                     400..=499 => "invalid_request_error",
+                    504 => "timeout_error",
                     _ => "api_error",
                 };
                 // The fixed class is the only diagnosis Messages clients can show.
@@ -519,5 +533,42 @@ fn recovery_is_independent_of_native_error_presentation() {
         let error = ApiError::failure(status, br#"{"error":{"code":"insufficient_quota"}}"#, None);
         assert_eq!(error.recovery.class, Some(class));
         assert!(!error.streams_as_failed());
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn task_retry_hints_are_limited_to_rate_and_overload_within_the_horizon() {
+    use crate::protocol::failure::SourceFailureKind;
+    let horizon = std::time::Duration::from_secs(60);
+    for (status, kind, hint, expected) in [
+        (429, SourceFailureKind::RateLimit, 60, Some(60)),
+        (503, SourceFailureKind::Overloaded, 5, Some(5)),
+        (429, SourceFailureKind::RateLimit, 61, None),
+        (429, SourceFailureKind::RateLimit, 0, None),
+        (429, SourceFailureKind::Quota, 5, None),
+        (500, SourceFailureKind::Other, 5, None),
+        (400, SourceFailureKind::ContextOverflow, 5, None),
+    ] {
+        let error = ApiError::classified(status, kind, Some(hint)).bound_task_retry_hint(horizon);
+        assert_eq!(error.retry_after, expected, "{status} {kind:?} {hint}");
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn messages_errors_use_documented_timeout_and_size_types() {
+    for (error, status, kind) in [
+        (ApiError::timeout(), 504, "timeout_error"),
+        (
+            ApiError::new(StatusCode::PAYLOAD_TOO_LARGE, ErrorKind::RequestTooLarge),
+            413,
+            "request_too_large",
+        ),
+        (ApiError::upstream(), 502, "api_error"),
+    ] {
+        let (rendered, body) = error.messages_error();
+        assert_eq!(rendered.as_u16(), status);
+        assert_eq!(body["error"]["type"], kind);
     }
 }

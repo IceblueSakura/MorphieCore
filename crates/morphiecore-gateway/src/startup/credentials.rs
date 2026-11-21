@@ -187,7 +187,13 @@ impl Source {
     }
     pub(crate) fn provenance(&self) -> String {
         match self {
-            Self::ApiKey(secret) => secret.expose().into(),
+            // Scope identity needs only equality, never a raw key copy.
+            Self::ApiKey(secret) => {
+                use sha2::{Digest, Sha256};
+                let digest = Sha256::digest(secret.expose().as_bytes());
+                let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+                format!("direct-key:{hex}")
+            }
             Self::Account(binding) => binding.provenance(),
             Self::ManagedKey(binding) => binding.provenance(),
         }

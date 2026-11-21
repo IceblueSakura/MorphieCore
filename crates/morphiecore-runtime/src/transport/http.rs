@@ -128,6 +128,10 @@ impl TransportError {
                 Self::Timeout
             };
         }
+        // Body-read facts cannot occur before a connection exists.
+        if error.is_connect() && matches!(cause, None | Some(Self::Read)) {
+            return Self::Connect;
+        }
         cause.unwrap_or_else(|| {
             if error.is_connect() {
                 Self::Connect

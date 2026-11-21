@@ -108,15 +108,19 @@ pub fn decode_request_with(
     bounded(v)?;
     let mut normalized;
     // Deprecated `max_tokens` is still an official output cap; the rule only selects
-    // the upstream spelling.
+    // the upstream spelling. Both fields are nullable, and null means absent.
     let v = if v.get("max_tokens").is_some() {
         normalized = v.clone();
         let o = normalized.as_object_mut().ok_or(CodecError::invalid())?;
-        if o.contains_key("max_completion_tokens") {
-            return Err(CodecError::invalid());
-        }
         let limit = o.shift_remove("max_tokens").expect("checked field");
-        o.insert("max_completion_tokens".into(), limit);
+        if !limit.is_null() {
+            if o.get("max_completion_tokens")
+                .is_some_and(|cap| !cap.is_null())
+            {
+                return Err(CodecError::invalid());
+            }
+            o.insert("max_completion_tokens".into(), limit);
+        }
         &normalized
     } else {
         v

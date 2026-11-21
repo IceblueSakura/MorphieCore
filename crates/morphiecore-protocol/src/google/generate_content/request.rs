@@ -28,8 +28,6 @@ pub enum RequestRule {
     SummarizeReasoning,
     /// Incompatible complete reasoning is omitted, retaining visible history.
     TransferVisibleHistory,
-    /// Explicit opt-in for unattributed readable reasoning.
-    ReasoningAsText,
     OmitSchemaName,
 }
 impl RequestRule {
@@ -43,7 +41,6 @@ impl RequestRule {
             Self::OmitSampling => (Field::Sampling, Change::Omit),
             Self::OmitSchemaName => (Field::SchemaName, Change::Omit),
             Self::OmitVerbosity => (Field::Verbosity, Change::Omit),
-            Self::ReasoningAsText => (Field::ReportedReasoning, Change::Approximate),
             Self::SummarizeReasoning => (Field::ReasoningSummary, Change::Approximate),
             Self::TransferVisibleHistory => (Field::Replay, Change::Omit),
         };
@@ -67,9 +64,6 @@ impl RequestRule {
             Self::SummarizeReasoning => crate::lowering::disposition::GENERATE_CONTENT_SUMMARY.id,
             Self::TransferVisibleHistory => {
                 crate::lowering::disposition::TRANSFER_GENERATE_CONTENT_HISTORY.id
-            }
-            Self::ReasoningAsText => {
-                crate::lowering::disposition::GENERATE_CONTENT_REASONING_AS_TEXT.id
             }
             Self::OmitSchemaName => crate::lowering::disposition::GENERATE_CONTENT_SCHEMA_NAME.id,
         }
@@ -185,10 +179,7 @@ pub(super) fn project(
             json!({"parts": parts.iter().map(|t| json!({"text": t})).collect::<Vec<_>>()}),
         );
     }
-    body.insert(
-        "contents".into(),
-        contents(request, fidelity, target, rules)?,
-    );
+    body.insert("contents".into(), contents(request, fidelity, target)?);
     if s.tools.is_some() {
         let declarations = request
             .tools()

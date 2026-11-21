@@ -1,8 +1,5 @@
 //! Request-history content projection for generateContent.
-use super::{
-    replay::Signed,
-    request::{RequestRule, unsupported},
-};
+use super::{replay::Signed, request::unsupported};
 use crate::{
     CodecError, fidelity::FidelityRecords, native::ReplayTarget, semantic::task::generation::*,
 };
@@ -13,7 +10,6 @@ pub(super) fn contents(
     request: &GenerationRequest,
     fidelity: &FidelityRecords,
     target: &ReplayTarget,
-    rules: &mut BTreeSet<RequestRule>,
 ) -> Result<Value, CodecError> {
     let mut contents = vec![];
     let mut included = BTreeSet::new();
@@ -34,7 +30,7 @@ pub(super) fn contents(
                 .find(|(id, _)| id == owner)
                 .ok_or_else(unsupported)?
                 .1;
-            item_parts(*owner, item, request, fidelity, target, rules, &mut parts)?;
+            item_parts(*owner, item, request, fidelity, target, &mut parts)?;
         }
         if parts.is_empty() {
             return Err(unsupported());
@@ -71,7 +67,6 @@ fn item_parts(
     request: &GenerationRequest,
     fidelity: &FidelityRecords,
     target: &ReplayTarget,
-    rules: &mut BTreeSet<RequestRule>,
     parts: &mut Vec<Value>,
 ) -> Result<(), CodecError> {
     match item {
@@ -111,16 +106,12 @@ fn item_parts(
                 .as_ref()
                 .filter(|v| v.format() == ReplayFormat::GoogleGenerateContentPart);
             let Some(value) = own else {
-                // Every turn converts alike, keeping the projection append-only.
-                if r.replay.is_some() {
-                    return Err(CodecError::invalid());
-                }
-                let text = readable();
-                if !text.trim().is_empty() {
-                    rules.insert(RequestRule::ReasoningAsText);
-                    parts.push(json!({"text": text}));
-                }
-                return Ok(());
+                // Lowering owns omission of unsealed reasoning; it is never moved into text.
+                return Err(if r.replay.is_some() {
+                    CodecError::invalid()
+                } else {
+                    unsupported()
+                });
             };
             if !fidelity.replay_matches_request(id, r, Some(&target.origin()), request) {
                 return Err(CodecError::invalid());

@@ -466,6 +466,95 @@ async fn concurrent_recovery_and_final_handoff_distinguish_local_and_upstream_de
 }
 
 #[tokio::test]
+async fn unsent_retry_returns_the_failure_that_triggered_it() {
+    use crate::credential::{CredentialManager, Secret};
+    use std::{
+        sync::atomic::{AtomicUsize, Ordering},
+        time::Duration,
+    };
+    use tower::ServiceExt;
+    let dir = morphiecore_test_support::filesystem::Directory::new();
+    let manager = CredentialManager::new(&dir.path, vec![]).unwrap();
+    manager
+        .add_api_key(
+            "fixture",
+            "one",
+            Secret::new("synthetic-key".into()).unwrap(),
+        )
+        .unwrap();
+    // The first reply holds the store lock, so the retry's credential check
+    // outlives the recovery budget before anything is sent.
+    let held = Arc::new(Mutex::new(None::<std::fs::File>));
+    let calls = Arc::new(AtomicUsize::new(0));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let (lock_path, slot, observed) = (dir.path.join("store.lock"), held.clone(), calls.clone());
+    let router = Router::new().route(
+        "/chat/completions",
+        post(move || {
+            observed.fetch_add(1, Ordering::SeqCst);
+            let lock = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&lock_path)
+                .unwrap();
+            lock.lock().unwrap();
+            *slot.lock().unwrap() = Some(lock);
+            async { (StatusCode::SERVICE_UNAVAILABLE, [("retry-after", "0")]).into_response() }
+        }),
+    );
+    let upstream = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let mut credentials = Credentials::new();
+    credentials.insert_managed_key(
+        CredentialBindingId::new("fixture-key").unwrap(),
+        manager.bind_key_reference("fixture", "one").unwrap(),
+    );
+    let gate = Gateway::new(
+        super::topology::topology_at(&origin),
+        TaskEntries {
+            generation: vec![Entry {
+                model: "fixture-model".into(),
+                protocol: crate::protocol::ClientProtocol::Chat,
+                endpoint: EndpointId::new("fixture-chat").unwrap(),
+            }],
+            ..Default::default()
+        },
+        credentials,
+        std::collections::BTreeMap::from([(
+            "fixture-agent".into(),
+            SecretMaterial::new(super::support::KEY).unwrap(),
+        )]),
+        Limits {
+            provider_recovery: std::collections::BTreeMap::from([(
+                "fixture".into(),
+                crate::provider::RecoveryPolicy {
+                    recovery_timeout_ms: 200,
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        },
+        None,
+    )
+    .unwrap();
+    let response = tokio::time::timeout(Duration::from_secs(3), gate.router().oneshot(
+        axum::http::Request::builder().method("POST").uri("/v1/chat/completions")
+            .header("authorization", format!("Bearer {}", super::support::KEY))
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(r#"{"model":"fixture-model","messages":[{"role":"user","content":"synthetic"}]}"#)).unwrap(),
+    ))
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(response.status(), 503);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    drop(held.lock().unwrap().take());
+    gate.shutdown();
+    upstream.abort();
+    let _ = upstream.await;
+}
+
+#[tokio::test]
 async fn same_target_retry_reports_reused_upstream_request_adaptations() {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tower::ServiceExt;

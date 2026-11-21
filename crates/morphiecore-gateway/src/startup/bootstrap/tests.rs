@@ -482,8 +482,8 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
             "generation.omit-temperature.v1"
         ]
     );
-    // Foreign opaque values are dropped; readable reasoning without this target's
-    // signature becomes assistant text in every turn.
+    // Foreign opaque values are dropped, and readable reasoning without this
+    // target's signature is omitted; neither becomes assistant text.
     let foreign = crate::protocol::replay_envelope::seal(
         &crate::protocol::replay_envelope::issuer("openai", "gpt-6.2-sol"),
         crate::semantic::task::generation::ReplayFormat::ResponsesEncrypted,

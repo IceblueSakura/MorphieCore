@@ -331,6 +331,21 @@ impl Catalog {
                 .validate()
                 .map_err(|_| TopologyError::InvalidModelBinding)?;
         }
+        // Messages and Images endpoint identities, dialects and defaults are code-owned
+        // for one reviewed binding each; other data cannot silently inherit them.
+        if self.messages.len() > 1
+            || self
+                .messages
+                .iter()
+                .any(|b| (b.provider, b.model) != messages::REVIEWED)
+            || self.images.len() > 1
+            || self
+                .images
+                .iter()
+                .any(|b| (b.provider, b.model) != images::REVIEWED)
+        {
+            return Err(TopologyError::InvalidModelBinding);
+        }
         for b in &self.messages {
             operation(
                 b.provider,
@@ -538,6 +553,36 @@ mod tests {
         .unwrap()]);
         assert!(ModelId::new(catalog.google[0].model).is_ok());
         assert_eq!(catalog.validate(), Err(TopologyError::InvalidModelBinding));
+    }
+
+    #[test]
+    fn code_owned_messages_and_images_contracts_accept_only_their_reviewed_binding() {
+        let mut catalog = parse(fixture!("deepseek", "fixture", "[]", "")).unwrap();
+        catalog.messages = Box::new([serde_json::from_str(
+            r#"{"model":"claude-haiku-5-5","upstream":"claude-haiku-5-5",
+                    "provider":"opencode-go","released_at":1,"developer":"Fixture"}"#,
+        )
+        .unwrap()]);
+        catalog.images = Box::new([serde_json::from_str(
+            r#"{"model":"gpt-image-2.5-flare","upstream":"openai/gpt-image-2.5-flare",
+                    "provider":"openrouter","released_at":1,"developer":"Fixture"}"#,
+        )
+        .unwrap()]);
+        assert_eq!(catalog.validate(), Ok(()));
+        let mut other = parse(fixture!("deepseek", "fixture", "[]", "")).unwrap();
+        other.messages = Box::new([serde_json::from_str(
+            r#"{"model":"claude-sonnet-5-5","upstream":"claude-sonnet-5-5",
+                    "provider":"opencode-go","released_at":1,"developer":"Fixture"}"#,
+        )
+        .unwrap()]);
+        assert_eq!(other.validate(), Err(TopologyError::InvalidModelBinding));
+        let mut other = parse(fixture!("deepseek", "fixture", "[]", "")).unwrap();
+        other.images = Box::new([serde_json::from_str(
+            r#"{"model":"gpt-image-2.5-flare","upstream":"gpt-image-2.5-flare",
+                    "provider":"openai","released_at":1,"developer":"Fixture"}"#,
+        )
+        .unwrap()]);
+        assert_eq!(other.validate(), Err(TopologyError::InvalidModelBinding));
     }
 
     #[test]

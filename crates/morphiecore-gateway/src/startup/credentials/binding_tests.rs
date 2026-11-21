@@ -43,3 +43,12 @@ fn managed_keys_enforce_domain_kind_and_epoch_without_network() {
     assert_ne!(fresh.provenance(), provenance);
     assert_eq!(fresh.resolve().unwrap().0.expose(), "synthetic-new");
 }
+
+#[test]
+fn direct_key_provenance_identifies_material_without_copying_it() {
+    let source = |key: &str| Source::ApiKey(Arc::new(SecretMaterial::new(key).unwrap()));
+    let provenance = source("synthetic-direct-key").provenance();
+    assert!(!provenance.contains("synthetic-direct-key"));
+    assert_eq!(provenance, source("synthetic-direct-key").provenance());
+    assert_ne!(provenance, source("synthetic-other-key").provenance());
+}

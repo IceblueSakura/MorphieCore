@@ -99,7 +99,7 @@ One exchange-local failure ledger retains the original HTTP observation, later i
   A completed retry discards its first failure's pending penalty; otherwise merged account/target constraints advance each affected scope at most once.
 
   Attempt-local output resets while usage and diagnostics remain separately attributable.
-- **Downstream hints:** Upstream reset evidence remains available to health/recovery. Returned `Retry-After` describes only a credible short route-wide block and is suppressed when another usable target is ready; `x-should-retry` is never emitted.
+- **Downstream hints:** Upstream reset evidence remains available to health/recovery. Returned `Retry-After` describes only a credible short route-wide block and is suppressed when another usable target is ready; `x-should-retry` is never emitted. Standalone tasks have no route view and forward only an upstream rate-limit or overload hint within the horizon. A same-target retry that never sends returns the failure that triggered it.
 
 Provider-owned finite classifiers use status, structured codes, declared reset fields and in-band outcomes. Unknown codes retain actual-status fallback; operators do not supply error rules. Configuration defaults and parameter ownership live in [Usage](../usage/credentials-and-diagnostics.md#recovery-defaults).
 

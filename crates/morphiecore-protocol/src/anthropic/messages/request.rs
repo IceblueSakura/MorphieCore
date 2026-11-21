@@ -205,8 +205,6 @@ pub enum RequestRule {
     /// Claude 5.x models reject non-default `temperature` and `top_p`.
     OmitSampling,
     ProjectCallIds,
-    /// Explicit opt-in for unattributed readable reasoning, not foreign-state transfer.
-    ReasoningAsText,
     /// A Messages output format has no name; OpenAI requires one as a label.
     OmitSchemaName,
 }
@@ -222,7 +220,6 @@ impl RequestRule {
             Self::OmitSchemaName => (Field::SchemaName, Change::Omit),
             Self::OmitVerbosity => (Field::Verbosity, Change::Omit),
             Self::ProjectCallIds => (Field::ToolCallIdentity, Change::Normalize),
-            Self::ReasoningAsText => (Field::ReportedReasoning, Change::Approximate),
             Self::SummarizeReasoning => (Field::ReasoningSummary, Change::Approximate),
         };
         match self {
@@ -246,7 +243,6 @@ impl RequestRule {
             Self::ProjectCallIds => {
                 crate::lowering::disposition::Rule::MESSAGES_PROJECT_CALL_IDS.id
             }
-            Self::ReasoningAsText => crate::lowering::disposition::MESSAGES_REASONING_AS_TEXT.id,
             Self::OmitSchemaName => crate::lowering::disposition::MESSAGES_SCHEMA_NAME.id,
         }
     }
@@ -696,24 +692,11 @@ pub(in crate::anthropic::messages) fn project(
                 .find(|(id, _)| id == owner)
                 .ok_or_else(unsupported)?
                 .1;
-            // Every turn converts alike, keeping the projection append-only.
+            // Lowering owns omission of unsealed reasoning; it is never moved into text.
             if let Item::Reasoning(r) = item
                 && r.replay.is_none()
             {
-                if r.status != ItemLifecycle::Completed {
-                    return Err(unsupported());
-                }
-                for (_, part) in &r.parts {
-                    let (ReasoningContent::Summary(t) | ReasoningContent::Text(t)) = part;
-                    if !t.as_str().trim().is_empty() {
-                        rules.insert(RequestRule::ReasoningAsText);
-                        blocks.push(super::CacheMarked {
-                            content: Block::Text(t.as_str().into()),
-                            cache: None,
-                        });
-                    }
-                }
-                continue;
+                return Err(unsupported());
             }
             blocks.extend(
                 item_blocks(*owner, item, request, fidelity, target, normalized, omitted)?

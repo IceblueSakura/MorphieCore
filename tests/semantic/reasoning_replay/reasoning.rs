@@ -576,3 +576,51 @@ fn subsequent_response_effort_replaces_off_and_applies_to_tool_continuation() {
         );
     }
 }
+
+#[test]
+fn responses_reasoning_text_parts_have_content_part_lifecycle_events() {
+    // openai-python ResponseContentPartAddedEvent.Part includes `reasoning_text`.
+    let mut events = vec![StreamEvent::Started, start(1, ItemKind::Reasoning)];
+    events.extend(part(1, 1, PartKind::ReasoningText, "think"));
+    events.extend([
+        close(1, ItemLifecycle::Completed),
+        terminal(StreamTerminal::Completed),
+    ]);
+    let wire = encode(
+        &events,
+        GenerationApi::Responses,
+        &FidelityRecords::default(),
+    );
+    let lifecycle: Vec<_> = wire
+        .iter()
+        .filter(|event| {
+            let kind = event["type"].as_str().unwrap();
+            kind.starts_with("response.content_part.")
+                || kind.starts_with("response.reasoning_text.")
+        })
+        .map(|event| {
+            (
+                event["type"].clone(),
+                event["content_index"].clone(),
+                event.get("part").cloned(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        lifecycle,
+        [
+            (
+                json!("response.content_part.added"),
+                json!(0),
+                Some(json!({"type":"reasoning_text","text":""}))
+            ),
+            (json!("response.reasoning_text.delta"), json!(0), None),
+            (json!("response.reasoning_text.done"), json!(0), None),
+            (
+                json!("response.content_part.done"),
+                json!(0),
+                Some(json!({"type":"reasoning_text","text":"think"}))
+            ),
+        ]
+    );
+}

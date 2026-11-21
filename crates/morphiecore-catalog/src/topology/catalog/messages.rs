@@ -17,6 +17,10 @@ pub struct MessagesBinding {
     pub(super) limits: crate::protocol::model_limits::ModelLimits,
 }
 
+/// The only (Provider, model) pair whose endpoint identity, dialect and contract
+/// below are reviewed; topology data may select it but not describe another.
+pub(super) const REVIEWED: (&str, &str) = ("opencode-go", "claude-haiku-5-5");
+
 /// Reviewed native Haiku inputs and pi's ordered agent profile.
 fn haiku_contract(mut contract: Dispositions) -> Dispositions {
     contract.set_native(

@@ -71,14 +71,13 @@ pub(super) fn steps(
                         .as_ref()
                         .filter(|v| v.format() == ReplayFormat::GoogleInteractionsV1Thought);
                     let Some(value) = own else {
-                        if r.replay.is_some() {
-                            return Err(CodecError::invalid());
-                        }
-                        if !content.is_empty() {
-                            rules.insert(RequestRule::ReasoningAsText);
-                            steps.push(json!({"type":"model_output","content":content}));
-                        }
-                        continue;
+                        // Lowering owns omission of unsealed reasoning; it is never
+                        // moved into text.
+                        return Err(if r.replay.is_some() {
+                            CodecError::invalid()
+                        } else {
+                            unsupported()
+                        });
                     };
                     if !fidelity.replay_matches_request(*id, r, Some(&target.origin()), request) {
                         return Err(CodecError::invalid());

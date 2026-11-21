@@ -248,7 +248,7 @@ When Standard Chat planning is blocked by required thinking history, HTTP 400 us
 | 502 / 504 | Upstream or projection failure / upstream timeout |
 | 503 / 500 | Shutdown, unavailable credentials/targets or upstream overload / local fault |
 
-Messages maps exhausted quota to 402 and upstream overload to 529. Reported delays and local `upstream_unavailable` recovery delays may appear as `Retry-After`; they are not promises of recovery.
+Messages maps exhausted quota to 402, upstream overload to 529, gateway timeouts to 504 `timeout_error` and oversized bodies to 413 `request_too_large`. Reported delays and local `upstream_unavailable` recovery delays may appear as `Retry-After`; they are not promises of recovery. Standalone tasks pass only an upstream rate-limit or overload delay within `routing.retry_hint_horizon_ms`.
 
 A Responses stream with gateway-classified context overflow or exhausted quota may return HTTP 200 with a standard standalone `error` event, not a fabricated `response.failed` object. Native upstream failed Responses remain a separate carrier. HTTP 200 alone does not mean success. After body publication, errors can only report failure or abort delivery; no candidate replay or fabricated success terminal is allowed.
 

@@ -136,6 +136,6 @@ impl<T: TaskOutput> body::Produce for Exchange<T> {
         }
         .await;
         trace.end_candidate(result.as_ref().err().map(|e| e.diagnostic_code()), false);
-        result
+        result.map_err(|error| error.bound_task_retry_hint(limits.retry_hint_horizon))
     }
 }

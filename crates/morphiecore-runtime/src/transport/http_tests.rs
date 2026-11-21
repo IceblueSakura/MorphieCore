@@ -260,3 +260,39 @@ async fn redirects_are_not_followed_server_errors_are_not_retried_and_timeouts_a
         TransportError::Timeout
     );
 }
+
+#[tokio::test]
+async fn unlisted_connect_phase_io_errors_are_connect_failures() {
+    struct Failing;
+    impl reqwest::dns::Resolve for Failing {
+        fn resolve(&self, _: reqwest::dns::Name) -> reqwest::dns::Resolving {
+            Box::pin(async {
+                Err(Box::new(std::io::Error::other("synthetic resolver failure")) as _)
+            })
+        }
+    }
+    let transport = HttpTransport {
+        client: Client::builder()
+            .no_proxy()
+            .retry(reqwest::retry::never())
+            .dns_resolver(std::sync::Arc::new(Failing))
+            .build()
+            .unwrap(),
+        loopback_authority: None,
+    };
+    let fact = transport
+        .send(
+            UpstreamRequest {
+                origin: "http://synthetic.invalid".into(),
+                method: "POST",
+                path: "/".into(),
+                safe_headers: vec![],
+                auth_header: ("authorization".into(), "Bearer synthetic".into()),
+                body: vec![],
+            },
+            Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(fact, TransportError::Connect);
+}

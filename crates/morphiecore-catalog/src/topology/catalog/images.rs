@@ -8,6 +8,10 @@ use crate::{
         images::{ImageEndpoint, ImageRoute, ProviderEntry},
     },
 };
+/// The only (Provider, model) pair whose endpoint identity and adapter below are
+/// reviewed; topology data may select it but not describe another.
+pub(super) const REVIEWED: (&str, &str) = ("openrouter", "gpt-image-2.5-flare");
+
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImageBinding {
