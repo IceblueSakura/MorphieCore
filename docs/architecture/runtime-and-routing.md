@@ -176,6 +176,8 @@ Delivery lifecycle and event streaming are coordinated by [`ResponseDelivery`](.
 
 #### Semantic stream normalization
 
+Shared [SSE framing](../../crates/morphiecore-protocol/src/sse.rs) follows WHATWG dispatch: comment and field-only blocks without data lines (`retry:`, `id:`, `event:` keep-alives) are not events and count only toward wire bytes; an empty `data:` line is an event with empty data.
+
 Codecs validate and reduce upstream events in source order, emitting legal target streams:
 - Preserves delta ordering, call identities, and signature attachments.
 - Emits block openers before deltas, and closes blocks before terminal events.

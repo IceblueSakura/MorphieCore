@@ -9,7 +9,7 @@ This plan tracks repairs selected from the 2026-11-21 whole-project review at `b
 | 1 | Quadratic stream metadata and history-edit checks | Done |
 | 2 | Unbounded connection heads and shutdown drain | Done |
 | 3 | Post-publication failures abort without protocol terminals | Done |
-| 4 | Data-less SSE blocks dispatched as events | Planned |
+| 4 | Data-less SSE blocks dispatched as events | Done |
 | 5 | Chat-upstream calls withheld from Messages clients until finish | Planned |
 | 6 | Messages delivery rejects upstream call IDs after dispatch | Planned |
 | 7 | OAuth renewal withdraws valid access and over-quarantines | Planned |
@@ -45,9 +45,9 @@ Every slice ends with focused tests at the responsible layer, the [offline basel
 
 **Defect.** [`SseDecoder`](../crates/morphiecore-protocol/src/sse.rs) dispatches blocks with an empty data buffer. Messages, generateContent and Interactions decoders then fail on spec-legal `retry:`, `id:` or `event:`-only keep-alives.
 
-**Repair.** Dispatch only when the data buffer is non-empty, retaining `id` and `retry` state; remove per-decoder empty-data special cases.
+**Repair.** Dispatch only blocks with data lines; a field-only block discards its event type and carries `id`/`retry` to the next event. The OpenAI decoders keep skipping empty `data:` payloads, which remain spec events.
 
-**Exit.** Framing tests cover field-only blocks; each upstream decoder accepts interleaved keep-alive blocks.
+**Result.** The framing test pins WHATWG dispatch, and all five upstream decoders produce the same semantic response with `retry:`, `id:` and `event: ping` blocks interleaved between every frame; the old framing fails that test.
 
 ## Slice 5 — Incremental Chat calls for Messages clients
 

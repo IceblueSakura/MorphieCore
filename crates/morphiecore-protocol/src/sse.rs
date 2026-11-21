@@ -203,12 +203,11 @@ impl EventBuilder {
             _ => {}
         }
     }
+    /// WHATWG SSE dispatch: a block without data lines is not an event. Its
+    /// event type is discarded; `id` and `retry` carry to the next event.
     fn take_event(&mut self) -> Option<SseEvent> {
-        if self.event.is_none()
-            && self.data_lines.is_empty()
-            && self.id.is_none()
-            && self.retry_ms.is_none()
-        {
+        if self.data_lines.is_empty() {
+            self.event = None;
             return None;
         }
         Some(SseEvent {

@@ -422,6 +422,64 @@ fn upstream_eof_is_distinct_from_malformed_pending_frames() {
 }
 
 #[test]
+fn field_only_keepalive_blocks_are_not_events_for_any_upstream_decoder() {
+    use morphiecore::{execution::Attempt, protocol::stream::SseLimits};
+    let target = ReplayTarget::new("public-fixture", "gemini-fixture").unwrap();
+    let responses = crate::wire::events(2)
+        .iter()
+        .map(|event| {
+            format!(
+                "event: {}\ndata: {event}\n\n",
+                event["type"].as_str().unwrap()
+            )
+        })
+        .collect::<String>()
+        .into_bytes();
+    // Spec-legal blocks that carry no data, as proxies and keep-alives emit them.
+    let keepalive = "retry: 1000\n\nid: 7\n\nevent: ping\n\n";
+    for (adapter, bytes) in [
+        (openai(GenerationApi::Chat), asset("openai/chat-tool.sse")),
+        (openai(GenerationApi::Responses), responses),
+        (
+            messages("claude-3-opus-latest"),
+            messages_with_delimiter("anthropic/basic.sse"),
+        ),
+        (
+            UpstreamAdapter::GoogleGenerateContent {
+                target: target.clone(),
+            },
+            jsonl_sse("vercel/google-text.jsonl", None),
+        ),
+        (
+            UpstreamAdapter::GoogleInteractions { target },
+            jsonl_sse("vercel/interactions-basic.jsonl", Some("event_type")),
+        ),
+    ] {
+        let raw = std::str::from_utf8(&bytes).unwrap();
+        let interleaved = raw
+            .split_inclusive("\n\n")
+            .flat_map(|frame| [keepalive, frame])
+            .collect::<String>();
+        let decode = |bytes: &[u8]| {
+            let mut attempt = Attempt::new(adapter.clone(), 2 << 20, SseLimits::default());
+            attempt.begin(200, "text/event-stream").unwrap();
+            feed(&mut attempt, bytes, bytes.len()).unwrap();
+            attempt
+                .finish()
+                .unwrap_or_else(|error| panic!("{adapter:?}: {error:?}"));
+            attempt
+        };
+        let plain = decode(&bytes);
+        let with_keepalive = decode(interleaved.as_bytes());
+        assert_eq!(
+            with_keepalive.response().unwrap().semantic,
+            plain.response().unwrap().semantic,
+            "{adapter:?}"
+        );
+    }
+}
+
+#[test]
 fn upstream_ingress_budgets_are_independent_and_fragmentation_invariant() {
     use morphiecore::{
         execution::{Attempt, AttemptError},

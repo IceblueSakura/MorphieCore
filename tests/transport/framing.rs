@@ -61,20 +61,20 @@ fn decoder_parses_retry_and_ignores_invalid_retry_and_nul_ids() {
     assert_eq!(events[0].retry_ms(), Some(1500));
     assert_eq!(events[0].data(), "ready");
 
-    // Empty known fields still dispatch; ignored fields alone do not.
+    // WHATWG dispatch: a block without data lines is not an event and drops its
+    // event type; `id`/`retry` carry to the next event. An empty data line is.
     let events = decoder
-        .push(b"event:\nid:\nretry: 0\n\ndata:\n\n: keepalive\nunknown: ignored\nid: rejected\0id\nretry: invalid\n\n")
+        .push(b"event: ping\nid:\nretry: 0\n\ndata:\n\n: keepalive\nunknown: ignored\nid: rejected\0id\nretry: invalid\n\n")
         .unwrap();
-    assert_eq!(events.len(), 2);
-    assert_eq!(events[0].event(), Some(""));
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event(), None);
     assert_eq!(events[0].id(), Some(""));
     assert_eq!(events[0].retry_ms(), Some(0));
     assert_eq!(events[0].data(), "");
-    assert_eq!(events[1].event(), None);
-    assert_eq!(events[1].id(), None);
-    assert_eq!(events[1].retry_ms(), None);
-    assert_eq!(events[1].data(), "");
     assert!(decoder.finish_strict().unwrap().is_empty());
+    let mut eof = SseDecoder::new(64);
+    assert!(eof.push(b"event: ping\nid: 7").unwrap().is_empty());
+    assert!(eof.finish().unwrap().is_empty());
 }
 
 #[test]
