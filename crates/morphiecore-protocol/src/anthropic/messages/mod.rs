@@ -23,6 +23,7 @@ pub mod wire;
 use crate::CodecError;
 pub use media::{Media, ResultBlock, ResultContent, Source};
 pub use request::RequestRule;
+pub(crate) use request::project_call_id;
 use serde_json::Value;
 pub use wire::*;
 

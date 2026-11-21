@@ -82,6 +82,7 @@ pub fn encode_client_response(
             }
             Item::ToolCall(call) => {
                 calls = true;
+                super::projection::tool_labels(call.call_id.as_str(), call.name.as_str())?;
                 let input = tool_input(call)?;
                 content.push(json!({"type":"tool_use","id":call.call_id.as_str(),
                     "name":call.name.as_str(),"input":input}));

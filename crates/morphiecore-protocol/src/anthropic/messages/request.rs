@@ -243,23 +243,33 @@ impl RequestRule {
             Self::OmitMessagePhase => "messages.omit-message-phase.v1",
             Self::SummarizeReasoning => crate::lowering::disposition::MESSAGES_SUMMARY.id,
             Self::OmitSampling => "messages.omit-sampling.v1",
-            Self::ProjectCallIds => "messages.project-call-ids.v1",
+            Self::ProjectCallIds => {
+                crate::lowering::disposition::Rule::MESSAGES_PROJECT_CALL_IDS.id
+            }
             Self::ReasoningAsText => crate::lowering::disposition::MESSAGES_REASONING_AS_TEXT.id,
             Self::OmitSchemaName => crate::lowering::disposition::MESSAGES_SCHEMA_NAME.id,
         }
     }
 }
-/// Messages call IDs must match `^[a-zA-Z0-9_-]{1,64}$`. Other IDs map to a stable digest,
-/// so earlier turns project identically; a digest equal to a client ID fails validation as
-/// a duplicate call instead of merging links.
 fn call_id(id: &str, rules: &mut BTreeSet<RequestRule>) -> String {
-    if super::shape::name(id, 64).is_ok() {
-        return id.into();
+    match project_call_id(id) {
+        Some(projected) => {
+            rules.insert(RequestRule::ProjectCallIds);
+            projected
+        }
+        None => id.into(),
     }
-    rules.insert(RequestRule::ProjectCallIds);
+}
+/// Messages call IDs must match `^[a-zA-Z0-9_-]{1,64}$`. Other IDs map to a stable
+/// digest, so every turn and both directions project identically; a digest equal to a
+/// client ID fails validation as a duplicate call instead of merging links.
+pub(crate) fn project_call_id(id: &str) -> Option<String> {
+    if super::shape::name(id, 64).is_ok() {
+        return None;
+    }
     let digest = Sha256::digest(id.as_bytes());
     let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
-    format!("mc_{}", &hex[..40])
+    Some(format!("mc_{}", &hex[..40]))
 }
 fn native_tool(t: &FunctionTool) -> Result<super::Tool, CodecError> {
     let ToolDispatch {

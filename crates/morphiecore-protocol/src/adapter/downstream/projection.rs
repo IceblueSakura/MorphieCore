@@ -17,6 +17,9 @@ impl ClientAdapter {
         DeliveryDispositions::from_facts(|fact| match (protocol, fact) {
             // A model-authored refusal is not a classifier stop.
             (ClientProtocol::Messages, Refusal) => Approximate(Rule::MESSAGES_REFUSAL_AS_TEXT),
+            (ClientProtocol::Messages, CallIdentity) => {
+                Approximate(Rule::MESSAGES_PROJECT_CALL_IDS)
+            }
             (ClientProtocol::Chat, OpeningService) => Omit(Rule::OMIT_CHAT_OPENING_SERVICE),
             (ClientProtocol::Chat, Reasoning) if self.omits_readable_reasoning() => {
                 Omit(Rule::OMIT_CHAT_READABLE_REASONING)
@@ -365,12 +368,30 @@ impl ClientProjection {
                     }
                     StreamEvent::ItemStarted {
                         item,
-                        kind: ItemKind::ToolCall { format, .. },
+                        kind:
+                            ItemKind::ToolCall {
+                                format, call_id, ..
+                            },
                         ..
                     } => {
                         self.calls.insert(*item, false);
                         if self.client.protocol() == ClientProtocol::Messages {
                             *format = ArgumentFormat::Json;
+                        }
+                        // Upstream call IDs outside the client's grammar reach
+                        // it as the digest its next request sends back.
+                        if let Disposition::Approximate(rule) =
+                            self.dispositions.get(DeliveryFact::CallIdentity)
+                            && let Some(projected) =
+                                crate::anthropic::messages::project_call_id(call_id.as_str())
+                        {
+                            *call_id = crate::semantic::value::Text::new(
+                                &projected,
+                                "call id",
+                                projected.len(),
+                            )
+                            .map_err(|_| CodecError::invalid())?;
+                            self.loss(rule, Owner::item(*item));
                         }
                     }
                     StreamEvent::PartStarted { kind, .. }

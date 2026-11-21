@@ -988,6 +988,95 @@ async fn late_truncation_and_trailing_payload_never_emit_success_terminal() {
     assert!(!wire.contains("response.completed"));
 }
 #[tokio::test]
+async fn messages_delivery_projects_upstream_call_ids_its_history_can_return() {
+    // sha256("functions.get_weather:0"), first 40 hex digits, computed independently.
+    const PROJECTED: &str = "mc_79ac1aaab216b228c7ab22411b23ccfa39cb4207";
+    let gate = gateway(Limits::default());
+    let entry = gate.state.entries[&(ClientProtocol::Messages, "fixture-model".into())].clone();
+    let deliver = |stream: bool, id: &'static str| {
+        let gate = &gate;
+        let entry = entry.clone();
+        async move {
+            let body = serde_json::json!({"model":"fixture-model","max_tokens":32,"stream":stream,
+                "tools":[{"name":"lookup","input_schema":{"type":"object","properties":{}}}],
+                "messages":[{"role":"user","content":"q"}]});
+            let request = entry
+                .client
+                .decode_client_request(body.to_string().as_bytes())
+                .unwrap();
+            let (media, upstream_body) = if stream {
+                let mut events = wire::events(1);
+                events[1]["choices"][0]["delta"]["tool_calls"][0]["id"] = id.into();
+                let sse = events
+                    .iter()
+                    .map(|v| format!("data: {v}\n\n"))
+                    .collect::<String>()
+                    + "data: [DONE]\n\n";
+                ("text/event-stream", sse)
+            } else {
+                let mut value = wire::response(1);
+                value["choices"][0]["message"]["tool_calls"][0]["id"] = id.into();
+                value["usage"]["prompt_tokens_details"] = serde_json::json!({"cached_tokens":0});
+                ("application/json", value.to_string())
+            };
+            let (tx, source, _, _) = upstream(200, media);
+            tx.send(Ok(Bytes::from(upstream_body))).await.unwrap();
+            drop(tx);
+            let response = bounded(respond(
+                entry.clone(),
+                entry.candidates[0].clone(),
+                request,
+                source,
+                &gate.state.limits,
+                Instant::now() + Duration::from_secs(2),
+                gate.state.shutdown.clone(),
+                gate.state.permits.clone().acquire_owned().await.unwrap(),
+                super::Trace::new(None),
+            ))
+            .await
+            .unwrap();
+            let bytes = axum::body::to_bytes(response.into_body(), 1 << 16)
+                .await
+                .unwrap();
+            let text = String::from_utf8(bytes.to_vec()).unwrap();
+            if stream {
+                morphiecore_test_support::messages_stream::messages_stream_body(&text)
+            } else {
+                serde_json::from_str(&text).unwrap()
+            }
+        }
+    };
+    for stream in [false, true] {
+        let delivered = deliver(stream, "functions.get_weather:0").await;
+        assert_eq!(delivered["content"][0]["type"], "tool_use", "{delivered}");
+        assert_eq!(delivered["content"][0]["id"], PROJECTED, "stream={stream}");
+        let native = deliver(stream, "call_valid-01").await;
+        assert_eq!(
+            native["content"][0]["id"], "call_valid-01",
+            "stream={stream}"
+        );
+    }
+    // The client returns the projected ID; the Chat target receives one consistent link.
+    let next = serde_json::json!({"model":"fixture-model","max_tokens":32,
+        "tools":[{"name":"lookup","input_schema":{"type":"object","properties":{}}}],
+        "messages":[{"role":"user","content":"q"},
+            {"role":"assistant","content":[{"type":"tool_use","id":PROJECTED,"name":"lookup","input":{"n":1}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":PROJECTED,"content":"sunny"}]}]});
+    let (_, request) = crate::ingress::admission::prepare(
+        &gate.state,
+        ClientProtocol::Messages,
+        next.to_string().as_bytes(),
+        &crate::execution::report::Report::default(),
+    )
+    .unwrap();
+    let (chat, _) = entry.candidates[0]
+        .endpoint
+        .encode_request_with_rules(&request)
+        .unwrap();
+    assert_eq!(chat["messages"][1]["tool_calls"][0]["id"], PROJECTED);
+    assert_eq!(chat["messages"][2]["tool_call_id"], PROJECTED);
+}
+#[tokio::test]
 async fn post_publication_failures_end_with_one_protocol_error_frame() {
     let prefix: Bytes = frames()[..3].concat().into();
     for protocol in [

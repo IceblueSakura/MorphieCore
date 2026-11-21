@@ -250,8 +250,8 @@ pub fn usage_loss() -> crate::conversion::generation::Effect {
         owner: crate::conversion::generation::Owner::Root,
     }
 }
+/// Callers check labels: delivered IDs may be projected from the source call.
 pub(super) fn tool_input(call: &ToolCall) -> Result<Value, CodecError> {
-    tool_labels(call.call_id.as_str(), call.name.as_str())?;
     if !call.context.is_direct() || call.context.alias_domain.is_some() {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
@@ -274,10 +274,11 @@ pub(super) fn tool_labels(id: &str, tool: &str) -> Result<(), CodecError> {
     wire::shape::name(tool, 128)
 }
 /// Reuse the existing EOF-validated materialization; never buffer streamed arguments again.
+/// Source call IDs are checked after delivery projection, which may replace them.
 pub fn validate_tool_calls(response: &DecodedResponse) -> Result<(), CodecError> {
     for (_, item) in response.semantic.items() {
         if let Item::ToolCall(call) = item {
-            tool_labels(call.call_id.as_str(), call.name.as_str())?;
+            wire::shape::name(call.name.as_str(), 128)?;
             if matches!(call.arguments, ToolArguments::StructuredPartial(_))
                 && call.status == ItemLifecycle::Incomplete
                 && response.semantic.outcome() == Outcome::Incomplete

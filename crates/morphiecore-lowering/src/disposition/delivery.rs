@@ -16,6 +16,7 @@ pub enum DeliveryFact {
     TerminalExplanation,
     Refusal,
     OpeningService,
+    CallIdentity,
 }
 
 impl DispositionKey for DeliveryFact {
@@ -37,6 +38,7 @@ impl DeliveryFact {
             Self::TerminalExplanation => "terminal_explanation",
             Self::Refusal => "refusal",
             Self::OpeningService => "opening_service_report",
+            Self::CallIdentity => "call_identity",
         }
     }
 }
@@ -58,6 +60,13 @@ impl DeliveryDispositions {
 }
 
 impl Rule {
+    /// Messages call IDs must match `^[a-zA-Z0-9_-]{1,64}$`; other IDs map to
+    /// one stable digest in both request and delivery directions.
+    pub const MESSAGES_PROJECT_CALL_IDS: Self = Self::new(
+        "messages.project-call-ids.v1",
+        Field::ToolCallIdentity,
+        Change::Normalize,
+    );
     pub const MESSAGES_REFUSAL_AS_TEXT: Self = Self::new(
         "messages.refusal-as-text.v1",
         Field::ContentRefusal,

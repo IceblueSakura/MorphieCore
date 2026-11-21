@@ -2492,19 +2492,39 @@ fn messages_preserves_parts_and_rejects_unrepresentable_calls() {
         encode_client_response(&tool_response(call.clone()), "m").unwrap()["content"],
         json!([{"type":"tool_use","id":"c","name":"lookup","input":{}}])
     );
-    for (id, name, valid) in [
-        ("a".repeat(64), "b".repeat(128), true),
-        ("a".repeat(65), "lookup".into(), false),
-        ("bad.id".into(), "lookup".into(), false),
-        ("c".into(), "bad.name".into(), false),
-        ("c".into(), "工具".into(), false),
+    // Delivery projects IDs outside the Messages grammar to a stable digest
+    // (sha256 prefix, computed independently); names have no projection.
+    for (id, name, valid, delivered) in [
+        ("a".repeat(64), "b".repeat(128), true, Some("a".repeat(64))),
+        (
+            "a".repeat(65),
+            "lookup".into(),
+            false,
+            Some("mc_635361c48bb9eab14198e76ea8ab7f1a41685d6a".into()),
+        ),
+        (
+            "bad.id".into(),
+            "lookup".into(),
+            false,
+            Some("mc_fca7dec356a708b998cd46a828c9e432d60f170b".into()),
+        ),
+        ("c".into(), "bad.name".into(), false, None),
+        ("c".into(), "工具".into(), false, None),
     ] {
         let mut candidate = call.clone();
         candidate.call_id = morphiecore::semantic::value::Text::new(id, "id", 256).unwrap();
         candidate.name = morphiecore::semantic::value::Text::new(name, "name", 128).unwrap();
         let source = tool_response(candidate.clone());
         let rendered = morphiecore::adapter::ClientAdapter::Messages.snapshot(source);
-        assert_eq!(rendered.is_ok(), valid);
+        assert_eq!(
+            rendered
+                .as_ref()
+                .ok()
+                .map(|(_, wire)| wire["content"][0]["id"].as_str().unwrap().to_owned()),
+            delivered
+        );
+        // The raw encoder accepts only already-projected identities.
+
         let mut stream = ClientEventEncoder::new("r", "m");
         assert_eq!(
             stream
