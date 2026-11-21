@@ -87,7 +87,6 @@ pub struct TargetContract {
     pub model_limits: crate::model_limits::ModelLimits,
     pub cache: CacheTargetPolicy,
     pub reasoning_policy: Option<crate::reasoning::ReasoningRequestPolicy>,
-    pub reasoning_as_text: bool,
     /// Optional default output token ceiling injected when client omits `max_tokens`.
     pub default_output_tokens: Option<u64>,
     /// Default TTL for automatic turn-boundary cache marker placement.
@@ -102,7 +101,6 @@ impl TargetContract {
             dispositions: profile.semantic_contract(),
             model_limits: Default::default(),
             reasoning_policy: None,
-            reasoning_as_text: false,
             default_output_tokens: None,
             automatic_cache_default: None,
             cache: CacheTargetPolicy {

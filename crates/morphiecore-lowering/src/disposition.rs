@@ -413,11 +413,6 @@ pub const TRANSFER_MESSAGES_HISTORY: Rule = Rule::new(
     Field::Replay,
     Change::Omit,
 );
-pub const MESSAGES_REASONING_AS_TEXT: Rule = Rule::new(
-    "messages.reasoning-as-text.v1",
-    Field::ReportedReasoning,
-    Change::Approximate,
-);
 pub const MESSAGES_SUMMARY: Rule = Rule::new(
     "messages.summarize-reasoning.v1",
     Field::ReasoningSummary,
@@ -431,16 +426,6 @@ pub const GENERATE_CONTENT_SUMMARY: Rule = Rule::new(
 pub const INTERACTIONS_SUMMARY: Rule = Rule::new(
     "interactions.summarize-reasoning.v1",
     Field::ReasoningSummary,
-    Change::Approximate,
-);
-pub const GENERATE_CONTENT_REASONING_AS_TEXT: Rule = Rule::new(
-    "gemini.reasoning-as-text.v1",
-    Field::ReportedReasoning,
-    Change::Approximate,
-);
-pub const INTERACTIONS_REASONING_AS_TEXT: Rule = Rule::new(
-    "interactions.reasoning-as-text.v1",
-    Field::ReportedReasoning,
     Change::Approximate,
 );
 pub const TRANSFER_GENERATE_CONTENT_HISTORY: Rule = Rule::new(

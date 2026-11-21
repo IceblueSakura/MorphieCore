@@ -78,8 +78,6 @@ pub struct TargetContract {
     pub resource_time: Option<std::time::SystemTime>,
     pub cache: CacheTargetPolicy,
     pub reasoning_policy: Option<crate::reasoning::ReasoningRequestPolicy>,
-    /// Model-selected numeric carrier, independent of a configured conversion fallback.
-    pub reasoning_as_text: bool,
     /// Selected downstream terminal projection; native source facts stay unchanged.
     pub messages_terminal_projection: bool,
 }
@@ -93,7 +91,6 @@ impl Default for TargetContract {
             resource_time: None,
             cache: CacheTargetPolicy::default(),
             reasoning_policy: None,
-            reasoning_as_text: false,
             messages_terminal_projection: false,
         }
     }

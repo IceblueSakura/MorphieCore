@@ -273,50 +273,6 @@ impl GenerationRequest {
         )?;
         Ok(self)
     }
-    /// Candidate copy: listed reasoning becomes assistant text under a fresh derived ID,
-    /// since an item's kind is protected under its ID; envelope membership follows the
-    /// new ID and lifecycle is preserved. Listed reasoning without non-blank text is removed.
-    pub fn with_reasoning_as_text(mut self, owners: &[ItemId]) -> Result<Self, GenerationError> {
-        let mut items = Vec::with_capacity(self.items.len());
-        for (position, (id, item)) in self.items.iter().enumerate() {
-            let reasoning = match item {
-                Item::Reasoning(reasoning) if owners.contains(id) => reasoning,
-                _ => {
-                    items.push((*id, item.clone()));
-                    continue;
-                }
-            };
-            let parts: Vec<_> = reasoning
-                .parts
-                .iter()
-                .filter_map(|(part, content)| {
-                    let (ReasoningContent::Summary(text) | ReasoningContent::Text(text)) = content;
-                    (!text.as_str().trim().is_empty()).then(|| Part {
-                        replay: None,
-                        id: *part,
-                        cache: None,
-                        content: ContentPart::Text(text.clone().into()),
-                    })
-                })
-                .collect();
-            if parts.is_empty() {
-                continue;
-            }
-            let fresh = ItemId::scoped(LocalScope::DERIVED, position as u64);
-            self.envelopes.revise(*id, fresh);
-            items.push((
-                fresh,
-                Item::Message(Message {
-                    participant: None,
-                    role: MessageRole::Assistant,
-                    parts,
-                    status: reasoning.status,
-                    phase: None,
-                }),
-            ));
-        }
-        self.with_items(items)
-    }
     pub fn retain_items(
         self,
         mut keep: impl FnMut(ItemId, &Item) -> bool,

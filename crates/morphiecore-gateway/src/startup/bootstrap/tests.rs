@@ -381,9 +381,7 @@ fn xiaomi_audio_is_explicit_and_prepares_its_own_json_contracts() {
 
 #[test]
 fn codex_history_reaches_the_native_binding_by_named_rules() {
-    let mut models = selected_models(&["claude-haiku-5-5"], &["opencode-go"]);
-    models["models"]["claude-haiku-5-5"]["candidates"][0]["reasoning_as_text"] =
-        serde_json::json!(true);
+    let models = selected_models(&["claude-haiku-5-5"], &["opencode-go"]);
     let boot = Fixture::new(
         service(),
         models,
@@ -505,30 +503,6 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
         reasoning("rs_3", &["Plan B"], None),
     ];
     history.extend(call("call_2", "again"));
-    let (entry, mut rejected) = crate::ingress::admission::prepare(
-        &boot.gateway.state,
-        ClientProtocol::Responses,
-        &serde_json::to_vec(&body(serde_json::Value::Null, &history)).unwrap(),
-        &crate::execution::report::Report::default(),
-    )
-    .unwrap();
-    rejected.conversation =
-        Some(crate::semantic::context::ConversationContext::conversation("synthetic").unwrap());
-    let mut disabled = entry.candidates[0].endpoint.clone();
-    assert!(
-        disabled
-            .representation
-            .messages()
-            .unwrap()
-            .reasoning_as_text
-    );
-    disabled
-        .representation
-        .messages_mut()
-        .unwrap()
-        .reasoning_as_text = false;
-    let uncarried = disabled.encode_request(&rejected).unwrap();
-    assert!(!uncarried.to_string().contains("Plan B"));
     let (wire, rules) = prepare(serde_json::Value::Null, &history).unwrap();
     assert_eq!(
         wire["messages"],
@@ -697,14 +671,6 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
             .unwrap()
             .adaptation
             .scope,
-    );
-    assert!(
-        !entry.candidates[0]
-            .endpoint
-            .representation
-            .openai()
-            .unwrap()
-            .reasoning_as_text
     );
     let mut invalid = model_config.clone();
     invalid["models"]["claude-haiku-5-5"]["candidates"][0]["base_url"] =

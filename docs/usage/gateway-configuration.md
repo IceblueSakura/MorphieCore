@@ -263,7 +263,6 @@ Use `morphiecore --catalog` to select a registered public label and its catalog 
 | Model | `thinking_tokens` | Optional six-level numeric table shared by this model's candidates |
 | Candidate | `binding` | Required catalog endpoint ID; fixes protocol, dialect, canonical model and authentication kind |
 | Candidate | `upstream_model` | Wire spelling only; does not change canonical identity or model capabilities |
-| Candidate | `reasoning_as_text` | Permit the existing named history conversion; default `false` |
 | Candidate | `thinking_conversion` | `budget_to_effort` or `effort_to_budget` fallback; exact model-supported controls take precedence. Omission performs no numeric conversion |
 | Candidate | `allowed_effort` | Optional nonempty array of distinct `minimal`, `low`, `medium`, `high`, `xhigh`, `max` levels; narrows the catalog declaration when present |
 | Candidate | `context_window_tokens` | Optional positive `u64` total-context planning capacity; narrows a known declaration or explicitly supplies an unknown one |
@@ -364,7 +363,7 @@ These adaptations do not promise equivalent Claude effort behavior or complete G
 
 Those reviewed Google bindings omit temperature/top-p/top-k that the model ignores, with field-specific adaptation evidence. Generic codecs and other models do not inherit that policy; request labels cannot select it. Interactions v1 has no carrier for those controls. See the [target-effective sampling contract](../architecture/adaptation-and-dialects.md#selected-request-approximations); this does not change routing or activate structured-result admission.
 
-`reasoning_as_text` controls the explicit conversion of unattributed readable history reasoning into assistant text, not visibility of new reasoning output. With the default `false`, a candidate needing that conversion rejects. Separately, complete reasoning demonstrably belonging to another target is omitted under the named visible-history transfer policy, never promoted to an assistant answer. Visible messages and real call/results remain; partial reasoning, damaged compatible replay and required compacted/cached context cannot be repaired by omission. Valid native carriers remain available.
+History reasoning is never converted into assistant text. Readable reasoning without this target's native carrier, including reasoning demonstrably belonging to another target, is omitted under the named visible-history transfer policy, never promoted to an assistant answer. Visible messages and real call/results remain; partial reasoning, damaged compatible replay and required compacted/cached context cannot be repaired by omission. Valid native carriers remain available.
 
 Only listed models are activated. Images, Speech and Embeddings select one account explicitly, for example `"text-embedding-3-small":{"account":"primary"}`. They retain single-target task execution without Generation overrides or multi-account recovery.
 

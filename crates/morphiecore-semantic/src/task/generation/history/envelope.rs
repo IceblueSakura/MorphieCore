@@ -169,16 +169,4 @@ impl MessageEnvelopes {
         });
         Self::new(items, values)
     }
-    pub fn revise(&mut self, old: ItemId, new: ItemId) {
-        for group in &mut self.values {
-            for member in &mut group.members {
-                if *member == old {
-                    *member = new;
-                }
-            }
-            if group.before == Some(old) {
-                group.before = Some(new);
-            }
-        }
-    }
 }

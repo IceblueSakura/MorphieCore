@@ -577,30 +577,6 @@ impl<'a> Target<'a> {
                 },
             );
         }
-        if source.items().iter().any(|(_, item)| {
-            matches!(item,
-            Item::Reasoning(reasoning) if reasoning.replay.is_none() && !reasoning.parts.is_empty())
-        }) {
-            let native = match self {
-                Target::Messages(contract) => Some((
-                    contract.reasoning_as_text,
-                    super::disposition::MESSAGES_REASONING_AS_TEXT,
-                )),
-                Target::GenerateContent(contract) => Some((
-                    contract.reasoning_as_text,
-                    super::disposition::GENERATE_CONTENT_REASONING_AS_TEXT,
-                )),
-                Target::Interactions(contract) => Some((
-                    contract.reasoning_as_text,
-                    super::disposition::INTERACTIONS_REASONING_AS_TEXT,
-                )),
-                Target::OpenAi(_, _) => None,
-            };
-            if let Some((allowed, rule)) = native {
-                table.set(ReasoningHistory, if allowed { Disposition::Approximate(rule) }
-                    else { Disposition::Reject("readable reasoning cannot be reclassified as assistant text without the selected policy") });
-            }
-        }
         if let Target::OpenAi(api, contract) = self {
             table.set(SchemaName, Disposition::Native);
             if api == GenerationApi::Responses && !contract.adaptation.rules.hooks.bailian_requests

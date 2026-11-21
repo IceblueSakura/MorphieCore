@@ -55,8 +55,6 @@ struct Candidate {
     default_output_tokens: crate::semantic::value::Presence<u64>,
     #[serde(default, deserialize_with = "crate::configuration::optional")]
     upstream_model: Option<String>,
-    #[serde(default)]
-    reasoning_as_text: bool,
     #[serde(default, deserialize_with = "crate::configuration::optional")]
     thinking_conversion: Option<ThinkingConversion>,
 }
@@ -275,12 +273,7 @@ impl Models {
                         limits.context_window_tokens = None;
                         limits.maximum_input_tokens = None;
                     }
-                    reasoning(
-                        &mut endpoint,
-                        candidate.reasoning_as_text,
-                        candidate.thinking_conversion,
-                        &table,
-                    )?;
+                    reasoning(&mut endpoint, candidate.thinking_conversion, &table)?;
                     let limits = crate::protocol::model_limits::ModelLimits {
                         reject_disabled_reasoning: false,
                         allowed_effort: candidate
@@ -390,7 +383,6 @@ impl Models {
 
 fn reasoning(
     endpoint: &mut Endpoint,
-    as_text: bool,
     conversion: Option<ThinkingConversion>,
     table: &ThinkingBudgets,
 ) -> Result<(), StartupError> {
@@ -431,21 +423,17 @@ fn reasoning(
             if policy.is_some() && caps.adaptation.effort_mapping.is_some() {
                 return Err(invalid());
             }
-            caps.reasoning_as_text = as_text;
             caps.adaptation.reasoning_policy = policy;
         }
         TargetContract::AnthropicMessages(caps) => {
-            caps.reasoning_as_text = as_text;
             caps.reasoning_policy = policy;
         }
         TargetContract::GoogleGenerateContent(caps) => {
-            caps.reasoning_as_text = as_text;
             if policy.is_some() {
                 caps.reasoning_policy = policy;
             }
         }
         TargetContract::GoogleInteractions(caps) => {
-            caps.reasoning_as_text = as_text;
             if policy.is_some() {
                 caps.reasoning_policy = policy;
             }

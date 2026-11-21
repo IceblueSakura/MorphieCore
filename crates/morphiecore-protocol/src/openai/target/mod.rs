@@ -8,8 +8,6 @@ use crate::lowering::{
 pub struct TargetContract {
     pub adaptation: crate::openai::dialect::adaptation::Adaptation,
     pub reasoning_history: Option<crate::reasoning::ReasoningHistory>,
-    /// Permit the named projection of foreign readable reasoning into assistant text.
-    pub reasoning_as_text: bool,
     /// Explicit origin for unbound callers; otherwise inherit the bound codec scope.
     pub replay_origin: Option<crate::semantic::value::ReplayOrigin>,
     /// Caller-supplied clock for checking a reported remote-resource expiry.
@@ -59,7 +57,6 @@ impl TargetContract {
         Self {
             adaptation: Default::default(),
             reasoning_history: None,
-            reasoning_as_text: false,
             replay_origin: None,
             resource_time: None,
             dispositions: Dispositions::full(),

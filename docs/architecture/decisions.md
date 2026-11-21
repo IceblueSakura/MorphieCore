@@ -102,6 +102,7 @@ See [Architecture Overview](index.md) for system boundaries and core IR semantic
 | Prefix-cache ownership | Cache | `Part.cache` owns request-lifetime versus explicit TTL breakpoints. |
 | Compacted context | History | Opaque compaction items are preserved in history; requests reject if the target lacks a compaction carrier. |
 | Stateful API activation freeze | Responses and upstreams | Stateful APIs, including storage, reference continuation and stored-resource operations, are experimental and disabled until explicit user activation. Model adaptation/repair acceptance excludes them; full-history stateless replay remains required. This supersedes public activation of process-local Responses history, not its isolated internal invariants. [Boundary](history-and-replay.md#stateful-history) |
+| No reasoning-to-text conversion | History | Readable reasoning without a native target carrier is omitted under the visible-history transfer rule, never converted into assistant text. The candidate `reasoning_as_text` option and its as-text rules were removed: lowering always omitted first, so neither the conversion nor its rejection was reachable. Configurations that set the option now fail strict parsing. [Contract](history-and-replay.md#reasoning-replay) |
 | Agent session files | Sessions | Selected opt-in per-Agent JSONL direction, with explicit cross-Agent reading/copying and attribution. Unimplemented and unscheduled; isolation/lifetime bounds await selection. [Direction](history-and-replay.md#agent-session-files) |
 
 ### Routing and security decisions

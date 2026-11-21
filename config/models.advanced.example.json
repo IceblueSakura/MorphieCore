@@ -22,7 +22,6 @@
           ],
           "maximum_output_tokens": 8192,
           "default_output_tokens": null,
-          "reasoning_as_text": false,
           "thinking_conversion": "budget_to_effort"
         }
       ]
@@ -47,7 +46,6 @@
             "high"
           ],
           "maximum_output_tokens": 32768,
-          "reasoning_as_text": false,
           "thinking_conversion": "effort_to_budget"
         }
       ]
