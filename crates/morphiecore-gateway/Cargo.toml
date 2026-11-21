@@ -26,7 +26,8 @@ bytes.workspace = true
 futures-util.workspace = true
 getrandom.workspace = true
 httpdate.workspace = true
-hyper.workspace = true
+hyper = { workspace = true, features = ["http1", "server"] }
+hyper-util.workspace = true
 mime.workspace = true
 opentelemetry.workspace = true
 opentelemetry_sdk.workspace = true

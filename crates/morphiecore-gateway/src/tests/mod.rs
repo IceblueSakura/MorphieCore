@@ -3,6 +3,7 @@ mod affinity;
 mod conversation;
 mod embedding;
 mod ingress;
+mod listener;
 mod models;
 mod responses;
 pub(crate) use morphiecore_test_support::responses_profile as responses_wire;

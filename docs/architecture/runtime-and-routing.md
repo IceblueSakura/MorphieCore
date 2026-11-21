@@ -210,6 +210,7 @@ An observed incomplete text-item finish also authorizes closure of that owner's 
 MorphieCore operates behind a loopback-bound reverse proxy:
 - SSE responses set `X-Accel-Buffering: no` and `Cache-Control: no-store`.
 - The proxy terminates TLS and provides client compression; MorphieCore handles authentication and streaming logic.
+- The [HTTP/1 listener](../../crates/morphiecore-gateway/src/ingress/http.rs) applies fixed bounds before request admission: a 90 s header-read timeout that also closes idle keep-alive connections, at most 512 open connections (excess peers wait in the backlog), and a 5 s connection drain after the shutdown signal before remaining connections are dropped and request and storage drains run. Proxy upstream keep-alive timeouts should stay below 90 s.
 
 #### Optional delta coalescing
 

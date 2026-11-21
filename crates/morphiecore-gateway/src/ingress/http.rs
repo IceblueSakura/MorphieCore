@@ -11,10 +11,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::MethodRouter,
 };
-use std::{
-    future::{Future, IntoFuture},
-    sync::Arc,
-};
+use std::{future::Future, sync::Arc, time::Duration};
 use tokio::net::TcpListener;
 use tracing::{Instrument, instrument::WithSubscriber};
 
@@ -123,19 +120,17 @@ impl Gateway {
         let router = self.router();
         let maintenance = self.clone();
         let storage_tasks = tokio_util::task::TaskTracker::new();
-        let server = axum::serve(listener, router)
-            .with_graceful_shutdown(async move {
-                tokio::select! {
-                    _ = shutdown => {},
-                    _ = self.state.shutdown.cancelled() => {},
-                }
-                self.shutdown();
-            })
-            .into_future();
+        let server = serve_connections(listener, router, ConnectionLimits::DEFAULT, async move {
+            tokio::select! {
+                _ = shutdown => {},
+                _ = self.state.shutdown.cancelled() => {},
+            }
+            self.shutdown();
+        });
         tokio::pin!(server);
-        let result = tokio::select! {
+        tokio::select! {
             biased;
-            result = &mut server => result,
+            () = &mut server => {}
             _ = maintenance.renew_credentials(&storage_tasks) => server.await,
         };
         maintenance.shutdown();
@@ -145,7 +140,90 @@ impl Gateway {
         // preserve rotated material and release account locks before we return.
         storage_tasks.close();
         storage_tasks.wait().await;
-        result
+        Ok(())
+    }
+}
+/// Listener bounds that hold before request admission, independent of request permits.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ConnectionLimits {
+    /// Bounds a partial or idle keep-alive request head. It exceeds common client
+    /// and proxy idle timeouts so the peer normally closes idle connections first.
+    pub header_read: Duration,
+    /// Accepted sockets, idle keep-alive included; excess peers wait in the backlog.
+    pub connections: usize,
+    /// Grace after shutdown before connections that are still open are dropped.
+    pub drain: Duration,
+}
+impl ConnectionLimits {
+    pub(crate) const DEFAULT: Self = Self {
+        header_read: Duration::from_secs(90),
+        // Above the largest request concurrency, below the usual 1024 descriptor limit.
+        connections: 512,
+        drain: Duration::from_secs(5),
+    };
+}
+/// HTTP/1 accept loop. `axum::serve` installs no timer, which disables hyper's
+/// header-read timeout and lets one partial head block graceful shutdown forever.
+pub(crate) async fn serve_connections(
+    mut listener: TcpListener,
+    router: Router,
+    limits: ConnectionLimits,
+    shutdown: impl Future<Output = ()>,
+) {
+    use tokio_util::{sync::CancellationToken, task::TaskTracker};
+    let slots = Arc::new(tokio::sync::Semaphore::new(limits.connections));
+    let connections = TaskTracker::new();
+    let draining = CancellationToken::new();
+    let abort = CancellationToken::new();
+    tokio::pin!(shutdown);
+    loop {
+        let slot = tokio::select! {
+            biased;
+            () = &mut shutdown => break,
+            slot = slots.clone().acquire_owned() => slot,
+        };
+        let Ok(slot) = slot else { break };
+        let (io, _) = tokio::select! {
+            biased;
+            () = &mut shutdown => break,
+            // Retries transient accept errors, including descriptor exhaustion.
+            accepted = axum::serve::Listener::accept(&mut listener) => accepted,
+        };
+        let service = hyper_util::service::TowerToHyperService::new(router.clone());
+        let (draining, abort) = (draining.clone(), abort.clone());
+        connections.spawn(async move {
+            let _slot = slot;
+            let mut builder = hyper::server::conn::http1::Builder::new();
+            builder
+                .timer(hyper_util::rt::TokioTimer::new())
+                .header_read_timeout(limits.header_read);
+            let connection = builder.serve_connection(hyper_util::rt::TokioIo::new(io), service);
+            tokio::pin!(connection);
+            // Connection errors are peer I/O outcomes; requests own their diagnostics.
+            tokio::select! {
+                biased;
+                () = abort.cancelled() => {}
+                _ = connection.as_mut() => {}
+                () = draining.cancelled() => {
+                    connection.as_mut().graceful_shutdown();
+                    tokio::select! {
+                        biased;
+                        () = abort.cancelled() => {}
+                        _ = connection.as_mut() => {}
+                    }
+                }
+            }
+        });
+    }
+    drop(listener);
+    draining.cancel();
+    connections.close();
+    if tokio::time::timeout(limits.drain, connections.wait())
+        .await
+        .is_err()
+    {
+        abort.cancel();
+        connections.wait().await;
     }
 }
 fn ingress_error(path: &str, error: ApiError) -> Response {

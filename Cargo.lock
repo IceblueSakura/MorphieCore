@@ -1382,6 +1382,7 @@ dependencies = [
  "getrandom 0.4.3",
  "httpdate",
  "hyper",
+ "hyper-util",
  "mime",
  "morphiecore-catalog",
  "morphiecore-lowering",

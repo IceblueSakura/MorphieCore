@@ -7,7 +7,7 @@ This plan tracks repairs selected from the 2026-11-21 whole-project review at `b
 | Slice | Defect | Status |
 |---|---|---|
 | 1 | Quadratic stream metadata and history-edit checks | Done |
-| 2 | Unbounded connection heads and shutdown drain | Planned |
+| 2 | Unbounded connection heads and shutdown drain | Done |
 | 3 | Post-publication failures abort without protocol terminals | Planned |
 | 4 | Data-less SSE blocks dispatched as events | Planned |
 | 5 | Chat-upstream calls withheld from Messages clients until finish | Planned |
@@ -31,7 +31,7 @@ Every slice ends with focused tests at the responsible layer, the [offline basel
 
 **Repair.** Serve with an explicit accept loop over `hyper_util` with a Tokio timer, a header-read timeout, and a connection cap. Bound the post-signal connection drain, then continue to request-task and storage drains.
 
-**Exit.** Tests show a stalled request head is closed, excess connections wait or close without admitting requests, and shutdown completes with a stalled head open.
+**Result.** A gateway-owned HTTP/1 accept loop applies a 90 s header-read timeout, a 512-connection cap and a 5 s drain bound ([listener bounds](architecture/runtime-and-routing.md#reverse-proxy-delivery)). Tests show a stalled head is closed, a connection beyond the cap waits until a slot is released, and shutdown completes with a stalled head open; removing the timer or the drain abort fails them.
 
 ## Slice 3 — Honest post-publication terminals
 
