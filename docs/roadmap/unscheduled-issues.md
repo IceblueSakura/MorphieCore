@@ -81,6 +81,7 @@ The [source and feasibility recheck](../refs/2026-10-27-client-ir-boundaries.md#
 | Legacy function carriers | Retained rejection | A real client needs a constrained association/default/conflict/history contract |
 | Broader settings echo and richer output grouping | Case-specific ladder application | A concrete failure has an exact mapping or a bounded approximation; preserve report authority and content-coordinate ownership |
 | Messages custom-input wrapping | Conditional Stage-3 follow-up S3-T6; not a core exit prerequisite | Declaration, arguments, return/history mapping and client execution expectations are selected together |
+| Assistant text after a call toward Chat targets | A Messages assistant turn `[text, tool_use, text]` lowers to Chat as `assistant(content, tool_calls)`, `assistant(text)`, then the tool results, which strict Chat services reject. The Chat stream decoder now closes text at the first call, so a rare Chat upstream that emits content after its calls produces this history shape. | Select a Chat regrouping rule for post-call assistant text, such as one named approximation that joins it into the call-bearing message, with independent request expectations |
 | Token scope and SDK drift | Investigate only the selected target/field; no automatic source-pin promotion | A bounded budget rule or reviewed version change has independent expectations and a reachable target path |
 
 ### Routing qualification

@@ -2126,11 +2126,11 @@ fn messages_serializes_interleaved_owners_parts_and_delayed_signatures() {
                     "choices":[],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3,
                         "prompt_tokens_details":{"cached_tokens":0}}}),
             ];
-            let input = frames
+            let mut input = frames
                 .iter()
                 .map(|frame| format!("data: {frame}\n\n"))
-                .collect::<String>()
-                + "data: [DONE]\n\n";
+                .collect::<Vec<_>>();
+            input.push("data: [DONE]\n\n".into());
             let mut attempt = Attempt::new(
                 GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None),
                 1 << 20,
@@ -2146,20 +2146,32 @@ fn messages_serializes_interleaved_owners_parts_and_delayed_signatures() {
                 true,
             );
             let mut output = vec![];
-            for fragment in input.as_bytes().chunks(13) {
-                let mut rest = fragment;
-                while !rest.is_empty() {
-                    let (used, events) = attempt.push(rest).unwrap();
-                    assert!(used > 0);
-                    output.extend(
-                        delivery
-                            .encode_events(&attempt, &events)
-                            .unwrap()
-                            .into_bytes()
-                            .into_iter()
-                            .flatten(),
+            for (index, frame) in input.iter().enumerate() {
+                if index == 5 {
+                    // Calls stream before the finish chunk: the text before the
+                    // first call closed, so neither waits for finish_reason.
+                    let early = std::str::from_utf8(&output).unwrap();
+                    assert!(
+                        early.contains(r#""type":"tool_use","id":"first""#),
+                        "{early}"
                     );
-                    rest = &rest[used..];
+                    assert!(early.contains(r#""partial_json":"1}""#), "{early}");
+                }
+                for fragment in frame.as_bytes().chunks(13) {
+                    let mut rest = fragment;
+                    while !rest.is_empty() {
+                        let (used, events) = attempt.push(rest).unwrap();
+                        assert!(used > 0);
+                        output.extend(
+                            delivery
+                                .encode_events(&attempt, &events)
+                                .unwrap()
+                                .into_bytes()
+                                .into_iter()
+                                .flatten(),
+                        );
+                        rest = &rest[used..];
+                    }
                 }
             }
             assert!(!String::from_utf8_lossy(&output).contains("message_stop"));
@@ -2174,12 +2186,14 @@ fn messages_serializes_interleaved_owners_parts_and_delayed_signatures() {
             );
             let delivered =
                 crate::messages_stream::messages_stream_body(std::str::from_utf8(&output).unwrap());
+            // Text after a call is a new owner in source order.
             assert_eq!(
                 delivered["content"],
                 json!([
-                    {"type":"text","text":"AB"},
+                    {"type":"text","text":"A"},
                     {"type":"tool_use","id":"first","name":"lookup","input":{"n":1}},
                     {"type":"tool_use","id":"second","name":"lookup","input":{"n":2}},
+                    {"type":"text","text":"B"},
                 ])
             );
             assert_eq!(delivered["stop_reason"], "tool_use");

@@ -10,7 +10,7 @@ This plan tracks repairs selected from the 2026-11-21 whole-project review at `b
 | 2 | Unbounded connection heads and shutdown drain | Done |
 | 3 | Post-publication failures abort without protocol terminals | Done |
 | 4 | Data-less SSE blocks dispatched as events | Done |
-| 5 | Chat-upstream calls withheld from Messages clients until finish | Planned |
+| 5 | Chat-upstream calls withheld from Messages clients until finish | Done |
 | 6 | Messages delivery rejects upstream call IDs after dispatch | Planned |
 | 7 | OAuth renewal withdraws valid access and over-quarantines | Planned |
 | 8 | Low-impact contract mismatches | Planned |
@@ -53,9 +53,9 @@ Every slice ends with focused tests at the responsible layer, the [offline basel
 
 **Defect.** The Chat decoder closes the assistant text part and item only at `finish_reason`; the Messages client schedule holds later owners behind the open text block, so tool-use blocks and their argument deltas are withheld until the response finishes.
 
-**Repair.** Close the open text part and message item when the first tool call opens; later content opens a new message item.
+**Repair.** Close open reasoning and text owners as completed when the first tool call opens; later content opens a new message owner in the same envelope.
 
-**Exit.** A text-then-call Chat stream delivers the Messages tool-use start and argument deltas before the finish chunk; existing ordering and history tests pass.
+**Result.** A text-then-call Chat stream delivers the Messages tool-use start and every argument delta before the finish chunk; the old decoder fails that assertion. Content after a call is now delivered in source order (`text, tool_use, tool_use, text`) instead of being merged ahead of the calls. The Chat request projection of that history shape is recorded as an [unscheduled issue](roadmap/unscheduled-issues.md#protocol-boundaries).
 
 ## Slice 6 — Messages call-ID delivery
 

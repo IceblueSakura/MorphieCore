@@ -32,6 +32,9 @@ pub(super) struct State {
     pub(super) finish_reason: Option<String>,
     pub(super) extras: crate::openai::dialect::adapter_shapes::Extras,
     pub(super) owner: Option<ItemId>,
+    /// Message owners closed when a call opened; content after a call opens
+    /// a new owner in the same assistant envelope.
+    closed_owners: Vec<ItemId>,
     pub(super) calls: Vec<ItemId>,
     pending_calls: BTreeMap<usize, PendingCall>,
     pending_bytes: usize,
@@ -359,7 +362,6 @@ impl EventDecoder {
         if message_owned {
             self.chat_message_owner(out)?;
         }
-        let owner = self.chat.owner;
         for (key, kind) in [("content", PartKind::Text), ("refusal", PartKind::Refusal)] {
             if let Some(v) = delta.get(key).filter(|v| !v.is_null()) {
                 let fragment = v.as_str().ok_or(CodecError::invalid())?;
@@ -371,7 +373,10 @@ impl EventDecoder {
                     }
                     continue;
                 }
-                let item = owner.ok_or(CodecError::invalid())?;
+                if fragment.is_empty() && self.owner_closed()? {
+                    continue;
+                }
+                let item = self.writable_message_owner(out)?;
                 let existing = self
                     .state()?
                     .item(item)?
@@ -426,7 +431,7 @@ impl EventDecoder {
         out: &mut Vec<StreamEvent>,
     ) -> Result<(), CodecError> {
         if let Some(audio) = delta.get("audio").filter(|v| !v.is_null()) {
-            let item = self.chat.owner.ok_or(CodecError::invalid())?;
+            let item = self.writable_message_owner(out)?;
             if self
                 .state()?
                 .item(item)?
@@ -658,6 +663,15 @@ impl EventDecoder {
             if !finalizing && index != self.chat.calls.len() {
                 break;
             }
+            if self.chat.calls.is_empty() {
+                // Reasoning and text before the first call are complete: Chat
+                // admits no later reasoning, and later text opens a new owner.
+                // Closing them lets block-ordered clients stream the call now.
+                if let Some(owner) = self.chat.owner {
+                    self.materialize_pending_part(owner, out)?;
+                }
+                self.close_open_items(ItemLifecycle::Completed, out)?;
+            }
             let call = self.chat.pending_calls.remove(&index).unwrap();
             let call_id = call.id.unwrap();
             let name = call.name.unwrap();
@@ -710,8 +724,66 @@ impl EventDecoder {
     ) -> Result<(), CodecError> {
         self.flush_chat_calls(true, out)?;
         let owner = self.chat_message_owner(out)?;
-        // A deferred opening fragment materializes its empty part only when
-        // no other content won the part, matching static `content: ""`.
+        self.materialize_pending_part(owner, out)?;
+        let (terminal, details) = crate::openai::terminal::decode_chat_finish(
+            reason.as_str().ok_or(CodecError::invalid())?,
+            &self.adaptation,
+            !self.chat.calls.is_empty(),
+        )?;
+        self.close_open_items(
+            if terminal == StreamTerminal::Completed {
+                ItemLifecycle::Completed
+            } else {
+                ItemLifecycle::Incomplete
+            },
+            out,
+        )?;
+        // The calls belong to the message that opened before them.
+        if !self.chat.calls.is_empty() {
+            let mut owners = self.chat.closed_owners.clone();
+            owners.push(owner);
+            let mut members = vec![];
+            for item in self.state()?.items() {
+                if owners.contains(&item.id) {
+                    if item.parts.iter().any(|p| p.kind == PartKind::Refusal) {
+                        return Err(CodecError::invalid());
+                    }
+                    members.push(item.id);
+                } else if self.chat.calls.contains(&item.id) {
+                    members.push(item.id);
+                }
+            }
+            let anchor = owners[0];
+            let group = MessageEnvelope::new(
+                GroupId::new(anchor.scope(), anchor.get()),
+                MessageEnvelopeRole::Assistant,
+                members,
+            )?;
+            self.emit(StreamEvent::MessageEnvelope(group), out)?;
+        }
+        self.chat.finish_reason = reason.as_str().map(str::to_owned);
+        self.chat.pending = Some((terminal, details));
+        if let Some(value) = terminal_usage {
+            let usage = crate::openai::accounting::usage(
+                Some(value),
+                GenerationApi::Chat,
+                &self.adaptation,
+                &mut self.evidence,
+                crate::conversion::generation::ConversionBoundary::EventDecode,
+            )?
+            .ok_or(CodecError::Invalid(ShapeReason::UsageTail))?;
+            self.emit(StreamEvent::Usage(usage), out)?;
+        }
+        Ok(())
+    }
+
+    /// A deferred opening fragment materializes its empty part only when no
+    /// other content won the part, matching static `content: ""`.
+    fn materialize_pending_part(
+        &mut self,
+        owner: ItemId,
+        out: &mut Vec<StreamEvent>,
+    ) -> Result<(), CodecError> {
         if let Some(kind) = self.chat.pending_part.take()
             && self.state()?.item(owner)?.parts.is_empty()
         {
@@ -725,11 +797,20 @@ impl EventDecoder {
                 out,
             )?;
         }
-        let (terminal, details) = crate::openai::terminal::decode_chat_finish(
-            reason.as_str().ok_or(CodecError::invalid())?,
-            &self.adaptation,
-            !self.chat.calls.is_empty(),
-        )?;
+        Ok(())
+    }
+    fn owner_closed(&self) -> Result<bool, CodecError> {
+        Ok(match self.chat.owner {
+            Some(item) => self.state()?.item(item)?.status.is_some(),
+            None => false,
+        })
+    }
+    /// Close every open item in source order, recording audio fidelity.
+    fn close_open_items(
+        &mut self,
+        status: ItemLifecycle,
+        out: &mut Vec<StreamEvent>,
+    ) -> Result<(), CodecError> {
         let items = self.state()?.items().to_vec();
         for item in items {
             if item.status.is_some() {
@@ -764,52 +845,22 @@ impl EventDecoder {
             self.emit(
                 StreamEvent::ItemFinished {
                     item: item.id,
-                    status: if terminal == StreamTerminal::Completed {
-                        ItemLifecycle::Completed
-                    } else {
-                        ItemLifecycle::Incomplete
-                    },
+                    status,
                     replay: None,
                 },
                 out,
             )?;
         }
-        // The calls belong to the message that opened before them.
-        if !self.chat.calls.is_empty() {
-            if self
-                .state()?
-                .item(owner)?
-                .parts
-                .iter()
-                .any(|p| p.kind == PartKind::Refusal)
-            {
-                return Err(CodecError::invalid());
-            }
-            let mut members = vec![owner];
-            members.extend(&self.chat.calls);
-            let group = MessageEnvelope::new(
-                GroupId::new(owner.scope(), owner.get()),
-                MessageEnvelopeRole::Assistant,
-                members,
-            )?;
-            self.emit(StreamEvent::MessageEnvelope(group), out)?;
-        }
-        self.chat.finish_reason = reason.as_str().map(str::to_owned);
-        self.chat.pending = Some((terminal, details));
-        if let Some(value) = terminal_usage {
-            let usage = crate::openai::accounting::usage(
-                Some(value),
-                GenerationApi::Chat,
-                &self.adaptation,
-                &mut self.evidence,
-                crate::conversion::generation::ConversionBoundary::EventDecode,
-            )?
-            .ok_or(CodecError::Invalid(ShapeReason::UsageTail))?;
-            self.emit(StreamEvent::Usage(usage), out)?;
-        }
         Ok(())
     }
-
+    /// Message content after a call opened belongs to a new owner.
+    fn writable_message_owner(&mut self, out: &mut Vec<StreamEvent>) -> Result<ItemId, CodecError> {
+        if self.owner_closed()? {
+            let closed = self.chat.owner.take().expect("closed owner");
+            self.chat.closed_owners.push(closed);
+        }
+        self.chat_message_owner(out)
+    }
     fn chat_message_owner(&mut self, out: &mut Vec<StreamEvent>) -> Result<ItemId, CodecError> {
         if let Some(item) = self.chat.owner {
             return Ok(item);
