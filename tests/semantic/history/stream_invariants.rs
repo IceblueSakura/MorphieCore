@@ -276,6 +276,65 @@ fn probability_deltas_and_final_metadata_share_the_part_budget() {
 }
 
 #[test]
+fn long_probability_streams_are_reduced_incrementally() {
+    // One delta per token is the normal Chat shape; revalidating the
+    // accumulated prefix per delta made this stream take minutes.
+    const TOKENS: usize = 16_000;
+    let item = ItemId::new(1);
+    let part = PartId::new(1);
+    let mut state = StreamState::new();
+    for event in [event(0), event(1), event(2)] {
+        state = reduce(state, event).unwrap();
+    }
+    let number = |v| serde_json::Number::from_f64(v).unwrap();
+    let probability = Logprob {
+        token: "tok".into(),
+        logprob: number(-0.25),
+        bytes: None,
+        top_logprobs: Some(vec![
+            TopLogprob {
+                token: Some("alt".into()),
+                logprob: Some(number(-1.5)),
+                bytes: None,
+            };
+            5
+        ]),
+    };
+    for _ in 0..TOKENS {
+        state = reduce(
+            state,
+            StreamEvent::Delta {
+                item,
+                part,
+                fragment: "tok".into(),
+                logprobs: vec![probability.clone()],
+            },
+        )
+        .unwrap();
+    }
+    let expected = vec![probability; TOKENS];
+    assert_eq!(
+        state.part(item, part).unwrap().logprobs.as_ref(),
+        Some(&expected)
+    );
+    state = reduce(state, StreamEvent::ValueFinished { item, part }).unwrap();
+    state = reduce(
+        state,
+        StreamEvent::TextMetadata {
+            item,
+            part,
+            annotations: vec![],
+            logprobs: Some(expected),
+        },
+    )
+    .unwrap();
+    for event in [event(5), event(6), event(7)] {
+        state = reduce(state, event).unwrap();
+    }
+    assert_eq!(materialize(&state).unwrap().outcome(), Outcome::Completed);
+}
+
+#[test]
 fn replay_replacement_refunds_only_its_previous_charge_at_the_stream_limit() {
     let mut state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
     let item = ItemId::new(1);

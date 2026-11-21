@@ -11,10 +11,14 @@ pub struct StreamPart {
     pub finished: bool,
     pub annotations: Vec<Annotation>,
     pub logprobs: Option<Vec<Logprob>>,
-    pub(super) metadata_bytes: usize,
+    pub(super) annotation_bytes: usize,
+    pub(super) logprob_bytes: usize,
     pub(super) metadata_finished: bool,
 }
 impl StreamPart {
+    pub(super) fn metadata_bytes(&self) -> usize {
+        self.annotation_bytes.saturating_add(self.logprob_bytes)
+    }
     pub fn value(&self) -> &StreamPartValue {
         &self.data
     }
@@ -40,6 +44,7 @@ pub struct StreamState {
     pub(super) items: Vec<StreamItem>,
     pub(super) message_envelopes: Vec<MessageEnvelope>,
     pub(super) part_ids: BTreeSet<PartId>,
+    pub(super) annotation_count: usize,
     pub(super) terminal: Option<StreamTerminal>,
     pub(super) usage: UsageReports,
     pub(super) safety_reports: Vec<SafetyReport>,

@@ -6,7 +6,7 @@ This plan tracks repairs selected from the 2026-11-21 whole-project review at `b
 
 | Slice | Defect | Status |
 |---|---|---|
-| 1 | Quadratic stream metadata and history-edit checks | Planned |
+| 1 | Quadratic stream metadata and history-edit checks | Done |
 | 2 | Unbounded connection heads and shutdown drain | Planned |
 | 3 | Post-publication failures abort without protocol terminals | Planned |
 | 4 | Data-less SSE blocks dispatched as events | Planned |
@@ -21,9 +21,9 @@ Every slice ends with focused tests at the responsible layer, the [offline basel
 
 **Defect.** `StreamEvent::Delta` with logprobs clones, revalidates and re-serializes the whole accumulated logprob vector ([reduce](../crates/morphiecore-semantic/src/task/generation/stream/reduce.rs)); annotation events re-sum every annotation. Decoder, projection and encoder each reduce, so a 4000-token `top_logprobs: 20` stream costs over 10 s of async-worker CPU per pass. `check_call_edits` ([identity](../crates/morphiecore-semantic/src/task/generation/identity.rs)) compares every source operation against every edited item.
 
-**Repair.** Validate and size only appended logprobs and annotations, keeping running per-part metadata bytes and stream-wide annotation counts. Index source operations once by item ID and alias for edit checks.
+**Repair.** Validate and size only appended logprobs and annotations, keeping running per-part annotation/logprob bytes and a stream-wide annotation count. Index item positions once for call-edit, protected-edit, envelope and participant checks; instruction order uses prefix/suffix bounds instead of pairwise scans.
 
-**Exit.** Existing limit and lifecycle assertions pass unchanged; a regression test bounds a long logprob stream and a large call/result history to linear work.
+**Result.** A 16,000-delta `top_logprobs: 5` stream reduces in under a second in a debug build (previously over 60 s), and `retain_items` over 32,000 call/result pairs takes 58 ms in release (previously 5.7 s). Existing exact-budget and lifecycle assertions pass unchanged; a new test pins instruction-crossing rejection.
 
 ## Slice 2 — Ingress connection bounds and bounded shutdown
 

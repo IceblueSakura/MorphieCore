@@ -1,5 +1,6 @@
 //! Atomic caller-supplied edits and content-free adaptations, not a history store.
 use super::*;
+use crate::task::generation::history::envelope::item_positions;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone)]
@@ -308,14 +309,30 @@ pub(in crate::task::generation) fn check_protected_edits(
 ) -> Result<(), GenerationError> {
     let before = call_participants(source, source_envelopes);
     let after = call_participants(final_items, final_envelopes);
-    for (old_position, (id, old)) in source.iter().enumerate() {
-        let Some((new_position, (_, new))) = final_items
-            .iter()
-            .enumerate()
-            .find(|(_, (next, _))| next == id)
-        else {
-            continue;
-        };
+    let positions = item_positions(final_items);
+    // Final positions of surviving source items, in source order. An instruction
+    // keeps its relative order iff every earlier survivor stays before it and
+    // every later survivor stays after it.
+    let survivors = source
+        .iter()
+        .enumerate()
+        .filter_map(|(old, (id, _))| positions.get(id).map(|new| (old, *new)))
+        .collect::<Vec<_>>();
+    let mut earlier_max = Vec::with_capacity(survivors.len());
+    let mut highest = None;
+    for (_, new) in &survivors {
+        earlier_max.push(highest);
+        highest = highest.max(Some(*new));
+    }
+    let mut later_min = vec![None; survivors.len()];
+    let mut lowest: Option<usize> = None;
+    for (index, (_, new)) in survivors.iter().enumerate().rev() {
+        later_min[index] = lowest;
+        lowest = Some(lowest.map_or(*new, |low| low.min(*new)));
+    }
+    for (survivor, (old_position, new_position)) in survivors.iter().enumerate() {
+        let (id, old) = &source[*old_position];
+        let new = &final_items[*new_position].1;
         if std::mem::discriminant(old) != std::mem::discriminant(new) {
             return Err(GenerationError::InvalidContextTransform);
         }
@@ -324,17 +341,12 @@ pub(in crate::task::generation) fn check_protected_edits(
         {
             return Err(GenerationError::InvalidContextTransform);
         }
-        if let (Item::Instruction(old), Item::Instruction(new)) = (old, new) {
-            if old.participant != new.participant {
-                return Err(GenerationError::InvalidContextTransform);
-            }
-            for (other_position, (other, _)) in source.iter().enumerate() {
-                if let Some(position) = final_items.iter().position(|(id, _)| id == other)
-                    && (other_position < old_position) != (position < new_position)
-                {
-                    return Err(GenerationError::InvalidContextTransform);
-                }
-            }
+        if let (Item::Instruction(old), Item::Instruction(new)) = (old, new)
+            && (old.participant != new.participant
+                || earlier_max[survivor].is_some_and(|p| p > *new_position)
+                || later_min[survivor].is_some_and(|p| p < *new_position))
+        {
+            return Err(GenerationError::InvalidContextTransform);
         }
         if let (Item::Message(old), Item::Message(new)) = (old, new)
             && (old.role != new.role
@@ -353,15 +365,12 @@ fn call_participants<'a>(
     items: &'a [(ItemId, Item)],
     groups: &[MessageEnvelope],
 ) -> BTreeMap<ItemId, Option<&'a Text>> {
+    let positions = item_positions(items);
     let mut participants = BTreeMap::new();
     for group in groups {
         let mut participant = None;
         for id in group.members() {
-            match items
-                .iter()
-                .find(|(owner, _)| owner == id)
-                .map(|(_, item)| item)
-            {
+            match positions.get(id).map(|index| &items[*index].1) {
                 Some(Item::Message(message)) => participant = message.participant.as_ref(),
                 Some(Item::ToolCall(_) | Item::CustomCall(_)) => {
                     participants.insert(*id, participant);

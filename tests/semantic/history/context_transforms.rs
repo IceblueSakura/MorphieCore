@@ -351,3 +351,55 @@ fn edits_never_orphan_results_and_relations_have_one_final_owner() {
     assert_eq!(edited.request().items().len(), 2);
     assert_eq!(source.items().len(), 3);
 }
+
+#[test]
+fn edits_cannot_move_items_across_an_instruction() {
+    let instruction = (
+        ItemId::new(3),
+        Item::Instruction(Instruction {
+            participant: None,
+            parts: vec![Part::new(PartId::new(3), text("rules"))],
+            status: None,
+        }),
+    );
+    let source = GenerationRequest::new(
+        vec![
+            message(1, "first"),
+            message(2, "second"),
+            instruction.clone(),
+            message(4, "fourth"),
+        ],
+        GenerationControls::default(),
+    )
+    .unwrap();
+    let edit = |items| source.clone().with_items(items);
+    assert!(
+        edit(vec![
+            message(2, "second"),
+            message(1, "first"),
+            instruction.clone(),
+            message(4, "fourth"),
+        ])
+        .is_ok()
+    );
+    assert!(edit(vec![message(1, "first"), instruction.clone()]).is_ok());
+    for crossed in [
+        vec![
+            message(1, "first"),
+            instruction.clone(),
+            message(2, "second"),
+            message(4, "fourth"),
+        ],
+        vec![
+            message(1, "first"),
+            message(2, "second"),
+            message(4, "fourth"),
+            instruction.clone(),
+        ],
+    ] {
+        assert_eq!(
+            edit(crossed).unwrap_err(),
+            GenerationError::InvalidContextTransform
+        );
+    }
+}

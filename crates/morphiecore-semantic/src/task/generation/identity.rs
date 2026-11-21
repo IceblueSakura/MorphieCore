@@ -96,14 +96,27 @@ pub(super) fn check_call_edits(
     source: &[(ItemId, Item)],
     edited: &[(ItemId, Item)],
 ) -> Result<(), crate::task::generation::GenerationError> {
+    use std::collections::BTreeMap;
+    // Index the edited history once so whole-history copies stay O(n log n).
+    let mut by_owner = BTreeMap::<ItemId, Vec<&Item>>::new();
+    let mut by_alias = BTreeMap::<_, Vec<&Item>>::new();
+    for (next, value) in edited {
+        by_owner.entry(*next).or_default().push(value);
+        if let Some(alias) = call_alias(value) {
+            by_alias.entry(alias).or_default().push(value);
+        }
+    }
     for (owner, old) in source.iter().filter(|(_, item)| item.is_operation()) {
-        for (next, value) in edited {
-            if (*owner == *next
-                || call_alias(old).is_some() && call_alias(old) == call_alias(value))
-                && !same_call_meaning(old, value)
-            {
-                return Err(crate::task::generation::GenerationError::InvalidDependency);
-            }
+        let same_owner = by_owner.get(owner).into_iter().flatten();
+        let same_alias = call_alias(old)
+            .and_then(|alias| by_alias.get(&alias))
+            .into_iter()
+            .flatten();
+        if same_owner
+            .chain(same_alias)
+            .any(|value| !same_call_meaning(old, value))
+        {
+            return Err(crate::task::generation::GenerationError::InvalidDependency);
         }
     }
     Ok(())

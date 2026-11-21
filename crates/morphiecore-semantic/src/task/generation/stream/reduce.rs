@@ -140,7 +140,8 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 finished: false,
                 annotations: vec![],
                 logprobs: None,
-                metadata_bytes: 0,
+                annotation_bytes: 0,
+                logprob_bytes: 0,
                 metadata_finished: false,
             });
         }
@@ -158,7 +159,7 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 .data
                 .bytes()?
                 .saturating_add(fragment.len())
-                .saturating_add(target.metadata_bytes)
+                .saturating_add(target.metadata_bytes())
                 > MAX_TEXT_BYTES
             {
                 return Err(EventError::Limit);
@@ -172,23 +173,30 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 ) {
                     return Err(EventError::Lifecycle);
                 }
-                let mut probs = state
-                    .part(item, part)?
-                    .logprobs
-                    .as_ref()
-                    .cloned()
-                    .unwrap_or_default();
-                probs.extend(logprobs);
-                validate_logprobs(&probs)?;
-                let probs = Some(probs);
-                let bytes = metadata_cost(&state.part(item, part)?.annotations, &probs)?;
-                state.charge(bytes.saturating_sub(state.part(item, part)?.metadata_bytes))?;
-                let p = state.open_part(item, part)?;
-                if p.data.bytes()?.saturating_add(bytes) > MAX_TEXT_BYTES {
+                // Validate and size only the appended entries; the accumulated
+                // prefix was already checked when it arrived.
+                validate_logprobs(&logprobs)?;
+                let p = state.part(item, part)?;
+                let known = p.logprobs.as_ref().map(Vec::len);
+                if known.unwrap_or(0).saturating_add(logprobs.len()) > MAX_ITEMS {
                     return Err(EventError::Limit);
                 }
-                p.metadata_bytes = bytes;
-                p.logprobs = probs;
+                let appended = logprob_cost(&logprobs)?;
+                let logprob_bytes = match known {
+                    None => appended,
+                    // Join two JSON arrays: drop one bracket pair, add a separator.
+                    Some(n) => (p.logprob_bytes + appended - 2).saturating_add(usize::from(n > 0)),
+                };
+                let total = p.annotation_bytes.saturating_add(logprob_bytes);
+                if total > MAX_TEXT_BYTES || p.data.bytes()?.saturating_add(total) > MAX_TEXT_BYTES
+                {
+                    return Err(EventError::Limit);
+                }
+                let added = logprob_bytes - p.logprob_bytes;
+                state.charge(added)?;
+                let p = state.open_part(item, part)?;
+                p.logprob_bytes = logprob_bytes;
+                p.logprobs.get_or_insert_default().extend(logprobs);
             }
         }
         StreamEvent::AudioDelta { item, part, update } => {
@@ -217,17 +225,17 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 return Err(EventError::Lifecycle);
             }
             validate_logprobs(&logprobs)?;
-            let value = Some(logprobs);
-            let n = metadata_cost(&p.annotations, &value)?;
-            let old = p.metadata_bytes;
-            if p.data.bytes()?.saturating_add(n) > MAX_TEXT_BYTES {
+            let logprob_bytes = logprob_cost(&logprobs)?;
+            let total = p.annotation_bytes.saturating_add(logprob_bytes);
+            if total > MAX_TEXT_BYTES || p.data.bytes()?.saturating_add(total) > MAX_TEXT_BYTES {
                 return Err(EventError::Limit);
             }
+            let old = p.logprob_bytes;
             state.bytes -= old;
-            state.charge(n)?;
+            state.charge(logprob_bytes)?;
             let p = state.open_part(item, part)?;
-            p.logprobs = value;
-            p.metadata_bytes = n;
+            p.logprobs = Some(logprobs);
+            p.logprob_bytes = logprob_bytes;
         }
         StreamEvent::AnnotationAdded {
             item,
@@ -235,14 +243,7 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             annotation,
         } => {
             annotation.check_source(&state.resources)?;
-            if state
-                .items
-                .iter()
-                .flat_map(|i| &i.parts)
-                .map(|p| p.annotations.len())
-                .sum::<usize>()
-                >= MAX_ITEMS
-            {
+            if state.annotation_count >= MAX_ITEMS {
                 return Err(EventError::Limit);
             }
             let p = state.open_part(item, part)?;
@@ -252,17 +253,21 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             if p.metadata_finished {
                 return Err(EventError::Lifecycle);
             }
-            let mut annotations = p.annotations.clone();
-            annotations.push(annotation);
-            let n = metadata_cost(&annotations, &p.logprobs)?;
-            let old = p.metadata_bytes;
-            state.charge(n.saturating_sub(old))?;
-            let p = state.open_part(item, part)?;
-            if p.data.bytes()?.saturating_add(n) > MAX_TEXT_BYTES {
+            let annotation_bytes = p
+                .annotation_bytes
+                .checked_add(annotation.bytes())
+                .filter(|n| *n <= MAX_TEXT_BYTES)
+                .ok_or(EventError::Limit)?;
+            let total = annotation_bytes.saturating_add(p.logprob_bytes);
+            if total > MAX_TEXT_BYTES || p.data.bytes()?.saturating_add(total) > MAX_TEXT_BYTES {
                 return Err(EventError::Limit);
             }
-            p.annotations = annotations;
-            p.metadata_bytes = n;
+            let added = annotation_bytes - p.annotation_bytes;
+            state.charge(added)?;
+            state.annotation_count += 1;
+            let p = state.open_part(item, part)?;
+            p.annotations.push(annotation);
+            p.annotation_bytes = annotation_bytes;
         }
         StreamEvent::TextMetadata {
             item,
@@ -273,17 +278,11 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             for a in &annotations {
                 a.check_source(&state.resources)?;
             }
-            let total = state
-                .items
-                .iter()
-                .flat_map(|i| &i.parts)
-                .map(|p| p.annotations.len())
-                .sum::<usize>();
-            if total.saturating_add(
-                annotations
-                    .len()
-                    .saturating_sub(state.part(item, part)?.annotations.len()),
-            ) > MAX_ITEMS
+            let known = state.part(item, part)?.annotations.len();
+            if state
+                .annotation_count
+                .saturating_add(annotations.len().saturating_sub(known))
+                > MAX_ITEMS
             {
                 return Err(EventError::Limit);
             }
@@ -312,14 +311,22 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 annotations.clone(),
                 logprobs.clone(),
             )?;
-            let new_bytes = metadata_cost(content.annotations(), content.logprobs())?;
-            let old_bytes = p.metadata_bytes;
+            let annotation_bytes = annotation_cost(content.annotations())?;
+            let logprob_bytes = content.logprobs().as_deref().map_or(Ok(0), logprob_cost)?;
+            if annotation_bytes.saturating_add(logprob_bytes) > MAX_TEXT_BYTES {
+                return Err(EventError::Limit);
+            }
+            let old_bytes = p.metadata_bytes();
+            // `starts_with` above guarantees the replacement only appends.
+            let added = annotations.len() - p.annotations.len();
             state.bytes -= old_bytes;
-            state.charge(new_bytes)?;
+            state.charge(annotation_bytes.saturating_add(logprob_bytes))?;
+            state.annotation_count += added;
             let p = state.open_part(item, part)?;
             p.annotations = annotations;
             p.logprobs = logprobs;
-            p.metadata_bytes = new_bytes;
+            p.annotation_bytes = annotation_bytes;
+            p.logprob_bytes = logprob_bytes;
             p.metadata_finished = true;
         }
         StreamEvent::ValueFinished { item, part } => {
@@ -470,26 +477,14 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
     }
     Ok(state)
 }
-fn metadata_cost(
-    annotations: &[Annotation],
-    probs: &Option<Vec<Logprob>>,
-) -> Result<usize, EventError> {
-    if annotations.is_empty() && probs.is_none() {
-        return Ok(0);
-    }
-    let a = annotations.iter().try_fold(0usize, |n, a| {
+fn annotation_cost(annotations: &[Annotation]) -> Result<usize, EventError> {
+    annotations.iter().try_fold(0usize, |n, a| {
         n.checked_add(a.bytes())
             .filter(|n| *n <= MAX_TEXT_BYTES)
             .ok_or(EventError::Limit)
-    })?;
-    let p = probs
-        .as_ref()
-        .map(|p| crate::value::json_size(p, MAX_TEXT_BYTES).map_err(|_| EventError::Limit))
-        .transpose()?
-        .unwrap_or(0);
-    let total = a.saturating_add(p);
-    if total > MAX_TEXT_BYTES {
-        return Err(EventError::Limit);
-    }
-    Ok(total)
+    })
+}
+/// Serialized size of a logprob array, including its brackets.
+fn logprob_cost(probs: &[Logprob]) -> Result<usize, EventError> {
+    crate::value::json_size(&probs, MAX_TEXT_BYTES).map_err(|_| EventError::Limit)
 }

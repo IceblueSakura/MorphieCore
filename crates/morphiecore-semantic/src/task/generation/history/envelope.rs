@@ -60,6 +60,17 @@ impl MessageEnvelope {
     }
 }
 
+/// First position of each item ID, so per-member lookups stay logarithmic.
+pub(in crate::task::generation) fn item_positions(
+    items: &[(ItemId, Item)],
+) -> std::collections::BTreeMap<ItemId, usize> {
+    let mut positions = std::collections::BTreeMap::new();
+    for (index, (id, _)) in items.iter().enumerate() {
+        positions.entry(*id).or_insert(index);
+    }
+    positions
+}
+
 /// Validated envelopes of one request or response. Protocol views, such as Chat's
 /// call ownership, are derived at their boundary.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -82,6 +93,7 @@ impl MessageEnvelopes {
         if self.values.len() > MAX_ITEMS {
             return Err(GenerationError::Limit);
         }
+        let positions = item_positions(items);
         let mut ids = BTreeSet::new();
         let mut members = BTreeSet::new();
         for group in &self.values {
@@ -91,9 +103,9 @@ impl MessageEnvelopes {
             let anchor = group
                 .before
                 .map(|before| {
-                    items
-                        .iter()
-                        .position(|(id, _)| *id == before)
+                    positions
+                        .get(&before)
+                        .copied()
                         .ok_or(GenerationError::InvalidMessageGroup)
                 })
                 .transpose()?;
@@ -105,9 +117,9 @@ impl MessageEnvelopes {
                 if members.len() > MAX_ITEMS {
                     return Err(GenerationError::Limit);
                 }
-                let index = items
-                    .iter()
-                    .position(|(id, _)| id == member)
+                let index = positions
+                    .get(member)
+                    .copied()
                     .ok_or(GenerationError::InvalidMessageGroup)?;
                 if previous.is_some_and(|old| old >= index) || anchor.is_some_and(|a| a > index) {
                     return Err(GenerationError::InvalidMessageGroup);
@@ -148,12 +160,11 @@ impl MessageEnvelopes {
                 .sum::<usize>())
     }
     pub fn edited(&self, items: &[(ItemId, Item)]) -> Result<Self, GenerationError> {
+        let present = items.iter().map(|(id, _)| *id).collect::<BTreeSet<_>>();
         let mut values = self.values.clone();
         values.retain_mut(|group| {
             let was_empty = group.members.is_empty();
-            group
-                .members
-                .retain(|id| items.iter().any(|(owner, _)| owner == id));
+            group.members.retain(|id| present.contains(id));
             was_empty || !group.members.is_empty()
         });
         Self::new(items, values)
