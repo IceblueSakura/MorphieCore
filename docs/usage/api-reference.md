@@ -8,6 +8,7 @@ See [Client Requests](client-requests.md) for generation protocols and [OpenAPI]
 
 - [HTTP API](#http-api)
   - [Static image generation](#static-image-generation)
+  - [Speech synthesis](#speech-synthesis)
   - [Embeddings](#embeddings)
   - [Generation Text model discovery](#generation-text-model-discovery)
   - [Capability discovery and adaptation notice](#capability-discovery-and-adaptation-notice)
@@ -61,6 +62,10 @@ artifacts, output_format = result["data"], result["output_format"]
 ```
 
 See [Qwen model configuration](gateway-configuration.md#qwen-image-candidates) for activation and [native static images](../architecture/adaptation-and-dialects.md#native-static-images) for supported controls. Omit the header for default delivery and for GPT Image.
+
+### Speech synthesis
+
+Enable `gpt-4o-mini-tts` in `models.json` with a named `openai` Platform API-key account for bounded static binary delivery on `POST /v1/audio/speech`. It accepts OpenAI's 13 built-in voices (`alloy`, `ash`, `ballad`, `coral`, `echo`, `fable`, `onyx`, `nova`, `sage`, `shimmer`, `verse`, `marin`, `cedar`), `instructions`, `speed` (`0.25`–`4`), `response_format` (`mp3`, `opus`, `aac`, `flac`, `wav`, `pcm`) and `stream_format: "audio"`. Custom voice objects and `stream_format: "sse"` reject. Narrower `qwen-audio-3.0-tts-plus` (`aliyun-tokenplan-cn`, `mp3` only, `longanlingxin`/`longanlufeng`) and `mimo-v2.5-tts` (`xiaomi`, `wav`/`pcm`/`mp3`, no `speed`) bindings remain separately activatable.
 
 ### Embeddings
 

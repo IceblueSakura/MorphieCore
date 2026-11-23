@@ -262,6 +262,10 @@
       "images": {
         "path": "/v1/images/generations",
         "suffix": "/images/generations"
+      },
+      "speech": {
+        "path": "/v1/audio/speech",
+        "suffix": "/audio/speech"
       }
     },
     "sources": [
@@ -270,6 +274,8 @@
       "https://developers.openai.com/api/docs/models/text-embedding-3-small",
       "https://developers.openai.com/api/docs/models/text-embedding-3-large",
       "https://developers.openai.com/api/reference/resources/images/methods/generate",
+      "https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create",
+      "https://developers.openai.com/api/docs/models/gpt-4o-mini-tts",
       "https://developers.openai.com/api/docs/models/gpt-image-2.6-flare",
       "https://developers.openai.com/api/docs/models/gpt-image-2.6-sunburst",
       "https://developers.openai.com/api/docs/models/gpt-6.2-sol",

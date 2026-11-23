@@ -781,6 +781,15 @@
       "voices": ["longanlingxin", "longanlufeng"],
       "released_at": 1784592000,
       "developer": "Alibaba"
+    },
+    {
+      "provider": "openai",
+      "identity": "openai-speech",
+      "profile": "standard",
+      "model": "gpt-4o-mini-tts",
+      "upstream": "gpt-4o-mini-tts",
+      "released_at": 1742428800,
+      "developer": "OpenAI"
     }
   ],
   "transcription_models": [

@@ -25,6 +25,9 @@
     "qwen-audio-3.0-tts-plus": {
       "account": "primary"
     },
+    "gpt-4o-mini-tts": {
+      "account": "primary"
+    },
     "qwen-audio-3.0-asr-flash": {
       "binding": "tokenplan-qwen-asr",
       "account": "primary"

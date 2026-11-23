@@ -848,6 +848,54 @@ mod tokenplan_speech {
         assert!(prepare(route, provider, &foreign_voice).is_err());
     }
 }
+mod openai_speech {
+    use morphiecore::{
+        execution::speech::prepare, protocol::openai::speech, provider::SecretMaterial,
+        topology::catalog,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn openai_speech_binding_prepares_standard_controls_and_rejects_foreign_voice() {
+        let topology = catalog::default_topology().unwrap();
+        let route = topology
+            .speech_route("gpt-4o-mini-tts")
+            .expect("explicit binding");
+        let provider = topology.provider("openai").unwrap();
+        let request = speech::decode_request(
+            br#"{"model":"gpt-4o-mini-tts","input":"Hi.","voice":"coral","instructions":"Warm.","speed":1.25,"response_format":"opus","stream_format":"audio"}"#,
+        )
+        .unwrap();
+        let secret = SecretMaterial::new("synthetic-only").unwrap();
+        let wire = prepare(route, provider, &request)
+            .unwrap()
+            .authorize(provider, &secret)
+            .unwrap();
+        assert_eq!(wire.origin, "https://api.openai.com");
+        assert_eq!(wire.path, "/v1/audio/speech");
+        assert!(
+            wire.safe_headers
+                .contains(&("accept".into(), "application/octet-stream".into()))
+        );
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&wire.body).unwrap(),
+            json!({
+                "model": "gpt-4o-mini-tts",
+                "input": "Hi.",
+                "voice": "coral",
+                "instructions": "Warm.",
+                "speed": 1.25,
+                "response_format": "opus",
+                "stream_format": "audio",
+            })
+        );
+        assert!(!route.endpoint.execution.streaming);
+        assert!(topology.model("gpt-4o-mini-tts").is_none());
+        let mut foreign_voice = request;
+        foreign_voice.task.set_voice("nonexistent-voice").unwrap();
+        assert!(prepare(route, provider, &foreign_voice).is_err());
+    }
+}
 mod tokenplan_asr {
     use morphiecore::{
         protocol::{aliyun_asr, openai::transcription, transcription::Request},

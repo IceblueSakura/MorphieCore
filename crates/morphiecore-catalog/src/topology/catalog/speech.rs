@@ -26,8 +26,9 @@ pub struct SpeechBinding {
 impl SpeechBinding {
     pub(super) fn voices(&self) -> Result<&[&str], TopologyError> {
         match (self.profile, self.voices.as_deref()) {
+            (UpstreamAdapter::Standard, None) => Ok(crate::protocol::openai::speech::VOICES),
             (UpstreamAdapter::Xiaomi, None) => Ok(crate::protocol::xiaomi_audio::VOICES),
-            (UpstreamAdapter::Xiaomi, Some(_)) | (_, None) => {
+            (UpstreamAdapter::Standard | UpstreamAdapter::Xiaomi, Some(_)) | (_, None) => {
                 Err(TopologyError::InvalidModelBinding)
             }
             (_, Some(voices)) => Ok(voices),
@@ -80,13 +81,18 @@ impl SpeechBinding {
                         .iter()
                         .map(|v| (*v).into())
                         .collect(),
-                    formats: if self.profile == UpstreamAdapter::Xiaomi {
-                        crate::protocol::xiaomi_audio::FORMATS.to_vec()
-                    } else {
-                        vec![AudioEncoding::Mp3]
+                    formats: match self.profile {
+                        UpstreamAdapter::Standard => {
+                            crate::protocol::openai::speech::FORMATS.to_vec()
+                        }
+                        UpstreamAdapter::Xiaomi => crate::protocol::xiaomi_audio::FORMATS.to_vec(),
+                        UpstreamAdapter::AliyunMp3 => vec![AudioEncoding::Mp3],
                     },
-                    instructions: self.profile == UpstreamAdapter::Xiaomi,
-                    speed: false,
+                    instructions: matches!(
+                        self.profile,
+                        UpstreamAdapter::Standard | UpstreamAdapter::Xiaomi
+                    ),
+                    speed: self.profile == UpstreamAdapter::Standard,
                 },
                 credential: self.credential(),
                 execution: ExecutionContract {

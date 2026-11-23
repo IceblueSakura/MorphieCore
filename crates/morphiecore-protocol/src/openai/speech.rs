@@ -12,6 +12,19 @@ use crate::{
 use bytes::Bytes;
 use serde_json::{Value, json};
 
+pub const VOICES: &[&str] = &[
+    "alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse",
+    "marin", "cedar",
+];
+pub const FORMATS: &[AudioEncoding] = &[
+    AudioEncoding::Mp3,
+    AudioEncoding::Opus,
+    AudioEncoding::Aac,
+    AudioEncoding::Flac,
+    AudioEncoding::Wav,
+    AudioEncoding::PcmS16Le24KhzMono,
+];
+
 pub fn valid_model(model: &str) -> bool {
     !model.is_empty()
         && model.len() <= 256

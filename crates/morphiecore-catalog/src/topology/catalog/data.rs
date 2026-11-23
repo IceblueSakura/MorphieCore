@@ -583,20 +583,29 @@ mod tests {
     #[test]
     fn fixed_speech_codec_voices_cannot_be_redeclared_in_topology() {
         let mut catalog = parse(fixture!("deepseek", "fixture", "[]", "")).unwrap();
-        catalog.speech = Box::new([serde_json::from_str(
-            r#"{"provider":"xiaomi","identity":"fixture-speech","profile":"xiaomi",
+        for (valid, invalid) in [
+            (
+                r#"{"provider":"xiaomi","identity":"fixture-speech","profile":"xiaomi",
                     "model":"fixture-tts","upstream":"fixture-tts",
                     "released_at":1,"developer":"Fixture"}"#,
-        )
-        .unwrap()]);
-        assert_eq!(catalog.validate(), Ok(()));
-        catalog.speech = Box::new([serde_json::from_str(
-            r#"{"provider":"xiaomi","identity":"fixture-speech","profile":"xiaomi",
+                r#"{"provider":"xiaomi","identity":"fixture-speech","profile":"xiaomi",
                     "model":"fixture-tts","upstream":"fixture-tts","voices":["fixture-voice"],
                     "released_at":1,"developer":"Fixture"}"#,
-        )
-        .unwrap()]);
-        assert_eq!(catalog.validate(), Err(TopologyError::InvalidModelBinding));
+            ),
+            (
+                r#"{"provider":"openai","identity":"fixture-speech","profile":"standard",
+                    "model":"fixture-tts","upstream":"fixture-tts",
+                    "released_at":1,"developer":"Fixture"}"#,
+                r#"{"provider":"openai","identity":"fixture-speech","profile":"standard",
+                    "model":"fixture-tts","upstream":"fixture-tts","voices":["fixture-voice"],
+                    "released_at":1,"developer":"Fixture"}"#,
+            ),
+        ] {
+            catalog.speech = Box::new([serde_json::from_str(valid).unwrap()]);
+            assert_eq!(catalog.validate(), Ok(()));
+            catalog.speech = Box::new([serde_json::from_str(invalid).unwrap()]);
+            assert_eq!(catalog.validate(), Err(TopologyError::InvalidModelBinding));
+        }
     }
 
     #[test]

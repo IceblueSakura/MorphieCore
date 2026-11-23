@@ -649,12 +649,28 @@ fn speech_and_images_do_not_activate_from_generation_accounts() {
         ("aliyun-tokenplan-cn", "primary", "synthetic-first"),
         ("openai", "backup", "synthetic-second"),
     ];
-    let boot=Fixture::new(service(),json!({"models":{
-        "qwen-audio-3.0-tts-plus":{"account":"primary"},"gpt-image-2.6-flare":{"account":"backup"}
-    }}),&keys).unwrap();
+    let boot = Fixture::new(
+        service(),
+        json!({"models":{
+            "qwen-audio-3.0-tts-plus":{"account":"primary"},
+            "gpt-4o-mini-tts":{"account":"backup"},
+            "gpt-image-2.6-flare":{"account":"backup"}
+        }}),
+        &keys,
+    )
+    .unwrap();
     assert!(boot.gateway.state.entries.is_empty());
-    assert_eq!(boot.gateway.state.speech.len(), 1);
+    assert_eq!(boot.gateway.state.speech.len(), 2);
     assert_eq!(boot.gateway.state.images.len(), 1);
+    assert_eq!(
+        boot.gateway.state.speech["gpt-4o-mini-tts"]
+            .secret
+            .resolve()
+            .unwrap()
+            .0
+            .expose(),
+        "synthetic-second"
+    );
     assert_eq!(
         boot.gateway.state.images["gpt-image-2.6-flare"][0]
             .secret
@@ -667,6 +683,9 @@ fn speech_and_images_do_not_activate_from_generation_accounts() {
     let view: serde_json::Value = serde_json::from_slice(&boot.gateway.state.models.list).unwrap();
     assert!(view["data"].as_array().unwrap().contains(&json!({
         "id":"qwen-audio-3.0-tts-plus","object":"model","created":1784592000,"owned_by":"Alibaba"
+    })));
+    assert!(view["data"].as_array().unwrap().contains(&json!({
+        "id":"gpt-4o-mini-tts","object":"model","created":1742428800,"owned_by":"OpenAI"
     })));
     let generation = Fixture::new(
         service(),
