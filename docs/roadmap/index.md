@@ -10,6 +10,7 @@ This page owns current scope, planned execution sequence, stage priorities, and 
 - [Planned order](#planned-order)
   - [Execution sequence and work-package rules](#execution-sequence-and-work-package-rules)
   - [Stage 4 scope](#stage-4-scope)
+    - [OpenAI direct binding migration](#openai-direct-binding-migration)
     - [Decision API closure](#decision-api-closure)
     - [Stage-4 operation readiness](#stage-4-operation-readiness)
     - [Grok Imagine adaptation](#grok-imagine-adaptation)
@@ -83,6 +84,16 @@ Each Stage-4 family requires an explicit contract selection before implementatio
 | **S4-4b Multipart Uploads** | Chunked upload sessions, part ordering, and cleanup | Ordered part assembly, cancellation cleanup, and bounded memory use |
 | **S4-4c File-reference integration** | Connect resolved file resources to dependent task inputs | Target-scoped references, stale reference rejection, and direct-input fallback |
 | **S4-5 Video** | Async video generation, job status tracking, and artifact access | Bounded polling, status reconciliation, cancellation, and artifact delivery |
+
+#### OpenAI direct binding migration
+
+Implement the [OpenAI Platform route decision](../architecture/decisions.md#routing-and-security-decisions) before adding further OpenAI media bindings. Keep public model labels where the same official model is available. Code and deployment switch independently; do not remove a live candidate without a compatible configuration cutover.
+
+| Binding | Direct cutover gate |
+|---|---|
+| `text-embedding-3-small` | Switch to OpenAI `/v1/embeddings`; verify text and the existing scoped-token contract, width, encoding, and model/usage reports. Leave `text-embedding-3-large` and the other Providers unchanged. Do not assert cross-target vector-space equivalence from name or width. |
+| `gpt-image-2.5-flare` | Switch static Generate to OpenAI `/v1/images/generations` after the standard codec handles native reports, including the documented `safety_identifier`, without weakening known-field validation or inventing metadata. Require a standard SDK to decode one complete default-PNG result. Edit, preview streams and Grok are separate. |
+| `gpt-6-luna` | Qualify the existing native OpenAI Responses binding through the gateway, including stateless tool continuation. Retire the OpenRouter candidate and coordinate any deployed configuration that names it. Keep the independent ChatGPT OAuth binding; do not treat OpenRouter replay as direct OpenAI replay. |
 
 #### Decision API closure
 
