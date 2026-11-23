@@ -1,4 +1,4 @@
-//! Authenticated file transcription, bounded native JSON intake and standard projection.
+//! Authenticated file transcription, bounded native/standard intake and JSON/text projection.
 use super::{
     exchange::Receiver,
     lifecycle::{Admission, TaskOutput},
@@ -7,7 +7,7 @@ use crate::{
     ApiError, Credentials, Runtime, StartupError, TranscriptionEntry, body,
     diagnostics::{Stage, Trace},
     protocol::openai::transcription as codec,
-    semantic::task::speech_recognition::RecognitionResult,
+    semantic::task::speech_recognition::{OutputFormat, RecognitionResult},
     topology::{CompiledTopology, transcription::TranscriptionRoute},
 };
 use axum::{
@@ -16,6 +16,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use std::{collections::BTreeMap, sync::Arc};
+
 pub(crate) type BoundTranscription = super::BoundTask<TranscriptionRoute>;
 pub(crate) fn bind(
     topology: &CompiledTopology,
@@ -99,35 +100,54 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
             crate::error::ErrorKind::ModelNotFound,
         ))?
         .clone();
+    let format = request.task.response_format;
     let prepared =
         crate::execution::transcription::prepare(&entry.route, &entry.provider, &request)
             .map_err(|_| ApiError::invalid())?;
-    admitted.respond(runtime, entry, prepared, Output).await
+    admitted
+        .respond(runtime, entry, prepared, Output { format })
+        .await
 }
 async fn decode(
     receiver: Receiver,
     profile: crate::adapter::transcription::UpstreamAdapter,
+    format: OutputFormat,
     trace: &mut Trace,
 ) -> Result<RecognitionResult, ApiError> {
-    receiver.require_media("application/json")?;
+    receiver.require_media(profile.expected_response_media(format))?;
     let bytes = receiver.collect(trace).await?;
     profile
-        .decode_response(&bytes)
+        .decode_response(&bytes, format)
         .map_err(|_| ApiError::upstream())
 }
 #[cfg(test)]
 pub(crate) async fn receive_for_test(
     upstream: reqwest::Response,
     profile: crate::adapter::transcription::UpstreamAdapter,
+    format: OutputFormat,
     limit: usize,
     trace: &mut Trace,
 ) -> Result<RecognitionResult, ApiError> {
-    decode(Receiver::new(upstream, limit, trace)?, profile, trace).await
+    decode(
+        Receiver::new(upstream, limit, trace)?,
+        profile,
+        format,
+        trace,
+    )
+    .await
 }
-struct Output;
+struct Output {
+    format: OutputFormat,
+}
 impl TaskOutput for Output {
     type Route = TranscriptionRoute;
-    const RESPONSE: body::ResponseType = body::ResponseType::Json;
+
+    fn response_type(&self) -> body::ResponseType {
+        match self.format {
+            OutputFormat::Json => body::ResponseType::Json,
+            OutputFormat::Text => body::ResponseType::Text,
+        }
+    }
 
     fn receive_limit(&self, _: &BoundTranscription, _: &crate::Limits, wire_limit: usize) -> usize {
         wire_limit
@@ -141,12 +161,23 @@ impl TaskOutput for Output {
         lane: &body::Lane<'_>,
         trace: &mut Trace,
     ) -> Result<(), ApiError> {
-        let result = decode(receiver, entry.route.endpoint.profile, trace).await?;
+        let result = decode(receiver, entry.route.endpoint.profile, self.format, trace).await?;
         trace.stage(Stage::Projection);
-        let projected = codec::project_result(&result).map_err(|_| ApiError::upstream())?;
-        crate::semantic::value::json_size(&projected.body, limits.response_bytes)
-            .map_err(|_| ApiError::upstream())?;
-        let bytes = serde_json::to_vec(&projected.body).map_err(|_| ApiError::upstream())?;
+        let projected =
+            codec::project_result(&result, self.format).map_err(|_| ApiError::upstream())?;
+        let bytes = match projected.output {
+            codec::ProjectedOutput::Json(body) => {
+                crate::semantic::value::json_size(&body, limits.response_bytes)
+                    .map_err(|_| ApiError::upstream())?;
+                serde_json::to_vec(&body).map_err(|_| ApiError::upstream())?
+            }
+            codec::ProjectedOutput::Text(bytes) => {
+                if bytes.len() > limits.response_bytes {
+                    return Err(ApiError::upstream());
+                }
+                bytes
+            }
+        };
         body::send_final_frame(lane, bytes.into(), trace).await?;
         Ok(())
     }

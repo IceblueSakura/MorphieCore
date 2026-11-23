@@ -49,6 +49,7 @@ async fn every_task_preserves_retry_after_and_releases_a_failed_head() {
                 _ => tasks::transcription::receive_for_test(
                     upstream,
                     crate::adapter::transcription::UpstreamAdapter::AliyunFlash,
+                    crate::semantic::task::speech_recognition::OutputFormat::Json,
                     4096,
                     &mut trace,
                 )

@@ -81,9 +81,17 @@ pub fn encode_transcription(
     {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
+    if !request.task.languages.is_empty()
+        || !request.task.keywords.is_empty()
+        || request.task.prompt.is_some()
+        || request.task.temperature.is_some()
+    {
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+    }
     let (format, mime) = match request.task.audio.format() {
         InputFormat::Wav => ("wav", "audio/wav"),
         InputFormat::Mp3 => ("mp3", "audio/mpeg"),
+        _ => return Err(CodecError::Unsupported(CarrierReason::Unavailable)),
     };
     let data = format!(
         "data:{mime};base64,{}",
@@ -221,7 +229,11 @@ pub fn decode_transcription(bytes: &[u8]) -> Result<RecognitionResult, CodecErro
         message.content.ok_or_else(CodecError::invalid)?,
         RecognitionReport {
             request_id: completion.id,
-            processed_seconds: completion.usage.and_then(|u| u.seconds),
+            usage: completion
+                .usage
+                .and_then(|u| u.seconds)
+                .map(crate::semantic::task::speech_recognition::RecognitionUsage::duration_seconds),
+            detected_languages: None,
             last_sentence: None,
         },
     )
@@ -290,7 +302,10 @@ mod tests {
         let wire = br#"{"id":"asr-fixture","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"Hello.","audio":null,"tool_calls":null}}],"usage":{"seconds":4}}"#;
         let result = decode_transcription(wire).unwrap();
         assert_eq!(result.text(), "Hello.");
-        assert_eq!(result.report().processed_seconds, Some(4));
+        assert_eq!(
+            result.report().usage,
+            Some(crate::semantic::task::speech_recognition::RecognitionUsage::duration_seconds(4))
+        );
         assert!(result.report().last_sentence.is_none());
         request.task.language = Some("ja".into());
         assert!(encode_transcription(&request, "mimo-v2.5-asr").is_err());

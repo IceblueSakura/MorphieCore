@@ -55,7 +55,7 @@ policy gates; Stage 5 remains unscheduled.
 | Stage | Goal | Exit evidence |
 |---|---|---|
 | **3 — Conditional compatibility follow-ups** | [Conditional packages](unscheduled-issues.md#conditional-stage-3-follow-ups) | Separate policy selection and affected-loop verification; not default Stage-4 or optional Agent blockers |
-| **4 — Modalities, Decision & file resources** | Decision, Audio (Speech/Transcription/Translation), Images, Files/Uploads, and Video at equal priority | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
+| **4 — Modalities, Decision & file resources** | Decision, Audio (Speech/Transcription), Images, Files/Uploads, and Video at equal priority | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
 | **5 — Unscheduled follow-ups** | Citations, tool discovery, hosted tools, server-side compaction, Batch, and Realtime | Requires explicit per-slice design selection and scheduling prior to implementation |
 
 ### Execution sequence and work-package rules
@@ -76,8 +76,7 @@ Each Stage-4 family requires an explicit contract selection before implementatio
 | **S4-0 Per-operation design** | Pin official contracts, select targets, define resource lifecycles, and apply the conversion ladder to each family's fields | Explicit contract decisions classifying fields by ladder level, without speculative shared abstractions |
 | **S4-6 Decision closure** | Complete dual-SDK design, typed answers, and synchronous execution | Verified independent oracles, both SDK loops (TypeSafe and OpenAI), and bounded Provider evidence |
 | **S4-2a Speech** | Text-to-speech with static binary and optional streaming delivery | Bounded buffering, cancellation safety, and verified audio format carriage |
-| **S4-2b Transcription** | Audio-to-text recognition with multipart upstream preparation | Accurate text/timing carriage, format rejection, and bounded resource handling |
-| **S4-2c Translation** | Audio-to-text translation as a distinct native operation | Preserved language intent, output format validation, and direct execution |
+| **S4-2b Transcription** | Audio-to-text recognition with multipart upstream preparation | Accurate text/usage carriage, format rejection, and bounded resource handling |
 | **S4-3 Images** | Generate, Edit, and preview/final streaming (internal sequence: Generate first) | Selected defaults, format encoding, mask boundaries, and artifact identity |
 | **S4-4a Files** | File storage, public ID authorization, and content access | Isolated namespaces, bounded spooling, deletion lifecycle, and durable mappings |
 | **S4-4b Multipart Uploads** | Chunked upload sessions, part ordering, and cleanup | Ordered part assembly, cancellation cleanup, and bounded memory use |
@@ -99,7 +98,7 @@ Selected direction: Dual-SDK support (TypeSafe and OpenAI) backed by a unified D
 | Decision | Dual-SDK direction selected; IR drafts under review | Finalize contract selection and implement codecs |
 | Images Generate | Direct GPT Image 2.6 uses standard static Generate; Qwen Image, Gemini Nano Banana and Grok Imagine default to the OpenAI Images shape, with optional native delivery | Native ratio/resolution tiers and other output controls remain separately selectable |
 | Images Edit & Stream | Research complete; mask boundaries and stream formats unselected | Await static Generate closure |
-| Audio (Speech/ASR) | Direct OpenAI `gpt-4o-mini-tts` static binary Speech, Xiaomi/Aliyun static Speech/Transcription and bounded client multipart intake exist; Aliyun speech consumes upstream SSE. Progressive binary/downstream SSE Speech and native multipart upstream preparation remain unselected | Select bounded single-operation profile |
+| Audio (Speech/ASR) | Direct OpenAI `gpt-4o-mini-tts` static binary Speech, `gpt-transcribe` static multipart Transcription (`json`/`text`), and Xiaomi/Aliyun static Speech/Transcription exist; Aliyun speech consumes upstream SSE. Progressive binary/downstream SSE Speech and Transcription SSE remain unselected; Translation is [unscheduled](../roadmap/backlog-and-frozen.md#deferred-generation-semantics) | Select bounded streaming profile |
 | Files & Uploads | Safety requirements defined; storage authority unselected | Select storage authority and ID authorization |
 | Video | Upstream API research available; job lifecycles unselected | Select job status and retrieval contract |
 

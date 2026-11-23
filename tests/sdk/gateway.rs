@@ -602,3 +602,145 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
         .unwrap()
         .unwrap();
 }
+
+#[tokio::test]
+#[ignore = "requires pinned OpenAI SDK; synthetic standard multipart transcription upstream"]
+async fn standard_transcription_sdk_multipart_json_and_text() {
+    use morphiecore::{
+        gateway::{Gateway, Limits, TaskEntries, TranscriptionEntry},
+        protocol::openai::transcription as codec,
+        provider::{CredentialBindingId, SecretMaterial},
+        semantic::task::speech_recognition::{InputFormat, OutputFormat},
+        topology::{ModelId, ModelMetadata, compile},
+    };
+    use std::collections::BTreeMap;
+
+    #[derive(Clone, Default)]
+    struct Seen(Arc<Mutex<Vec<(String, String)>>>);
+
+    async fn upstream_transcribe(
+        State(seen): State<Seen>,
+        headers: HeaderMap,
+        body: axum::body::Bytes,
+    ) -> Response {
+        assert_eq!(
+            headers["authorization"],
+            "Bearer synthetic-asr-upstream-0001"
+        );
+        let ct = headers["content-type"].to_str().unwrap().to_owned();
+        let decoded = codec::decode_request(&ct, body).await.unwrap();
+        assert_eq!(decoded.model, "private-standard-asr");
+        assert_eq!(decoded.task.audio.format(), InputFormat::Wav);
+        let index = {
+            let mut list = seen.0.lock().unwrap();
+            list.push((
+                ct,
+                match decoded.task.response_format {
+                    OutputFormat::Json => "json".into(),
+                    OutputFormat::Text => "text".into(),
+                },
+            ));
+            list.len() - 1
+        };
+        if index == 0 {
+            assert_eq!(decoded.task.languages, vec!["en", "zh"]);
+            assert_eq!(decoded.task.keywords, vec!["MorphieCore", "IR"]);
+            assert_eq!(decoded.task.prompt.as_deref(), Some("Technical."));
+            assert_eq!(
+                decoded.task.temperature.as_ref().unwrap().number().as_str(),
+                "0.25"
+            );
+            Response::builder()
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"text":"Hello standard.","languages":[{"code":"en"}],"usage":{"type":"tokens","input_tokens":10,"output_tokens":3,"total_tokens":13}}"#,
+                ))
+                .unwrap()
+        } else {
+            assert_eq!(decoded.task.language.as_deref(), Some("en"));
+            Response::builder()
+                .header("content-type", "text/plain; charset=utf-8")
+                .body(Body::from("Plain standard."))
+                .unwrap()
+        }
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let seen = Seen::default();
+    let state = seen.clone();
+    let upstream = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/audio/transcriptions", post(upstream_transcribe))
+                .with_state(state),
+        )
+        .await
+        .unwrap();
+    });
+    let _upstream = ServerGuard(upstream.abort_handle());
+
+    let (provider, entry, route) =
+        morphiecore_test_harness::media_bindings::standard_transcription(&origin);
+    let topology = compile(vec![provider], vec![], vec![], vec![], vec![])
+        .unwrap()
+        .with_transcriptions(vec![entry], vec![route])
+        .unwrap()
+        .with_model_metadata([(
+            ModelId::new("standard-transcription").unwrap(),
+            ModelMetadata::new(15, "Synthetic OpenAI").unwrap(),
+        )])
+        .unwrap();
+    let gateway = Gateway::new(
+        topology,
+        TaskEntries {
+            transcriptions: vec![TranscriptionEntry {
+                model: "standard-transcription".into(),
+                binding: None,
+            }],
+            ..Default::default()
+        },
+        BTreeMap::from([(
+            CredentialBindingId::new("asr-key").unwrap(),
+            Arc::new(SecretMaterial::new("synthetic-asr-upstream-0001").unwrap()),
+        )]),
+        BTreeMap::from([(
+            "fixture-agent".into(),
+            SecretMaterial::new(support::CLIENT_KEY).unwrap(),
+        )]),
+        Limits::default(),
+        None,
+    )
+    .unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    let (stop, stopped) = oneshot::channel();
+    let serving = tokio::spawn(gateway.serve(listener, async {
+        let _ = stopped.await;
+    }));
+    let _server = ServerGuard(serving.abort_handle());
+
+    let home = tempfile::tempdir().unwrap();
+    let mut command = super::isolated_sdk_python(home.path());
+    command.args(["tests/sdk/transcription_standard_loop.py", &base]);
+    let output = super::child_process::run(&mut command, b"", Duration::from_secs(20), 8192)
+        .await
+        .expect("bounded SDK transcription process");
+    assert!(
+        output.status.success(),
+        "SDK transcription failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["requests"], 2);
+    assert_eq!(seen.0.lock().unwrap().len(), 2);
+
+    stop.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(3), serving)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+}

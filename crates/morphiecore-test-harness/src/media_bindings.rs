@@ -91,3 +91,54 @@ pub fn native_transcription(
         },
     )
 }
+
+#[allow(dead_code)]
+pub fn standard_transcription(
+    origin: &str,
+) -> (
+    ProviderDefinition,
+    transcription::ProviderEntry,
+    transcription::TranscriptionRoute,
+) {
+    let mut provider = provider(origin, "standard-asr-fixture");
+    let path = EndpointPath::new("/audio/transcriptions").unwrap();
+    provider.endpoints.insert(
+        crate::morphiecore::provider::ProviderOperation::Transcription,
+        crate::morphiecore::provider::ProviderEndpoint {
+            suffix: path.clone(),
+            path: path.clone(),
+            auth: None,
+        },
+    );
+    let (_, _, speech) = native_speech(origin);
+    let model = ModelId::new("standard-transcription").unwrap();
+    (
+        provider.clone(),
+        transcription::ProviderEntry {
+            provider: provider.id.clone(),
+            path: path.clone(),
+        },
+        transcription::TranscriptionRoute {
+            id: RouteId::new("standard-transcription").unwrap(),
+            model: model.clone(),
+            canonical_model: model.clone(),
+            endpoint: transcription::TranscriptionEndpoint {
+                id: EndpointId::new("standard-transcription").unwrap(),
+                provider: provider.id,
+                target: EndpointTarget {
+                    origin: provider.origin,
+                    path,
+                },
+                upstream_model: "private-standard-asr".into(),
+                canonical_model: model,
+                profile: crate::morphiecore::adapter::transcription::UpstreamAdapter::Standard,
+                credential: CredentialBindingId::new("asr-key").unwrap(),
+                execution: crate::morphiecore::topology::ExecutionContract {
+                    streaming: false,
+                    request_body_limit: 6 << 20,
+                    ..speech.endpoint.execution
+                },
+            },
+        },
+    )
+}

@@ -114,7 +114,10 @@ struct Output {
 }
 impl TaskOutput for Output {
     type Route = EmbeddingRoute;
-    const RESPONSE: body::ResponseType = body::ResponseType::Json;
+
+    fn response_type(&self) -> body::ResponseType {
+        body::ResponseType::Json
+    }
 
     fn receive_limit(&self, _: &BoundEmbedding, _: &crate::Limits, wire_limit: usize) -> usize {
         wire_limit.min(crate::semantic::value::JsonLimits::ENVELOPE.bytes)

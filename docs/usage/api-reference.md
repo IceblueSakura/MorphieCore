@@ -9,6 +9,7 @@ See [Client Requests](client-requests.md) for generation protocols and [OpenAPI]
 - [HTTP API](#http-api)
   - [Static image generation](#static-image-generation)
   - [Speech synthesis](#speech-synthesis)
+  - [Audio transcription](#audio-transcription)
   - [Embeddings](#embeddings)
   - [Generation Text model discovery](#generation-text-model-discovery)
   - [Capability discovery and adaptation notice](#capability-discovery-and-adaptation-notice)
@@ -38,7 +39,7 @@ Standalone endpoints require explicit model activation:
 | `POST /v1/embeddings` | Text or model-scoped token IDs, float or Base64 vectors |
 | `POST /v1/images/generations` | Static inline images |
 | `POST /v1/audio/speech` | Binary audio |
-| `POST /v1/audio/transcriptions` | One WAV/MP3 multipart upload |
+| `POST /v1/audio/transcriptions` | One bounded audio multipart upload (`json` or `text`) |
 
 The [OpenAPI summary](../openapi.json) describes envelopes and selected constraints, not full vendor API conformance. Codecs define exact admission. Business input cannot choose an upstream origin, credential or auth header; inbound headers are not forwarded.
 
@@ -66,6 +67,10 @@ See [Qwen model configuration](gateway-configuration.md#qwen-image-candidates) f
 ### Speech synthesis
 
 Enable `gpt-4o-mini-tts` in `models.json` with a named `openai` Platform API-key account for bounded static binary delivery on `POST /v1/audio/speech`. It accepts OpenAI's 13 built-in voices (`alloy`, `ash`, `ballad`, `coral`, `echo`, `fable`, `onyx`, `nova`, `sage`, `shimmer`, `verse`, `marin`, `cedar`), `instructions`, `speed` (`0.25`–`4`), `response_format` (`mp3`, `opus`, `aac`, `flac`, `wav`, `pcm`) and `stream_format: "audio"`. Custom voice objects and `stream_format: "sse"` reject. Narrower `qwen-audio-3.0-tts-plus` (`aliyun-tokenplan-cn`, `mp3` only, `longanlingxin`/`longanlufeng`) and `mimo-v2.5-tts` (`xiaomi`, `wav`/`pcm`/`mp3`, no `speed`) bindings remain separately activatable.
+
+### Audio transcription
+
+Enable `gpt-transcribe` in `models.json` with a named `openai` Platform API-key account for static multipart transcription on `POST /v1/audio/transcriptions`. It accepts direct uploads up to 4 MiB in nine containers (`wav`, `mp3`, `flac`, `mp4`, `mpeg`, `mpga`, `m4a`, `ogg`, `webm`), `language` or `languages[]` (mutually exclusive), `keywords[]`, `prompt`, `temperature` (`0`–`1`), `response_format` (`json` or `text`) and `stream: false`. Subtitle/diarized/verbose formats, `stream: true`, `chunking_strategy`, `include` and `timestamp_granularities` reject. Narrower `qwen-audio-3.0-asr-flash` (`dashscope-qwen-asr` or `tokenplan-qwen-asr`) and `mimo-v2.5-asr` (`xiaomi`) bindings accept WAV/MP3 up to 4 MiB and `language`, reject `languages[]`/`keywords[]`/`prompt`/`temperature`, and also support downstream `response_format: "text"` projection.
 
 ### Embeddings
 

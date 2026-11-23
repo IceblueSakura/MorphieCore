@@ -802,6 +802,11 @@
       "model": "qwen-audio-3.0-asr-flash",
       "released_at": 1785369600,
       "developer": "Alibaba"
+    },
+    {
+      "model": "gpt-transcribe",
+      "released_at": 1785196800,
+      "developer": "OpenAI"
     }
   ],
   "transcriptions": [
@@ -828,6 +833,14 @@
       "provider": "aliyun-dashscope-cn",
       "endpoint_id": "dashscope-qwen-asr",
       "profile": "aliyun_flash"
+    },
+    {
+      "model": "gpt-transcribe",
+      "canonical_model": "gpt-transcribe",
+      "upstream": "gpt-transcribe",
+      "provider": "openai",
+      "endpoint_id": "openai-transcribe",
+      "profile": "standard"
     }
   ],
   "embeddings": [

@@ -4,7 +4,8 @@ use crate::{
     CodecError,
     failure::CarrierReason,
     semantic::task::speech_recognition::{
-        InputFormat, RecognitionReport, RecognitionResult, RecognizedSentence, RecognizedWord,
+        InputFormat, RecognitionReport, RecognitionResult, RecognitionUsage, RecognizedSentence,
+        RecognizedWord,
     },
     transcription::Request,
 };
@@ -46,9 +47,17 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
     }) {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
+    if !request.task.languages.is_empty()
+        || !request.task.keywords.is_empty()
+        || request.task.prompt.is_some()
+        || request.task.temperature.is_some()
+    {
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+    }
     let (format, mime) = match request.task.audio.format() {
         InputFormat::Wav => ("wav", "audio/wav"),
         InputFormat::Mp3 => ("mp3", "audio/mpeg"),
+        _ => return Err(CodecError::Unsupported(CarrierReason::Unavailable)),
     };
     let data = format!(
         "data:{mime};base64,{}",
@@ -169,7 +178,8 @@ pub fn decode_response(bytes: &[u8]) -> Result<RecognitionResult, CodecError> {
         body,
         RecognitionReport {
             request_id,
-            processed_seconds,
+            usage: processed_seconds.map(RecognitionUsage::duration_seconds),
+            detected_languages: None,
             last_sentence,
         },
     )

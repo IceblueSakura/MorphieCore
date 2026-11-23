@@ -33,6 +33,7 @@ pub(super) struct Chunk {
 }
 pub(super) enum ResponseType {
     Json,
+    Text,
     EventStream,
     Audio,
 }
@@ -507,6 +508,7 @@ pub(super) async fn respond_producer(
     let content_type = match response_type {
         ResponseType::Audio => first.audio_content_type.ok_or_else(ApiError::upstream)?,
         ResponseType::Json => "application/json",
+        ResponseType::Text => "text/plain; charset=utf-8",
         ResponseType::EventStream => "text/event-stream",
     };
     // Conservatively freeze the candidate when HTTP response ownership leaves

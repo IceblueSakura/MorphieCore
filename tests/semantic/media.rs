@@ -898,8 +898,15 @@ mod openai_speech {
 }
 mod tokenplan_asr {
     use morphiecore::{
-        protocol::{aliyun_asr, openai::transcription, transcription::Request},
-        semantic::task::speech_recognition::{AudioInput, InputFormat, RecognitionRequest},
+        protocol::{
+            aliyun_asr,
+            openai::transcription::{self, ProjectedOutput},
+            transcription::Request,
+        },
+        semantic::task::speech_recognition::{
+            AudioInput, InputFormat, MAX_INPUT_BYTES, OutputFormat, RecognitionRequest,
+            RecognitionUsage,
+        },
     };
     use serde_json::json;
 
@@ -928,7 +935,11 @@ mod tokenplan_asr {
         );
         assert!(AudioInput::new(bytes::Bytes::new(), InputFormat::Mp3).is_err());
         assert!(
-            AudioInput::new(bytes::Bytes::from(vec![0; (1 << 20) + 1]), InputFormat::Mp3).is_err()
+            AudioInput::new(
+                bytes::Bytes::from(vec![0; MAX_INPUT_BYTES + 1]),
+                InputFormat::Mp3
+            )
+            .is_err()
         );
         let mut edited = request;
         for language in ["not-a-language", "xx"] {
@@ -941,24 +952,40 @@ mod tokenplan_asr {
         let mut result =
             aliyun_asr::decode_response(&serde_json::to_vec(&response()).unwrap()).unwrap();
         assert_eq!(result.text(), "Hi.");
-        assert_eq!(result.report().processed_seconds, Some(1));
+        assert_eq!(
+            result.report().usage,
+            Some(RecognitionUsage::duration_seconds(1))
+        );
         assert_eq!(
             result.report().last_sentence.as_ref().unwrap().words[0].end_ms,
             750
         );
-        let projected = transcription::project_result(&result).unwrap();
+        let projected = transcription::project_result(&result, OutputFormat::Json).unwrap();
+        let ProjectedOutput::Json(body) = projected.output else {
+            panic!("expected json projection");
+        };
         assert_eq!(
-            projected.body,
+            body,
             json!({"text":"Hi.","usage":{"type":"duration","seconds":1}})
         );
         assert!(projected.omitted_alignment);
+        let text_projected = transcription::project_result(&result, OutputFormat::Text).unwrap();
+        let ProjectedOutput::Text(raw_text) = text_projected.output else {
+            panic!("expected text projection");
+        };
+        assert_eq!(raw_text, b"Hi.");
+        assert!(text_projected.omitted_ancillary);
         result.set_text("Edited").unwrap();
         assert!(result.report().last_sentence.is_none());
-        assert!(result.report().processed_seconds.is_none());
-        assert_eq!(
-            transcription::project_result(&result).unwrap().body,
-            json!({"text":"Edited"})
-        );
+        assert!(result.report().usage.is_none());
+        let ProjectedOutput::Json(edited_body) =
+            transcription::project_result(&result, OutputFormat::Json)
+                .unwrap()
+                .output
+        else {
+            panic!("expected json projection");
+        };
+        assert_eq!(edited_body, json!({"text":"Edited"}));
     }
     fn upload(fields: &[(&str, &str)], file_header: &str) -> bytes::Bytes {
         let mut body = Vec::new();
@@ -995,11 +1022,14 @@ mod tokenplan_asr {
         assert_eq!(request.task.audio.format(), InputFormat::Wav);
         for fields in [
             vec![("model", "one"), ("model", "two")],
-            vec![("model", "one"), ("prompt", "")],
             vec![("model", "one"), ("stream", "true")],
             vec![("model", "one"), ("response_format", "verbose_json")],
             vec![("model", "one"), ("timestamp_granularities[]", "word")],
-            vec![("model", "one"), ("temperature", "0")],
+            vec![("model", "one"), ("language", "en"), ("languages[]", "zh")],
+            vec![("model", "one"), ("keywords", "bare")],
+            vec![("model", "one"), ("languages", "en")],
+            vec![("model", "one"), ("temperature", "1.1")],
+            vec![("model", "one"), ("temperature", "-0.1")],
         ] {
             assert!(
                 transcription::decode_request(
@@ -1028,9 +1058,174 @@ mod tokenplan_asr {
                 .is_err()
         );
         assert!(
-            transcription::decode_request(media, bytes::Bytes::from(vec![0; 2 << 20]))
-                .await
-                .is_err()
+            transcription::decode_request(
+                media,
+                bytes::Bytes::from(vec![0; transcription::MAX_UPLOAD_BYTES + 1])
+            )
+            .await
+            .is_err()
         );
+    }
+}
+mod openai_asr {
+    use morphiecore::{
+        execution::transcription::prepare,
+        protocol::{
+            aliyun_asr,
+            openai::transcription::{self, ProjectedOutput},
+            xiaomi_audio,
+        },
+        provider::SecretMaterial,
+        semantic::task::speech_recognition::{InputFormat, OutputFormat, RecognitionUsage},
+        topology::catalog,
+    };
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn openai_transcription_binding_roundtrips_multipart_controls_and_response_shapes() {
+        let boundary = "fixture";
+        let media = format!("multipart/form-data; boundary={boundary}");
+        let mut body = Vec::new();
+        for (name, value) in [
+            ("model", "gpt-transcribe"),
+            ("languages[]", "en"),
+            ("languages[]", "zh"),
+            ("keywords[]", "MorphieCore"),
+            ("keywords[]", "IR"),
+            ("prompt", "Technical terms."),
+            ("temperature", "0.25"),
+            ("response_format", "json"),
+        ] {
+            body.extend_from_slice(
+                format!(
+                    "--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n"
+                )
+                .as_bytes(),
+            );
+        }
+        body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"clip.flac\"\r\nContent-Type: audio/flac\r\n\r\nfLaC\r\n--{boundary}--\r\n"
+            )
+            .as_bytes(),
+        );
+        let request = transcription::decode_request(&media, body.into())
+            .await
+            .unwrap();
+        assert_eq!(request.task.audio.format(), InputFormat::Flac);
+        assert_eq!(request.task.languages, vec!["en", "zh"]);
+        assert_eq!(request.task.keywords, vec!["MorphieCore", "IR"]);
+        assert_eq!(request.task.prompt.as_deref(), Some("Technical terms."));
+        assert_eq!(
+            request.task.temperature.as_ref().unwrap().number().as_str(),
+            "0.25"
+        );
+
+        let topology = catalog::default_topology().unwrap();
+        let route = topology
+            .transcription_route("gpt-transcribe")
+            .expect("explicit binding");
+        let provider = topology.provider("openai").unwrap();
+        let secret = SecretMaterial::new("synthetic-only").unwrap();
+        let wire = prepare(route, provider, &request)
+            .unwrap()
+            .authorize(provider, &secret)
+            .unwrap();
+        assert_eq!(wire.origin, "https://api.openai.com");
+        assert_eq!(wire.path, "/v1/audio/transcriptions");
+        let content_type = wire
+            .safe_headers
+            .iter()
+            .find(|(k, _)| k == "content-type")
+            .map(|(_, v)| v.as_str())
+            .unwrap()
+            .to_owned();
+        assert!(content_type.starts_with("multipart/form-data; boundary="));
+        assert!(
+            wire.safe_headers
+                .contains(&("accept".into(), "application/json".into()))
+        );
+        let reparsed = transcription::decode_request(&content_type, wire.body.into())
+            .await
+            .unwrap();
+        assert_eq!(reparsed, request);
+
+        let upstream_tokens = br#"{"text":"Hello.","languages":[{"code":"en","future_field":1}],"usage":{"type":"tokens","input_tokens":10,"output_tokens":3,"total_tokens":13,"input_token_details":{"audio_tokens":8,"text_tokens":2}},"future_top":true}"#;
+        let decoded = transcription::decode_response(upstream_tokens, OutputFormat::Json).unwrap();
+        assert_eq!(decoded.text(), "Hello.");
+        assert_eq!(
+            decoded.report().detected_languages.as_deref(),
+            Some(&["en".to_string()][..])
+        );
+        assert_eq!(
+            decoded.report().usage,
+            Some(RecognitionUsage::Tokens {
+                input_tokens: 10,
+                output_tokens: 3,
+                total_tokens: 13,
+                audio_tokens: Some(8),
+                text_tokens: Some(2),
+            })
+        );
+        let ProjectedOutput::Json(projected) =
+            transcription::project_result(&decoded, OutputFormat::Json)
+                .unwrap()
+                .output
+        else {
+            panic!("expected json");
+        };
+        assert_eq!(
+            projected,
+            json!({
+                "text": "Hello.",
+                "languages": [{"code": "en"}],
+                "usage": {
+                    "type": "tokens",
+                    "input_tokens": 10,
+                    "output_tokens": 3,
+                    "total_tokens": 13,
+                    "input_token_details": {"audio_tokens": 8, "text_tokens": 2}
+                }
+            })
+        );
+
+        let decoded_text =
+            transcription::decode_response(b"Plain output.", OutputFormat::Text).unwrap();
+        let ProjectedOutput::Text(out_text) =
+            transcription::project_result(&decoded_text, OutputFormat::Text)
+                .unwrap()
+                .output
+        else {
+            panic!("expected text");
+        };
+        assert_eq!(out_text, b"Plain output.");
+    }
+
+    #[tokio::test]
+    async fn transcription_rejects_unsupported_controls_and_containers_per_target() {
+        let media = "multipart/form-data; boundary=fixture";
+        let flac = b"--fixture\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\npublic\r\n--fixture\r\nContent-Disposition: form-data; name=\"file\"; filename=\"clip.flac\"\r\nContent-Type: audio/flac\r\n\r\nfLaC\r\n--fixture--\r\n";
+        let req_flac = transcription::decode_request(media, flac.as_slice().into())
+            .await
+            .unwrap();
+        assert!(aliyun_asr::encode_request(&req_flac, "qwen-audio-3.0-asr-flash").is_err());
+        assert!(xiaomi_audio::encode_transcription(&req_flac, "mimo-v2.5-asr").is_err());
+
+        for field in [
+            ("prompt", "style"),
+            ("temperature", "0"),
+            ("keywords[]", "term"),
+            ("languages[]", "en"),
+        ] {
+            let wire = format!(
+                "--fixture\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\npublic\r\n--fixture\r\nContent-Disposition: form-data; name=\"{}\"\r\n\r\n{}\r\n--fixture\r\nContent-Disposition: form-data; name=\"file\"; filename=\"clip.wav\"\r\nContent-Type: audio/wav\r\n\r\nRIFF\r\n--fixture--\r\n",
+                field.0, field.1
+            );
+            let req = transcription::decode_request(media, wire.into_bytes().into())
+                .await
+                .unwrap();
+            assert!(aliyun_asr::encode_request(&req, "qwen-audio-3.0-asr-flash").is_err());
+            assert!(xiaomi_audio::encode_transcription(&req, "mimo-v2.5-asr").is_err());
+        }
     }
 }

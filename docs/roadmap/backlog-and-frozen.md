@@ -52,6 +52,7 @@ Preserve the existing [terminal-report exceptions](../architecture/adaptation-an
 General multimodal input, native client intake, custom tools, unified error parsing and broader probability reports remain excluded.
 
 ### Deferred Generation semantics
+- Audio translation (`POST /v1/audio/translations`, unscheduled: OpenAI deprecated `whisper-1` and `/v1/audio/translations` on 2026-08-26 for shutdown on 2027-02-26 in favor of Realtime translation).
 - Turn-scoped system messages (`clear_at`).
 - Generated audio/video inside Chat (beyond basic static audio).
 - Upstream/downstream persistence and reference continuation, including Chat/Responses `store:true` and managed Responses resources: experimental and disabled until explicit activation, outside current adaptation/repair acceptance.

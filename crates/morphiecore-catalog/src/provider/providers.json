@@ -266,6 +266,10 @@
       "speech": {
         "path": "/v1/audio/speech",
         "suffix": "/audio/speech"
+      },
+      "transcription": {
+        "path": "/v1/audio/transcriptions",
+        "suffix": "/audio/transcriptions"
       }
     },
     "sources": [
@@ -276,6 +280,8 @@
       "https://developers.openai.com/api/reference/resources/images/methods/generate",
       "https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create",
       "https://developers.openai.com/api/docs/models/gpt-4o-mini-tts",
+      "https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create",
+      "https://developers.openai.com/api/docs/models/gpt-transcribe",
       "https://developers.openai.com/api/docs/models/gpt-image-2.6-flare",
       "https://developers.openai.com/api/docs/models/gpt-image-2.6-sunburst",
       "https://developers.openai.com/api/docs/models/gpt-6.2-sol",

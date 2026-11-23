@@ -60,7 +60,7 @@ impl TranscriptionBinding {
                 credential: self.credential(),
                 execution: ExecutionContract {
                     streaming: false,
-                    request_body_limit: 2 << 20,
+                    request_body_limit: 6 << 20,
                     response_body_limit: 2 << 20,
                     credential_kind: CredentialKind::ApiKey,
                     timeout_ms: 120_000,

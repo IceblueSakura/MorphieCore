@@ -654,6 +654,7 @@ fn speech_and_images_do_not_activate_from_generation_accounts() {
         json!({"models":{
             "qwen-audio-3.0-tts-plus":{"account":"primary"},
             "gpt-4o-mini-tts":{"account":"backup"},
+            "gpt-transcribe":{"account":"backup"},
             "gpt-image-2.6-flare":{"account":"backup"}
         }}),
         &keys,
@@ -661,9 +662,19 @@ fn speech_and_images_do_not_activate_from_generation_accounts() {
     .unwrap();
     assert!(boot.gateway.state.entries.is_empty());
     assert_eq!(boot.gateway.state.speech.len(), 2);
+    assert_eq!(boot.gateway.state.transcriptions.len(), 1);
     assert_eq!(boot.gateway.state.images.len(), 1);
     assert_eq!(
         boot.gateway.state.speech["gpt-4o-mini-tts"]
+            .secret
+            .resolve()
+            .unwrap()
+            .0
+            .expose(),
+        "synthetic-second"
+    );
+    assert_eq!(
+        boot.gateway.state.transcriptions["gpt-transcribe"]
             .secret
             .resolve()
             .unwrap()
@@ -687,6 +698,9 @@ fn speech_and_images_do_not_activate_from_generation_accounts() {
     assert!(view["data"].as_array().unwrap().contains(&json!({
         "id":"gpt-4o-mini-tts","object":"model","created":1742428800,"owned_by":"OpenAI"
     })));
+    assert!(view["data"].as_array().unwrap().contains(&json!({
+        "id":"gpt-transcribe","object":"model","created":1785196800,"owned_by":"OpenAI"
+    })));
     let generation = Fixture::new(
         service(),
         selected_models(
@@ -697,7 +711,9 @@ fn speech_and_images_do_not_activate_from_generation_accounts() {
     )
     .unwrap();
     assert!(
-        generation.gateway.state.images.is_empty() && generation.gateway.state.speech.is_empty()
+        generation.gateway.state.images.is_empty()
+            && generation.gateway.state.speech.is_empty()
+            && generation.gateway.state.transcriptions.is_empty()
     );
     assert!(!generation.gateway.state.entries.is_empty());
 }

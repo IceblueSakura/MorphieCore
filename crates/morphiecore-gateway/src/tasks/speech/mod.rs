@@ -108,7 +108,10 @@ pub(crate) async fn receive_for_test(
 struct Output(crate::protocol::speech::Request);
 impl TaskOutput for Output {
     type Route = SpeechRoute;
-    const RESPONSE: body::ResponseType = body::ResponseType::Audio;
+
+    fn response_type(&self) -> body::ResponseType {
+        body::ResponseType::Audio
+    }
 
     fn receive_limit(
         &self,

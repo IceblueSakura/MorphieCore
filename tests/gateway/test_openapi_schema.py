@@ -445,25 +445,48 @@ class TranscriptionSchemaTests(unittest.TestCase):
         request = {"model": "public-asr", "file": "synthetic-file"}
         check.validate(request)
         check.validate({**request, "language": "zh", "response_format": "json", "stream": False})
+        check.validate({
+            **request,
+            "languages[]": ["en", "zh"],
+            "keywords[]": ["MorphieCore"],
+            "prompt": "",
+            "temperature": 0,
+            "response_format": "text",
+        })
         for value in (
             {"model": "public-asr"}, {**request, "file": ""},
             {**request, "file": ["one", "two"]}, {**request, "language": None},
+            {**request, "language": "en", "languages[]": ["en"]},
+            {**request, "keywords[]": [""]},
             {**request, "response_format": "verbose_json"}, {**request, "stream": True},
-            {**request, "prompt": ""}, {**request, "temperature": 0},
+            {**request, "prompt": "a" * 4097}, {**request, "temperature": 1.1},
             {**request, "provider": {}}, {**request, "file_url": "https://example.invalid"},
         ):
             self.assertFalse(check.is_valid(value))
         post = DOCUMENT["paths"]["/v1/audio/transcriptions"]["post"]
         self.assertEqual(set(post["requestBody"]["content"]), {"multipart/form-data"})
+        self.assertEqual(set(post["responses"]["200"]["content"]), {"application/json", "text/plain"})
 
     def test_result_has_text_and_only_reported_duration(self):
         check = validator("TranscriptionResponse")
         check.validate({"text": ""})
         check.validate({"text": "Hi.", "usage": {"type": "duration", "seconds": 1}})
+        check.validate({
+            "text": "Hi.",
+            "languages": [{"code": "en"}],
+            "usage": {
+                "type": "tokens",
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "total_tokens": 15,
+                "input_token_details": {"audio_tokens": 8, "text_tokens": 2},
+            },
+        })
         for value in (
             {}, {"text": None}, {"text": "Hi.", "usage": None},
             {"text": "Hi.", "usage": {"type": "duration", "seconds": -1}},
             {"text": "Hi.", "usage": {"seconds": 1}},
+            {"text": "Hi.", "languages": None},
             {"text": "Hi.", "language": "invented"},
             {"text": "Hi.", "_openbridge": {}},
         ):

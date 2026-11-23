@@ -36,6 +36,7 @@ pub mod file_constraints;
 pub mod image;
 pub mod image_constraints;
 pub mod json;
+pub mod multipart;
 pub mod speech;
 pub mod sse;
 pub mod stream;

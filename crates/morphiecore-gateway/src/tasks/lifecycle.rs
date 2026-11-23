@@ -64,6 +64,7 @@ impl Admission {
         }
         let limits = runtime.limits.clone();
         let shutdown = runtime.shutdown.clone();
+        let response_type = output.response_type();
         body::respond_producer(
             Exchange {
                 runtime,
@@ -71,7 +72,7 @@ impl Admission {
                 prepared,
                 output,
             },
-            T::RESPONSE,
+            response_type,
             limits,
             deadline,
             shutdown,
@@ -84,8 +85,8 @@ impl Admission {
 
 pub(super) trait TaskOutput: Send + 'static {
     type Route: TaskRoute + Send + Sync + 'static;
-    const RESPONSE: body::ResponseType;
 
+    fn response_type(&self) -> body::ResponseType;
     fn receive_limit(
         &self,
         entry: &BoundTask<Self::Route>,

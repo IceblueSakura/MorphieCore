@@ -31,6 +31,9 @@
     "qwen-audio-3.0-asr-flash": {
       "binding": "tokenplan-qwen-asr",
       "account": "primary"
+    },
+    "gpt-transcribe": {
+      "account": "primary"
     }
   }
 }

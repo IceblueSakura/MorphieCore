@@ -22,14 +22,20 @@ pub fn prepare(
             crate::execution::attempt::ProtocolReason::TranscriptionBinding,
         ));
     }
-    let value = endpoint
-        .profile
-        .encode_request(request, &endpoint.upstream_model)?;
-    crate::semantic::value::json_size(&value, endpoint.execution.request_body_limit)
-        .map_err(|_| AttemptError::Limit)?;
+    let encoded = endpoint.profile.encode_request(
+        request,
+        &endpoint.upstream_model,
+        endpoint.execution.request_body_limit,
+    )?;
     let mut headers = vec![
-        ("content-type".into(), "application/json".into()),
-        ("accept".into(), "application/json".into()),
+        ("content-type".into(), encoded.content_type),
+        (
+            "accept".into(),
+            endpoint
+                .profile
+                .expected_response_media(request.task.response_format)
+                .into(),
+        ),
     ];
     if endpoint.profile == crate::adapter::transcription::UpstreamAdapter::AliyunFlash {
         headers.push(("x-dashscope-sse".into(), "disable".into()));
@@ -39,10 +45,6 @@ pub fn prepare(
         endpoint.target.path.clone(),
         crate::provider::ProviderOperation::Transcription,
         headers,
-        serde_json::to_vec(&value).map_err(|_| {
-            AttemptError::Protocol(
-                crate::execution::attempt::ProtocolReason::TranscriptionSerialization,
-            )
-        })?,
+        encoded.body,
     ))
 }
