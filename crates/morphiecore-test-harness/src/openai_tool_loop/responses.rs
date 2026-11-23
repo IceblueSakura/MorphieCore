@@ -1,11 +1,11 @@
-//! OpenRouter Responses wire, phase and stored/stateless effective-history expectations.
+//! Direct Responses wire, phase and stateless effective-history expectations.
 use super::RESULT;
 use morphiecore_test_support::responses_profile as responses_wire;
 use serde_json::{Value, json};
 
 pub fn snapshot(turn: usize) -> Value {
     json!({"id":format!("response-{turn}"),"object":"response","created_at":1,
-        "completed_at":2,"model":"openai/gpt-6-luna","status":"completed","error":null,
+        "completed_at":2,"model":"gpt-6-luna","status":"completed","error":null,
         "reasoning":{"effort":"low","summary":"detailed","context":"all_turns","mode":"standard"},
         "service_tier":"default","text":null,
         "incomplete_details":null,"output":if turn == 1 {json!([
@@ -119,7 +119,7 @@ pub fn events(turn: usize) -> Vec<Value> {
             event["type"].as_str(),
             Some("response.created" | "response.in_progress")
         ) {
-            event["response"]["reasoning"] = json!({"effort":"low","summary":"auto"});
+            event["response"]["reasoning"] = json!({"effort":"low","summary":"detailed","context":"all_turns","mode":"standard"});
             event["response"]["service_tier"] = json!("auto");
         }
     }
@@ -127,7 +127,7 @@ pub fn events(turn: usize) -> Vec<Value> {
 }
 
 pub fn assert_request(body: &Value) -> usize {
-    assert_eq!(body["model"], "openai/gpt-6-luna");
+    assert_eq!(body["model"], "gpt-6-luna");
     assert_eq!(body["max_output_tokens"], 256);
     assert_eq!(body["reasoning"]["effort"], "low");
     assert_eq!(body["store"], false);
@@ -136,7 +136,7 @@ pub fn assert_request(body: &Value) -> usize {
         body.get("text").is_none(),
         "reported null is not request intent"
     );
-    assert_eq!(body["provider"], json!({"require_parameters":true}));
+    assert!(body.get("provider").is_none());
     let history = body["input"].as_array().unwrap();
     let batch = history[0]["content"] == "batch" || history[0]["content"][0]["text"] == "batch";
     let tool = if batch {

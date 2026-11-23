@@ -292,39 +292,6 @@
       "endpoint_slice": "canonical"
     },
     {
-      "provider": "openrouter",
-      "dialect": "open_router",
-      "endpoint_prefix": "openrouter",
-      "model": "gpt-6-luna",
-      "canonical_model": "gpt-6-luna",
-      "upstream": "openai/gpt-6-luna",
-      "protocols": ["open_ai_responses", "open_ai_chat"],
-      "effort_mappings": [],
-      "reasoning_history": [],
-      "public_slice": "restricted_luna",
-      "endpoint_slice": "restricted_luna",
-      "wire_overrides": [
-        [
-          "open_ai_responses",
-          {
-            "responses_lifecycle_reports": true,
-            "delegate_strict_tools": true
-          }
-        ],
-        [
-          "open_ai_chat",
-          {
-            "delegate_strict_tools": true
-          }
-        ]
-      ],
-      "limits": {
-        "allowed_effort": ["low", "medium", "high", "xhigh", "max"],
-        "context_window_tokens": 1050000,
-        "maximum_output_tokens": 128000
-      }
-    },
-    {
       "provider": "nvidia",
       "dialect": "nvidia",
       "endpoint_prefix": "nvidia",
@@ -765,11 +732,18 @@
   ],
   "images": [
     {
-      "model": "gpt-image-2.5-flare",
-      "upstream": "openai/gpt-image-2.5-flare",
-      "released_at": 1788825600,
+      "model": "gpt-image-2.6-flare",
+      "upstream": "gpt-image-2.6-flare",
+      "released_at": 1793750400,
       "developer": "OpenAI",
-      "provider": "openrouter"
+      "provider": "openai"
+    },
+    {
+      "model": "gpt-image-2.6-sunburst",
+      "upstream": "gpt-image-2.6-sunburst",
+      "released_at": 1793750400,
+      "developer": "OpenAI",
+      "provider": "openai"
     }
   ],
   "speech": [
@@ -861,8 +835,8 @@
     },
     {
       "model": "text-embedding-3-small",
-      "upstream": "openai/text-embedding-3-small",
-      "provider": "openrouter",
+      "upstream": "text-embedding-3-small",
+      "provider": "openai",
       "max_inputs": 128,
       "dimensions": [],
       "max_dimensions": 1536,
@@ -872,7 +846,7 @@
       "user": "forward",
       "tokenizer": "cl100k_base",
       "max_input_tokens": 8192,
-      "profile": "open_router",
+      "profile": "standard",
       "released_at": 1706140800,
       "developer": "OpenAI"
     },

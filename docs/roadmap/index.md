@@ -87,13 +87,7 @@ Each Stage-4 family requires an explicit contract selection before implementatio
 
 #### OpenAI direct binding migration
 
-Implement the [OpenAI Platform route decision](../architecture/decisions.md#routing-and-security-decisions) before adding further OpenAI media bindings. Keep public model labels where the same official model is available. Code and deployment switch independently; do not remove a live candidate without a compatible configuration cutover.
-
-| Binding | Direct cutover gate |
-|---|---|
-| `text-embedding-3-small` | Switch to OpenAI `/v1/embeddings`; verify text and the existing scoped-token contract, width, encoding, and model/usage reports. Leave `text-embedding-3-large` and the other Providers unchanged. Do not assert cross-target vector-space equivalence from name or width. |
-| `gpt-image-2.5-flare` | Switch static Generate to OpenAI `/v1/images/generations` after the standard codec handles native reports, including the documented `safety_identifier`, without weakening known-field validation or inventing metadata. Require a standard SDK to decode one complete default-PNG result. Edit, preview streams and Grok are separate. |
-| `gpt-6-luna` | Qualify the existing native OpenAI Responses binding through the gateway, including stateless tool continuation. Retire the OpenRouter candidate and coordinate any deployed configuration that names it. Keep the independent ChatGPT OAuth binding; do not treat OpenRouter replay as direct OpenAI replay. |
+The [direct OpenAI catalog migration](../architecture/decisions.md#routing-and-security-decisions) requires a coordinated release/configuration cutover where `gpt-6-luna` still names `openrouter-responses`. Replace that candidate with `openai-luna-responses`, leaving independent ChatGPT OAuth selections intact. Do not reuse protected OpenRouter replay on the direct target. The [GPT Image 2.6](../usage/api-reference.md#static-image-generation) and [small Embedding](../usage/api-reference.md#embeddings) bindings remain opt-in; no deployment or activation is implied.
 
 #### Decision API closure
 
@@ -108,7 +102,7 @@ Selected direction: Dual-SDK support (TypeSafe and OpenAI) backed by a unified D
 | Family | Readiness | Next step |
 |---|---|---|
 | Decision | Dual-SDK direction selected; IR drafts under review | Finalize contract selection and implement codecs |
-| Images Generate | Existing static carriers; Grok codec and binding absent | Select standard versus explicit native-output delivery, encoding defaults separately from Base64/URL carriage, and required result metadata |
+| Images Generate | Direct OpenAI GPT Image 2.6 covers standard static Generate; Grok remains unselected | Select a separate public contract before any Grok integration |
 | Images Edit & Stream | Research complete; mask boundaries and stream formats unselected | Await static Generate closure |
 | Audio (Speech/ASR) | Static speech/transcription and bounded client multipart intake exist; Aliyun speech consumes upstream SSE. Native multipart upstream preparation and downstream SSE profiles remain unselected | Select bounded single-operation profile |
 | Files & Uploads | Safety requirements defined; storage authority unselected | Select storage authority and ID authorization |

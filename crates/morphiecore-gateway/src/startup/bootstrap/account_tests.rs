@@ -81,7 +81,7 @@ fn resource_budgets_and_task_shapes_remain_strict() {
     let result = Fixture::new(
         service(),
         json!({"models":{"text-embedding-3-small":{"account":"primary","candidates":[]}}}),
-        &[("openrouter", "primary", "synthetic-key")],
+        &[("openai", "primary", "synthetic-key")],
     );
     assert!(matches!(result, Err(super::StartupError::Detail(error)) if error.domain == "models"));
 }

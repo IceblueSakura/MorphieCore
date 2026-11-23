@@ -8,9 +8,8 @@ use crate::{
         images::{ImageEndpoint, ImageRoute, ProviderEntry},
     },
 };
-/// The only (Provider, model) pair whose endpoint identity and adapter below are
-/// reviewed; topology data may select it but not describe another.
-pub(super) const REVIEWED: (&str, &str) = ("openrouter", "gpt-image-2.5-flare");
+/// Models reviewed under the one direct, static GPT Image contract.
+pub(super) const REVIEWED: &[&str] = &["gpt-image-2.6-flare", "gpt-image-2.6-sunburst"];
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -47,13 +46,14 @@ impl ImageBinding {
     pub fn route(&self) -> ImageRoute {
         let provider = self.provider();
         let canonical = ModelId::new(self.model).expect("static image identity");
+        let identity = format!("openai-{}-images", self.model);
         ImageRoute {
-            id: RouteId::new("openrouter-flare-images").expect("static route"),
+            id: RouteId::new(&identity).expect("static route"),
             model: canonical.clone(),
             canonical_model: canonical.clone(),
-            accounting: AccountingPolicy::OmitUnrepresentableAccounting,
+            accounting: AccountingPolicy::Strict,
             endpoint: ImageEndpoint {
-                id: EndpointId::new("openrouter-flare-images").expect("static endpoint"),
+                id: EndpointId::new(&identity).expect("static endpoint"),
                 provider: provider.id,
                 target: EndpointTarget {
                     origin: provider.origin,
@@ -61,7 +61,7 @@ impl ImageBinding {
                 },
                 upstream_model: self.upstream.into(),
                 canonical_model: canonical,
-                profile: UpstreamAdapter::OpenRouterFlare,
+                profile: UpstreamAdapter::GptImage,
                 credential: self.credential(),
                 execution: ExecutionContract {
                     streaming: false,

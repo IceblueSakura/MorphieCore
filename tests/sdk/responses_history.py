@@ -24,7 +24,8 @@ def responses_completion(client, params, stream, status="completed"):
                 check(event.type not in ("error", "response.failed"))
                 if event.type in ("response.created", "response.in_progress"):
                     opening = event.response.model_dump(exclude_unset=True)
-                    check(opening["reasoning"] == {"effort": "low", "summary": "auto"})
+                    check(opening["reasoning"] == {"effort": "low", "summary": "detailed",
+                                                  "context": "all_turns", "mode": "standard"})
                     check(opening["service_tier"] == "auto")
                 if event.type == f"response.{status}":
                     completed += 1

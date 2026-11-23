@@ -7,6 +7,7 @@ See [Client Requests](client-requests.md) for generation protocols and [OpenAPI]
 ## Contents
 
 - [HTTP API](#http-api)
+  - [Static image generation](#static-image-generation)
   - [Embeddings](#embeddings)
   - [Generation Text model discovery](#generation-text-model-discovery)
   - [Capability discovery and adaptation notice](#capability-discovery-and-adaptation-notice)
@@ -40,6 +41,10 @@ Standalone endpoints require explicit model activation:
 
 The [OpenAPI summary](../openapi.json) describes envelopes and selected constraints, not full vendor API conformance. Codecs define exact admission. Business input cannot choose an upstream origin, credential or auth header; inbound headers are not forwarded.
 
+### Static image generation
+
+Enable `gpt-image-2.6-flare` or `gpt-image-2.6-sunburst` in `models.json` with a named `openai` Platform API-key account. `/v1/images/generations` returns bounded inline Base64 artifacts, defaulting to PNG. Reported creation time, supported image metadata and usage retain their standard meanings. Neither the retired OpenRouter `gpt-image-2.5-flare` label nor Image Edit, preview streaming, SVG or GIF is admitted.
+
 ### Embeddings
 
 Explicitly list the model in `models.json`, for example `"text-embedding-3-large":{"account":"primary"}`, and provision the named account for its bound Provider. Other enabled accounts are not task fallback targets.
@@ -49,7 +54,7 @@ Explicitly list the model in `models.json`, for example `"text-embedding-3-large
 | `text-embedding-3-large` | `openai` (direct Platform API key, not `chatgpt` OAuth) | 3072 | 1–3072 |
 | `qwen3.7-text-embedding` | `aliyun-dashscope-cn` | 1024 | 256, 512, 768, 1024, 1536, 2048 or 2560 |
 | `gemini-embedding-2` | `google` | 3072 | 128–3072 |
-| `text-embedding-3-small` | `openrouter` | 1536 | 1–1536 |
+| `text-embedding-3-small` | `openai` (direct Platform API key) | 1536 | 1–1536 |
 
 Use the same binding and width for indexing and querying; matching widths do not make vector spaces interchangeable.
 
@@ -69,7 +74,7 @@ Reported zeros are preserved.
 
 Approximate counts can be inaccurate across languages and models; do not treat them as exact billing or hard quota measurements.
 
-Unsupported `user` hints are omitted on Google/DashScope and forwarded on the OpenAI and OpenRouter bindings. The direct OpenAI binding requires the upstream model to match and both usage counters to be reported; it does not substitute or estimate missing reports.
+Unsupported `user` hints are omitted on Google/DashScope and forwarded on the OpenAI bindings. The direct OpenAI bindings require the upstream model to match and both usage counters to be reported; they do not substitute or estimate missing reports.
 
 These adaptations do not claim upstream reporting or attribution.
 

@@ -188,7 +188,7 @@ The proposed native-output profile is narrower than a complete Grok API:
 
 Before implementation, review isolated directional examples: native `data` without `created`; a separate result with `created` plus serving `model`; a standard omitted-format request followed by a JPEG report; differing reports across two artifacts; and sparse usage with exact money. Each negative example must reach its own intended failure rather than first failing for a missing timestamp. Positive examples must independently specify the selected public representation, not only native→IR→native round trips.
 
-One existing boundary repair also belongs in the selected static slice: OpenAI/OpenRouter upstream image parsing currently shares closed-object helpers and rejects unknown members, unlike the strict-known/ignore-unknown rule. Separate upstream tolerance from downstream admission; retain strict known fields, duplicate-key rejection and resource bounds. Do not accidentally admit unsupported client controls while fixing upstream extensibility.
+The direct OpenAI static codec preserves supported standard reports and ignores unknown upstream envelope and artifact members independently of downstream admission. Any new Image dialect must retain strict known fields, duplicate-key rejection and resource bounds.
 
 Grok OAuth support and entitlement are subsequent independent integration questions. The API-key-only image topology/gateway checks need responsible-layer changes under the selected contract, not a weakened Provider check or a duplicate model identity.
 

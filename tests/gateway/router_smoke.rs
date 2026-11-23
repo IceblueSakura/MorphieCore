@@ -177,23 +177,6 @@ fn responses_delivery(body: &[u8], streaming: bool) -> DecodedResponse {
     decoder.materialize().unwrap()
 }
 
-async fn openrouter_image_answer(
-    State(state): State<Upstream>,
-    headers: HeaderMap,
-    axum::Json(request): axum::Json<Value>,
-) -> Response {
-    assert_eq!(
-        headers["authorization"],
-        "Bearer synthetic-router-credential-0001"
-    );
-    assert!(!headers.contains_key("x-never-forward"));
-    assert_eq!(
-        request,
-        json!({"model":"openai/gpt-image-2.5-flare","prompt":"blue square","n":1,"stream":false,"provider":{"only":["openai"],"allow_fallbacks":false}})
-    );
-    state.0.lock().unwrap().push(request);
-    Response::builder().header("content-type","application/json").body(Body::from(json!({"created":456,"data":[{"b64_json":"BAUG","media_type":"image/png"}],"usage":{"prompt_tokens":3,"completion_tokens":5,"total_tokens":8,"cost":0.000123}}).to_string())).unwrap()
-}
 async fn image_answer(
     State(state): State<Upstream>,
     headers: HeaderMap,
@@ -207,10 +190,15 @@ async fn image_answer(
     assert_eq!(request["model"], "private-image");
     assert!(request.get("max_output_tokens").is_none());
     state.0.lock().unwrap().push(request.clone());
+    let format = if request["prompt"] == "wrong default" {
+        "jpeg"
+    } else {
+        "png"
+    };
     Response::builder()
         .header("content-type", "application/json")
         .body(Body::from(
-            json!({"created":123,"data":[{"b64_json":"AQID"}],"output_format":"png","size":"1024x1024"})
+            json!({"created":123,"data":[{"b64_json":"AQID"}],"output_format":format,"size":"1024x1024"})
                 .to_string(),
         ))
         .unwrap()
@@ -318,7 +306,6 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         .route("/responses", post(answer))
         .route("/embeddings", post(embedding_answer))
         .route("/images/generations", post(image_answer))
-        .route("/api/v1/images", post(openrouter_image_answer))
         .route("/audio/speech", post(speech_answer))
         .route("/api/v1/audio/speech", post(speech_answer))
         .route(
@@ -664,15 +651,18 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
     let response = client
         .post(format!("{url}/v1/images/generations"))
         .bearer_auth(support::CLIENT_KEY)
-        .header("x-never-forward", "synthetic-private")
-        .json(&json!({"model":"router-image","prompt":"blue square"}))
+        .json(&json!({"model":"public-image","prompt":"wrong default"}))
         .send()
         .await
         .unwrap();
-    assert_eq!(response.status(), 200);
-    assert_eq!(
-        response.json::<Value>().await.unwrap(),
-        json!({"created":456,"data":[{"b64_json":"BAUG"}],"output_format":"png"})
+    assert_eq!(response.status(), 502);
+    assert!(
+        response
+            .json::<Value>()
+            .await
+            .unwrap()
+            .get("data")
+            .is_none()
     );
     for format in ["mp3", "wav"] {
         let response = client.post(format!("{url}/v1/audio/speech"))

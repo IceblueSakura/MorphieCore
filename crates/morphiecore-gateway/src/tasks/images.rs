@@ -129,6 +129,16 @@ impl TaskOutput for Output {
         trace: &mut Trace,
     ) -> Result<(), ApiError> {
         let response = decode(receiver, entry.route.endpoint.profile, trace).await?;
+        if self.0.task.format.value().is_none()
+            && response.images.iter().any(|image| {
+                image
+                    .format
+                    .value()
+                    .is_some_and(|format| *format != crate::semantic::value::ImageFormat::Png)
+            })
+        {
+            return Err(ApiError::upstream());
+        }
         check_response(
             &response,
             &self.0.task,

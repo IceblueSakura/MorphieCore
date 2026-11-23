@@ -1,4 +1,4 @@
-//! Static GPT Image profile; unknown fields and unsupported options fail closed.
+//! Static GPT Image profile; request admission is independent of upstream report extensions.
 //! Sources: https://developers.openai.com/api/reference/resources/images/methods/generate
 //! https://github.com/openai/openai-python/tree/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types
 use crate::{
@@ -11,26 +11,23 @@ use crate::{
     },
 };
 use serde_json::{Map, Value, json};
-pub fn object<'a>(
-    value: &'a Value,
-    allowed: &[&str],
-) -> Result<&'a Map<String, Value>, CodecError> {
+fn object<'a>(value: &'a Value, allowed: &[&str]) -> Result<&'a Map<String, Value>, CodecError> {
     let map = value.as_object().ok_or_else(CodecError::invalid)?;
     if map.keys().any(|key| !allowed.contains(&key.as_str())) {
         return Err(CodecError::invalid());
     }
     Ok(map)
 }
-pub fn required<'a>(map: &'a Map<String, Value>, key: &str) -> Result<&'a Value, CodecError> {
+fn required<'a>(map: &'a Map<String, Value>, key: &str) -> Result<&'a Value, CodecError> {
     map.get(key).ok_or_else(CodecError::invalid)
 }
-pub fn string(value: &Value) -> Result<&str, CodecError> {
+fn string(value: &Value) -> Result<&str, CodecError> {
     value.as_str().ok_or_else(CodecError::invalid)
 }
-pub fn number(value: &Value) -> Result<u64, CodecError> {
+fn number(value: &Value) -> Result<u64, CodecError> {
     value.as_u64().ok_or_else(CodecError::invalid)
 }
-pub fn optional<T>(
+fn optional<T>(
     map: &Map<String, Value>,
     key: &str,
     parse: impl FnOnce(&Value) -> Result<T, CodecError>,
@@ -266,18 +263,10 @@ fn usage(value: &Value) -> Result<ImageUsage, CodecError> {
 }
 pub fn decode_response(bytes: &[u8]) -> Result<ImageGenerationResponse, CodecError> {
     let value = crate::json::decode_image_response(bytes)?;
-    let map = object(
-        &value,
-        &[
-            "created",
-            "data",
-            "output_format",
-            "size",
-            "background",
-            "quality",
-            "usage",
-        ],
-    )?;
+    let map = value.as_object().ok_or_else(CodecError::invalid)?;
+    if map.contains_key("svg_usage") {
+        return Err(CodecError::invalid());
+    }
     let data = required(map, "data")?
         .as_array()
         .ok_or_else(CodecError::invalid)?;
@@ -295,7 +284,10 @@ pub fn decode_response(bytes: &[u8]) -> Result<ImageGenerationResponse, CodecErr
     let mut total = 0;
     let mut images = Vec::with_capacity(data.len());
     for item in data {
-        let item = object(item, &["b64_json"])?;
+        let item = item.as_object().ok_or_else(CodecError::invalid)?;
+        if item.contains_key("url") || item.contains_key("revised_prompt") {
+            return Err(CodecError::invalid());
+        }
         let data = image_data(required(item, "b64_json")?, &mut total)?;
         images.push(GeneratedImage {
             data,
@@ -307,12 +299,13 @@ pub fn decode_response(bytes: &[u8]) -> Result<ImageGenerationResponse, CodecErr
     }
     let mut response = ImageGenerationResponse::new(number(required(map, "created")?)?, images)
         .map_err(|_| CodecError::invalid())?;
+    response.safety_identifier = optional(map, "safety_identifier", |v| Ok(string(v)?.into()))?;
     response.usage = optional(map, "usage", usage)?;
     response.validate().map_err(|_| CodecError::invalid())?;
     Ok(response)
 }
 /// Charge aggregate bytes before retaining another encoded artifact.
-pub fn image_data(value: &Value, total: &mut usize) -> Result<ImageData, CodecError> {
+fn image_data(value: &Value, total: &mut usize) -> Result<ImageData, CodecError> {
     let encoded = string(value)?;
     let remaining = MAX_IMAGES_BYTES
         .checked_sub(*total)
@@ -382,6 +375,12 @@ pub fn encode_response(response: &ImageGenerationResponse) -> Result<Value, Code
     }
     let mut map = Map::new();
     map.insert("created".into(), json!(created));
+    put(
+        &mut map,
+        "safety_identifier",
+        &response.safety_identifier,
+        |v| json!(v),
+    );
     map.insert(
         "data".into(),
         Value::Array(

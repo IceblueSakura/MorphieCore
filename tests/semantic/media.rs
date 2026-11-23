@@ -505,12 +505,8 @@ mod image_binding {
 mod image_controls {
     //! Independent static generation controls, not provider capability inference.
     use morphiecore::{
-        adapter::images::UpstreamAdapter,
-        protocol::{openai::images, openrouter_images},
-        semantic::{
-            task::image_generation::*,
-            value::{ImageFormat, Presence},
-        },
+        protocol::openai::images,
+        semantic::{task::image_generation::*, value::Presence},
     };
     use serde_json::json;
 
@@ -540,33 +536,6 @@ mod image_controls {
         );
         assert_eq!(request.identity.user, Some("synthetic-private-user".into()));
         assert!(!format!("{request:?}").contains("synthetic-private-user"));
-    }
-
-    #[test]
-    fn openrouter_maps_only_declared_controls_with_fixed_provider_options() {
-        let wire = json!({"model":"gpt-image-2.5-flare","prompt":"square","quality":"high","background":"transparent","moderation":"low","user":"synthetic-user"});
-        let mut request = images::decode_request(&serde_json::to_vec(&wire).unwrap()).unwrap();
-        assert_eq!(
-            openrouter_images::encode_request(&request, "openai/gpt-image-2.5-flare").unwrap(),
-            json!({"model":"openai/gpt-image-2.5-flare","prompt":"square","n":1,"stream":false,"quality":"high","background":"transparent","user":"synthetic-user","provider":{"only":["openai"],"allow_fallbacks":false,"options":{"openai":{"moderation":"low"}}}})
-        );
-        request.task.size = Presence::Value(ImageSizeRequest::Exact(ImageSize {
-            width: 1024,
-            height: 1024,
-        }));
-        assert!(
-            UpstreamAdapter::OpenRouterFlare
-                .encode_request(&request, "openai/gpt-image-2.5-flare")
-                .is_err()
-        );
-        request.task.size = Presence::Absent;
-        request.task.format = Presence::Value(ImageFormat::Webp);
-        request.task.compression = Presence::Value(80);
-        assert!(
-            UpstreamAdapter::OpenRouterFlare
-                .encode_request(&request, "openai/gpt-image-2.5-flare")
-                .is_err()
-        );
     }
 }
 mod image_generation {
@@ -613,6 +582,29 @@ mod image_generation {
     }
 
     #[test]
+    fn image_reports_preserve_safety_attribution_without_leaking_extension_fields() {
+        let wire =
+            br#"{"created":123,"data":[{"b64_json":"AQID","generation_id":"synthetic-internal"}],
+            "safety_identifier":"synthetic-attribution","future_report":true}"#;
+        let response = images::decode_response(wire).unwrap();
+        assert_eq!(
+            response.safety_identifier,
+            Presence::Value("synthetic-attribution".into())
+        );
+        assert!(!format!("{response:?}").contains("synthetic-attribution"));
+        assert_eq!(
+            images::encode_response(&response).unwrap(),
+            json!({"created":123,"data":[{"b64_json":"AQID"}],"safety_identifier":"synthetic-attribution"})
+        );
+        assert!(
+            images::decode_response(
+                br#"{"created":123,"data":[{"b64_json":"AQID"}],"safety_identifier":5}"#
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn image_generation_reported_values_are_not_request_defaults() {
         let v = json!({"created":123,"data":[{"b64_json":"AQID"}],"output_format":"png", "size":"1536x1024",
         "background":"opaque","quality":"high","usage":{"input_tokens":3,"input_tokens_details":{"text_tokens":3,"image_tokens":0},"output_tokens":5,"total_tokens":8}});
@@ -640,7 +632,7 @@ mod image_generation {
         assert!(!format!("{response:?}").contains("AQID"));
         for v in [
             json!({"created":123,"data":[{"b64_json":"AQID"}]}),
-            json!({"created":123,"data":[{"b64_json":"AQID"}],"output_format":null,"size":null,"background":null,"quality":null,"usage":null}),
+            json!({"created":123,"data":[{"b64_json":"AQID"}],"output_format":null,"size":null,"background":null,"quality":null,"safety_identifier":null,"usage":null}),
         ] {
             let r = images::decode_response(&serde_json::to_vec(&v).unwrap()).unwrap();
             assert_eq!(images::encode_response(&r).unwrap(), v);
@@ -653,51 +645,6 @@ mod image_generation {
             usage.total = Presence::Absent;
         }
         assert!(images::encode_response(&incomplete).is_err());
-    }
-}
-mod openrouter_images {
-    use morphiecore::{
-        protocol::{
-            image::projection::{AccountingPolicy, project_response},
-            openai::images,
-            openrouter_images,
-        },
-        semantic::value::Presence,
-    };
-    use serde_json::json;
-    #[test]
-    fn sparse_image_accounting_stays_in_ir_and_has_explicit_downstream_loss() {
-        let bytes=br#"{"created":42,"data":[{"b64_json":"AQID","media_type":"image/png"}],"usage":{"prompt_tokens":7,"completion_tokens":9,"total_tokens":16,"cost":0.01234567890123456789,"is_byok":false,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens_details":{"image_tokens":8,"reasoning_tokens":1}}}"#;
-        let response = openrouter_images::decode_response(bytes).unwrap();
-        let usage = response.usage.value().unwrap();
-        assert_eq!(usage.input, Presence::Value(7));
-        assert!(usage.input_details.value().unwrap().text.is_absent());
-        assert_eq!(
-            usage.input_details.value().unwrap().cached.value(),
-            Some(&2)
-        );
-        assert_eq!(
-            usage.output_details.value().unwrap().image.value(),
-            Some(&8)
-        );
-        assert_eq!(
-            usage.billing.cost.value().unwrap().amount().to_string(),
-            "0.01234567890123456789"
-        );
-        assert!(project_response(&response, AccountingPolicy::Strict).is_err());
-        let projected =
-            project_response(&response, AccountingPolicy::OmitUnrepresentableAccounting).unwrap();
-        assert!(projected.loss.usage_omitted);
-        assert!(projected.loss.billing_omitted);
-        assert_eq!(
-            images::encode_response(&projected.response).unwrap(),
-            json!({"created":42,"data":[{"b64_json":"AQID"}],"output_format":"png"})
-        );
-        assert_eq!(
-            response.usage.value().unwrap().input,
-            Presence::Value(7),
-            "projection cannot mutate the source"
-        );
     }
 }
 mod speech {

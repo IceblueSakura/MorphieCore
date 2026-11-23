@@ -40,10 +40,10 @@ async fn configured_task_sends_once_to_its_named_account_despite_generation_reco
         service(),
         json!({"models":{"text-embedding-3-small":{"account":"backup"}}}),
         &[
-            ("openrouter", "primary", "synthetic-primary"),
-            ("openrouter", "backup", "synthetic-backup"),
+            ("openai", "primary", "synthetic-primary"),
+            ("openai", "backup", "synthetic-backup"),
         ],
-        json!({"version":1,"providers":{"openrouter":{
+        json!({"version":1,"providers":{"openai":{
             "recovery":{"recovery_timeout_ms":5000},
             "accounts":(["primary","backup"].map(|name| json!({
                 "name":name,"enabled":true,"credential":{"alias":name},"base_url":root
@@ -82,7 +82,7 @@ async fn configured_task_sends_once_to_its_named_account_despite_generation_reco
             "standalone tasks do not inherit Generation recovery"
         );
         assert_eq!(calls[0].0, "Bearer synthetic-backup");
-        assert_eq!(calls[0].1["model"], "openai/text-embedding-3-small");
+        assert_eq!(calls[0].1["model"], "text-embedding-3-small");
     }
     server.abort();
     let _ = server.await;
@@ -120,7 +120,7 @@ async fn abandoned_embedding_releases_upstream_and_its_permit_before_and_during_
                 let body = futures_util::stream::once(async move {
                     opened.send(tx).await.unwrap();
                     Ok(Bytes::from_static(
-                        br#"{"object":"list","model":"reported",
+                        br#"{"object":"list","model":"text-embedding-3-small",
                        "data":[{"object":"embedding","index":0,"embedding":[0.5,1]}],
                        "usage":{"prompt_tokens":1,"total_tokens":1}}"#,
                     ))
@@ -140,8 +140,8 @@ async fn abandoned_embedding_releases_upstream_and_its_permit_before_and_during_
     let mut boot = Fixture::with_accounts(
         settings,
         json!({"models":{"text-embedding-3-small":{"account":"fixture"}}}),
-        &[("openrouter", "fixture", "synthetic-embedding-key")],
-        json!({"version":1,"providers":{"openrouter":{"accounts":[{
+        &[("openai", "fixture", "synthetic-embedding-key")],
+        json!({"version":1,"providers":{"openai":{"accounts":[{
             "name":"fixture","enabled":true,"credential":{"alias":"fixture"},"base_url":root
         }]}}}),
     )
@@ -289,10 +289,10 @@ fn embeddings_select_one_named_account_and_publish_only_the_selected_task() {
 fn task_accounts_share_target_composition_but_not_automatic_account_selection() {
     let model = "text-embedding-3-small";
     let keys = [
-        ("openrouter", "primary", "synthetic-first"),
-        ("openrouter", "backup", "synthetic-second"),
+        ("openai", "primary", "synthetic-first"),
+        ("openai", "backup", "synthetic-second"),
     ];
-    let declarations = json!({"version":1,"providers":{"openrouter":{"accounts":[
+    let declarations = json!({"version":1,"providers":{"openai":{"accounts":[
         {"name":"primary","enabled":true,"credential":{"alias":"primary"}},
         {"name":"backup","enabled":true,"credential":{"alias":"backup"},"base_url":"https://relay.invalid/custom/v1"}
     ]}}});
@@ -314,7 +314,7 @@ fn task_accounts_share_target_composition_but_not_automatic_account_selection() 
         "synthetic-second"
     );
     let mut disabled = declarations;
-    disabled["providers"]["openrouter"]["accounts"][1]["enabled"] = json!(false);
+    disabled["providers"]["openai"]["accounts"][1]["enabled"] = json!(false);
     assert!(matches!(
         Fixture::with_accounts(
             service(),
@@ -392,19 +392,19 @@ fn tokenplan_audio_stays_explicit_and_each_task_uses_its_fixed_account() {
 }
 
 #[test]
-fn openrouter_speech_and_images_do_not_activate_from_generation_accounts() {
+fn speech_and_images_do_not_activate_from_generation_accounts() {
     let keys = [
         ("openrouter", "primary", "synthetic-first"),
-        ("openrouter", "backup", "synthetic-second"),
+        ("openai", "backup", "synthetic-second"),
     ];
     let boot=Fixture::new(service(),json!({"models":{
-        "qwen-audio-3.0-tts-flash":{"account":"primary"},"gpt-image-2.5-flare":{"account":"backup"}
+        "qwen-audio-3.0-tts-flash":{"account":"primary"},"gpt-image-2.6-flare":{"account":"backup"}
     }}),&keys).unwrap();
     assert!(boot.gateway.state.entries.is_empty());
     assert_eq!(boot.gateway.state.speech.len(), 1);
     assert_eq!(boot.gateway.state.images.len(), 1);
     assert_eq!(
-        boot.gateway.state.images["gpt-image-2.5-flare"]
+        boot.gateway.state.images["gpt-image-2.6-flare"]
             .secret
             .resolve()
             .unwrap()
@@ -418,7 +418,7 @@ fn openrouter_speech_and_images_do_not_activate_from_generation_accounts() {
     })));
     let generation = Fixture::new(
         service(),
-        selected_models(&["gpt-6-luna"], &["openrouter"]),
+        selected_models(&["gpt-6-luna", "step-5-preview"], &["openai", "openrouter"]),
         &keys,
     )
     .unwrap();

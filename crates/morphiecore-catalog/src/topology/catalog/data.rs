@@ -96,9 +96,6 @@ pub(super) struct WireOverrides {
     reasoning_alias: Option<bool>,
     responses_summary_text_alias: Option<bool>,
     qwen4_responses_reasoning: Option<bool>,
-    responses_lifecycle_reports: Option<bool>,
-    #[serde(default)]
-    pub(super) delegate_strict_tools: bool,
 }
 
 impl WireOverrides {
@@ -120,9 +117,6 @@ impl WireOverrides {
         }
         if let Some(value) = self.qwen4_responses_reasoning {
             rules.reasoning.qwen4_responses_reasoning = value;
-        }
-        if let Some(value) = self.responses_lifecycle_reports {
-            rules.metadata.responses_lifecycle_reports = value;
         }
     }
 }
@@ -331,18 +325,18 @@ impl Catalog {
                 .validate()
                 .map_err(|_| TopologyError::InvalidModelBinding)?;
         }
-        // Messages and Images endpoint identities, dialects and defaults are code-owned
-        // for one reviewed binding each; other data cannot silently inherit them.
+        // Only reviewed bindings can inherit the code-owned Messages and Images contracts.
         if self.messages.len() > 1
             || self
                 .messages
                 .iter()
                 .any(|b| (b.provider, b.model) != messages::REVIEWED)
-            || self.images.len() > 1
-            || self
-                .images
-                .iter()
-                .any(|b| (b.provider, b.model) != images::REVIEWED)
+            || self.images.len() > images::REVIEWED.len()
+            || self.images.iter().any(|b| {
+                b.provider != "openai"
+                    || b.upstream != b.model
+                    || !images::REVIEWED.contains(&b.model)
+            })
         {
             return Err(TopologyError::InvalidModelBinding);
         }
@@ -564,8 +558,8 @@ mod tests {
         )
         .unwrap()]);
         catalog.images = Box::new([serde_json::from_str(
-            r#"{"model":"gpt-image-2.5-flare","upstream":"openai/gpt-image-2.5-flare",
-                    "provider":"openrouter","released_at":1,"developer":"Fixture"}"#,
+            r#"{"model":"gpt-image-2.6-flare","upstream":"gpt-image-2.6-flare",
+                    "provider":"openai","released_at":1,"developer":"Fixture"}"#,
         )
         .unwrap()]);
         assert_eq!(catalog.validate(), Ok(()));
@@ -578,7 +572,7 @@ mod tests {
         assert_eq!(other.validate(), Err(TopologyError::InvalidModelBinding));
         let mut other = parse(fixture!("deepseek", "fixture", "[]", "")).unwrap();
         other.images = Box::new([serde_json::from_str(
-            r#"{"model":"gpt-image-2.5-flare","upstream":"gpt-image-2.5-flare",
+            r#"{"model":"gpt-image-2.6-flare","upstream":"gpt-image-2.6-sunburst",
                     "provider":"openai","released_at":1,"developer":"Fixture"}"#,
         )
         .unwrap()]);

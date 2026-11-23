@@ -4,7 +4,10 @@
     "text-embedding-3-large": {
       "account": "primary"
     },
-    "gpt-image-2.5-flare": {
+    "gpt-image-2.6-flare": {
+      "account": "primary"
+    },
+    "gpt-image-2.6-sunburst": {
       "account": "primary"
     },
     "qwen-audio-3.0-tts-plus": {

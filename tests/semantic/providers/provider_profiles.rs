@@ -645,11 +645,7 @@ fn binding_parallel_omission_preserves_serial_guarantees_and_source() {
         topology::{GenerationProtocol, catalog::api_key_bindings},
     };
     let client = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
-    for prefix in [
-        "openrouter",
-        "opencode-go-mimo-pro",
-        "opencode-go-mimo-flash",
-    ] {
+    for prefix in ["opencode-go-mimo-pro", "opencode-go-mimo-flash"] {
         let binding = api_key_bindings()
             .iter()
             .find(|b| b.endpoint_prefix == prefix)

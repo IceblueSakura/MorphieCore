@@ -839,92 +839,35 @@ fn opencode_go_projects_neutral_conversations_independently_of_cache_groups() {
 }
 
 #[test]
-fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
+fn router_request_policy_remains_fixed_for_non_openai_models() {
     let topology = catalog::default_topology().unwrap();
-    let secret = SecretMaterial::new("synthetic-router-secret").unwrap();
-    for (profile, suffix, mut body) in [
-        (
-            GenerationApi::Chat,
-            "chat",
-            json!({"model":"gpt-6-luna","messages":[
-            {"role":"user","content":"hello"},
-            {"role":"assistant","content":"pong","reasoning_content":"think"}],
-            "max_completion_tokens":64,"reasoning_effort":"low","verbosity":"high","stream":true}),
-        ),
-        (
-            GenerationApi::Responses,
-            "responses",
-            json!({"model":"gpt-6-luna","input":"hello",
-            "max_output_tokens":64,"reasoning":{"effort":"low"},"text":{"verbosity":"high"},"stream":true}),
-        ),
-    ] {
-        let client = GenerationCodec::new(profile, Dialect::MorphieCore, None);
-        let request = client.decode_request(body.to_string().as_bytes()).unwrap();
-        admit(
-            catalog::default_topology()
-                .unwrap()
-                .model("gpt-6-luna")
-                .unwrap(),
-            &request,
-        )
+    let endpoint = topology
+        .endpoint(&EndpointId::new("openrouter-step-responses").unwrap())
         .unwrap();
-        let endpoint = topology
-            .endpoint(&EndpointId::new(&format!("openrouter-{suffix}")).unwrap())
-            .unwrap();
-        let prepared = prepare(endpoint, &providers::openrouter(), &secret, &request).unwrap();
-        let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
-        assert_eq!(wire["model"], "openai/gpt-6-luna");
-        assert_eq!(wire["provider"], json!({"require_parameters":true}));
-        assert_eq!(prepared.origin, "https://openrouter.ai");
-        assert_eq!(
-            prepared.path,
-            if profile == GenerationApi::Chat {
-                "/api/v1/chat/completions"
-            } else {
-                "/api/v1/responses"
-            }
-        );
-        assert_eq!(
-            prepared.auth_header,
-            (
-                "authorization".into(),
-                "Bearer synthetic-router-secret".into()
-            )
-        );
-        if profile == GenerationApi::Chat {
-            assert_eq!(wire["verbosity"], "high");
-            assert_eq!(wire["messages"][1]["reasoning"], "think");
-            assert!(wire["messages"][1].get("reasoning_content").is_none());
-            assert_eq!(wire["max_completion_tokens"], 64);
-        } else {
-            assert_eq!(wire["text"]["verbosity"], "high");
-            assert_eq!(wire["store"], false);
-            assert_eq!(wire["max_output_tokens"], 64);
-        }
-        body["temperature"] = json!(0.5);
-        let unsupported = client.decode_request(body.to_string().as_bytes()).unwrap();
-        admit(
-            catalog::default_topology()
-                .unwrap()
-                .model("gpt-6-luna")
-                .unwrap(),
-            &unsupported,
-        )
+    let client = GenerationCodec::new(GenerationApi::Responses, Dialect::MorphieCore, None);
+    let request = client
+        .decode_request(br#"{"model":"step-5-preview","input":"hello","stream":true}"#)
         .unwrap();
-        let prepared = prepare(endpoint, &providers::openrouter(), &secret, &unsupported).unwrap();
-        assert!(
-            serde_json::from_slice::<Value>(&prepared.body)
-                .unwrap()
-                .get("temperature")
-                .is_none()
-        );
-        let (_, rules) = endpoint.encode_request_with_rules(&unsupported).unwrap();
-        assert!(rules.contains(&"generation.omit-temperature.v1"));
-        assert!(!rules.contains(&"generation.omit-verbosity.v1"));
-        body.as_object_mut().unwrap().remove("temperature");
-        body["provider"] = json!({"require_parameters":false,"order":["untrusted"]});
-        assert!(client.decode_request(body.to_string().as_bytes()).is_err());
-    }
+    let prepared = prepare(
+        endpoint,
+        &providers::openrouter(),
+        &SecretMaterial::new("synthetic-router-secret").unwrap(),
+        &request,
+    )
+    .unwrap();
+    let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
+    assert_eq!(wire["model"], "stepfun/step-5-preview");
+    assert_eq!(wire["provider"], json!({"require_parameters":true}));
+    assert_eq!(prepared.origin, "https://openrouter.ai");
+    assert_eq!(prepared.path, "/api/v1/responses");
+    assert!(client.decode_request(
+        br#"{"model":"step-5-preview","input":"hello","provider":{"require_parameters":false,"order":["untrusted"]}}"#,
+    ).is_err());
+}
+
+#[test]
+fn luna_platform_and_subscription_keep_separate_native_contracts() {
+    let secret = SecretMaterial::new("synthetic-luna-secret").unwrap();
     let topology = catalog::default_topology().unwrap();
     let public = topology.model("gpt-6-luna").unwrap();
     let route = topology.route(&public.route).unwrap();
@@ -946,7 +889,7 @@ fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
     assert_eq!(prepared.path, "/v1/responses");
     let plan = morphiecore::execution::ExecutionPlan::for_request(&topology, &request).unwrap();
     assert!(plan.candidates.iter().any(|c| c.endpoint_id == endpoint.id));
-    assert_eq!(plan.candidates.len(), 4);
+    assert_eq!(plan.candidates.len(), 2);
     let capped = client
         .decode_request(br#"{"model":"gpt-6-luna","input":"hello","max_output_tokens":64}"#)
         .unwrap();
@@ -964,7 +907,7 @@ fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
     let plan = morphiecore::execution::ExecutionPlan::for_request(&topology, &capped).unwrap();
     assert!(plan.candidates.iter().any(|c| c.endpoint_id == endpoint.id));
     assert!(plan.rejections.iter().all(|r| r.endpoint_id != endpoint.id));
-    assert_eq!(plan.candidates.len(), 4);
+    assert_eq!(plan.candidates.len(), 2);
     assert_eq!(capped, original);
     let platform = route
         .endpoints

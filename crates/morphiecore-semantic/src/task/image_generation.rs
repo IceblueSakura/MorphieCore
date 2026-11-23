@@ -237,12 +237,24 @@ mod accounting;
 pub use accounting::{
     ImageBilling, ImageCostBreakdown, ImageTokenBreakdown, ImageUsage, UsdAmount,
 };
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ImageGenerationResponse {
     pub created: Presence<u64>,
     pub model: Presence<String>,
+    pub safety_identifier: Presence<String>,
     pub images: Vec<GeneratedImage>,
     pub usage: Presence<ImageUsage>,
+}
+impl std::fmt::Debug for ImageGenerationResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImageGenerationResponse")
+            .field("created", &self.created)
+            .field("model", &self.model)
+            .field("safety_identifier", &"[redacted]")
+            .field("images", &self.images)
+            .field("usage", &self.usage)
+            .finish()
+    }
 }
 impl ImageGenerationResponse {
     /// Missing reports stay unknown; a reported contradiction cannot satisfy an explicit intent.
@@ -261,6 +273,7 @@ impl ImageGenerationResponse {
         let response = Self {
             created: Presence::Value(created),
             model: Presence::Absent,
+            safety_identifier: Presence::Absent,
             images,
             usage: Presence::Absent,
         };
@@ -282,6 +295,10 @@ impl ImageGenerationResponse {
                     || model.len() > 256
                     || model.chars().any(|c| c.is_control() || c.is_whitespace())
             })
+            || self
+                .safety_identifier
+                .value()
+                .is_some_and(|id| id.chars().count() > 128)
         {
             return Err(ImageError);
         }

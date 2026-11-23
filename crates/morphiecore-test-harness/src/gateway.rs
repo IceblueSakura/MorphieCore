@@ -137,8 +137,7 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
         contract: Dispositions::full(),
     };
     let (image_provider, image_route) = image_support::binding(origin);
-    let (router_provider, router_image_operation, router_route) = media::router_images(origin);
-    let (_, router_speech_operation, router_speech) = media::router_speech(origin);
+    let (router_provider, router_speech_operation, router_speech) = media::router_speech(origin);
     let (native_provider, native_speech_operation, native_speech) = media::native_speech(origin);
     let (asr_operation, asr) = media::native_transcription(origin);
     let topology = compile(
@@ -154,10 +153,7 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
         vec![canonical],
     )
     .unwrap()
-    .with_images(
-        vec![image_provider, router_image_operation],
-        vec![image_route, router_route],
-    )
+    .with_images(vec![image_provider], vec![image_route])
     .unwrap()
     .with_speech(
         vec![
@@ -190,10 +186,6 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
             ModelId::new("canonical-image").unwrap(),
             crate::morphiecore::topology::ModelMetadata::new(8, "Synthetic Image Developer")
                 .unwrap(),
-        ),
-        (
-            ModelId::new("router-image").unwrap(),
-            crate::morphiecore::topology::ModelMetadata::new(10, "Synthetic Router").unwrap(),
         ),
         (
             ModelId::new("canonical-speech").unwrap(),
@@ -273,14 +265,9 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
         topology,
         crate::morphiecore::gateway::TaskEntries {
             generation: entries,
-            images: vec![
-                crate::morphiecore::gateway::ImageEntry {
-                    model: "public-image".into(),
-                },
-                crate::morphiecore::gateway::ImageEntry {
-                    model: "router-image".into(),
-                },
-            ],
+            images: vec![crate::morphiecore::gateway::ImageEntry {
+                model: "public-image".into(),
+            }],
             speech: vec![
                 crate::morphiecore::gateway::SpeechEntry {
                     model: "public-speech".into(),

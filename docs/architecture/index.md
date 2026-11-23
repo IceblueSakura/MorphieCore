@@ -74,7 +74,7 @@ See [shared Provider metadata](#shared-provider-metadata) for the trusted catalo
 
 ### Shared Provider metadata
 
-[Provider data](../../crates/morphiecore-catalog/src/provider/providers.json) owns default origins, operation paths, override suffixes and authentication. [Topology data](../../crates/morphiecore-catalog/src/topology/catalog/topology.json) owns models, ordered binding members, binding limits, effort maps and standalone tasks. Both are embedded with `include_bytes!`; strict parsing and validated references precede topology compilation. Adding a standard model using existing carriers requires only catalog data. Messages and Images endpoint identities, dialects and defaults are code-owned for one reviewed binding each; their data entries can only select that binding, and catalog validation rejects any other. Native codec qualifications, including [Bailian model policies](../../crates/morphiecore-protocol/src/openai/dialect/bailian/models.rs), are separate from deployment bindings and apply to direct native codecs too.
+[Provider data](../../crates/morphiecore-catalog/src/provider/providers.json) owns default origins, operation paths, override suffixes and authentication. [Topology data](../../crates/morphiecore-catalog/src/topology/catalog/topology.json) owns models, ordered binding members, binding limits, effort maps and standalone tasks. Both are embedded with `include_bytes!`; strict parsing and validated references precede topology compilation. Adding a standard Generation model using existing carriers requires only catalog data. Messages and Images use code-owned contracts restricted to reviewed bindings. Native codec qualifications, including [Bailian model policies](../../crates/morphiecore-protocol/src/openai/dialect/bailian/models.rs), are separate from deployment bindings and apply to direct native codecs too.
 
 Binding validation and assembly use the same model-contract lookup and derived identities. A canonical model alone does not declare support for a different carrier. Fixed codec domains such as Xiaomi Speech voices are inherited from the codec, not redeclared in topology data.
 
@@ -330,7 +330,7 @@ Selected policy direction for the deferred counting surface, not implemented end
 
 Operational on `POST /v1/embeddings`, decoupled from Generation routing:
 - Supports text input samples, dense vector output, and request-level dimensionality constraints.
-- Bound targets: direct OpenAI `text-embedding-3-large`, DashScope `qwen3.7-text-embedding`, Google `gemini-embedding-2`, and OpenRouter `text-embedding-3-small`.
+- Bound targets: direct OpenAI `text-embedding-3-large` and `text-embedding-3-small`, DashScope `qwen3.7-text-embedding`, and Google `gemini-embedding-2`.
 - Direct single-attempt execution; no failover across distinct embedding spaces.
 - The direct OpenAI binding uses the standard codec without encoding or usage substitution. It rejects responses that report a different model even when vector counts and widths match.
 

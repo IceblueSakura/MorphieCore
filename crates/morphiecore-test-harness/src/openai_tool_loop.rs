@@ -287,7 +287,7 @@ async fn start_with_recovery(
         Router::new().route(
             match target {
                 GenerationProtocol::OpenAiChat => "/compatible-mode/v1/chat/completions",
-                GenerationProtocol::OpenAiResponses => "/api/v1/responses",
+                GenerationProtocol::OpenAiResponses => "/v1/responses",
                 GenerationProtocol::AnthropicMessages => "/inference/go/anthropic/v1/messages",
                 _ => unreachable!(),
             },
@@ -296,7 +296,7 @@ async fn start_with_recovery(
     } else {
         Router::new()
             .route("/compatible-mode/v1/chat/completions", post(answer))
-            .route("/api/v1/responses", post(answer))
+            .route("/v1/responses", post(answer))
     }
     .with_state(StateData {
         profile,
@@ -315,10 +315,10 @@ async fn start_with_recovery(
         Some(GenerationProtocol::AnthropicMessages) => {
             ("claude-haiku-5-5", "opencode-go-haiku-messages")
         }
-        Some(GenerationProtocol::OpenAiResponses) => ("gpt-6-luna", "openrouter-responses"),
+        Some(GenerationProtocol::OpenAiResponses) => ("gpt-6-luna", "openai-luna-responses"),
         _ => match profile {
             GenerationApi::Chat => ("qwen3.8-flash", "dashscope-flash-chat"),
-            GenerationApi::Responses => ("gpt-6-luna", "openrouter-responses"),
+            GenerationApi::Responses => ("gpt-6-luna", "openai-luna-responses"),
         },
     };
     let mut endpoint = catalog
@@ -394,7 +394,7 @@ async fn start_with_recovery(
     let (credentials, store) = if recover {
         let prefix = match profile {
             GenerationApi::Chat => "/compatible-mode/v1",
-            GenerationApi::Responses => "/api/v1",
+            GenerationApi::Responses => "/v1",
         };
         let (accounts, store) = crate::credential_recovery::accounts(
             provider.id.as_str(),

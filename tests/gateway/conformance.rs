@@ -237,9 +237,9 @@ const BINDINGS: &[Binding<'static>] = &[
     ),
     (
         "gpt-6-luna",
-        "openrouter-responses",
-        "openrouter",
-        "openrouter-api-key",
+        "openai-luna-responses",
+        "openai",
+        "openai-api-key",
         Api::Responses,
     ),
     (
@@ -838,7 +838,7 @@ async fn representative_dialects_preserve_text_and_tool_workflows() {
         "xiaomi",
         "deepseek",
         "dashscope-flash",
-        "openrouter",
+        "openrouter-step",
         "nvidia",
         "modelbest-minicpm5-1b",
         "opencode-go",
@@ -1033,7 +1033,7 @@ async fn agent_default_production_lanes() {
 #[tokio::test]
 async fn messages_delivery_controls_complete_without_cache_markers() {
     // Isolate report projection from owner-local cache projection.
-    for id in ["dashscope-glm-chat", "openrouter-responses"] {
+    for id in ["dashscope-glm-chat", "openai-luna-responses"] {
         let binding = BINDINGS.iter().find(|binding| binding.1 == id).unwrap();
         for stream in [false, true] {
             let actual = lane(
@@ -1088,7 +1088,7 @@ async fn bare_messages_manual_thinking_converts_to_adaptive() {
 async fn incomplete_responses_reasoning_keeps_its_delivery_and_replay_status() {
     let binding = BINDINGS
         .iter()
-        .find(|b| b.1 == "openrouter-responses")
+        .find(|b| b.1 == "openai-luna-responses")
         .unwrap();
     for stream in [false, true] {
         let actual = lane(
@@ -1123,14 +1123,14 @@ fn expected(binding: &str, client: Api, profile: Profile) -> &'static [&'static 
     match (binding, client, profile) {
         ("dashscope-glm-chat", Chat | Responses, Reasoning) => ACCEPT,
         ("dashscope-glm-chat" | "deepseek-chat", Messages, Reasoning) => ACCEPT,
-        ("openrouter-responses", Messages, Reasoning) => ACCEPT,
+        ("openai-luna-responses", Messages, Reasoning) => ACCEPT,
         ("dashscope-flash-responses", Messages, Reasoning) => ACCEPT,
         ("deepseek-chat", Chat, Reasoning) => {
             &["planning:[\"admission.reasoning_history_required\"]@0"]
         }
         ("deepseek-chat", Responses, Reasoning) => ACCEPT,
-        ("openrouter-responses", Responses, Reasoning) => ACCEPT,
-        ("openrouter-responses" | "dashscope-flash-responses", Chat, Reasoning) => ACCEPT,
+        ("openai-luna-responses", Responses, Reasoning) => ACCEPT,
+        ("openai-luna-responses" | "dashscope-flash-responses", Chat, Reasoning) => ACCEPT,
         ("dashscope-flash-responses", Responses, Reasoning) => ACCEPT,
         ("opencode-go-haiku-messages", Chat | Messages, Text | Tools)
         | ("opencode-go-haiku-messages", Responses, Text | Tools) => ACCEPT,

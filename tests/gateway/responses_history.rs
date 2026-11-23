@@ -3,7 +3,13 @@ use crate::openai_tool_loop as fixture;
 use morphiecore::protocol::openai::GenerationApi;
 use serde_json::{Value, json};
 
-async fn request(client: &reqwest::Client, base: &str, key: &str, body: &Value) -> Value {
+async fn request(
+    client: &reqwest::Client,
+    base: &str,
+    key: &str,
+    body: &Value,
+    opening_reasoning: &Value,
+) -> Value {
     let response = client
         .post(format!("{base}/responses"))
         .bearer_auth(key)
@@ -23,10 +29,7 @@ async fn request(client: &reqwest::Client, base: &str, key: &str, body: &Value) 
             event["type"].as_str(),
             Some("response.created" | "response.in_progress")
         ) {
-            assert_eq!(
-                event["response"]["reasoning"],
-                json!({"effort":"low","summary":"auto"})
-            );
+            assert_eq!(&event["response"]["reasoning"], opening_reasoning);
             assert_eq!(event["response"]["service_tier"], "auto");
             assert!(event["response"].get("text").is_none());
         }
@@ -102,7 +105,8 @@ async fn stateless_standard_history_survives_a_fresh_gateway_without_stored_resp
             "reasoning":{"effort":"low","summary":"auto"},"service_tier":"auto",
             "include":["reasoning.encrypted_content"],"tools":[{"type":"function","name":"read",
                 "parameters":{"type":"object","properties":{"key":{"type":"string"}}},"strict":false}]});
-        let first = request(&client, &base, super::support::CLIENT_KEY, &body).await;
+        let opening = json!({"effort":"low","summary":"auto"});
+        let first = request(&client, &base, super::support::CLIENT_KEY, &body, &opening).await;
         assert_eq!(
             client
                 .get(format!(
@@ -135,7 +139,7 @@ async fn stateless_standard_history_survives_a_fresh_gateway_without_stored_resp
             .unwrap()
             .unwrap();
         let (base, shutdown, mut server) = bounded_history_service(&origin).await;
-        let second = request(&client, &base, super::support::CLIENT_KEY, &body).await;
+        let second = request(&client, &base, super::support::CLIENT_KEY, &body, &opening).await;
         assert_eq!(second["output"][0]["content"][0]["text"], "value-A");
         {
             let sent = seen.lock().unwrap();
@@ -166,6 +170,8 @@ async fn stateless_tool_history_in_json_and_sse() {
         .timeout(std::time::Duration::from_secs(5))
         .build()
         .unwrap();
+    let opening =
+        json!({"effort":"low","summary":"detailed","context":"all_turns","mode":"standard"});
     for stream in [false, true] {
         let mut body = json!({"model":"gpt-6-luna","input":[{"role":"user","content":"lookup"}],"store":false,
             "max_output_tokens":256,"reasoning":{"effort":"low","summary":"auto"},
@@ -173,7 +179,8 @@ async fn stateless_tool_history_in_json_and_sse() {
             "description":"Synthetic lookup","parameters":{"type":"object","properties":{"key":{"type":"string"}},
             "required":["key"]},"strict":false}],"stream":stream});
         for turn in 1..=3 {
-            let response = request(&client, &fixture.base, fixture::CLIENT_KEY, &body).await;
+            let response =
+                request(&client, &fixture.base, fixture::CLIENT_KEY, &body, &opening).await;
             assert_eq!(
                 response["usage"]["total_tokens"], 18,
                 "stream={stream}, turn={turn}: {response}"

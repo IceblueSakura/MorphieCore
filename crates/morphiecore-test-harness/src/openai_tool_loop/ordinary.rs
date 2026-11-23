@@ -18,7 +18,7 @@ pub fn assert_request(target: GenerationProtocol, headers: &HeaderMap, body: &Va
         body["model"],
         match target {
             GenerationProtocol::OpenAiChat => "qwen3.8-flash",
-            GenerationProtocol::OpenAiResponses => "openai/gpt-6-luna",
+            GenerationProtocol::OpenAiResponses => "gpt-6-luna",
             GenerationProtocol::AnthropicMessages => "claude-haiku-5-5",
             _ => unreachable!(),
         }

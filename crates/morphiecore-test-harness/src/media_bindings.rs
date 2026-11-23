@@ -1,17 +1,13 @@
 //! Explicit protocol fixtures; never selected from the product catalog.
 use crate::{
-    image_generation as image_support,
     morphiecore::{
-        adapter::{
-            images::UpstreamAdapter as ImageProfile, speech::UpstreamAdapter as SpeechProfile,
-        },
-        protocol::image::projection::AccountingPolicy,
+        adapter::speech::UpstreamAdapter as SpeechProfile,
         provider::{
             AuthScheme, CredentialBindingId, EndpointPath, ProviderDefinition, ProviderId,
             TrustedOrigin,
         },
         semantic::value::AudioEncoding,
-        topology::{EndpointId, EndpointTarget, ModelId, RouteId, images, speech, transcription},
+        topology::{EndpointId, EndpointTarget, ModelId, RouteId, speech, transcription},
     },
     speech as speech_support,
 };
@@ -23,34 +19,6 @@ fn provider(origin: &str, id: &str) -> ProviderDefinition {
         endpoints: [].into(),
         auth: AuthScheme::Bearer,
     }
-}
-
-pub fn router_images(
-    origin: &str,
-) -> (
-    ProviderDefinition,
-    images::ProviderEntry,
-    images::ImageRoute,
-) {
-    let provider = provider(origin, "router-fixture");
-    let (_, mut route) = image_support::binding(origin);
-    route.id = RouteId::new("router-image").unwrap();
-    route.model = ModelId::new("router-image").unwrap();
-    route.canonical_model = route.model.clone();
-    route.accounting = AccountingPolicy::OmitUnrepresentableAccounting;
-    route.endpoint.id = EndpointId::new("router-image").unwrap();
-    route.endpoint.provider = provider.id.clone();
-    route.endpoint.canonical_model = route.canonical_model.clone();
-    route.endpoint.target.path = EndpointPath::new("/api/v1/images").unwrap();
-    // This named codec pins an upstream operation; the public label is synthetic.
-    route.endpoint.upstream_model = "openai/gpt-image-2.5-flare".into();
-    route.endpoint.profile = ImageProfile::OpenRouterFlare;
-    route.endpoint.credential = CredentialBindingId::new("router-key").unwrap();
-    let operation = images::ProviderEntry {
-        provider: provider.id.clone(),
-        path: route.endpoint.target.path.clone(),
-    };
-    (provider, operation, route)
 }
 
 pub fn router_speech(

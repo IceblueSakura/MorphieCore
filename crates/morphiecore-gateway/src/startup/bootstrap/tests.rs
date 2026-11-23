@@ -206,23 +206,17 @@ fn bootstrap_is_loopback_and_requires_explicit_auth_and_provider_keys() {
 
 #[test]
 fn responses_chat_bridge_is_explicit_and_replaces_not_falls_back_to_native_responses() {
-    let binding = catalog::api_key_bindings()
-        .iter()
-        .find(|b| b.model == "gpt-6-luna" && b.provider().id.as_str() == "openrouter")
-        .unwrap()
-        .endpoint_id(crate::topology::GenerationProtocol::OpenAiChat);
-    let config =
-        serde_json::json!({"models":{"gpt-6-luna":{"candidates":[{"binding":binding.as_str()}]}}});
+    let model = "step-5-preview";
+    let binding = "openrouter-step-chat";
+    let config = serde_json::json!({"models":{model:{"candidates":[{"binding":binding}]}}});
     let credentials = [(
         "openrouter",
         "openrouter-api-key",
         "synthetic-upstream-only",
     )];
     let boot = Fixture::new(service(), config.clone(), &credentials).unwrap();
-    let entry = &boot.gateway.state.entries[&(
-        crate::protocol::ClientProtocol::Responses,
-        "gpt-6-luna".into(),
-    )];
+    let entry =
+        &boot.gateway.state.entries[&(crate::protocol::ClientProtocol::Responses, model.into())];
     assert_eq!(entry.candidates.len(), 1);
     assert_eq!(
         entry.candidates[0].endpoint.protocol,
@@ -232,15 +226,15 @@ fn responses_chat_bridge_is_explicit_and_replaces_not_falls_back_to_native_respo
         entry.candidates[0].endpoint.target.path.as_str(),
         "/api/v1/chat/completions"
     );
-    for invalid in ["unknown", "deepseek-flash-chat"] {
+    for invalid in ["unknown", "deepseek-chat"] {
         let mut bad = config.clone();
-        bad["models"]["gpt-6-luna"]["candidates"][0]["binding"] = serde_json::json!(invalid);
+        bad["models"][model]["candidates"][0]["binding"] = serde_json::json!(invalid);
         assert!(Fixture::new(service(), bad, &credentials).is_err());
     }
     assert!(
         Fixture::new(
             service(),
-            serde_json::json!({"models":{"gpt-6-luna":{"candidates":[]}}}),
+            serde_json::json!({"models":{model:{"candidates":[]}}}),
             &credentials
         )
         .is_err()
@@ -725,11 +719,8 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
     write_private(&models_file, br#"{"models":{},"models":{}}"#);
     assert!(Bootstrap::from_files(&gateway_file, &store).is_err());
 
-    let replay_binding = catalog::api_key_bindings()
-        .iter()
-        .find(|b| b.model == "gpt-6-luna" && b.provider().id.as_str() == "openrouter")
-        .unwrap()
-        .endpoint_id(crate::topology::GenerationProtocol::OpenAiResponses);
+    let replay_model = "step-5-preview";
+    let replay_binding = "openrouter-step-responses";
     account_config["providers"]["openrouter"]["accounts"][0]["base_url"] =
         serde_json::json!("https://primary.example/first/v1");
     account_config["providers"]["openrouter"]["accounts"][1]["base_url"] =
@@ -737,14 +728,14 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
     write_accounts(directory.path(), &account_config);
     private_write(
         &models_file,
-        serde_json::json!({"models":{"gpt-6-luna":{
-            "candidates":[{"binding":replay_binding.as_str()}]
+        serde_json::json!({"models":{replay_model:{
+            "candidates":[{"binding":replay_binding}]
         }}}),
     );
     let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
     let entry = &configured.gateway.state.entries[&(
         crate::protocol::ClientProtocol::Responses,
-        "gpt-6-luna".into(),
+        replay_model.into(),
     )];
     let first = &entry.candidates[0].endpoint;
     let second = &entry.candidates[1].endpoint;
@@ -762,7 +753,7 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
     )
     .decode_request(
         &serde_json::to_vec(&serde_json::json!({
-            "model":"gpt-6-luna",
+            "model":replay_model,
             "input":[{"type":"compaction","id":"cmp","encrypted_content":sealed.as_str()}]
         }))
         .unwrap(),

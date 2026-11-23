@@ -205,14 +205,6 @@ impl ApiKeyBinding {
             model_limits: self.limits.clone(),
             ..TargetContract::full()
         };
-        if overrides.delegate_strict_tools {
-            // The router carries strict, but its endpoint inventory does not
-            // assess this nested guarantee. Let require_parameters qualify it.
-            contract.dispositions.set(
-                crate::semantic::task::generation::Feature::StrictTools,
-                crate::lowering::disposition::Disposition::Delegate,
-            );
-        }
         if self.dialect == Dialect::Bailian {
             contract.dispositions.set(
                 crate::semantic::task::generation::Feature::StrictTools,

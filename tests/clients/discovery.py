@@ -21,7 +21,7 @@ def main():
         version = process.wait(timeout=5).decode().strip()
     check_client_version(case, version)
     domains = ["deepseek", "google", "opencode-go", "modelbest",
-               "aliyun-dashscope-cn", "aliyun-tokenplan-cn", "openrouter", "xiaomi"]
+               "aliyun-dashscope-cn", "aliyun-tokenplan-cn", "openai", "xiaomi"]
     private_json(root / "accounts.json", {"version": 1, "providers": {
         domain: {"accounts": [{"name": "primary", "enabled": True,
                                "credential": {"alias": "primary"}}]}
@@ -35,7 +35,7 @@ def main():
         "hy4": ["opencode-go-chat"],
         "mimo-v2.6-flash": ["opencode-go-mimo-flash-chat"],
         "mimo-v2.6-pro": ["opencode-go-mimo-pro-chat", "xiaomi-responses"],
-        "gpt-6-luna": ["openrouter-responses"],
+        "gpt-6-luna": ["openai-luna-responses"],
         "minicpm5-1b": ["modelbest-minicpm5-1b-chat"],
         "minicpm5-2b": ["modelbest-minicpm5-2b-chat"],
         "MiniCPM-V-4.7-1B": ["modelbest-minicpm-v-4.7-1b-chat"],

@@ -161,9 +161,7 @@ fn completed_reasoning_is_not_rehashed_for_unrelated_text_batches() {
 fn late_chat_reasoning_identity_keeps_published_and_retained_aliases() {
     let endpoint = crate::topology::catalog::api_key_bindings()
         .iter()
-        .find(|binding| {
-            binding.canonical_model == "gpt-6-luna" && binding.dialect == Dialect::OpenRouter
-        })
+        .find(|binding| binding.endpoint_prefix == "openrouter-step")
         .unwrap()
         .endpoint(crate::topology::GenerationProtocol::OpenAiChat)
         .unwrap();
@@ -544,7 +542,7 @@ fn messages_end_turn_derivation_uses_original_request_without_mutating_reports()
     };
     let binding = crate::topology::catalog::api_key_bindings()
         .iter()
-        .find(|b| b.endpoint_prefix == "openrouter")
+        .find(|b| b.endpoint_prefix == "xiaomi-ultraspeed")
         .unwrap();
     for api in [GenerationApi::Chat, GenerationApi::Responses] {
         let codec = GenerationCodec::new(api, Dialect::Standard, None);
@@ -720,7 +718,7 @@ fn messages_end_turn_stream_waits_for_eof_and_final_metadata() {
     use crate::semantic::task::generation::{CompletionCause, InteractionProgress};
     let endpoint = crate::topology::catalog::api_key_bindings()
         .iter()
-        .find(|b| b.endpoint_prefix == "openrouter")
+        .find(|b| b.endpoint_prefix == "xiaomi-ultraspeed")
         .unwrap()
         .endpoint(crate::topology::GenerationProtocol::OpenAiResponses)
         .unwrap();
@@ -2106,15 +2104,8 @@ fn chat_delivery_uses_terminal_service_reports_without_rewriting_opening_facts()
                 "content":[{"type":"output_text","text":"answer","annotations":[],"logprobs":[]}]}]});
         let mut frames = morphiecore_test_support::responses_profile::response_events(response);
         frames[0]["response"]["service_tier"] = json!("auto");
-        let endpoint = crate::topology::catalog::api_key_bindings()
-            .iter()
-            .find(|binding| {
-                binding.canonical_model == "gpt-6-luna" && binding.dialect == Dialect::OpenRouter
-            })
-            .unwrap()
-            .endpoint(crate::topology::GenerationProtocol::OpenAiResponses)
-            .unwrap();
-        let mut attempt = Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
+        let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+        let mut attempt = Attempt::new(codec, 65536, Default::default());
         attempt.begin(200, "text/event-stream").unwrap();
         let mut delivery = ResponseDelivery::new(
             ClientAdapter::openai(
