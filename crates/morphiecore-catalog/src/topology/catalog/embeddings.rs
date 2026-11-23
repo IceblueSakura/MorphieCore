@@ -97,7 +97,11 @@ impl EmbeddingBinding {
                     tokenizer: self.tokenizer,
                     max_input_tokens: self.max_input_tokens,
                     joint_text: self.profile == UpstreamAdapter::Google,
-                    reports: ReportPolicy::Compatible,
+                    reports: if self.profile == UpstreamAdapter::Standard {
+                        ReportPolicy::Strict
+                    } else {
+                        ReportPolicy::Compatible
+                    },
                 },
                 credential: self.credential(),
                 execution: ExecutionContract {

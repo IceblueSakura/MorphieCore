@@ -158,8 +158,13 @@ async fn answer(
     } else {
         json!({"prompt_tokens":7,"total_tokens":7})
     };
+    let model = if state.profile == UpstreamAdapter::Standard && input[0] != "wrong-model" {
+        "private-vector"
+    } else {
+        "reported-vector"
+    };
     let mut output = json!({
-        "object":"list","model":"reported-vector","id":"synthetic-id","data":data,"usage":usage,"unknown":true
+        "object":"list","model":model,"id":"synthetic-id","data":data,"usage":usage,"unknown":true
     });
     if input[0].is_array() {
         output.as_object_mut().unwrap().remove("usage");
@@ -178,17 +183,26 @@ impl Fixture {
         default_dimensions: usize,
         max_inputs: usize,
     ) -> Self {
-        Self::start_profile(encodings, default_dimensions, max_inputs, false).await
+        let profile = if encodings == EncodingSupport::Float {
+            UpstreamAdapter::DashScope
+        } else {
+            UpstreamAdapter::OpenRouter
+        };
+        Self::start_profile(encodings, default_dimensions, max_inputs, profile).await
     }
     pub async fn start_google() -> Self {
-        Self::start_profile(EncodingSupport::Float, 2, 4, true).await
+        Self::start_profile(EncodingSupport::Float, 2, 4, UpstreamAdapter::Google).await
+    }
+    pub async fn start_standard() -> Self {
+        Self::start_profile(EncodingSupport::Both, 2, 4, UpstreamAdapter::Standard).await
     }
     async fn start_profile(
         encodings: EncodingSupport,
         default_dimensions: usize,
         max_inputs: usize,
-        google: bool,
+        profile: UpstreamAdapter,
     ) -> Self {
+        let google = profile == UpstreamAdapter::Google;
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let origin = format!("http://{}", listener.local_addr().unwrap());
         let provider = ProviderDefinition {
@@ -209,8 +223,10 @@ impl Fixture {
                 default_dimensions.max(16),
             );
         route.endpoint.contract.max_inputs = max_inputs;
-        route.endpoint.contract.reports =
-            crate::morphiecore::protocol::embedding::projection::ReportPolicy::Compatible;
+        if profile != UpstreamAdapter::Standard {
+            route.endpoint.contract.reports =
+                crate::morphiecore::protocol::embedding::projection::ReportPolicy::Compatible;
+        }
         route.endpoint.contract.user =
             crate::morphiecore::protocol::embedding::projection::UserPolicy::Omit;
         route.endpoint.contract.tokenizer = if google {
@@ -220,19 +236,13 @@ impl Fixture {
         };
         route.endpoint.contract.max_input_tokens = Some(8192);
         route.endpoint.execution.response_body_limit = 1 << 20;
-        route.endpoint.profile = if google {
-            UpstreamAdapter::Google
-        } else if encodings == EncodingSupport::Float {
-            UpstreamAdapter::DashScope
-        } else {
-            UpstreamAdapter::OpenRouter
-        };
+        route.endpoint.profile = profile;
         let seen = Arc::new(Mutex::new(vec![]));
         let router = Router::new()
             .route("/embeddings", post(answer))
             .with_state(Upstream {
                 seen: seen.clone(),
-                profile: route.endpoint.profile,
+                profile,
                 default_dimensions,
             });
         let upstream = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });

@@ -330,8 +330,9 @@ Selected policy direction for the deferred counting surface, not implemented end
 
 Operational on `POST /v1/embeddings`, decoupled from Generation routing:
 - Supports text input samples, dense vector output, and request-level dimensionality constraints.
-- Bound targets: DashScope text models, OpenAI `text-embedding-3-small` (via OpenRouter), and Google `gemini-embedding-2`.
+- Bound targets: direct OpenAI `text-embedding-3-large`, DashScope `qwen3.7-text-embedding`, Google `gemini-embedding-2`, and OpenRouter `text-embedding-3-small`.
 - Direct single-attempt execution; no failover across distinct embedding spaces.
+- The direct OpenAI binding uses the standard codec without encoding or usage substitution. It rejects responses that report a different model even when vector counts and widths match.
 
 ##### Embedding encoding compatibility
 

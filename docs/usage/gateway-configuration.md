@@ -64,7 +64,7 @@ Replace **each** Agent-key placeholder with an independently generated high-entr
 
 Provision every referenced account with `--accounts "$ROOT/accounts.json" --store "$ROOT/credentials"`.
 
-The shipped account template declares `primary` for `aliyun-tokenplan-cn`, `opencode-go`, `google` and `openrouter`; each references its Provider-local `example` alias.
+The shipped account template declares `primary` for `aliyun-tokenplan-cn`, `opencode-go`, `google`, `openai` and `openrouter`; each references its Provider-local `example` alias.
 
 Remove unused Provider declarations before validation if those accounts will not be provisioned.
 
@@ -365,7 +365,7 @@ Those reviewed Google bindings omit temperature/top-p/top-k that the model ignor
 
 History reasoning is never converted into assistant text. Readable reasoning without this target's native carrier, including reasoning demonstrably belonging to another target, is omitted under the named visible-history transfer policy, never promoted to an assistant answer. Visible messages and real call/results remain; partial reasoning, damaged compatible replay and required compacted/cached context cannot be repaired by omission. Valid native carriers remain available.
 
-Only listed models are activated. Images, Speech and Embeddings select one account explicitly, for example `"text-embedding-3-small":{"account":"primary"}`. They retain single-target task execution without Generation overrides or multi-account recovery.
+Only listed models are activated. Images, Speech and Embeddings select one account explicitly, for example `"text-embedding-3-large":{"account":"primary"}`. They retain single-target task execution without Generation overrides or multi-account recovery.
 
 Transcription also requires `account`. A shared model requires an explicit model-level `binding`, not a Generation `candidates` list:
 

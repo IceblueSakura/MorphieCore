@@ -877,6 +877,23 @@
       "developer": "OpenAI"
     },
     {
+      "model": "text-embedding-3-large",
+      "upstream": "text-embedding-3-large",
+      "provider": "openai",
+      "max_inputs": 128,
+      "dimensions": [],
+      "max_dimensions": 3072,
+      "min_dimensions": 1,
+      "default_dimensions": 3072,
+      "encodings": "both",
+      "user": "forward",
+      "tokenizer": null,
+      "max_input_tokens": 8192,
+      "profile": "standard",
+      "released_at": 1706140800,
+      "developer": "OpenAI"
+    },
+    {
       "model": "gemini-embedding-2",
       "upstream": "gemini-embedding-2",
       "provider": "google",

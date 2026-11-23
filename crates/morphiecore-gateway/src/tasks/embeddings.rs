@@ -139,6 +139,12 @@ impl TaskOutput for Output {
             expectation.upstream_encoding,
         )
         .await?;
+        // The standard binding identifies one vector space, even at a shared width.
+        if entry.route.endpoint.profile == UpstreamAdapter::Standard
+            && response.model.as_deref() != Some(entry.route.endpoint.upstream_model.as_str())
+        {
+            return Err(ApiError::upstream());
+        }
         expectation
             .validate_response(&response)
             .map_err(|_| ApiError::upstream())?;

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "models": {
-    "text-embedding-3-small": {
+    "text-embedding-3-large": {
       "account": "primary"
     },
     "gpt-image-2.5-flare": {

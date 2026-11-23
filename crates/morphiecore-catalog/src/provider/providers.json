@@ -259,10 +259,16 @@
       "responses": {
         "path": "/v1/responses",
         "suffix": "/responses"
+      },
+      "embeddings": {
+        "path": "/v1/embeddings",
+        "suffix": "/embeddings"
       }
     },
     "sources": [
       "https://developers.openai.com/api/reference/resources/responses/methods/create",
+      "https://developers.openai.com/api/reference/resources/embeddings/methods/create",
+      "https://developers.openai.com/api/docs/models/text-embedding-3-large",
       "https://developers.openai.com/api/docs/models/gpt-6.2-sol",
       "https://developers.openai.com/api/docs/models/gpt-6.2-astra",
       "https://developers.openai.com/api/docs/models/gpt-6-luna"

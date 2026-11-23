@@ -123,6 +123,48 @@ async fn embedding_encodings_and_effective_width() {
 }
 
 #[tokio::test]
+async fn standard_embedding_rejects_vectors_from_a_different_reported_model() {
+    let fixture = Fixture::start_standard().await;
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap();
+    let send = |text| {
+        client
+            .post(format!("{}/v1/embeddings", fixture.base))
+            .bearer_auth(CLIENT_KEY)
+            .json(&json!({
+                "model":"public-vector","input":[text,"second"],"dimensions":3,"encoding_format":"float"
+            }))
+            .send()
+    };
+    let accepted = send("first").await.unwrap();
+    assert_eq!(accepted.status(), 200);
+    let delivered: Value = accepted.json().await.unwrap();
+    assert_eq!(delivered["model"], "private-vector");
+    assert_eq!(
+        delivered["data"],
+        json!([
+            {"object":"embedding","index":1,"embedding":[0.1,-0.125,0]},
+            {"object":"embedding","index":0,"embedding":[0.1,-0.125,0]}
+        ])
+    );
+    let rejected = send("wrong-model").await.unwrap();
+    assert_eq!(rejected.status(), 502);
+    let body: Value = rejected.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "upstream_error");
+    assert!(body.get("data").is_none());
+    assert_eq!(
+        *fixture.seen.lock().unwrap(),
+        [
+            json!({"model":"private-vector","input":["first","second"],"dimensions":3,"encoding_format":"float"}),
+            json!({"model":"private-vector","input":["wrong-model","second"],"dimensions":3,"encoding_format":"float"})
+        ]
+    );
+}
+
+#[tokio::test]
 async fn embedding_default_vector_budget_rejects_before_transport() {
     let fixture = Fixture::start_with_dimensions(EncodingSupport::Float, 1536, 128).await;
     let client = reqwest::Client::builder()

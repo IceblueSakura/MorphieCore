@@ -16,6 +16,11 @@
         { "name": "primary", "enabled": true, "credential": { "alias": "example" } }
       ]
     },
+    "openai": {
+      "accounts": [
+        { "name": "primary", "enabled": true, "credential": { "alias": "example" } }
+      ]
+    },
     "openrouter": {
       "accounts": [
         { "name": "primary", "enabled": true, "credential": { "alias": "example" } }
