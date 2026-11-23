@@ -1,4 +1,6 @@
 //! Authenticated static image admission and ordered, pre-send target selection.
+mod transcode;
+
 use super::{
     exchange::Receiver,
     lifecycle::{Admission, TaskOutput},
@@ -8,6 +10,7 @@ use crate::{
     diagnostics::{Stage, Trace},
     ingress::admission,
     protocol::openai::images,
+    semantic::value::{ImageFormat, Presence},
     topology::{CompiledTopology, images::ImageRoute},
 };
 use axum::{
@@ -15,7 +18,12 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::BTreeMap,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 pub(crate) const NATIVE_PROFILE: &str = "native-static-v1";
 const PROFILE_HEADER: &str = "x-morphiecore-image-profile";
@@ -136,32 +144,57 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
         StatusCode::NOT_FOUND,
         crate::error::ErrorKind::ModelNotFound,
     ))?;
-    if native
-        != candidates[0]
-            .route
-            .endpoint
-            .profile
-            .requires_native_static()
-    {
+    let upstream = candidates[0].route.endpoint.profile;
+    if native && !upstream.supports_native_static() {
         return Err(ApiError::invalid());
     }
     let request = images::decode_request(&bytes).map_err(|_| ApiError::invalid())?;
+    let compatibility = !native && upstream.supports_native_static();
+    let wire = if compatibility && upstream != crate::adapter::images::UpstreamAdapter::QwenImage {
+        if request
+            .task
+            .format
+            .value()
+            .is_some_and(|format| *format != ImageFormat::Png)
+        {
+            return Err(ApiError::invalid());
+        }
+        if runtime.limits.image_ffmpeg.is_none() {
+            return Err(ApiError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                crate::error::ErrorKind::Unavailable,
+            ));
+        }
+        let mut wire = request.clone();
+        // The Provider selects its native format. Publication enforces PNG on
+        // the immutable client request, not on this upstream-only projection.
+        wire.task.format = Presence::Absent;
+        Cow::Owned(wire)
+    } else {
+        Cow::Borrowed(&request)
+    };
     let entry = select(&admitted, &runtime, candidates).await?;
-    let prepared = crate::execution::images::prepare(&entry.route, &entry.provider, &request)
+    let prepared = crate::execution::images::prepare(&entry.route, &entry.provider, &wire)
         .map_err(|_| ApiError::invalid())?;
+    drop(wire);
     admitted
-        .respond(runtime, entry, prepared, Output(request, native))
+        .respond(
+            runtime,
+            entry,
+            prepared,
+            Output {
+                request,
+                native,
+                compatibility,
+            },
+        )
         .await
 }
-fn check_response(
+fn check_budget(
     response: &crate::semantic::task::image_generation::ImageGenerationResponse,
-    request: &crate::semantic::task::image_generation::ImageGenerationRequest,
     image_bytes: usize,
     images_bytes: usize,
 ) -> Result<(), ApiError> {
-    response
-        .validate_for(request)
-        .map_err(|_| ApiError::upstream())?;
     if response
         .images
         .iter()
@@ -200,7 +233,11 @@ pub(crate) async fn receive_for_test(
 ) -> Result<crate::semantic::task::image_generation::ImageGenerationResponse, ApiError> {
     decode(Receiver::new(upstream, limit, trace)?, codec, trace).await
 }
-struct Output(crate::protocol::image::Request, bool);
+struct Output {
+    request: crate::protocol::image::Request,
+    native: bool,
+    compatibility: bool,
+}
 impl TaskOutput for Output {
     type Route = ImageRoute;
     const RESPONSE: body::ResponseType = body::ResponseType::Json;
@@ -217,27 +254,36 @@ impl TaskOutput for Output {
         lane: &body::Lane<'_>,
         trace: &mut Trace,
     ) -> Result<(), ApiError> {
-        let response = decode(receiver, entry.route.endpoint.profile, trace).await?;
-        if !self.1
-            && self.0.task.format.value().is_none()
+        let mut response = decode(receiver, entry.route.endpoint.profile, trace).await?;
+        if self.compatibility {
+            check_budget(&response, limits.image_bytes, limits.images_bytes)?;
+            for image in &mut response.images {
+                transcode::png(
+                    limits.image_ffmpeg.as_deref(),
+                    image,
+                    limits.image_bytes.min(limits.images_bytes),
+                )
+                .await?;
+            }
+        }
+        if !self.native
+            && self.request.task.format.value().is_none()
             && response.images.iter().any(|image| {
                 image
                     .format
                     .value()
-                    .is_some_and(|format| *format != crate::semantic::value::ImageFormat::Png)
+                    .is_some_and(|format| *format != ImageFormat::Png)
             })
         {
             return Err(ApiError::upstream());
         }
-        check_response(
-            &response,
-            &self.0.task,
-            limits.image_bytes,
-            limits.images_bytes,
-        )?;
-        if self.1
+        response
+            .validate_for(&self.request.task)
+            .map_err(|_| ApiError::upstream())?;
+        check_budget(&response, limits.image_bytes, limits.images_bytes)?;
+        if (self.native || self.compatibility)
             && matches!(
-                self.0.task.size.value(),
+                self.request.task.size.value(),
                 Some(crate::semantic::task::image_generation::ImageSizeRequest::Exact(_))
             )
             && response
@@ -248,11 +294,17 @@ impl TaskOutput for Output {
             return Err(ApiError::upstream());
         }
         trace.stage(Stage::Projection);
-        let projected =
+        let mut projected =
             crate::protocol::image::projection::project_response(&response, entry.route.accounting)
                 .map_err(|_| ApiError::upstream())?;
+        if self.compatibility && projected.response.created.value().is_none() {
+            let prepared = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|_| ApiError::upstream())?;
+            projected.response.created = Presence::Value(prepared.as_secs());
+        }
 
-        let value = if self.1 {
+        let value = if self.native {
             images::encode_native_static_response(&projected.response)
         } else {
             images::encode_response(&projected.response)

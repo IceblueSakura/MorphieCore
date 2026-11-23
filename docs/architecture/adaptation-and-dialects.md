@@ -734,7 +734,7 @@ Bindings declare model-specific qualitative level translation via [`ReasoningEff
 ### Media
 
 Media resources (images, audio, video, files) are handled as inert payloads (base64 data or public URLs):
-- The gateway does not fetch URLs, transcode formats, or parse image pixels.
+- The gateway does not fetch URLs or transform media inputs. Output encoding normalization is limited to [static image generation](#native-static-images).
 - Chat video uses registered extension `video_url`; Responses video uses `input_video` in user messages.
 - Instructions are strictly text-only; media in system/developer roles is rejected at intake.
 - File references: Client-provided Provider file IDs are rejected. Only direct inline data or HTTPS URLs are admitted.
@@ -743,7 +743,9 @@ Media resources (images, audio, video, files) are handled as inert payloads (bas
 
 #### Native static images
 
-The explicit `native-static-v1` client profile publishes bounded inline static artifacts and their reported encoding (`png`, `jpeg` or `webp`). It neither fetches result URLs nor transcodes. The selected targets do not report creation time; neither HTTP Date nor gateway time stands in for it. Usage and billing do not belong to this artifact-only profile. Default GPT Image admission and response requirements remain unchanged.
+By default, `/v1/images/generations` uses an OpenAI Images response shape. For the native targets below, the compatibility projection delivers PNG without a custom header. If the source did not report `created`, `images.delivery-created.v1` sets it to the Unix seconds when the gateway has prepared the artifact for publication. This is an explicit compatibility convention, not the upstream image-creation time in the official schema. Native accounting is not projected as OpenAI usage. Default GPT Image admission, creation reports and response requirements remain unchanged.
+
+The explicit `native-static-v1` client profile bypasses this projection. It preserves the upstream format and bytes and leaves unreported `created` absent. Neither profile fetches URLs or resizes.
 
 | Target | Native wire and terminal |
 |---|---|
@@ -753,11 +755,14 @@ The explicit `native-static-v1` client profile publishes bounded inline static a
 
 | Field or behavior | Disposition |
 |---|---|
-| Prompt and artifact format | L1: preserve prompt and each binding's reported encoding. Qwen accepts PNG, exact `n` (1–6) and exact size (`WxH` → `W*H`); enforce reported size and output count. Gemini and Grok accept exactly one artifact with Provider-selected size and encoding. Grok forwards `user`; Gemini and Qwen reject it. |
+| Prompt and source artifact | L1: preserve prompt and the received artifact order. Qwen accepts PNG, exact `n` (1–6) and exact size (`WxH` → `W*H`); enforce reported size and output count. Gemini and Grok accept exactly one artifact with native size and encoding. Grok forwards `user`; Gemini and Qwen reject it. |
+| PNG compatibility output | `images.native-to-png.v1`: omitted or explicit PNG uses a native PNG unchanged or encodes one static JPEG/WebP result as PNG. Never relabel bytes or imply restoration of pixels already lost upstream. Other explicit output encodings on these bindings are unselected. |
 | Omitted/`auto` size, `auto` quality or background | L2 `images.native-defaults.v1`: delegate to the binding without promising a specific size, quality or background. |
 | Gemini's accompanying text and thought parts | `images.gemini.artifact-only.v1`: not part of the requested media result; do not serialize or replay them. They cannot substitute for an image. |
 | Accounting | `images.native-static-artifacts.v1`: omit native accounting from the public artifact profile. Qwen validates image count and dimensions; dimensions remain an artifact report. Grok retains validated token reports and exactly converts USD ticks in image IR before this projection. No native reports are relabeled as standard Images usage. |
-| Unsupported guarantees | L5: reject explicit formats or exact size on Gemini/Grok, non-PNG on Qwen, exact quality/background, moderation overrides and compression. Edit, preview streaming, deferred jobs and storage remain separate. |
+| Unsupported guarantees | L5: reject exact size on Gemini/Grok, non-PNG outputs on the native targets, exact quality/background, moderation overrides and compression. Edit, preview streaming, deferred jobs and storage remain separate. |
+
+PNG normalization runs after bounded upstream EOF and before publication. The configured FFmpeg process uses fixed image input/output codecs, pipes only, one frame and one worker. Input/output byte bounds also apply to the converted image; a pixel limit, single-allocation limit and Linux address-space limit constrain decoding. The original exchange deadline and cancellation own the child. An unavailable local encoder or invalid/over-budget output fails the request without further upstream sends.
 
 See [source contracts](../refs/2026-11-23-native-static-image-targets.md) and [client activation](../usage/api-reference.md#static-image-generation).
 

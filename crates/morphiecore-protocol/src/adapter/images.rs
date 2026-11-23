@@ -10,7 +10,7 @@ pub enum UpstreamAdapter {
     GrokImage,
 }
 impl UpstreamAdapter {
-    pub fn requires_native_static(self) -> bool {
+    pub fn supports_native_static(self) -> bool {
         self != Self::GptImage
     }
 

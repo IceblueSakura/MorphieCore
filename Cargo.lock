@@ -1383,6 +1383,7 @@ dependencies = [
  "httpdate",
  "hyper",
  "hyper-util",
+ "libc",
  "mime",
  "morphiecore-catalog",
  "morphiecore-lowering",

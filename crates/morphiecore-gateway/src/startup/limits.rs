@@ -8,6 +8,8 @@ pub struct Limits {
     pub force_upstream_stream: bool,
     /// Bounded text delivery batching; None explicitly selects immediate encoding.
     pub delta_coalescing: Option<crate::execution::delivery::DeltaCoalescing>,
+    /// Trusted executable for bounded static image encoding conversion.
+    pub image_ffmpeg: Option<std::path::PathBuf>,
     /// Disposable implicit affinity only; explicit grouping remains available when disabled.
     pub implicit_cache_affinity: bool,
     /// Success-only account binding retention, independent of prefix hints.
@@ -46,6 +48,7 @@ impl Default for Limits {
             #[cfg(any(test, feature = "test-hooks"))]
             force_upstream_stream: false,
             delta_coalescing: Self::default_delta_coalescing(),
+            image_ffmpeg: None,
             implicit_cache_affinity: true,
             affinity_ttl: Duration::from_secs(3600),
             affinity_capacity: 4096,
@@ -85,6 +88,12 @@ impl Limits {
             (
                 "delivery.delta_coalescing",
                 self.delta_coalescing.is_none_or(|p| p.valid()),
+            ),
+            (
+                "delivery.image_ffmpeg",
+                self.image_ffmpeg
+                    .as_ref()
+                    .is_none_or(|path| path.is_absolute() && path.is_file()),
             ),
             (
                 "resources.request_bytes",

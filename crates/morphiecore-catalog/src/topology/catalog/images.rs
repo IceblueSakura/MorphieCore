@@ -59,7 +59,7 @@ impl ImageBinding {
             id: RouteId::new(&identity).expect("static route"),
             model: canonical.clone(),
             canonical_model: canonical.clone(),
-            accounting: if profile.requires_native_static() {
+            accounting: if profile.supports_native_static() {
                 AccountingPolicy::NativeStaticArtifacts
             } else {
                 AccountingPolicy::Strict

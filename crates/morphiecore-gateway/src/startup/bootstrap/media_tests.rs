@@ -211,7 +211,6 @@ async fn native_image_routes_new_requests_around_cooldown_without_replaying() {
             r#"{"model":"qwen-image-3.0-pro","prompt":"a blue circle","size":"512x512","output_format":"png"}"#,
         )).unwrap())
     };
-    assert_eq!(send(None).await.unwrap().status(), StatusCode::BAD_REQUEST);
     assert_eq!(
         send(Some("native-static-v2")).await.unwrap().status(),
         StatusCode::BAD_REQUEST
@@ -219,13 +218,27 @@ async fn native_image_routes_new_requests_around_cooldown_without_replaying() {
     assert!(calls.lock().unwrap().is_empty());
     let profile = Some("native-static-v1");
     let expected = json!({"data":[{"b64_json":"AQID"}],"output_format":"png","size":"512x512"});
-    let first = send(profile).await.unwrap();
+    let before = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let first = send(None).await.unwrap();
     assert_eq!(first.status(), StatusCode::OK);
     let first = axum::body::to_bytes(first.into_body(), 4096).await.unwrap();
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&first).unwrap(),
-        expected
-    );
+    let mut delivered: serde_json::Value = serde_json::from_slice(&first).unwrap();
+    let created = delivered
+        .as_object_mut()
+        .unwrap()
+        .remove("created")
+        .unwrap()
+        .as_u64()
+        .unwrap();
+    let after = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    assert!((before..=after).contains(&created));
+    assert_eq!(delivered, expected);
     assert_eq!(*calls.lock().unwrap(), ["plan"]);
     assert_eq!(
         send(profile).await.unwrap().status(),

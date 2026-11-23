@@ -389,7 +389,12 @@ The file supports at most 64 models and 64 candidates per model, with at most 64
 
 #### Qwen image candidates
 
+
 Use the ordered `candidates` array in the [task template](../../config/models.tasks.example.json) to activate `qwen-image-3.0-pro`. Each entry requires exactly a `binding` and the name of an enabled API-key `account` owned by that binding's Provider. Neither installed credentials nor a shared account name activates metered fallback. Configure either candidate alone or both; when both are present, Token Plan must precede DashScope. See [pre-dispatch image selection](../architecture/runtime-and-routing.md#standalone-image-candidates) and the [client profile](api-reference.md#static-image-generation).
+
+#### Static image transcoding
+
+Set `delivery.image_ffmpeg` to the **absolute path** of a trusted FFmpeg executable available to the gateway service, for example `/usr/bin/ffmpeg`. The static gateway binary does not bundle FFmpeg. Default Gemini/Grok requests reject before upstream dispatch if this option is absent; explicit native delivery, Qwen PNG and direct GPT Image do not need it. FFmpeg runs with fixed pipe-only arguments and receives image bytes, not URLs or credentials. Over-budget output fails without resizing or retrying. Verify the installed executable in the release environment before enabling these models for standard clients.
 
 ### Delta coalescing
 

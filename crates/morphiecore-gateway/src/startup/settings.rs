@@ -89,6 +89,7 @@ impl Default for OAuth {
 pub(super) struct Delivery {
     pub exchange_timeout_ms: u64,
     pub delta_coalescing: Option<crate::execution::delivery::DeltaCoalescing>,
+    pub image_ffmpeg: Option<PathBuf>,
 }
 impl Default for Delivery {
     fn default() -> Self {
@@ -96,6 +97,7 @@ impl Default for Delivery {
         Self {
             exchange_timeout_ms: d.exchange_timeout.as_millis() as u64,
             delta_coalescing: d.delta_coalescing,
+            image_ffmpeg: None,
         }
     }
 }
@@ -136,6 +138,7 @@ impl Configuration {
                 self.oauth.minimum_renewal_interval_ms,
             ),
             delta_coalescing: self.delivery.delta_coalescing,
+            image_ffmpeg: self.delivery.image_ffmpeg.clone(),
             exchange_timeout: Duration::from_millis(self.delivery.exchange_timeout_ms),
             concurrency: self.resources.concurrency,
             request_bytes: self.resources.request_bytes,

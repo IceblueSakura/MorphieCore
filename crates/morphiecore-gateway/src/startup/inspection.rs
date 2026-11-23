@@ -67,7 +67,7 @@ pub fn catalog() -> Result<Value, StartupError> {
                     &route.endpoint.execution,
                     "images",
                 );
-                if route.endpoint.profile.requires_native_static() {
+                if route.endpoint.profile.supports_native_static() {
                     row["image_profile"] = json!(crate::tasks::images::NATIVE_PROFILE);
                 }
                 row

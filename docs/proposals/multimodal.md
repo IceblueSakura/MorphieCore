@@ -157,7 +157,7 @@ Maintain three distinct facts: requested controls, stream-reported settings (whi
 | Source reports serving model/native billing without standard carriers | Preserve the source; select explicit dialect carriage or a named allowed report omission. The existing accounting projection does not authorize model/time loss |
 | Artifact reports disagree across outputs | Do not collapse them into a misleading top-level report; reject incompatible standard delivery or use a selected richer carrier |
 
-The [accepted native static profile](../architecture/adaptation-and-dialects.md#native-static-images) uses explicit client selection and artifact-only delivery. Standard GPT Image remains strict. Transcoding is a separate capability, not a default repair.
+The [selected static delivery contract](../architecture/adaptation-and-dialects.md#native-static-images) separates default PNG compatibility from explicit native delivery. Standard GPT Image remains strict. Other transcodes and image transformations remain separate.
 
 ### Static Generate review proposal
 

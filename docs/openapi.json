@@ -267,7 +267,7 @@
             "in": "header",
             "required": false,
             "schema": {"type": "string", "const": "native-static-v1"},
-            "description": "Required for Qwen Image, Gemini Nano Banana and Grok Imagine. Omit for standard GPT Image."
+            "description": "Opt out of default OpenAI-shape PNG delivery for Qwen Image, Gemini Nano Banana and Grok Imagine. Omit for GPT Image."
           }
         ],
         "requestBody": {
@@ -282,7 +282,7 @@
         },
         "responses": {
           "200": {
-            "description": "Complete inline images after validated EOF. The count must match the request. The native profile reports the received format but does not expose unreported creation time or native accounting. Without the header the standard response applies. One target is dispatched.",
+            "description": "Complete inline images after validated EOF. By default the OpenAI response shape applies; native bindings use PNG and locally prepare a delivery timestamp only when created is unreported. The optional native profile preserves the received format and does not fill missing creation time. One target is dispatched.",
             "headers": {
               "Cache-Control": {
                 "schema": {
@@ -1592,7 +1592,8 @@
           },
           "created": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "description": "Reported upstream creation time when available. In default delivery from a native binding with no creation report, this is the Unix time when the gateway prepared the artifact, not when upstream created it."
           },
           "data": {
             "type": "array",

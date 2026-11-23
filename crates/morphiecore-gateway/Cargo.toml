@@ -40,7 +40,7 @@ sha2.workspace = true
 strum.workspace = true
 subtle.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["process"] }
 tokio-util.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
@@ -49,6 +49,9 @@ url.workspace = true
 
 morphiecore-test-support = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true
 
 [dev-dependencies]
 morphiecore-runtime = { workspace = true, features = ["test-hooks"] }

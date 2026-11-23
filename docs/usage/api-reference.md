@@ -45,7 +45,9 @@ The [OpenAPI summary](../openapi.json) describes envelopes and selected constrai
 
 Enable `gpt-image-2.6-flare` or `gpt-image-2.6-sunburst` in `models.json` with a named `openai` Platform API-key account. `/v1/images/generations` returns bounded inline Base64 artifacts, defaulting to PNG. Reported creation time, supported image metadata and usage retain their standard meanings. Neither the retired OpenRouter `gpt-image-2.5-flare` label nor Image Edit, preview streaming, SVG or GIF is admitted.
 
-For `qwen-image-3.0-pro`, `gemini-nano-banana-2.1` and `grok-imagine-image-2.0`, set `X-MorphieCore-Image-Profile: native-static-v1` on the same endpoint. This is not strict OpenAI Images conformance: read the bytes from `data[].b64_json` and the reported format from `output_format`. The response does not supply `created` or token `usage`. Gemini and Grok each return one image in a Provider-selected format; do not send `output_format` or an exact `size` for those bindings. Use the SDK's `extra_headers` and read the raw JSON:
+`qwen-image-3.0-pro`, `gemini-nano-banana-2.1` and `grok-imagine-image-2.0` can use the default OpenAI response shape without extra headers. Omit `output_format` or set it to `png`; Gemini and Grok take one image and do not accept an exact `size`. Qwen already supplies PNG. Gemini and Grok require an operator-configured [FFmpeg executable](gateway-configuration.md#static-image-transcoding) for default delivery. If the upstream does not report creation time, `created` is the time the gateway prepared the artifact, **not** the original creation time. Native accounting is not included.
+
+To keep the original encoding and bytes and leave unreported `created` absent, explicitly set `X-MorphieCore-Image-Profile: native-static-v1`. This mode is not a strict OpenAI Images response; use the SDK's `extra_headers` and read the raw JSON:
 
 ```python
 import json
@@ -58,7 +60,7 @@ result = json.loads(response.content)
 artifacts, output_format = result["data"], result["output_format"]
 ```
 
-See [Qwen model configuration](gateway-configuration.md#qwen-image-candidates) for activation and [native static images](../architecture/adaptation-and-dialects.md#native-static-images) for supported controls. Omit the header for GPT Image.
+See [Qwen model configuration](gateway-configuration.md#qwen-image-candidates) for activation and [native static images](../architecture/adaptation-and-dialects.md#native-static-images) for supported controls. Omit the header for default delivery and for GPT Image.
 
 ### Embeddings
 
