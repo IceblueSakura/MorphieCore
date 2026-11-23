@@ -13,7 +13,7 @@
 
 ## Authorization
 
-- **Git workflow:** Work on `main`; preserve unrelated changes. Stage only files belonging to your slice (`git add <paths>`, never `git add -A` over unrelated work). Commit and push completed implementation or documentation slices to `origin/main` after the verification below passes.
+- **Git workflow:** Work on `main`; preserve unrelated changes. Stage only files belonging to your slice (`git add <paths>`, never `git add -A` over unrelated work). Commit each completed implementation or documentation slice after the applicable verification below passes. Pushes to `origin/main` may batch multiple commits.
 - **Phase boundaries:** Approved phases allow large deletions and breaking rewrites without compatibility shims. [Frozen scope](docs/roadmap/backlog-and-frozen.md#frozen-scope) and the [temporary routing freeze](docs/roadmap/index.md#temporary-routing-freeze) permit necessary maintenance only.
 
 | Action | Policy |
