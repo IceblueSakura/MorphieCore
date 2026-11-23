@@ -60,13 +60,17 @@ pub fn catalog() -> Result<Value, StartupError> {
         let rows: Vec<_> = topology
             .image_bindings(binding.model)
             .map(|route| {
-                task(
+                let mut row = task(
                     binding.model,
                     route.endpoint.provider.as_str(),
                     route.endpoint.id.as_str(),
                     &route.endpoint.execution,
                     "images",
-                )
+                );
+                if route.endpoint.profile.requires_native_static() {
+                    row["image_profile"] = json!(crate::tasks::images::NATIVE_PROFILE);
+                }
+                row
             })
             .collect();
         if let [row] = rows.as_slice() {

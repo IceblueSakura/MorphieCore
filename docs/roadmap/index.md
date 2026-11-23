@@ -97,7 +97,7 @@ Selected direction: Dual-SDK support (TypeSafe and OpenAI) backed by a unified D
 | Family | Readiness | Next step |
 |---|---|---|
 | Decision | Dual-SDK direction selected; IR drafts under review | Finalize contract selection and implement codecs |
-| Images Generate | Direct OpenAI GPT Image 2.6 covers standard static Generate; Qwen Image 3.0 Pro has an opt-in native static profile | Qualify additional targets independently; Grok and Google activation remain unselected |
+| Images Generate | Direct GPT Image 2.6 uses standard static Generate; Qwen Image 3.0 Pro, Gemini Nano Banana 2.1 and Grok Imagine Image 2.0 support opt-in native static Generate | Native ratio/resolution tiers and other controls remain separately selectable |
 | Images Edit & Stream | Research complete; mask boundaries and stream formats unselected | Await static Generate closure |
 | Audio (Speech/ASR) | Static speech/transcription and bounded client multipart intake exist; Aliyun speech consumes upstream SSE. Native multipart upstream preparation and downstream SSE profiles remain unselected | Select bounded single-operation profile |
 | Files & Uploads | Safety requirements defined; storage authority unselected | Select storage authority and ID authorization |
@@ -105,7 +105,7 @@ Selected direction: Dual-SDK support (TypeSafe and OpenAI) backed by a unified D
 
 #### Grok Imagine adaptation
 
-Before Grok public Generate activation, select public delivery, encoding defaults and metadata requirements under the [static Generate review](../proposals/multimodal.md#static-generate-review-proposal). Native ratio/resolution controls remain independently selectable. OAuth must use the shared account source without inline login. Video integration requires a native asynchronous job contract rather than a synchronous facade.
+Native ratio/resolution controls remain independently selectable beyond [static Generate](../architecture/adaptation-and-dialects.md#native-static-images). Video integration requires a native asynchronous job contract rather than a synchronous facade.
 
 ### Stage 5 backlog
 

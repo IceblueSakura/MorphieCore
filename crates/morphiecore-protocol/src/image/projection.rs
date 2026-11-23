@@ -11,6 +11,8 @@ pub enum AccountingPolicy {
     Strict,
     /// Only usage that lacks a standard carrier and billing may be omitted.
     OmitUnrepresentableAccounting,
+    /// The native static artifact contract does not expose usage or billing.
+    NativeStaticArtifacts,
 }
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct AccountingLoss {
@@ -60,7 +62,8 @@ pub fn project_response(
         .usage
         .value()
         .map_or(AccountingLoss::default(), |u| AccountingLoss {
-            usage_omitted: !standard_tokens_representable(u),
+            usage_omitted: policy == AccountingPolicy::NativeStaticArtifacts
+                || !standard_tokens_representable(u),
             billing_omitted: !u.billing.is_absent(),
         });
     if policy == AccountingPolicy::Strict && loss != AccountingLoss::default() {

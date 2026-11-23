@@ -45,16 +45,17 @@ The [OpenAPI summary](../openapi.json) describes envelopes and selected constrai
 
 Enable `gpt-image-2.6-flare` or `gpt-image-2.6-sunburst` in `models.json` with a named `openai` Platform API-key account. `/v1/images/generations` returns bounded inline Base64 artifacts, defaulting to PNG. Reported creation time, supported image metadata and usage retain their standard meanings. Neither the retired OpenRouter `gpt-image-2.5-flare` label nor Image Edit, preview streaming, SVG or GIF is admitted.
 
-For `qwen-image-3.0-pro`, set `X-MorphieCore-Image-Profile: native-static-v1` on the same endpoint. This profile is not strict OpenAI Images conformance: the PNG remains in `data[].b64_json`, but the response omits `created` and token `usage`. Use the SDK's `extra_headers` to select the profile and a JSON consumer that accepts missing `created`:
+For `qwen-image-3.0-pro`, `gemini-nano-banana-2.1` and `grok-imagine-image-2.0`, set `X-MorphieCore-Image-Profile: native-static-v1` on the same endpoint. This is not strict OpenAI Images conformance: read the bytes from `data[].b64_json` and the reported format from `output_format`. The response does not supply `created` or token `usage`. Gemini and Grok each return one image in a Provider-selected format; do not send `output_format` or an exact `size` for those bindings. Use the SDK's `extra_headers` and read the raw JSON:
 
 ```python
 import json
 
 response = client.images.with_raw_response.generate(
-    model="qwen-image-3.0-pro", prompt="A flat blue circle on white",
+    model="gemini-nano-banana-2.1", prompt="A flat blue circle on white",
     extra_headers={"X-MorphieCore-Image-Profile": "native-static-v1"},
 )
-artifacts = json.loads(response.content)["data"]
+result = json.loads(response.content)
+artifacts, output_format = result["data"], result["output_format"]
 ```
 
 See [Qwen model configuration](gateway-configuration.md#qwen-image-candidates) for activation and [native static images](../architecture/adaptation-and-dialects.md#native-static-images) for supported controls. Omit the header for GPT Image.

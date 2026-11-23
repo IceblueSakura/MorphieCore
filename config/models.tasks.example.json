@@ -10,6 +10,12 @@
     "gpt-image-2.6-sunburst": {
       "account": "primary"
     },
+    "gemini-nano-banana-2.1": {
+      "account": "primary"
+    },
+    "grok-imagine-image-2.0": {
+      "account": "primary"
+    },
     "qwen-image-3.0-pro": {
       "candidates": [
         {"binding": "aliyun-tokenplan-cn-qwen-image-3.0-pro-images", "account": "primary"},

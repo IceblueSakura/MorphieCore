@@ -2,7 +2,7 @@
 use crate::{
     adapter::images::UpstreamAdapter,
     protocol::image::projection::AccountingPolicy,
-    provider::{CredentialBindingId, CredentialKind, ProviderOperation},
+    provider::{CredentialBindingId, ProviderOperation},
     topology::{
         EndpointId, EndpointTarget, ExecutionContract, ModelId, ModelMetadata, RouteId,
         images::{ImageEndpoint, ImageRoute, ProviderEntry},
@@ -24,6 +24,8 @@ impl ImageBinding {
             "qwen-image-3.0-pro" => {
                 *self.providers == ["aliyun-tokenplan-cn", "aliyun-dashscope-cn"]
             }
+            "gemini-nano-banana-2.1" => *self.providers == ["google"],
+            "grok-imagine-image-2.0" => *self.providers == ["grok"],
             _ => false,
         }
     }
@@ -46,16 +48,22 @@ impl ImageBinding {
         let provider = super::data::provider(provider);
         let canonical = ModelId::new(self.model).expect("static image identity");
         let identity = format!("{}-{}-images", provider.id.as_str(), self.model);
-        let (profile, accounting) = if provider.id.as_str() == "openai" {
-            (UpstreamAdapter::GptImage, AccountingPolicy::Strict)
-        } else {
-            (UpstreamAdapter::QwenImage, AccountingPolicy::Strict)
+        let profile = match provider.id.as_str() {
+            "openai" => UpstreamAdapter::GptImage,
+            "google" => UpstreamAdapter::GeminiImage,
+            "grok" => UpstreamAdapter::GrokImage,
+            "aliyun-tokenplan-cn" | "aliyun-dashscope-cn" => UpstreamAdapter::QwenImage,
+            _ => unreachable!("reviewed provider"),
         };
         ImageRoute {
             id: RouteId::new(&identity).expect("static route"),
             model: canonical.clone(),
             canonical_model: canonical.clone(),
-            accounting,
+            accounting: if profile.requires_native_static() {
+                AccountingPolicy::NativeStaticArtifacts
+            } else {
+                AccountingPolicy::Strict
+            },
             endpoint: ImageEndpoint {
                 id: EndpointId::new(&identity).expect("static endpoint"),
                 provider: provider.id.clone(),
@@ -72,7 +80,7 @@ impl ImageBinding {
                     streaming: false,
                     request_body_limit: 256 << 10,
                     response_body_limit: 4 << 20,
-                    credential_kind: CredentialKind::ApiKey,
+                    credential_kind: provider.auth.kind(),
                     timeout_ms: 120_000,
                 },
             },

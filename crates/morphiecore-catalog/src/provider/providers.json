@@ -284,6 +284,10 @@
       "profile": "grok"
     },
     "endpoints": {
+      "images": {
+        "path": "/v1/images/generations",
+        "suffix": "/images/generations"
+      },
       "models": {
         "path": "/v1/models",
         "suffix": "/models"
@@ -295,6 +299,7 @@
     },
     "sources": [
       "https://docs.x.ai/developers/rest-api-reference/inference/models",
+      "https://docs.x.ai/developers/rest-api-reference/inference/images",
       "https://docs.x.ai/developers/model-capabilities/text/generate-text"
     ]
   },
@@ -309,6 +314,10 @@
         "suffix": "/models"
       },
       "generate_content": {
+        "path": "/v1beta/models",
+        "suffix": "/models"
+      },
+      "images": {
         "path": "/v1beta/models",
         "suffix": "/models"
       },

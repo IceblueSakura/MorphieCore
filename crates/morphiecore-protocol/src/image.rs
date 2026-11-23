@@ -20,6 +20,7 @@ impl std::fmt::Debug for Request {
             .finish()
     }
 }
+pub(crate) mod native;
 pub mod projection;
 impl Request {
     pub fn new(model: impl Into<String>, task: ImageGenerationRequest) -> Self {

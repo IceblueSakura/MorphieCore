@@ -23,6 +23,18 @@ pub struct ImageEndpoint {
     pub credential: CredentialBindingId,
     pub execution: ExecutionContract,
 }
+impl ImageEndpoint {
+    pub fn request_path(&self) -> Result<EndpointPath, crate::provider::ProviderError> {
+        if self.profile == crate::adapter::images::UpstreamAdapter::GeminiImage {
+            return crate::provider::GenerationOperation::GoogleGenerateContent.resolve_path(
+                &self.target.path,
+                &self.upstream_model,
+                false,
+            );
+        }
+        Ok(self.target.path.clone())
+    }
+}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImageRoute {
     pub id: RouteId,
@@ -72,16 +84,20 @@ impl CompiledTopology {
             let provider = self
                 .provider(endpoint.provider.as_str())
                 .ok_or(TopologyError::UnknownProvider)?;
+            let kind = if endpoint.profile == crate::adapter::images::UpstreamAdapter::GrokImage {
+                CredentialKind::OAuth("grok")
+            } else {
+                CredentialKind::ApiKey
+            };
             if endpoint.target.origin != provider.origin
                 || paths.get(&endpoint.provider) != Some(&endpoint.target.path)
                 || provider
                     .entry(crate::provider::ProviderOperation::Images)
                     .is_some_and(|entry| {
-                        entry.path != &endpoint.target.path
-                            || entry.auth.kind() != CredentialKind::ApiKey
+                        entry.path != &endpoint.target.path || entry.auth.kind() != kind
                     })
-                || provider.auth.kind() != CredentialKind::ApiKey
-                || endpoint.execution.credential_kind != CredentialKind::ApiKey
+                || provider.auth.kind() != kind
+                || endpoint.execution.credential_kind != kind
             {
                 return Err(TopologyError::TargetMismatch);
             }
@@ -104,7 +120,8 @@ impl CompiledTopology {
             if endpoint.canonical_model != route.canonical_model {
                 return Err(TopologyError::CanonicalModelMismatch);
             }
-            if endpoint.upstream_model.is_empty()
+            if endpoint.request_path().is_err()
+                || endpoint.upstream_model.is_empty()
                 || endpoint.upstream_model.len() > 256
                 || endpoint
                     .upstream_model

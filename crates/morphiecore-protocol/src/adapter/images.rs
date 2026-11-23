@@ -6,10 +6,12 @@ use crate::image::Request;
 pub enum UpstreamAdapter {
     GptImage,
     QwenImage,
+    GeminiImage,
+    GrokImage,
 }
 impl UpstreamAdapter {
     pub fn requires_native_static(self) -> bool {
-        self == Self::QwenImage
+        self != Self::GptImage
     }
 
     pub fn encode_request(
@@ -20,6 +22,8 @@ impl UpstreamAdapter {
         match self {
             Self::GptImage => crate::openai::images::encode_request(request, model),
             Self::QwenImage => crate::aliyun_images::encode_request(request, model),
+            Self::GeminiImage => crate::image::native::gemini_request(request),
+            Self::GrokImage => crate::image::native::grok_request(request, model),
         }
     }
     pub fn decode_response(
@@ -30,6 +34,8 @@ impl UpstreamAdapter {
         match self {
             Self::GptImage => crate::openai::images::decode_response(bytes),
             Self::QwenImage => crate::aliyun_images::decode_response(bytes),
+            Self::GeminiImage => crate::image::native::gemini_response(bytes),
+            Self::GrokImage => crate::image::native::grok_response(bytes),
         }
     }
 }

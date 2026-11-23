@@ -5,6 +5,119 @@ use super::{
 };
 use serde_json::json;
 
+async fn assert_native_jpeg(
+    mut gateway: Fixture,
+    model: &str,
+    path: &str,
+    auth: (&'static str, &'static str),
+    wire: serde_json::Value,
+    report: serde_json::Value,
+) {
+    use axum::{
+        Json, Router,
+        body::Body,
+        http::{HeaderMap, Request, StatusCode},
+        routing::post,
+    };
+    use tower::ServiceExt;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    gateway.loopback_authority(&format!("http://{}", listener.local_addr().unwrap()));
+    let server = tokio::spawn(
+        axum::serve(
+            listener,
+            Router::new().route(
+                path,
+                post(
+                    move |headers: HeaderMap, Json(body): Json<serde_json::Value>| {
+                        assert_eq!(headers[auth.0], auth.1);
+                        assert!(!headers.contains_key("x-morphiecore-image-profile"));
+                        assert_eq!(body, wire);
+                        let report = report.clone();
+                        async { Json(report) }
+                    },
+                ),
+            ),
+        )
+        .into_future(),
+    );
+    let response = gateway
+        .gateway
+        .router()
+        .oneshot(
+            Request::post("/v1/images/generations")
+                .header(
+                    "authorization",
+                    "Bearer synthetic-gateway-client-token-0001",
+                )
+                .header("content-type", "application/json")
+                .header("x-morphiecore-image-profile", "native-static-v1")
+                .body(Body::from(
+                    json!({"model":model,"prompt":"pattern"}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), 4096)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+        json!({"output_format":"jpeg","data":[{"b64_json":"AQID"}]})
+    );
+    server.abort();
+    let _ = server.await;
+}
+
+#[tokio::test]
+async fn gemini_image_uses_trusted_generate_content_path_and_preserves_jpeg() {
+    let model = "gemini-nano-banana-2.1";
+    let fixture = Fixture::new(
+        service(),
+        json!({"models":{(model):{"account":"primary"}}}),
+        &[("google", "primary", "synthetic-google-key")],
+    )
+    .unwrap();
+    assert_native_jpeg(
+        fixture,
+        model,
+        "/v1beta/models/gemini-nano-banana-2.1:generateContent",
+        ("x-goog-api-key", "synthetic-google-key"),
+        json!({"contents":[{"role":"user","parts":[{"text":"pattern"}]}],
+            "generationConfig":{"responseModalities":["TEXT","IMAGE"]}}),
+        json!({"candidates":[{"finishReason":"STOP","content":{"role":"model","parts":[
+            {"inlineData":{"mimeType":"image/jpeg","data":"AQID"}}
+        ]}}]}),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn grok_image_uses_managed_oauth_and_delivers_only_the_native_artifact() {
+    let model = "grok-imagine-image-2.0";
+    let configuration = json!({"models":{(model):{"account":"primary"}}});
+    assert!(
+        Fixture::new(
+            service(),
+            configuration.clone(),
+            &[("openai", "primary", "synthetic-unrelated-key")]
+        )
+        .is_err()
+    );
+    let fixture = Fixture::with_oauth(service(), configuration, "grok", "primary").unwrap();
+    assert_native_jpeg(
+        fixture,
+        model,
+        "/v1/images/generations",
+        ("authorization", "Bearer synthetic-oauth-access"),
+        json!({"model":model,"prompt":"pattern","n":1,"response_format":"b64_json"}),
+        json!({"data":[{"b64_json":"AQID","mime_type":"image/jpeg"}],
+            "usage":{"cost_in_usd_ticks":400000000}}),
+    )
+    .await;
+}
+
 #[tokio::test]
 async fn native_image_routes_new_requests_around_cooldown_without_replaying() {
     use axum::{

@@ -5,7 +5,7 @@ use super::{
 };
 use crate::{
     Credentials,
-    account::{AccountCredential, BoundAccounts},
+    account::BoundAccounts,
     lowering::target::TargetContract,
     protocol::{
         ClientProtocol,
@@ -156,7 +156,8 @@ impl Models {
                             .account(provider, name)
                             .ok_or(StartupError::Credentials)?;
                         if !account.enabled
-                            || !matches!(account.credential, AccountCredential::ApiKey(_))
+                            || account.provider.auth.kind()
+                                != route.endpoint.execution.credential_kind
                         {
                             return Err(StartupError::Credentials);
                         }
@@ -248,7 +249,7 @@ impl Models {
                 let account = accounts
                     .account(provider.as_str(), name)
                     .ok_or(StartupError::Credentials)?;
-                if !account.enabled || !matches!(account.credential, AccountCredential::ApiKey(_)) {
+                if !account.enabled || account.provider.auth.kind() != execution.credential_kind {
                     return Err(StartupError::Credentials);
                 }
                 let mut described = super::inspection::task(

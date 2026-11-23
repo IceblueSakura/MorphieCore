@@ -748,6 +748,18 @@
       "released_at": 1784505600,
       "developer": "Alibaba",
       "providers": ["aliyun-tokenplan-cn", "aliyun-dashscope-cn"]
+    },
+    {
+      "model": "gemini-nano-banana-2.1",
+      "released_at": 1791244800,
+      "developer": "Google",
+      "providers": ["google"]
+    },
+    {
+      "model": "grok-imagine-image-2.0",
+      "released_at": 1786060800,
+      "developer": "xAI",
+      "providers": ["grok"]
     }
   ],
   "speech": [

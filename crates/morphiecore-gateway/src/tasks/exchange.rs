@@ -24,15 +24,22 @@ pub(super) async fn send<R>(
     trace.executor(entry.provider.id.as_str());
     trace.named_account(entry.account.as_deref());
     let (secret, grant) = entry.secret.resolve_for_request().await?;
-    if grant.is_some() {
-        return Err(ApiError::upstream());
+    let revision = grant.as_ref().map(|grant| grant.material_revision);
+    if let (Some(scopes), Some(revision)) = (&entry.health, revision) {
+        runtime.executors.verified_material(scopes, revision);
     }
-    let prepared = prepared
+    let mut prepared = prepared
         .authorize(&entry.provider, &secret)
         .map_err(|error| {
             trace.report.failure(None, &error);
             ApiError::invalid()
         })?;
+    if let Some(grant) = grant {
+        prepared.safe_headers.extend(
+            crate::credential::subscription::headers(entry.provider.auth, &grant)
+                .map_err(|_| ApiError::upstream())?,
+        );
+    }
 
     if Instant::now() >= deadline {
         return Err(ApiError::timeout());
@@ -62,7 +69,7 @@ pub(super) async fn send<R>(
         let failure = crate::routing::executors::FailureObservation {
             error: *error,
             at: now,
-            material_revision: None,
+            material_revision: revision,
         };
         runtime.executors.record_target_failures(
             entry.provider.id.as_str(),

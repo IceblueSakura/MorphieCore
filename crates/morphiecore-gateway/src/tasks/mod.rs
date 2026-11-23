@@ -8,7 +8,7 @@ pub(crate) mod transcription;
 
 use crate::{
     Credentials, StartupError,
-    provider::{CredentialBindingId, CredentialKind, ProviderDefinition, ProviderId},
+    provider::{CredentialBindingId, ProviderDefinition, ProviderId},
     startup::credentials,
     topology::{
         CompiledTopology, embeddings::EmbeddingRoute, images::ImageRoute, speech::SpeechRoute,
@@ -59,7 +59,7 @@ task_route!(
 );
 
 /// Bind at most 64 unique models, each to its route's Provider and exactly one
-/// API key without credential fallback.
+/// credential without fallback.
 pub(crate) fn bind<'t, E, R: TaskRoute + 't>(
     topology: &'t CompiledTopology,
     entries: Vec<E>,
@@ -105,7 +105,7 @@ fn bind_target<R: TaskRoute>(
         route.retarget(&provider)?;
     }
     let secret = binding.source.clone();
-    secret.check(CredentialKind::ApiKey, provider.id.as_str())?;
+    secret.check(route.delivery().2.credential_kind, provider.id.as_str())?;
     Ok(BoundTask {
         route,
         provider,

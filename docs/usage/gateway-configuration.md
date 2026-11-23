@@ -365,7 +365,7 @@ Those reviewed Google bindings omit temperature/top-p/top-k that the model ignor
 
 History reasoning is never converted into assistant text. Readable reasoning without this target's native carrier, including reasoning demonstrably belonging to another target, is omitted under the named visible-history transfer policy, never promoted to an assistant answer. Visible messages and real call/results remain; partial reasoning, damaged compatible replay and required compacted/cached context cannot be repaired by omission. Valid native carriers remain available.
 
-Only listed models are activated. GPT Image, Speech and Embeddings select one account explicitly, for example `"text-embedding-3-large":{"account":"primary"}`. They retain single-target task execution without Generation overrides or multi-account recovery.
+Only listed models are activated. GPT Image, Gemini Nano Banana, Grok Imagine, Speech and Embeddings select one account explicitly, for example `"text-embedding-3-large":{"account":"primary"}`. They retain single-target task execution without Generation overrides or multi-account recovery. `gemini-nano-banana-2.1` requires a named `google` API-key account; `grok-imagine-image-2.0` requires a named, already provisioned `grok` OAuth account. The name in `models.json` must match the account declaration, not a credential alias. See [account provisioning](credentials-and-diagnostics.md#prepare-credentials).
 
 Transcription also requires `account`. A shared model requires an explicit model-level `binding`, not a Generation `candidates` list:
 

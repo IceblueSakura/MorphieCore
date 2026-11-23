@@ -291,6 +291,7 @@ class ImageSchemaTests(unittest.TestCase):
         response = {"data": [{"b64_json": "AQID"}], "output_format": "png", "size": "512x512"}
         native = validator("NativeStaticImageGenerationResponse")
         native.validate(response)
+        native.validate({"data": response["data"], "output_format": "jpeg"})
         self.assertFalse(validator("ImageGenerationResponse").is_valid(response))
         self.assertFalse(native.is_valid({**response, "data": [{"url": "https://example.invalid"}]}))
         self.assertFalse(native.is_valid({**response, "usage": {"total_tokens": 1}}))

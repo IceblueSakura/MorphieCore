@@ -76,7 +76,7 @@ Treat this as a separate optional audio slice: migrate existing static mappings 
 
 ## Image production and editing
 
-The current task and execution path implement bounded static Generate, not Edit or streaming. There is no current Grok codec or binding. [Dated OpenAI evidence](../refs/2026-10-22-embedding-image-contracts.md#images) and [Grok observations](../refs/2026-10-22-grok-imagine.md#images) distinguish the official schema, model-effective controls and unresolved source discrepancies.
+The current task and execution path implement [bounded static Generate](../architecture/adaptation-and-dialects.md#native-static-images), not Edit or streaming. [Dated OpenAI evidence](../refs/2026-10-22-embedding-image-contracts.md#images) and [Grok observations](../refs/2026-10-22-grok-imagine.md#images) distinguish the official schema, model-effective controls and unresolved source discrepancies.
 
 ### Image requests and target admission
 
@@ -140,7 +140,7 @@ The mask sources conflict: the pinned SDK specifies PNG below 4 MB and matching 
 
 Resolve protocol defaults on typed target copies before encoding. Do not invent reported settings from those defaults. Preserve absent/null/explicit states only where their source contract permits them; null is not a universal reset. Both OpenAI identity inputs and reported effective safety identifiers need their own bounded envelope/report carriers, never output controls or inferred values.
 
-Operation admission must distinguish Generate, Edit, static and streaming support on one model identity. The current one-operation/API-key-only topology restrictions need responsible-layer changes only when their selected integration begins; do not invent duplicate model names to bypass them. Grok has no inspected equivalent mask or input-fidelity carrier and no established OpenAI preview stream: those combinations reject.
+Operation admission must distinguish Generate, Edit, static and streaming support on one model identity. Do not invent duplicate model names to bypass an operation boundary. Grok has no inspected equivalent mask or input-fidelity carrier and no established OpenAI preview stream: those combinations reject.
 
 ### Image results and delivery compatibility
 
@@ -157,40 +157,11 @@ Maintain three distinct facts: requested controls, stream-reported settings (whi
 | Source reports serving model/native billing without standard carriers | Preserve the source; select explicit dialect carriage or a named allowed report omission. The existing accounting projection does not authorize model/time loss |
 | Artifact reports disagree across outputs | Do not collapse them into a misleading top-level report; reject incompatible standard delivery or use a selected richer carrier |
 
-Recommend keeping strict OpenAI Images as the standard dialect and designing an **explicit MorphieCore Images dialect** for optional native reports and ratio/tier controls if Grok activation remains desired.
-
-Its selection mechanism, field layout, defaults and SDK implications require human review.
-
-Alternatives are a separately selected native surface or leaving Grok disconnected.
-
-Do not silently relax the standard schema for one model, add fields to OpenAPI before implementation, or claim that a lenient SDK parser establishes conformance.
-
-Image transcoding is a separate capability, not a default repair.
+The [accepted native static profile](../architecture/adaptation-and-dialects.md#native-static-images) uses explicit client selection and artifact-only delivery. Standard GPT Image remains strict. Transcoding is a separate capability, not a default repair.
 
 ### Static Generate review proposal
 
-**Unselected for Grok and other additional targets.** Qwen Image has a separately accepted [native static profile](../architecture/adaptation-and-dialects.md#native-static-images). The [roadmap](../roadmap/index.md#stage-4-operation-readiness) owns further scheduling and the Images-internal sequence. Start with Generate's existing task/artifact owners; neither an Image Generate/Edit type migration nor native ratio/tier controls are prerequisites for this review.
-
-| Public-contract option | Benefit and cost | Recommendation |
-|---|---|---|
-| Explicit native-output profile on the existing Generate route | Reuses task execution and most request fields, but intentionally changes encoding defaults and result requirements. Needs explicit versioned client opt-in, capability disclosure and a typed delivery alternative | Preferred if exposing Grok now is valuable; select the opt-in mechanism and exact schema before implementation |
-| Separate native image surface | Makes incompatibility unmistakable, but adds another public endpoint/schema and client integration for the same task | Use only if independent native API ownership is a product requirement |
-| Keep standard-only delivery and Grok disconnected | No new public contract; cannot deliver native Grok success without established standard-compatible defaults/reports | Safe fallback if a nonstandard profile is not wanted |
-
-The proposed native-output profile is narrower than a complete Grok API:
-
-- **Selection and ownership:** default clients retain strict OpenAI delivery. Require explicit per-request profile selection, independent of model aliases and trusted target selection. The profile is an adapter/delivery fact, not a semantic task field, origin or credential selector. Recommend a versioned request header so JSON model/prompt input remains reusable; its name/value and response schema are still review decisions. Unsupported profile values reject before dispatch.
-- **Request subset:** initially reuse prompt, count, supported quality and the existing identity envelope with bounded Base64 static delivery. Omitted image encoding delegates to the target, unlike standard OpenAI's PNG default. Explicit encoding, exact size and other unsupported controls reject before dispatch; do not silently map pixels to tiers. Native aspect ratio/resolution can be a later typed extension rather than a prerequisite for usable static output.
-- **Result shape:** retain ordered Base64 artifacts. Require the admitted final count, but allow absent reported creation time and serving model. Carry optional per-artifact format reports and sparse native accounting in explicitly typed fields rather than forcing them into standard required counters. Reuse the current exact-money/token owners; exact field names and null rules must be selected, with absence/null/zero distinguished where the source admits them. No raw response bag or broad report-loss policy.
-- **Defaults and evidence:** prepare a target-local effective expectation without mutating the source request. Standard omission must resolve to PNG and require an evidenced native guarantee; the proposed profile's omission means target-selected encoding, not guessed JPEG or PNG. Validate any reported contradiction after EOF. Missing MIME is unknown, not proof that the requested/default encoding was honored. A known incompatible target must reject before spending a request; a late contradiction fails delivery without replay.
-- **Bounds and publication:** retain the local 1–10 count and 8-MiB aggregate decoded-final ceiling, intersected with configured per-image/body/time/concurrency limits. Budget Base64/JSON delivery independently. No URL fetching, transcoding, deferred jobs, alternate upload destinations or new retries. Complete static intake/validation/projection before publication.
-- **Client consequence:** the profile is not strict OpenAI Images conformance. Python SDK header forwarding may be usable, but strict typed consumers can reject an absent `created` or ignore extension reports. SDK behavior needs its own acceptance and cannot justify inventing a timestamp.
-
-Before implementation, review isolated directional examples: native `data` without `created`; a separate result with `created` plus serving `model`; a standard omitted-format request followed by a JPEG report; differing reports across two artifacts; and sparse usage with exact money. Each negative example must reach its own intended failure rather than first failing for a missing timestamp. Positive examples must independently specify the selected public representation, not only native→IR→native round trips.
-
-The direct OpenAI static codec preserves supported standard reports and ignores unknown upstream envelope and artifact members independently of downstream admission. Any new Image dialect must retain strict known fields, duplicate-key rejection and resource bounds.
-
-Grok OAuth support and entitlement are subsequent independent integration questions. The API-key-only image topology/gateway checks need responsible-layer changes under the selected contract, not a weakened Provider check or a duplicate model identity.
+The selected static slice does not expose native ratio/resolution tiers, per-artifact settings that cannot be shared across a collection, or native billing reports. A later slice may add typed controls or reports only with explicit SDK and response-schema choices; do not map an exact pixel size to a resolution tier or restore the gateway clock as a creation report.
 
 ### Image streaming lifecycle
 
@@ -224,7 +195,7 @@ Buffered static images split into chunks do not establish upstream progressive d
 | Decision | Recommendation and alternative | Blocks |
 |---|---|---|
 | Operation/source ownership | Generate/Edit family, ordered neutral sources and explicit source-zero mask. Start with immutable byte-owned inputs and a total materialization budget; a later spool-backed part plan is a separate choice | Edit IR and multipart execution, not existing Generate maintenance |
-| Static Generate public contract | [Explicit native-output profile proposal](#static-generate-review-proposal), separate native surface or no Grok integration. Select defaults, report shape and client opt-in together; native ratio/tier exposure is independently selectable | Grok codec and binding, public admission and defaults; not Edit or streaming |
+| Additional native static controls and reports | [Separate selection](#static-generate-review-proposal) for ratio/tier exposure and richer result reports | Does not block static Generate, Edit or streaming |
 | Mask profile and validation | Conservative PNG-declared source/mask and byte subset, retaining native pixel/alpha validation. Local metadata inspection instead needs an explicit inert-media policy exception | Masked Edit admission, not unmasked direct-input design |
 | Stream association and reports | Initially one final output; task-local preview/final lifecycle and separate settings/event-time owners. Select omission/null behavior without inventing a preview default | Streaming, not static Generate/Edit |
 

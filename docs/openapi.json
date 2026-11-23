@@ -267,7 +267,7 @@
             "in": "header",
             "required": false,
             "schema": {"type": "string", "const": "native-static-v1"},
-            "description": "Required for qwen-image-3.0-pro. Omit for standard GPT Image."
+            "description": "Required for Qwen Image, Gemini Nano Banana and Grok Imagine. Omit for standard GPT Image."
           }
         ],
         "requestBody": {
@@ -282,7 +282,7 @@
         },
         "responses": {
           "200": {
-            "description": "Complete inline images after validated EOF. The count must match the request. The opt-in Qwen profile omits creation time and token usage; without the header the standard response applies. One target is dispatched.",
+            "description": "Complete inline images after validated EOF. The count must match the request. The native profile reports the received format but does not expose unreported creation time or native accounting. Without the header the standard response applies. One target is dispatched.",
             "headers": {
               "Cache-Control": {
                 "schema": {
@@ -1686,10 +1686,10 @@
               {"maxItems": 6}
             ]
           },
-          "output_format": {"const": "png"},
+          "output_format": {"enum": ["png", "jpeg", "webp"]},
           "size": {"$ref": "#/components/schemas/ImagePixelSize"}
         },
-        "description": "This opt-in response reports bounded inline PNGs and any upstream-reported size without inventing a creation timestamp or token usage."
+        "description": "This opt-in response reports bounded inline images, the reported encoding and any published size without inventing a creation timestamp or token usage."
       },
       "PublicModelLabel": {
         "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_.-]+(?![\\s\\S])",

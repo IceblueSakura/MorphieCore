@@ -95,18 +95,22 @@ async fn select(
         if tokio::time::Instant::now() >= deadline {
             return Err(ApiError::timeout());
         }
-        if runtime
-            .executors
-            .unavailable(scopes, tokio::time::Instant::now())
-            .is_some()
-        {
-            continue;
-        }
         match tokio::time::timeout_at(deadline, candidate.secret.availability_for_request())
             .await
             .map_err(|_| ApiError::timeout())?
         {
-            Ok(_) => return Ok(candidate.clone()),
+            Ok(revision) => {
+                if let Some(revision) = revision {
+                    runtime.executors.verified_material(scopes, revision);
+                }
+                if runtime
+                    .executors
+                    .unavailable(scopes, tokio::time::Instant::now())
+                    .is_none()
+                {
+                    return Ok(candidate.clone());
+                }
+            }
             Err(error) if error.kind == crate::error::ErrorKind::CredentialUnavailable => {
                 unavailable = error
             }
@@ -214,7 +218,8 @@ impl TaskOutput for Output {
         trace: &mut Trace,
     ) -> Result<(), ApiError> {
         let response = decode(receiver, entry.route.endpoint.profile, trace).await?;
-        if self.0.task.format.value().is_none()
+        if !self.1
+            && self.0.task.format.value().is_none()
             && response.images.iter().any(|image| {
                 image
                     .format

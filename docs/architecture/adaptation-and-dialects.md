@@ -743,16 +743,23 @@ Media resources (images, audio, video, files) are handled as inert payloads (bas
 
 #### Native static images
 
-The explicit `native-static-v1` client profile activates bounded static PNG delivery for the Qwen Image 3.0 Pro bindings. Default GPT Image admission and response requirements are unchanged. Both Aliyun targets use the native multimodal-generation operation with inline `b64_json` data URLs; the gateway never fetches result URLs. The model's optional creation time is not reported by either source, so public `created` is absent. Neither HTTP Date nor gateway time stands in for it.
+The explicit `native-static-v1` client profile publishes bounded inline static artifacts and their reported encoding (`png`, `jpeg` or `webp`). It neither fetches result URLs nor transcodes. The selected targets do not report creation time; neither HTTP Date nor gateway time stands in for it. Usage and billing do not belong to this artifact-only profile. Default GPT Image admission and response requirements remain unchanged.
+
+| Target | Native wire and terminal |
+|---|---|
+| Qwen Image 3.0 Pro | Both Aliyun targets use synchronous native multimodal generation with inline PNG data URLs. |
+| Gemini Nano Banana 2.1 | Google `generateContent` with `TEXT` and `IMAGE` response modalities. Publish one non-thought inline image only after `STOP` and EOF. Text-only output, intermediate thought images and incomplete candidates cannot satisfy Generate. |
+| Grok Imagine Image 2.0 | xAI `/v1/images/generations` with `b64_json` and the named managed Grok OAuth account. Require one inline result with a supported MIME; do not recognize URL, deferred or stored results as inline success. |
 
 | Field or behavior | Disposition |
 |---|---|
-| Prompt, exact `n` (1–6), PNG, explicit size | L1: map directly, translating `WxH` to `W*H`. Require the final reported size to satisfy an explicit size and the ordered artifact count to match `n`. |
-| Omitted/`auto` size, `auto` quality or background | L2 `images.qwen.native-defaults.v1`: delegate to the selected Qwen model without claiming a specific size, quality or background. |
-| Usage | `images.qwen.native-metering.v1`: validate reported image count and dimensions, retain dimensions as an artifact report, and do not relabel the image-count/tier report as OpenAI token usage. This profile does not expose the raw metering report. |
-| Other formats, exact quality/background, moderation override, compression, `user`, Edit or streaming | L5: the static native Qwen binding does not carry these guarantees, identities or operations. |
+| Prompt and artifact format | L1: preserve prompt and each binding's reported encoding. Qwen accepts PNG, exact `n` (1–6) and exact size (`WxH` → `W*H`); enforce reported size and output count. Gemini and Grok accept exactly one artifact with Provider-selected size and encoding. Grok forwards `user`; Gemini and Qwen reject it. |
+| Omitted/`auto` size, `auto` quality or background | L2 `images.native-defaults.v1`: delegate to the binding without promising a specific size, quality or background. |
+| Gemini's accompanying text and thought parts | `images.gemini.artifact-only.v1`: not part of the requested media result; do not serialize or replay them. They cannot substitute for an image. |
+| Accounting | `images.native-static-artifacts.v1`: omit native accounting from the public artifact profile. Qwen validates image count and dimensions; dimensions remain an artifact report. Grok retains validated token reports and exactly converts USD ticks in image IR before this projection. No native reports are relabeled as standard Images usage. |
+| Unsupported guarantees | L5: reject explicit formats or exact size on Gemini/Grok, non-PNG on Qwen, exact quality/background, moderation overrides and compression. Edit, preview streaming, deferred jobs and storage remain separate. |
 
-See [Aliyun's API reference](https://help.aliyun.com/zh/model-studio/qwen-image-generation-and-editing-api-reference) and [Token Plan image integration](https://help.aliyun.com/zh/model-studio/token-plan-image-generation).
+See [source contracts](../refs/2026-11-23-native-static-image-targets.md) and [client activation](../usage/api-reference.md#static-image-generation).
 
 ### Adaptation evidence
 

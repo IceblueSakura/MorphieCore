@@ -1,0 +1,266 @@
+//! Single-artifact native Generate profiles with Provider-selected encoding.
+use super::Request;
+use crate::{
+    CodecError,
+    semantic::{
+        task::image_generation::{
+            GeneratedImage, ImageBackgroundRequest, ImageBilling, ImageData,
+            ImageGenerationResponse, ImageQualityRequest, ImageSizeRequest, ImageTokenBreakdown,
+            ImageUsage, UsdAmount,
+        },
+        value::{ImageFormat, Presence},
+    },
+};
+use serde::Deserialize;
+use serde_json::{Value, json};
+
+fn admit(request: &Request) -> Result<(), CodecError> {
+    crate::openai::images::validate_request(request)?;
+    let task = &request.task;
+    if task.requested_count() != 1
+        || task.format.value().is_some()
+        || matches!(task.size.value(), Some(ImageSizeRequest::Exact(_)))
+        || matches!(task.quality.value(), Some(ImageQualityRequest::Exact(_)))
+        || matches!(
+            task.background.value(),
+            Some(ImageBackgroundRequest::Exact(_))
+        )
+        || task.moderation.value().is_some()
+    {
+        return Err(CodecError::invalid());
+    }
+    Ok(())
+}
+
+pub(crate) fn gemini_request(request: &Request) -> Result<Value, CodecError> {
+    admit(request)?;
+    if request.identity.user.is_some() {
+        return Err(CodecError::invalid());
+    }
+    Ok(json!({
+        "contents": [{"role":"user","parts":[{"text":request.task.prompt()}]}],
+        "generationConfig": {"responseModalities":["TEXT","IMAGE"]}
+    }))
+}
+
+pub(crate) fn grok_request(request: &Request, model: &str) -> Result<Value, CodecError> {
+    admit(request)?;
+    if !crate::openai::speech::valid_model(model) {
+        return Err(CodecError::invalid());
+    }
+    let mut body = json!({
+        "model": model, "prompt": request.task.prompt(), "n": 1, "response_format": "b64_json"
+    });
+    if let Some(user) = &request.identity.user {
+        body["user"] = json!(user);
+    }
+    Ok(body)
+}
+
+fn completed(encoded: &str, mime: &str) -> Result<ImageGenerationResponse, CodecError> {
+    let format = mime
+        .parse::<ImageFormat>()
+        .map_err(|_| CodecError::invalid())?;
+    let mut image =
+        GeneratedImage::new(ImageData::new(encoded).map_err(|_| CodecError::invalid())?);
+    image.format = Presence::Value(format);
+    let response = ImageGenerationResponse {
+        created: Presence::Absent,
+        model: Presence::Absent,
+        safety_identifier: Presence::Absent,
+        images: vec![image],
+        usage: Presence::Absent,
+    };
+    response.validate().map_err(|_| CodecError::invalid())?;
+    Ok(response)
+}
+
+#[derive(Deserialize)]
+struct Gemini {
+    candidates: Vec<GeminiCandidate>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GeminiCandidate {
+    finish_reason: String,
+    content: GeminiContent,
+}
+#[derive(Deserialize)]
+struct GeminiContent {
+    role: Option<String>,
+    parts: Vec<GeminiPart>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GeminiPart {
+    #[serde(default)]
+    thought: bool,
+    text: Option<String>,
+    inline_data: Option<GeminiImage>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GeminiImage {
+    mime_type: String,
+    data: String,
+}
+pub(crate) fn gemini_response(bytes: &[u8]) -> Result<ImageGenerationResponse, CodecError> {
+    let Gemini { candidates } = serde_json::from_value(crate::json::decode_image_response(bytes)?)
+        .map_err(|_| CodecError::invalid())?;
+    let [candidate] = candidates.as_slice() else {
+        return Err(CodecError::invalid());
+    };
+    if candidate.finish_reason != "STOP"
+        || candidate
+            .content
+            .role
+            .as_deref()
+            .is_some_and(|role| role != "model")
+    {
+        return Err(CodecError::invalid());
+    }
+    let mut image = None;
+    for part in candidate.content.parts.iter().filter(|p| !p.thought) {
+        match (&part.text, &part.inline_data) {
+            (Some(_), None) => {}
+            (None, Some(artifact)) if image.is_none() => image = Some(artifact),
+            _ => return Err(CodecError::invalid()),
+        }
+    }
+    let image = image.ok_or_else(CodecError::invalid)?;
+    completed(&image.data, &image.mime_type)
+}
+
+#[derive(Deserialize)]
+struct Grok {
+    data: Vec<GrokImage>,
+    usage: Option<GrokUsage>,
+}
+#[derive(Deserialize)]
+struct GrokImage {
+    b64_json: String,
+    mime_type: String,
+    url: Option<String>,
+}
+#[derive(Deserialize)]
+struct GrokUsage {
+    cost_in_usd_ticks: u64,
+    input_tokens: Option<u64>,
+    output_tokens: Option<u64>,
+    total_tokens: Option<u64>,
+    input_tokens_details: Option<GrokDetails>,
+    output_tokens_details: Option<GrokDetails>,
+}
+#[derive(Deserialize)]
+struct GrokDetails {
+    text_tokens: u64,
+    image_tokens: u64,
+    cached_tokens: Option<u64>,
+    reasoning_tokens: Option<u64>,
+}
+impl From<GrokDetails> for ImageTokenBreakdown {
+    fn from(raw: GrokDetails) -> Self {
+        Self {
+            text: Presence::Value(raw.text_tokens),
+            image: Presence::Value(raw.image_tokens),
+            cached: present(raw.cached_tokens),
+            reasoning: present(raw.reasoning_tokens),
+            ..Self::default()
+        }
+    }
+}
+fn present<T>(value: Option<T>) -> Presence<T> {
+    value.map_or(Presence::Absent, Presence::Value)
+}
+pub(crate) fn grok_response(bytes: &[u8]) -> Result<ImageGenerationResponse, CodecError> {
+    let Grok { data, usage } = serde_json::from_value(crate::json::decode_image_response(bytes)?)
+        .map_err(|_| CodecError::invalid())?;
+    let [image] = data.as_slice() else {
+        return Err(CodecError::invalid());
+    };
+    if image.url.is_some() {
+        return Err(CodecError::invalid());
+    }
+    let mut response = completed(&image.b64_json, &image.mime_type)?;
+    if let Some(usage) = usage {
+        let ticks = usage.cost_in_usd_ticks;
+        let scale = 10_000_000_000;
+        let cost = format!("{}.{:010}", ticks / scale, ticks % scale)
+            .parse()
+            .map_err(|_| CodecError::invalid())?;
+        response.usage = Presence::Value(ImageUsage {
+            input: present(usage.input_tokens),
+            input_details: present(usage.input_tokens_details.map(Into::into)),
+            output: present(usage.output_tokens),
+            output_details: present(usage.output_tokens_details.map(Into::into)),
+            total: present(usage.total_tokens),
+            billing: ImageBilling {
+                cost: Presence::Value(UsdAmount::new(cost).map_err(|_| CodecError::invalid())?),
+                ..ImageBilling::default()
+            },
+        });
+        response.validate().map_err(|_| CodecError::invalid())?;
+    }
+    Ok(response)
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::openai::images::decode_request;
+
+    #[test]
+    fn native_image_cannot_promise_unselected_pixel_controls() {
+        for control in [
+            json!({"size":"1024x1024"}),
+            json!({"n":2}),
+            json!({"output_format":"jpeg"}),
+        ] {
+            let mut request = json!({"model":"fixture","prompt":"pattern"});
+            request
+                .as_object_mut()
+                .unwrap()
+                .extend(control.as_object().unwrap().clone());
+            let request = decode_request(&serde_json::to_vec(&request).unwrap()).unwrap();
+            assert!(gemini_request(&request).is_err());
+            assert!(grok_request(&request, "fixture").is_err());
+        }
+    }
+
+    #[test]
+    fn gemini_requires_one_final_image_not_text_or_a_thought_artifact() {
+        let response = |finish, parts| json!({"candidates":[{"finishReason":finish,"content":{"role":"model","parts":parts}}]});
+        let decode = |value| gemini_response(&serde_json::to_vec(&value).unwrap());
+        let thought = json!({"thought":true,"inlineData":{"mimeType":"image/png","data":"AQID"}});
+        let image = json!({"inlineData":{"mimeType":"image/jpeg","data":"BAUG"}});
+        let result = decode(response("STOP", json!([thought, {"text":"Done."}, image]))).unwrap();
+        assert_eq!(result.images[0].format, Presence::Value(ImageFormat::Jpeg));
+        assert_eq!(result.images[0].data.as_base64(), "BAUG");
+        assert!(decode(response("STOP", json!([thought, {"text":"Done."}]))).is_err());
+        assert!(decode(response("MAX_TOKENS", json!([image]))).is_err());
+        assert!(decode(response("STOP", json!([image, image]))).is_err());
+    }
+
+    #[test]
+    fn grok_cost_is_exact_and_omitted_only_by_native_delivery_projection() {
+        let value = br#"{"data":[{"b64_json":"AQID","mime_type":"image/jpeg"}],
+                       "usage":{"cost_in_usd_ticks":400000001,"input_tokens":2,
+                       "output_tokens":5,"total_tokens":7}}"#;
+        let result = grok_response(value).unwrap();
+        let usage = result.usage.value().unwrap();
+        assert_eq!(
+            usage.billing.cost.value().unwrap().amount().to_string(),
+            "0.0400000001"
+        );
+        assert_eq!(result.images[0].format, Presence::Value(ImageFormat::Jpeg));
+        let projected = crate::image::projection::project_response(
+            &result,
+            crate::image::projection::AccountingPolicy::NativeStaticArtifacts,
+        )
+        .unwrap();
+        assert!(projected.loss.billing_omitted && projected.response.usage.is_absent());
+        assert!(
+            grok_response(br#"{"data":[{"b64_json":"AQID","mime_type":"image/gif"}]}"#).is_err()
+        );
+        assert!(grok_response(br#"{"data":[{"b64_json":"AQID"}]}"#).is_err());
+    }
+}

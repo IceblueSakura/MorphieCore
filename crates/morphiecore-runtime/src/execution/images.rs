@@ -22,7 +22,9 @@ pub fn prepare(
         .map_err(|_| AttemptError::Limit)?;
     Ok(PreparedTaskRequest::new(
         provider,
-        route.endpoint.target.path.clone(),
+        route.endpoint.request_path().map_err(|_| {
+            AttemptError::Protocol(crate::execution::attempt::ProtocolReason::ImageBindingMismatch)
+        })?,
         crate::provider::ProviderOperation::Images,
         vec![
             ("content-type".into(), "application/json".into()),
