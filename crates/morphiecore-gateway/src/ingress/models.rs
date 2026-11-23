@@ -46,7 +46,12 @@ impl ModelView {
             let canonical = topology
                 .model(label)
                 .map(|m| &m.canonical_model)
-                .or_else(|| topology.image_route(label).map(|r| &r.canonical_model))
+                .or_else(|| {
+                    topology
+                        .image_bindings(label)
+                        .next()
+                        .map(|r| &r.canonical_model)
+                })
                 .or_else(|| topology.speech_route(label).map(|r| &r.canonical_model))
                 .or_else(|| topology.embedding_route(label).map(|r| &r.canonical_model))
                 .or_else(|| topology.transcription_model(label))

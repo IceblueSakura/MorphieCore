@@ -44,6 +44,8 @@ pub(super) struct Model {
 struct Candidate {
     binding: String,
     #[serde(default, deserialize_with = "crate::configuration::optional")]
+    account: Option<String>,
+    #[serde(default, deserialize_with = "crate::configuration::optional")]
     allowed_effort: Option<Vec<String>>,
     #[serde(default, deserialize_with = "crate::configuration::optional")]
     context_window_tokens: Option<u64>,
@@ -57,6 +59,19 @@ struct Candidate {
     upstream_model: Option<String>,
     #[serde(default, deserialize_with = "crate::configuration::optional")]
     thinking_conversion: Option<ThinkingConversion>,
+}
+impl Candidate {
+    fn image_account(&self) -> Option<&str> {
+        (self.allowed_effort.is_none()
+            && self.context_window_tokens.is_none()
+            && self.maximum_input_tokens.is_none()
+            && self.maximum_output_tokens.is_none()
+            && self.default_output_tokens.is_absent()
+            && self.upstream_model.is_none()
+            && self.thinking_conversion.is_none())
+        .then_some(self.account.as_deref())
+        .flatten()
+    }
 }
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -118,10 +133,53 @@ impl Models {
                 "invalid model fields or task selection; choose a catalog model and its supported fields").into()
             };
             let Some(public) = catalog.model(&label) else {
-                if config.candidates.is_some()
-                    || config.total_timeout_ms.is_some()
-                    || config.thinking_tokens.is_some()
-                {
+                if let Some(candidates) = config.candidates.as_ref() {
+                    if config.account.is_some()
+                        || config.binding.is_some()
+                        || config.total_timeout_ms.is_some()
+                        || config.thinking_tokens.is_some()
+                        || candidates.is_empty()
+                    {
+                        return Err(invalid());
+                    }
+                    let mut routes = catalog.image_bindings(&label);
+                    let mut selected = Vec::new();
+                    for candidate in candidates {
+                        // Accept an ordered subsequence of the trusted catalog. Never let
+                        // a deployment silently reverse the subscription/metered priority.
+                        let route = routes
+                            .find(|route| route.endpoint.id.as_str() == candidate.binding)
+                            .ok_or_else(invalid)?;
+                        let name = candidate.image_account().ok_or_else(invalid)?;
+                        let provider = route.endpoint.provider.as_str();
+                        let account = accounts
+                            .account(provider, name)
+                            .ok_or(StartupError::Credentials)?;
+                        if !account.enabled
+                            || !matches!(account.credential, AccountCredential::ApiKey(_))
+                        {
+                            return Err(StartupError::Credentials);
+                        }
+                        let mut described = super::inspection::task(
+                            &label,
+                            provider,
+                            route.endpoint.id.as_str(),
+                            &route.endpoint.execution,
+                            "images",
+                        );
+                        described["selection"] = serde_json::json!("candidates");
+                        described["account"] = serde_json::json!(name);
+                        explanation.push(described);
+                        selected.push((route.endpoint.id.clone(), account.binding_id()));
+                    }
+                    drop(routes);
+                    entries.images.push(ImageEntry {
+                        model: label.clone(),
+                    });
+                    credentials.select_image(label, selected);
+                    continue;
+                }
+                if config.total_timeout_ms.is_some() || config.thinking_tokens.is_some() {
                     return Err(invalid());
                 }
                 let name = config.account.as_deref().ok_or_else(invalid)?;
@@ -227,6 +285,9 @@ impl Models {
             table.validate().map_err(|_| invalid())?;
             let mut deployments = BTreeSet::new();
             for (candidate_index, candidate) in candidates.into_iter().enumerate() {
+                if candidate.account.is_some() {
+                    return Err(invalid());
+                }
                 let problem = |reason| -> StartupError {
                     crate::configuration::ConfigurationError::new(
                         "models",

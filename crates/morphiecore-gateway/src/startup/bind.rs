@@ -53,13 +53,13 @@ impl Gateway {
             embeddings,
         } = entries;
         let credentials = credentials.into();
-        let images = crate::tasks::images::bind(&topology, images, &credentials)?;
+        let auth = auth::Auth::new(agents)?;
+        let images = crate::tasks::images::bind(&topology, images, &credentials, &auth.digest)?;
         let speech = crate::tasks::speech::bind(&topology, speech, &credentials)?;
         let transcriptions =
             crate::tasks::transcription::bind(&topology, transcriptions, &credentials)?;
         let embeddings = crate::tasks::embeddings::bind(&topology, embeddings, &credentials)?;
         limits.validate()?;
-        let auth = auth::Auth::new(agents)?;
         let transport = HttpTransport::with_environment_proxy(proxy, environment)
             .map_err(|_| StartupError::Transport)?;
         let entries = bind_generation(&topology, generation, &credentials, &auth.digest)?;

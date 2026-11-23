@@ -23,20 +23,47 @@ impl Scopes {
         endpoint: &crate::topology::Endpoint,
         provenance: &str,
     ) -> Self {
+        Self::bind_target(
+            namespace,
+            &endpoint.provider,
+            &endpoint.target,
+            &endpoint.upstream_model,
+            endpoint.protocol.identity_tag(),
+            provenance,
+        )
+    }
+    pub(crate) fn bind_image(
+        namespace: &[u8; 32],
+        endpoint: &crate::topology::images::ImageEndpoint,
+        provenance: &str,
+    ) -> Self {
+        Self::bind_target(
+            namespace,
+            &endpoint.provider,
+            &endpoint.target,
+            &endpoint.upstream_model,
+            u8::MAX,
+            provenance,
+        )
+    }
+    fn bind_target(
+        namespace: &[u8; 32],
+        provider: &crate::provider::ProviderId,
+        endpoint: &crate::topology::EndpointTarget,
+        model: &str,
+        operation: u8,
+        provenance: &str,
+    ) -> Self {
         let digest = |kind: &str, target: bool| {
             let mut hash = Sha256::new();
             hash.update(namespace);
-            for value in [kind, endpoint.provider.as_str(), provenance] {
+            for value in [kind, provider.as_str(), provenance] {
                 hash.update((value.len() as u64).to_le_bytes());
                 hash.update(value.as_bytes());
             }
             if target {
-                hash.update([endpoint.protocol.identity_tag()]);
-                for value in [
-                    endpoint.target.origin.as_str(),
-                    endpoint.target.path.as_str(),
-                    endpoint.upstream_model.as_str(),
-                ] {
+                hash.update([operation]);
+                for value in [endpoint.origin.as_str(), endpoint.path.as_str(), model] {
                     hash.update((value.len() as u64).to_le_bytes());
                     hash.update(value.as_bytes());
                 }
@@ -375,10 +402,24 @@ impl Executors {
         failures: &[FailureObservation],
         now: Instant,
     ) -> Option<Observation> {
-        let policy = self.policy(candidate);
+        self.record_target_failures(
+            candidate.provider.id.as_str(),
+            &candidate.health,
+            failures,
+            now,
+        )
+    }
+    pub(crate) fn record_target_failures(
+        &self,
+        provider: &str,
+        scopes: &Scopes,
+        failures: &[FailureObservation],
+        now: Instant,
+    ) -> Option<Observation> {
+        let policy = self.policies.get(provider).unwrap_or(&self.defaults);
         let mut state = self.state.lock().expect("executor state");
         let mut result: Option<(Instant, Observation)> = None;
-        for (index, key) in candidate.health.0.iter().enumerate() {
+        for (index, key) in scopes.0.iter().enumerate() {
             let health = state.health.entry(*key).or_default();
             let selected: Vec<_> = failures
                 .iter()

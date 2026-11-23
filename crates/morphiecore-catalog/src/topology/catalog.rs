@@ -143,10 +143,16 @@ fn compile_catalog() -> Result<CompiledTopology, TopologyError> {
     }
     compile(catalog::all(), endpoints, routes, merged, canonical_models)?
         .with_images(
-            task_entries(image_bindings().iter().map(|b| b.operation()), |e| {
-                &e.provider
-            }),
-            image_bindings().iter().map(|b| b.route()).collect(),
+            task_entries(
+                image_bindings()
+                    .iter()
+                    .flat_map(|b| b.providers.iter().copied().map(ImageBinding::operation)),
+                |e| &e.provider,
+            ),
+            image_bindings()
+                .iter()
+                .flat_map(|b| b.providers.iter().map(|provider| b.route(provider)))
+                .collect(),
         )?
         .with_speech(
             task_entries(speech_bindings().iter().map(|b| b.operation()), |e| {

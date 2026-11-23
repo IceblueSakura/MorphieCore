@@ -169,6 +169,10 @@
         "path": "/compatible-mode/v1/embeddings",
         "suffix": "/embeddings"
       },
+      "images": {
+        "path": "/api/v1/services/aigc/multimodal-generation/generation",
+        "suffix": "/services/aigc/multimodal-generation/generation"
+      },
       "transcription": {
         "path": "/api/v1/services/aigc/multimodal-generation/generation",
         "suffix": "/services/aigc/multimodal-generation/generation"
@@ -177,6 +181,7 @@
     "sources": [
       "https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions",
       "https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-responses",
+      "https://help.aliyun.com/zh/model-studio/qwen-image-generation-and-editing-api-reference",
       "https://help.aliyun.com/en/model-studio/text-embedding-synchronous-api",
       "https://help.aliyun.com/en/model-studio/fun-asr-flash-recorded-speech-recognition-http-api"
     ]
@@ -199,6 +204,10 @@
         "path": "/api/v1/services/audio/tts/SpeechSynthesizer",
         "suffix": "/services/audio/tts/SpeechSynthesizer"
       },
+      "images": {
+        "path": "/api/v1/services/aigc/multimodal-generation/generation",
+        "suffix": "/services/aigc/multimodal-generation/generation"
+      },
       "transcription": {
         "path": "/api/v1/services/aigc/multimodal-generation/generation",
         "suffix": "/services/aigc/multimodal-generation/generation"
@@ -207,6 +216,7 @@
     "sources": [
       "https://help.aliyun.com/zh/model-studio/base-url",
       "https://help.aliyun.com/zh/model-studio/codex",
+      "https://help.aliyun.com/zh/model-studio/token-plan-image-generation",
       "https://help.aliyun.com/en/model-studio/qwen-audio-tts-voice-list",
       "https://help.aliyun.com/en/model-studio/fun-asr-flash-recorded-speech-recognition-http-api"
     ]

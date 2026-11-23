@@ -733,17 +733,21 @@
   "images": [
     {
       "model": "gpt-image-2.6-flare",
-      "upstream": "gpt-image-2.6-flare",
       "released_at": 1793750400,
       "developer": "OpenAI",
-      "provider": "openai"
+      "providers": ["openai"]
     },
     {
       "model": "gpt-image-2.6-sunburst",
-      "upstream": "gpt-image-2.6-sunburst",
       "released_at": 1793750400,
       "developer": "OpenAI",
-      "provider": "openai"
+      "providers": ["openai"]
+    },
+    {
+      "model": "qwen-image-3.0-pro",
+      "released_at": 1784505600,
+      "developer": "Alibaba",
+      "providers": ["aliyun-tokenplan-cn", "aliyun-dashscope-cn"]
     }
   ],
   "speech": [

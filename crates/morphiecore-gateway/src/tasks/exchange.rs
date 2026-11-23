@@ -53,8 +53,25 @@ pub(super) async fn send<R>(
         .map_err(|error| {
             trace.report.failure(None, &AttemptError::Transport(error));
             ApiError::transport_fact(error)
-        })?;
-    Receiver::new(upstream, limit, trace)
+        });
+    let result = upstream.and_then(|upstream| Receiver::new(upstream, limit, trace));
+    if let (Some(scopes), Err(error)) = (&entry.health, &result)
+        && error.recovery.affects_health
+    {
+        let now = Instant::now();
+        let failure = crate::routing::executors::FailureObservation {
+            error: *error,
+            at: now,
+            material_revision: None,
+        };
+        runtime.executors.record_target_failures(
+            entry.provider.id.as_str(),
+            scopes,
+            &[failure],
+            now,
+        );
+    }
+    result
 }
 
 /// Bounded receive state only: no retries, semantic terminal inference or delivery.

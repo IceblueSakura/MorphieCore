@@ -365,7 +365,7 @@ Those reviewed Google bindings omit temperature/top-p/top-k that the model ignor
 
 History reasoning is never converted into assistant text. Readable reasoning without this target's native carrier, including reasoning demonstrably belonging to another target, is omitted under the named visible-history transfer policy, never promoted to an assistant answer. Visible messages and real call/results remain; partial reasoning, damaged compatible replay and required compacted/cached context cannot be repaired by omission. Valid native carriers remain available.
 
-Only listed models are activated. Images, Speech and Embeddings select one account explicitly, for example `"text-embedding-3-large":{"account":"primary"}`. They retain single-target task execution without Generation overrides or multi-account recovery.
+Only listed models are activated. GPT Image, Speech and Embeddings select one account explicitly, for example `"text-embedding-3-large":{"account":"primary"}`. They retain single-target task execution without Generation overrides or multi-account recovery.
 
 Transcription also requires `account`. A shared model requires an explicit model-level `binding`, not a Generation `candidates` list:
 
@@ -386,6 +386,10 @@ Select `dashscope-qwen-asr` for metered DashScope or `tokenplan-qwen-asr` for To
 Model optional fields reject explicit null except the named Messages default-clearing field. Standalone tasks reject Generation-only fields even when an array is empty. Candidate controls are validated for disabled accounts as well as enabled ones; enablement only selects routing participation.
 
 The file supports at most 64 models and 64 candidates per model, with at most 64 expanded account targets per public-model/client entry. Unknown bindings, mismatched model identities, duplicate deployments and invalid account references fail startup. See [service loading](../../crates/morphiecore-gateway/src/startup/bootstrap.rs) and [model assembly](../../crates/morphiecore-gateway/src/startup/models.rs).
+
+#### Qwen image candidates
+
+Use the ordered `candidates` array in the [task template](../../config/models.tasks.example.json) to activate `qwen-image-3.0-pro`. Each entry requires exactly a `binding` and the name of an enabled API-key `account` owned by that binding's Provider. Neither installed credentials nor a shared account name activates metered fallback. Configure either candidate alone or both; when both are present, Token Plan must precede DashScope. See [pre-dispatch image selection](../architecture/runtime-and-routing.md#standalone-image-candidates) and the [client profile](api-reference.md#static-image-generation).
 
 ### Delta coalescing
 

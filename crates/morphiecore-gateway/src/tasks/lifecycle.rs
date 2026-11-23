@@ -15,6 +15,12 @@ pub(super) struct Admission {
 }
 
 impl Admission {
+    pub(super) fn deadline(&self, limits: &Limits, timeout_ms: u64) -> Instant {
+        self.started
+            + limits
+                .exchange_timeout
+                .min(Duration::from_millis(timeout_ms))
+    }
     pub(super) async fn upload<H>(
         runtime: &Runtime,
         request: Request,
@@ -52,11 +58,7 @@ impl Admission {
         output: T,
     ) -> Result<Response, ApiError> {
         let (_, _, execution) = entry.route.delivery();
-        let deadline = self.started
-            + runtime
-                .limits
-                .exchange_timeout
-                .min(Duration::from_millis(execution.timeout_ms));
+        let deadline = self.deadline(&runtime.limits, execution.timeout_ms);
         if Instant::now() >= deadline {
             return Err(ApiError::timeout());
         }

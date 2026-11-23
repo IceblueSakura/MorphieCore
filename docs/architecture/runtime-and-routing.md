@@ -42,11 +42,15 @@ Failover operates on precompiled candidate lists under a cache-affine routing po
 
 Routes compile at startup (up to 64 candidates per model). Ingress requests cannot specify arbitrary candidate targets.
 
-A target is one account serving a route candidate: Provider, credential/security identity, upstream model, operation/protocol and effective origin/path. Matching hostnames alone do not establish target identity. Candidate order precedes account declaration order; credential kind adds no priority. Every enabled, validly bound account in the declared route may serve a new request, including another Provider's account. Stored credentials alone authorize no destination or billing path. Standalone tasks retain fixed-account execution rather than Generation recovery.
+A target is one account serving a route candidate: Provider, credential/security identity, upstream model, operation/protocol and effective origin/path. Matching hostnames alone do not establish target identity. Candidate order precedes account declaration order; credential kind adds no priority. Every enabled, validly bound account in the declared route may serve a new request, including another Provider's account. Stored credentials alone authorize no destination or billing path. Standalone tasks do not inherit Generation recovery.
 
 Selection prefers a fresh conversation binding when ready. Only that binding earns one cancellable cooldown wait, and only when its blocking deadline falls within the configured `max_wait`; otherwise select another ready legal candidate immediately or fail fast. Any permitted wait remains bounded by the original request deadline. Recheck lifecycle and cooldowns afterward. New or unbound requests never wait for a higher-priority cooling target. Do not loop through additional waits or balance traffic by weights, price, latency, usage or inferred cache value.
 
 Pre-dispatch representation checks may consider later candidates without weakening ingress, replay or explicit-guarantee validation. Once a send begins, upstream request/malformed failures never restart candidate search.
+
+#### Standalone image candidates
+
+The static Qwen image model can bind two explicit accounts for the same exact model and wire contract. Each new request selects the first candidate with available credential material and no active account or target cooldown: Token Plan, then metered DashScope. It uses shared health scopes and cooldown policy, without affinity, waits or probes. Classified send/head failures update health for subsequent requests; the failed request never restarts candidate selection. There is no standalone resend, even before publication. Other standalone task families remain fixed-account unless independently selected.
 
 #### Request conversion reuse
 

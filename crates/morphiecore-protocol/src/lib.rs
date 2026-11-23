@@ -43,6 +43,7 @@ pub mod transcription;
 
 // Standalone operation dialects; registration does not activate a binding.
 pub mod aliyun_asr;
+pub mod aliyun_images;
 pub mod aliyun_speech;
 pub mod xiaomi_audio;
 

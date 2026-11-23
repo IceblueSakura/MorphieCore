@@ -140,7 +140,7 @@ pub(super) struct Runtime {
     pub(super) auth: auth::Auth,
     pub(super) request_ids: super::ingress::correlation::RequestIds,
     pub(super) entries: BTreeMap<(ClientProtocol, String), Arc<BoundEntry>>,
-    pub(super) images: BTreeMap<String, Arc<images::BoundImage>>,
+    pub(super) images: BTreeMap<String, Vec<Arc<images::BoundImage>>>,
     pub(super) speech: BTreeMap<String, Arc<speech::BoundSpeech>>,
     pub(super) transcriptions: BTreeMap<String, Arc<transcription::BoundTranscription>>,
     pub(super) embeddings: BTreeMap<String, Arc<embeddings::BoundEmbedding>>,

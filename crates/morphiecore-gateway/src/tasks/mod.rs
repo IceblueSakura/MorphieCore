@@ -1,5 +1,4 @@
-//! Frozen standalone task endpoints. Each public model binds one catalog route,
-//! its Provider and a single API key, and makes one attempt.
+//! Standalone tasks with one dispatched target per exchange.
 pub(crate) mod embeddings;
 mod exchange;
 pub(crate) mod images;
@@ -24,6 +23,7 @@ pub(crate) struct BoundTask<R> {
     pub(crate) provider: ProviderDefinition,
     pub(crate) secret: credentials::Source,
     pub(crate) account: Option<String>,
+    pub(crate) health: Option<crate::routing::executors::Scopes>,
 }
 /// The trusted target a standalone route names.
 pub(crate) trait TaskRoute: Clone {
@@ -72,32 +72,11 @@ pub(crate) fn bind<'t, E, R: TaskRoute + 't>(
     }
     let mut result = BTreeMap::new();
     for entry in entries {
-        let mut route = route(&entry).ok_or(StartupError::Binding)?.clone();
-        let (provider, credential) = route.target();
+        let route = route(&entry).ok_or(StartupError::Binding)?.clone();
         let binding = credentials
-            .task(model(&entry), credential)
+            .task(model(&entry), route.target().1)
             .ok_or(StartupError::Credentials)?;
-        let provider = match &binding.provider {
-            Some(configured) => configured.clone(),
-            None => topology
-                .provider(provider.as_str())
-                .ok_or(StartupError::Binding)?
-                .clone(),
-        };
-        if provider.id != *route.target().0 {
-            return Err(StartupError::Credentials);
-        }
-        if binding.provider.is_some() {
-            route.retarget(&provider)?;
-        }
-        let secret = binding.source.clone();
-        secret.check(CredentialKind::ApiKey, provider.id.as_str())?;
-        let bound = BoundTask {
-            route,
-            provider,
-            secret,
-            account: binding.name.clone(),
-        };
+        let bound = bind_target(topology, route, binding)?;
         if result
             .insert(model(&entry).to_owned(), Arc::new(bound))
             .is_some()
@@ -106,4 +85,32 @@ pub(crate) fn bind<'t, E, R: TaskRoute + 't>(
         }
     }
     Ok(result)
+}
+fn bind_target<R: TaskRoute>(
+    topology: &CompiledTopology,
+    mut route: R,
+    binding: &credentials::Binding,
+) -> Result<BoundTask<R>, StartupError> {
+    let provider = match &binding.provider {
+        Some(configured) => configured.clone(),
+        None => topology
+            .provider(route.target().0.as_str())
+            .ok_or(StartupError::Binding)?
+            .clone(),
+    };
+    if provider.id != *route.target().0 {
+        return Err(StartupError::Credentials);
+    }
+    if binding.provider.is_some() {
+        route.retarget(&provider)?;
+    }
+    let secret = binding.source.clone();
+    secret.check(CredentialKind::ApiKey, provider.id.as_str())?;
+    Ok(BoundTask {
+        route,
+        provider,
+        secret,
+        account: binding.name.clone(),
+        health: None,
+    })
 }

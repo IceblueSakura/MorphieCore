@@ -1,4 +1,4 @@
-//! Explicit single-candidate image routes, compiled alongside conversation routes.
+//! Explicit static image bindings, compiled alongside conversation routes.
 //! A task-specific binding avoids meaningless Generation contracts on image tasks.
 use super::{
     CompiledTopology, EndpointId, EndpointTarget, ExecutionContract, ModelId, RouteId,
@@ -29,12 +29,22 @@ pub struct ImageRoute {
     pub model: ModelId,
     pub canonical_model: ModelId,
     pub accounting: crate::protocol::image::projection::AccountingPolicy,
-    /// Exactly one target; no implicit retry, fallback or capability union.
+    /// One target's contract; a configured model may select several bindings.
     pub endpoint: ImageEndpoint,
 }
 impl CompiledTopology {
     pub fn image_route(&self, model: &str) -> Option<&ImageRoute> {
-        self.image_routes.get(model)
+        let mut routes = self.image_bindings(model);
+        let route = routes.next()?;
+        routes.next().is_none().then_some(route)
+    }
+    pub fn image_bindings<'a, 'm>(
+        &'a self,
+        model: &'m str,
+    ) -> impl Iterator<Item = &'a ImageRoute> + use<'a, 'm> {
+        self.image_routes
+            .iter()
+            .filter(move |r| r.model.as_str() == model)
     }
     /// Trusted startup input explicitly selects a static image wire profile.
     /// No existing Chat/Responses registration implies an Images operation.
@@ -139,13 +149,17 @@ impl CompiledTopology {
                 || self.embedding_route(route.model.as_str()).is_some()
                 || self.transcription_model(route.model.as_str()).is_some()
                 || self.speech_route(route.model.as_str()).is_some()
-                || self
-                    .image_routes
-                    .insert(route.model.as_str().into(), route)
-                    .is_some()
+                || self.image_bindings(route.model.as_str()).any(|existing| {
+                    existing.canonical_model != route.canonical_model
+                        || existing.endpoint.provider == endpoint.provider
+                        || existing.endpoint.upstream_model != endpoint.upstream_model
+                        || existing.endpoint.profile != endpoint.profile
+                        || existing.accounting != route.accounting
+                })
             {
                 return Err(TopologyError::DuplicateModel);
             }
+            self.image_routes.push(route);
         }
         Ok(self)
     }

@@ -45,6 +45,20 @@ The [OpenAPI summary](../openapi.json) describes envelopes and selected constrai
 
 Enable `gpt-image-2.6-flare` or `gpt-image-2.6-sunburst` in `models.json` with a named `openai` Platform API-key account. `/v1/images/generations` returns bounded inline Base64 artifacts, defaulting to PNG. Reported creation time, supported image metadata and usage retain their standard meanings. Neither the retired OpenRouter `gpt-image-2.5-flare` label nor Image Edit, preview streaming, SVG or GIF is admitted.
 
+For `qwen-image-3.0-pro`, set `X-MorphieCore-Image-Profile: native-static-v1` on the same endpoint. This profile is not strict OpenAI Images conformance: the PNG remains in `data[].b64_json`, but the response omits `created` and token `usage`. Use the SDK's `extra_headers` to select the profile and a JSON consumer that accepts missing `created`:
+
+```python
+import json
+
+response = client.images.with_raw_response.generate(
+    model="qwen-image-3.0-pro", prompt="A flat blue circle on white",
+    extra_headers={"X-MorphieCore-Image-Profile": "native-static-v1"},
+)
+artifacts = json.loads(response.content)["data"]
+```
+
+See [Qwen model configuration](gateway-configuration.md#qwen-image-candidates) for activation and [native static images](../architecture/adaptation-and-dialects.md#native-static-images) for supported controls. Omit the header for GPT Image.
+
 ### Embeddings
 
 Explicitly list the model in `models.json`, for example `"text-embedding-3-large":{"account":"primary"}`, and provision the named account for its bound Provider. Other enabled accounts are not task fallback targets.

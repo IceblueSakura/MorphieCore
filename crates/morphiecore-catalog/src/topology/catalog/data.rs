@@ -331,12 +331,7 @@ impl Catalog {
                 .messages
                 .iter()
                 .any(|b| (b.provider, b.model) != messages::REVIEWED)
-            || self.images.len() > images::REVIEWED.len()
-            || self.images.iter().any(|b| {
-                b.provider != "openai"
-                    || b.upstream != b.model
-                    || !images::REVIEWED.contains(&b.model)
-            })
+            || self.images.iter().any(|b| !b.reviewed())
         {
             return Err(TopologyError::InvalidModelBinding);
         }
@@ -383,11 +378,9 @@ impl Catalog {
         }
         for b in &self.images {
             publication(b.model, b.released_at, b.developer)?;
-            operation(
-                b.provider,
-                ProviderOperation::Images,
-                CredentialKind::ApiKey,
-            )?;
+            for provider in &b.providers {
+                operation(provider, ProviderOperation::Images, CredentialKind::ApiKey)?;
+            }
         }
         for b in &self.speech {
             publication(b.model, b.released_at, b.developer)?;
@@ -558,8 +551,8 @@ mod tests {
         )
         .unwrap()]);
         catalog.images = Box::new([serde_json::from_str(
-            r#"{"model":"gpt-image-2.6-flare","upstream":"gpt-image-2.6-flare",
-                    "provider":"openai","released_at":1,"developer":"Fixture"}"#,
+            r#"{"model":"gpt-image-2.6-flare",
+                    "providers":["openai"],"released_at":1,"developer":"Fixture"}"#,
         )
         .unwrap()]);
         assert_eq!(catalog.validate(), Ok(()));
@@ -572,8 +565,8 @@ mod tests {
         assert_eq!(other.validate(), Err(TopologyError::InvalidModelBinding));
         let mut other = parse(fixture!("deepseek", "fixture", "[]", "")).unwrap();
         other.images = Box::new([serde_json::from_str(
-            r#"{"model":"gpt-image-2.6-flare","upstream":"gpt-image-2.6-sunburst",
-                    "provider":"openai","released_at":1,"developer":"Fixture"}"#,
+            r#"{"model":"gpt-image-2.6-flare",
+                    "providers":["aliyun-dashscope-cn"],"released_at":1,"developer":"Fixture"}"#,
         )
         .unwrap()]);
         assert_eq!(other.validate(), Err(TopologyError::InvalidModelBinding));

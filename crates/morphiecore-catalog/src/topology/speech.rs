@@ -85,7 +85,7 @@ impl CompiledTopology {
                     .any(|r| r.canonical_model == route.canonical_model)
                 || self
                     .image_routes
-                    .values()
+                    .iter()
                     .any(|r| r.canonical_model == route.canonical_model)
             {
                 return Err(TopologyError::TaskMismatch);
@@ -113,7 +113,7 @@ impl CompiledTopology {
             if self.route(&route.id).is_some()
                 || self.embedding_routes.values().any(|r| r.id == route.id)
                 || self.transcription_routes.values().any(|r| r.id == route.id)
-                || self.image_routes.values().any(|r| r.id == route.id)
+                || self.image_routes.iter().any(|r| r.id == route.id)
                 || !ids.insert(route.id.clone())
             {
                 return Err(TopologyError::DuplicateRoute);
@@ -129,7 +129,7 @@ impl CompiledTopology {
                     .any(|r| r.endpoint.id == endpoint.id)
                 || self
                     .image_routes
-                    .values()
+                    .iter()
                     .any(|r| r.endpoint.id == endpoint.id)
                 || !endpoints.insert(endpoint.id.clone())
             {
@@ -138,7 +138,7 @@ impl CompiledTopology {
             if self.model(route.model.as_str()).is_some()
                 || self.embedding_route(route.model.as_str()).is_some()
                 || self.transcription_model(route.model.as_str()).is_some()
-                || self.image_route(route.model.as_str()).is_some()
+                || self.image_bindings(route.model.as_str()).next().is_some()
                 || self
                     .speech_routes
                     .insert(route.model.as_str().into(), route)

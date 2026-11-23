@@ -169,7 +169,7 @@ Image transcoding is a separate capability, not a default repair.
 
 ### Static Generate review proposal
 
-**Unselected proposal.** The [roadmap](../roadmap/index.md#stage-4-operation-readiness) owns scheduling and the Images-internal sequence. Start with Generate's existing task/artifact owners; neither an Image Generate/Edit type migration nor native ratio/tier controls are prerequisites for this review.
+**Unselected for Grok and other additional targets.** Qwen Image has a separately accepted [native static profile](../architecture/adaptation-and-dialects.md#native-static-images). The [roadmap](../roadmap/index.md#stage-4-operation-readiness) owns further scheduling and the Images-internal sequence. Start with Generate's existing task/artifact owners; neither an Image Generate/Edit type migration nor native ratio/tier controls are prerequisites for this review.
 
 | Public-contract option | Benefit and cost | Recommendation |
 |---|---|---|

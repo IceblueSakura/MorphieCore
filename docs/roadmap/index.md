@@ -97,7 +97,7 @@ Selected direction: Dual-SDK support (TypeSafe and OpenAI) backed by a unified D
 | Family | Readiness | Next step |
 |---|---|---|
 | Decision | Dual-SDK direction selected; IR drafts under review | Finalize contract selection and implement codecs |
-| Images Generate | Direct OpenAI GPT Image 2.6 covers standard static Generate; Grok remains unselected | Select a separate public contract before any Grok integration |
+| Images Generate | Direct OpenAI GPT Image 2.6 covers standard static Generate; Qwen Image 3.0 Pro has an opt-in native static profile | Qualify additional targets independently; Grok and Google activation remain unselected |
 | Images Edit & Stream | Research complete; mask boundaries and stream formats unselected | Await static Generate closure |
 | Audio (Speech/ASR) | Static speech/transcription and bounded client multipart intake exist; Aliyun speech consumes upstream SSE. Native multipart upstream preparation and downstream SSE profiles remain unselected | Select bounded single-operation profile |
 | Files & Uploads | Safety requirements defined; storage authority unselected | Select storage authority and ID authorization |

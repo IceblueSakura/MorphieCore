@@ -260,7 +260,16 @@
     "/v1/images/generations": {
       "post": {
         "operationId": "imageGeneration",
-        "summary": "Generate an ordered inline image collection using the static GPT Image profile",
+        "summary": "Generate an ordered collection of inline static images",
+        "parameters": [
+          {
+            "name": "X-MorphieCore-Image-Profile",
+            "in": "header",
+            "required": false,
+            "schema": {"type": "string", "const": "native-static-v1"},
+            "description": "Required for qwen-image-3.0-pro. Omit for standard GPT Image."
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -273,7 +282,7 @@
         },
         "responses": {
           "200": {
-            "description": "Complete inline images after validated EOF. The count must match the request; short or invalid collections fail. Explicit activation and a single-source, non-fallback pool are required.",
+            "description": "Complete inline images after validated EOF. The count must match the request. The opt-in Qwen profile omits creation time and token usage; without the header the standard response applies. One target is dispatched.",
             "headers": {
               "Cache-Control": {
                 "schema": {
@@ -291,7 +300,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ImageGenerationResponse"
+                  "oneOf": [
+                    {"$ref": "#/components/schemas/ImageGenerationResponse"},
+                    {"$ref": "#/components/schemas/NativeStaticImageGenerationResponse"}
+                  ]
                 }
               }
             }
@@ -1662,6 +1674,22 @@
             }
           }
         ]
+      },
+      "NativeStaticImageGenerationResponse": {
+        "type": "object",
+        "required": ["data", "output_format"],
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "allOf": [
+              {"$ref": "#/components/schemas/ImageGenerationResponse/properties/data"},
+              {"maxItems": 6}
+            ]
+          },
+          "output_format": {"const": "png"},
+          "size": {"$ref": "#/components/schemas/ImagePixelSize"}
+        },
+        "description": "This opt-in response reports bounded inline PNGs and any upstream-reported size without inventing a creation timestamp or token usage."
       },
       "PublicModelLabel": {
         "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_.-]+(?![\\s\\S])",

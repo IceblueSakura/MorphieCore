@@ -5,8 +5,13 @@ use crate::image::Request;
 #[serde(rename_all = "snake_case")]
 pub enum UpstreamAdapter {
     GptImage,
+    QwenImage,
 }
 impl UpstreamAdapter {
+    pub fn requires_native_static(self) -> bool {
+        self == Self::QwenImage
+    }
+
     pub fn encode_request(
         self,
         request: &Request,
@@ -14,6 +19,7 @@ impl UpstreamAdapter {
     ) -> Result<serde_json::Value, crate::CodecError> {
         match self {
             Self::GptImage => crate::openai::images::encode_request(request, model),
+            Self::QwenImage => crate::aliyun_images::encode_request(request, model),
         }
     }
     pub fn decode_response(
@@ -23,6 +29,7 @@ impl UpstreamAdapter {
     {
         match self {
             Self::GptImage => crate::openai::images::decode_response(bytes),
+            Self::QwenImage => crate::aliyun_images::decode_response(bytes),
         }
     }
 }

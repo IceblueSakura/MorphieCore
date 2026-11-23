@@ -741,6 +741,19 @@ Media resources (images, audio, video, files) are handled as inert payloads (bas
 - Image transformations: `oversized_image: "error"` sets `RejectOversized`; default allows upstream downsizing.
 - Image detail: `auto` selects the target model's default processing, not a fixed resolution or token count. Preserve a native carrier when present; otherwise select the native default under `generation.image-auto-as-native-default.v1` (L2). Source IR retains explicit presence while only candidate copies normalize it. Selected unsupported non-auto values retain `generation.omit-image-detail.v1`. Discovery treats exact or L2 auto projection as faithful while retaining independent image, placement, format and bound checks.
 
+#### Native static images
+
+The explicit `native-static-v1` client profile activates bounded static PNG delivery for the Qwen Image 3.0 Pro bindings. Default GPT Image admission and response requirements are unchanged. Both Aliyun targets use the native multimodal-generation operation with inline `b64_json` data URLs; the gateway never fetches result URLs. The model's optional creation time is not reported by either source, so public `created` is absent. Neither HTTP Date nor gateway time stands in for it.
+
+| Field or behavior | Disposition |
+|---|---|
+| Prompt, exact `n` (1–6), PNG, explicit size | L1: map directly, translating `WxH` to `W*H`. Require the final reported size to satisfy an explicit size and the ordered artifact count to match `n`. |
+| Omitted/`auto` size, `auto` quality or background | L2 `images.qwen.native-defaults.v1`: delegate to the selected Qwen model without claiming a specific size, quality or background. |
+| Usage | `images.qwen.native-metering.v1`: validate reported image count and dimensions, retain dimensions as an artifact report, and do not relabel the image-count/tier report as OpenAI token usage. This profile does not expose the raw metering report. |
+| Other formats, exact quality/background, moderation override, compression, `user`, Edit or streaming | L5: the static native Qwen binding does not carry these guarantees, identities or operations. |
+
+See [Aliyun's API reference](https://help.aliyun.com/zh/model-studio/qwen-image-generation-and-editing-api-reference) and [Token Plan image integration](https://help.aliyun.com/zh/model-studio/token-plan-image-generation).
+
 ### Adaptation evidence
 
 Every lossy conversion or field omission generates bounded typed evidence. Internal authors pass `Field`, `ConversionBoundary` and `Change` enums directly; wire spelling remains at their serialization owner, without static-string parsing or panic tables.

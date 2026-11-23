@@ -57,16 +57,23 @@ pub fn catalog() -> Result<Value, StartupError> {
         models.push(json!({"model":model.id.as_str(),"task":"generation","candidates":candidates}));
     }
     for binding in catalog::image_bindings() {
-        let route = topology
-            .image_route(binding.model)
-            .ok_or(StartupError::Binding)?;
-        models.push(task(
-            binding.model,
-            route.endpoint.provider.as_str(),
-            route.endpoint.id.as_str(),
-            &route.endpoint.execution,
-            "images",
-        ));
+        let rows: Vec<_> = topology
+            .image_bindings(binding.model)
+            .map(|route| {
+                task(
+                    binding.model,
+                    route.endpoint.provider.as_str(),
+                    route.endpoint.id.as_str(),
+                    &route.endpoint.execution,
+                    "images",
+                )
+            })
+            .collect();
+        if let [row] = rows.as_slice() {
+            models.push(row.clone());
+        } else {
+            models.push(json!({"model":binding.model,"task":"images","selection":"candidates","image_profile":crate::tasks::images::NATIVE_PROFILE,"candidates":rows}));
+        }
     }
     for binding in catalog::speech_bindings() {
         let route = topology

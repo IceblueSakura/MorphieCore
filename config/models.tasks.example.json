@@ -10,6 +10,12 @@
     "gpt-image-2.6-sunburst": {
       "account": "primary"
     },
+    "qwen-image-3.0-pro": {
+      "candidates": [
+        {"binding": "aliyun-tokenplan-cn-qwen-image-3.0-pro-images", "account": "primary"},
+        {"binding": "aliyun-dashscope-cn-qwen-image-3.0-pro-images", "account": "primary"}
+      ]
+    },
     "qwen-audio-3.0-tts-plus": {
       "account": "primary"
     },

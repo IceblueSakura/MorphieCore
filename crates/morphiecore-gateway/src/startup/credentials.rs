@@ -6,6 +6,7 @@ use crate::{
     account::{AccountCredential, BoundAccount, BoundAccounts},
     credential::{AccessBinding, AccessGrant, ApiKeyAccess},
     provider::{CredentialBindingId, CredentialKind, ProviderDefinition, SecretMaterial},
+    topology::EndpointId,
 };
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -19,6 +20,7 @@ pub(crate) enum Source {
 pub struct Credentials {
     bindings: BTreeMap<CredentialBindingId, Binding>,
     task_accounts: BTreeMap<String, CredentialBindingId>,
+    image_accounts: BTreeMap<String, Vec<(EndpointId, CredentialBindingId)>>,
     pub(crate) oauth_accounts: Vec<RenewalAccount>,
 }
 #[derive(Clone)]
@@ -49,6 +51,7 @@ impl From<BTreeMap<CredentialBindingId, Arc<SecretMaterial>>> for Credentials {
                 .map(|(id, key)| (id, Binding::single(Source::ApiKey(key))))
                 .collect(),
             task_accounts: BTreeMap::new(),
+            image_accounts: BTreeMap::new(),
             oauth_accounts: vec![],
         }
     }
@@ -128,6 +131,19 @@ impl Credentials {
     }
     pub(crate) fn task(&self, model: &str, default: &CredentialBindingId) -> Option<&Binding> {
         self.get(self.task_accounts.get(model).unwrap_or(default))
+    }
+    pub(super) fn select_image(
+        &mut self,
+        model: String,
+        candidates: Vec<(EndpointId, CredentialBindingId)>,
+    ) {
+        self.image_accounts.insert(model, candidates);
+    }
+    pub(crate) fn image_candidates(
+        &self,
+        model: &str,
+    ) -> Option<&[(EndpointId, CredentialBindingId)]> {
+        self.image_accounts.get(model).map(Vec::as_slice)
     }
 }
 fn unavailable(_error: crate::credential::CredentialError) -> crate::ApiError {

@@ -8,61 +8,66 @@ use crate::{
         images::{ImageEndpoint, ImageRoute, ProviderEntry},
     },
 };
-/// Models reviewed under the one direct, static GPT Image contract.
-pub(super) const REVIEWED: &[&str] = &["gpt-image-2.6-flare", "gpt-image-2.6-sunburst"];
-
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImageBinding {
-    pub(super) provider: &'static str,
+    pub(super) providers: Box<[&'static str]>,
     pub model: &'static str,
-    pub upstream: &'static str,
     pub released_at: u64,
     pub developer: &'static str,
 }
 
 impl ImageBinding {
-    pub fn credential(&self) -> CredentialBindingId {
-        CredentialBindingId::new(self.provider().id.as_str()).expect("catalog Provider identity")
+    pub(super) fn reviewed(&self) -> bool {
+        match self.model {
+            "gpt-image-2.6-flare" | "gpt-image-2.6-sunburst" => *self.providers == ["openai"],
+            "qwen-image-3.0-pro" => {
+                *self.providers == ["aliyun-tokenplan-cn", "aliyun-dashscope-cn"]
+            }
+            _ => false,
+        }
     }
     pub fn metadata(&self) -> ModelMetadata {
         ModelMetadata::new(self.released_at, self.developer).expect("static publication")
     }
-    pub fn provider(&self) -> crate::provider::ProviderDefinition {
-        super::data::provider(self.provider).clone()
-    }
-    pub fn operation(&self) -> ProviderEntry {
-        let provider = self.provider();
+    pub(super) fn operation(provider: &str) -> ProviderEntry {
+        let provider = super::data::provider(provider);
         let path = provider
             .entry(ProviderOperation::Images)
             .expect("image entry")
             .path
             .clone();
         ProviderEntry {
-            provider: provider.id,
+            provider: provider.id.clone(),
             path,
         }
     }
-    pub fn route(&self) -> ImageRoute {
-        let provider = self.provider();
+    pub(super) fn route(&self, provider: &str) -> ImageRoute {
+        let provider = super::data::provider(provider);
         let canonical = ModelId::new(self.model).expect("static image identity");
-        let identity = format!("openai-{}-images", self.model);
+        let identity = format!("{}-{}-images", provider.id.as_str(), self.model);
+        let (profile, accounting) = if provider.id.as_str() == "openai" {
+            (UpstreamAdapter::GptImage, AccountingPolicy::Strict)
+        } else {
+            (UpstreamAdapter::QwenImage, AccountingPolicy::Strict)
+        };
         ImageRoute {
             id: RouteId::new(&identity).expect("static route"),
             model: canonical.clone(),
             canonical_model: canonical.clone(),
-            accounting: AccountingPolicy::Strict,
+            accounting,
             endpoint: ImageEndpoint {
                 id: EndpointId::new(&identity).expect("static endpoint"),
-                provider: provider.id,
+                provider: provider.id.clone(),
                 target: EndpointTarget {
-                    origin: provider.origin,
-                    path: self.operation().path,
+                    origin: provider.origin.clone(),
+                    path: Self::operation(provider.id.as_str()).path,
                 },
-                upstream_model: self.upstream.into(),
+                upstream_model: self.model.into(),
                 canonical_model: canonical,
-                profile: UpstreamAdapter::GptImage,
-                credential: self.credential(),
+                profile,
+                credential: CredentialBindingId::new(provider.id.as_str())
+                    .expect("catalog Provider identity"),
                 execution: ExecutionContract {
                     streaming: false,
                     request_body_limit: 256 << 10,

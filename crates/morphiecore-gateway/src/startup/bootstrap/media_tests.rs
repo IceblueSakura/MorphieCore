@@ -1,9 +1,135 @@
-//! Standalone tasks select one configured account without activating task recovery.
+//! Explicit standalone task bindings and once-only exchanges.
 use super::{
     test_support::{Fixture, selected_models, service},
     *,
 };
 use serde_json::json;
+
+#[tokio::test]
+async fn native_image_routes_new_requests_around_cooldown_without_replaying() {
+    use axum::{
+        Json, Router,
+        body::Body,
+        http::{HeaderMap, Request, StatusCode},
+        response::IntoResponse,
+        routing::post,
+    };
+    use std::sync::{Arc, Mutex};
+    use tower::ServiceExt;
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let observed = calls.clone();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let result = || {
+        Json(json!({
+        "output": {"choices":[{"finish_reason":"stop","message":{"role":"assistant",
+            "content":[{"image":"data:image/png;base64,AQID"}]}}]},
+        "usage":{"output_width":512,"output_height":512,"output_image_count":1,
+            "input_image_count":0,"input_image_type":"qima_input_1k","output_image_type":"qima_output_1k"}
+    })).into_response()
+    };
+    let suffix = "/services/aigc/multimodal-generation/generation";
+    let upstream = Router::new()
+        .route(&format!("/plan{suffix}"), post(move |headers: HeaderMap, Json(body): Json<serde_json::Value>| {
+            let mut calls = observed.lock().unwrap();
+            calls.push("plan");
+            assert_eq!(headers["authorization"], "Bearer synthetic-plan-key");
+            assert!(!headers.contains_key("x-morphiecore-image-profile"));
+            assert_eq!(body, json!({
+                "model":"qwen-image-3.0-pro",
+                "input":{"messages":[{"role":"user","content":[{"text":"a blue circle"}]}]},
+                "parameters":{"size":"512*512","n":1,"response_format":"b64_json"}
+            }));
+            let failure = calls.len() != 1;
+            async move {
+                if failure {
+                    (StatusCode::TOO_MANY_REQUESTS, [("retry-after", "60")]).into_response()
+                } else {
+                    result()
+                }
+            }
+        }))
+        .route(&format!("/metered{suffix}"), post({
+            let calls = calls.clone();
+            move |headers: HeaderMap, Json(body): Json<serde_json::Value>| {
+                calls.lock().unwrap().push("metered");
+                assert_eq!(headers["authorization"], "Bearer synthetic-metered-key");
+                assert_eq!(body["model"], "qwen-image-3.0-pro");
+                async move { result() }
+            }
+        }));
+    let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+    let model = "qwen-image-3.0-pro";
+    let catalog_candidates = [
+        json!({"binding":"aliyun-tokenplan-cn-qwen-image-3.0-pro-images","account":"plan"}),
+        json!({"binding":"aliyun-dashscope-cn-qwen-image-3.0-pro-images","account":"metered"}),
+    ];
+    let accounts = json!({"version":1,"providers":{
+        "aliyun-tokenplan-cn":{"accounts":[{"name":"plan","enabled":true,"credential":{"alias":"plan"},"base_url":format!("{base}/plan")}]},
+        "aliyun-dashscope-cn":{"accounts":[{"name":"metered","enabled":true,"credential":{"alias":"metered"},"base_url":format!("{base}/metered")}]}
+    }});
+    let keys = [
+        ("aliyun-tokenplan-cn", "plan", "synthetic-plan-key"),
+        ("aliyun-dashscope-cn", "metered", "synthetic-metered-key"),
+    ];
+    let configured = |candidates| json!({"models":{(model):{"candidates":candidates}}});
+    let mut reversed = catalog_candidates.clone();
+    reversed.reverse();
+    assert!(
+        Fixture::with_accounts(service(), configured(reversed), &keys, accounts.clone()).is_err()
+    );
+    let gateway =
+        Fixture::with_accounts(service(), configured(catalog_candidates), &keys, accounts).unwrap();
+    let router = gateway.gateway.router();
+    let send = |profile: Option<&'static str>| {
+        let mut request = Request::builder()
+            .method("POST")
+            .uri("/v1/images/generations")
+            .header(
+                "authorization",
+                "Bearer synthetic-gateway-client-token-0001",
+            )
+            .header("content-type", "application/json");
+        if let Some(profile) = profile {
+            request = request.header("x-morphiecore-image-profile", profile);
+        }
+        router.clone().oneshot(request.body(Body::from(
+            r#"{"model":"qwen-image-3.0-pro","prompt":"a blue circle","size":"512x512","output_format":"png"}"#,
+        )).unwrap())
+    };
+    assert_eq!(send(None).await.unwrap().status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        send(Some("native-static-v2")).await.unwrap().status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert!(calls.lock().unwrap().is_empty());
+    let profile = Some("native-static-v1");
+    let expected = json!({"data":[{"b64_json":"AQID"}],"output_format":"png","size":"512x512"});
+    let first = send(profile).await.unwrap();
+    assert_eq!(first.status(), StatusCode::OK);
+    let first = axum::body::to_bytes(first.into_body(), 4096).await.unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&first).unwrap(),
+        expected
+    );
+    assert_eq!(*calls.lock().unwrap(), ["plan"]);
+    assert_eq!(
+        send(profile).await.unwrap().status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    assert_eq!(*calls.lock().unwrap(), ["plan", "plan"]);
+    let next = send(profile).await.unwrap();
+    assert_eq!(next.status(), StatusCode::OK);
+    let next = axum::body::to_bytes(next.into_body(), 4096).await.unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&next).unwrap(),
+        expected
+    );
+    assert_eq!(*calls.lock().unwrap(), ["plan", "plan", "metered"]);
+    server.abort();
+    let _ = server.await;
+}
 
 #[tokio::test]
 async fn configured_task_sends_once_to_its_named_account_despite_generation_recovery() {
@@ -404,7 +530,7 @@ fn speech_and_images_do_not_activate_from_generation_accounts() {
     assert_eq!(boot.gateway.state.speech.len(), 1);
     assert_eq!(boot.gateway.state.images.len(), 1);
     assert_eq!(
-        boot.gateway.state.images["gpt-image-2.6-flare"]
+        boot.gateway.state.images["gpt-image-2.6-flare"][0]
             .secret
             .resolve()
             .unwrap()
