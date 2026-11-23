@@ -35,6 +35,8 @@ Other limitations and prerequisites share the [issue register](unscheduled-issue
 
 [Development](../development.md#overall-acceptance-status) owns overall acceptance.
 
+The selected text Embedding slice is complete. [Further Embedding extensions](../proposals/tasks-and-counting.md#embeddings) are unscheduled and do not gate Stage 4.
+
 No deployment or new API activation is implied.
 
 | Priority | Remaining work | Exit |
@@ -53,7 +55,7 @@ policy gates; Stage 5 remains unscheduled.
 | Stage | Goal | Exit evidence |
 |---|---|---|
 | **3 — Conditional compatibility follow-ups** | [Conditional packages](unscheduled-issues.md#conditional-stage-3-follow-ups) | Separate policy selection and affected-loop verification; not default Stage-4 or optional Agent blockers |
-| **4 — Modalities, Decision & file resources** | Decision, Embedding extensions, Audio (Speech/Transcription/Translation), Images, Files/Uploads, and Video at equal priority | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
+| **4 — Modalities, Decision & file resources** | Decision, Audio (Speech/Transcription/Translation), Images, Files/Uploads, and Video at equal priority | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
 | **5 — Unscheduled follow-ups** | Citations, tool discovery, hosted tools, server-side compaction, Batch, and Realtime | Requires explicit per-slice design selection and scheduling prior to implementation |
 
 ### Execution sequence and work-package rules
@@ -72,7 +74,6 @@ Each Stage-4 family requires an explicit contract selection before implementatio
 | Package | Scope | Exit criteria |
 |---|---|---|
 | **S4-0 Per-operation design** | Pin official contracts, select targets, define resource lifecycles, and apply the conversion ladder to each family's fields | Explicit contract decisions classifying fields by ladder level, without speculative shared abstractions |
-| **S4-1 Embedding extensions** | Select remaining extensions to the [independent Embedding contract](../proposals/tasks-and-counting.md#embeddings); existing implemented behavior is not pending | Independently verified selected input/result contracts, bounds and applicable SDK acceptance |
 | **S4-6 Decision closure** | Complete dual-SDK design, typed answers, and synchronous execution | Verified independent oracles, both SDK loops (TypeSafe and OpenAI), and bounded Provider evidence |
 | **S4-2a Speech** | Text-to-speech with static binary and optional streaming delivery | Bounded buffering, cancellation safety, and verified audio format carriage |
 | **S4-2b Transcription** | Audio-to-text recognition with multipart upstream preparation | Accurate text/timing carriage, format rejection, and bounded resource handling |
@@ -96,7 +97,6 @@ Selected direction: Dual-SDK support (TypeSafe and OpenAI) backed by a unified D
 | Family | Readiness | Next step |
 |---|---|---|
 | Decision | Dual-SDK direction selected; IR drafts under review | Finalize contract selection and implement codecs |
-| Embedding extensions | Existing independent path implemented; additional extensions unselected | Select a concrete extension contract |
 | Images Generate | Existing static carriers; Grok codec and binding absent | Select standard versus explicit native-output delivery, encoding defaults separately from Base64/URL carriage, and required result metadata |
 | Images Edit & Stream | Research complete; mask boundaries and stream formats unselected | Await static Generate closure |
 | Audio (Speech/ASR) | Static speech/transcription and bounded client multipart intake exist; Aliyun speech consumes upstream SSE. Native multipart upstream preparation and downstream SSE profiles remain unselected | Select bounded single-operation profile |

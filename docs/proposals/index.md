@@ -9,7 +9,7 @@ The expansion proposals are modularized by operational domain:
 |---|---|---|---|
 | **Decision API** | [Decision API Proposal](decisions-api.md) | Stage 4: OpenAI Decisions + TypeSafe System One dual-SDK support | Ready for review |
 | **Multimodal Operations** | [Multimodal Media Proposals](multimodal.md) | Stage 4: Audio (Speech/Transcription/Translation), Images (Generate/Edit), Video (Grok Imagine; concrete contracts pending) | Pending review |
-| **Tasks & Counting** | [Standalone Tasks and Token Counting](tasks-and-counting.md) | Stage 3, deferred: Messages counting; Responses input-token counting remains unselected. Stage 4: Embedding extensions | Pending review |
+| **Tasks & Counting** | [Standalone Tasks and Token Counting](tasks-and-counting.md) | Deferred: Messages counting. Unscheduled: Responses input-token counting and Embedding extensions | Pending review |
 | **Files & Uploads** | [Files and Uploads Resource Proposals](files-and-uploads.md) | Stage 4: Files management, multipart uploads | Pending review |
 | **Stage 5 Backlog** | [Stage 5 Unscheduled Proposals Backlog](stage5-backlog.md) | Stage 5: Native batch, Realtime, Context compaction, Citations; other deferred directions retain separate scheduling | Unscheduled |
 
