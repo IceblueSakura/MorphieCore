@@ -137,16 +137,10 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
         contract: Dispositions::full(),
     };
     let (image_provider, image_route) = image_support::binding(origin);
-    let (router_provider, router_speech_operation, router_speech) = media::router_speech(origin);
     let (native_provider, native_speech_operation, native_speech) = media::native_speech(origin);
     let (asr_operation, asr) = media::native_transcription(origin);
     let topology = compile(
-        vec![
-            provider,
-            router_provider,
-            speech_support::provider(origin),
-            native_provider,
-        ],
+        vec![provider, speech_support::provider(origin), native_provider],
         endpoints,
         vec![route],
         models,
@@ -156,16 +150,8 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
     .with_images(vec![image_provider], vec![image_route])
     .unwrap()
     .with_speech(
-        vec![
-            speech_support::binding(origin).0,
-            router_speech_operation,
-            native_speech_operation,
-        ],
-        vec![
-            speech_support::binding(origin).1,
-            router_speech,
-            native_speech,
-        ],
+        vec![speech_support::binding(origin).0, native_speech_operation],
+        vec![speech_support::binding(origin).1, native_speech],
     )
     .unwrap()
     .with_transcriptions(vec![asr_operation], vec![asr])
@@ -191,10 +177,6 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
             ModelId::new("canonical-speech").unwrap(),
             crate::morphiecore::topology::ModelMetadata::new(9, "Synthetic Speech Developer")
                 .unwrap(),
-        ),
-        (
-            ModelId::new("router-speech").unwrap(),
-            crate::morphiecore::topology::ModelMetadata::new(11, "Synthetic Router").unwrap(),
         ),
         (
             ModelId::new("native-speech").unwrap(),
@@ -249,10 +231,6 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
             Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
         ),
         (
-            CredentialBindingId::new("router-key").unwrap(),
-            Arc::new(SecretMaterial::new("synthetic-router-credential-0001").unwrap()),
-        ),
-        (
             CredentialBindingId::new("speech-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-speech-credential-0001").unwrap()),
         ),
@@ -271,9 +249,6 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
             speech: vec![
                 crate::morphiecore::gateway::SpeechEntry {
                     model: "public-speech".into(),
-                },
-                crate::morphiecore::gateway::SpeechEntry {
-                    model: "router-speech".into(),
                 },
                 crate::morphiecore::gateway::SpeechEntry {
                     model: "native-speech".into(),

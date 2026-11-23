@@ -421,7 +421,7 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
     let path = root.parent().unwrap().join("gateway.json");
     manager
         .add_api_key(
-            "openrouter",
+            "aliyun-tokenplan-cn",
             "speech",
             Secret::new("synthetic-speech-file-key".into()).unwrap(),
         )
@@ -437,7 +437,7 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
     options.open(root.parent().unwrap().join("accounts.json")).unwrap().write_all(&serde_json::to_vec(&json!({
         "version":1,"providers":{
             "deepseek":{"accounts":[{"name":"primary","enabled":true,"credential":{"alias":"one"}}]},
-            "openrouter":{"accounts":[{"name":"speech","enabled":true,"credential":{"alias":"speech"}}]}
+            "aliyun-tokenplan-cn":{"accounts":[{"name":"speech","enabled":true,"credential":{"alias":"speech"}}]}
         }
     })).unwrap()).unwrap();
     options
@@ -471,7 +471,7 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
         .write_all(
             &serde_json::to_vec(&json!({"version":1,"models":{
                 "deepseek-v4.1-flash-1017":{"candidates":[{"binding":binding.as_str()}]},
-                "qwen-audio-3.0-tts-flash":{"account":"speech"}
+                "qwen-audio-3.0-tts-plus":{"account":"speech"}
             }}))
             .unwrap(),
         )
@@ -549,7 +549,7 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
         .unwrap();
     assert_eq!(models["data"].as_array().unwrap().len(), 2);
     assert!(models["data"].as_array().unwrap().contains(&json!({
-        "id":"qwen-audio-3.0-tts-flash","object":"model","created":1784592000,"owned_by":"Alibaba"
+        "id":"qwen-audio-3.0-tts-plus","object":"model","created":1784592000,"owned_by":"Alibaba"
     })));
     let text_models: Value = client
         .get(format!("{origin}/v1/morphiecore/models"))

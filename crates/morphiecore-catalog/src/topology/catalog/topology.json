@@ -757,16 +757,6 @@
       "developer": "Xiaomi"
     },
     {
-      "provider": "openrouter",
-      "identity": "openrouter-qwen-speech",
-      "profile": "open_router_mp3",
-      "model": "qwen-audio-3.0-tts-flash",
-      "upstream": "qwen/qwen-audio-3.0-tts-flash",
-      "voices": ["loongjohn", "longanhuan_v3.6"],
-      "released_at": 1784592000,
-      "developer": "Alibaba"
-    },
-    {
       "provider": "aliyun-tokenplan-cn",
       "identity": "tokenplan-qwen-speech",
       "profile": "aliyun_mp3",

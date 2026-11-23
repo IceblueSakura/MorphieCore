@@ -181,7 +181,6 @@ struct Observed(
     Arc<std::sync::atomic::AtomicUsize>,
     Arc<std::sync::atomic::AtomicUsize>,
     Arc<std::sync::atomic::AtomicUsize>,
-    Arc<std::sync::atomic::AtomicUsize>,
 );
 async fn provider(
     State(state): State<Observed>,
@@ -194,7 +193,7 @@ async fn provider(
     );
     assert_eq!(request["model"], "private-model");
     if request["metadata"]["case"] == "classified-error" {
-        let count = state.6.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let count = state.5.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         assert!(count < 2, "classified failures must not retry");
         let quota = request["input"][0]["content"][0]["text"] == "quota";
         return Response::builder()
@@ -469,7 +468,7 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
         axum::Json(request): axum::Json<Value>,
     ) -> Response {
         let speech = request["model"] == "private-native-speech";
-        let index = if speech { &state.4 } else { &state.5 }
+        let index = if speech { &state.3 } else { &state.4 }
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         assert!(index < 3);
         if speech {
@@ -483,29 +482,6 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
         headers: HeaderMap,
         axum::Json(request): axum::Json<Value>,
     ) -> Response {
-        if request["model"] == "private-router-speech" {
-            assert_eq!(
-                headers["authorization"],
-                "Bearer synthetic-router-credential-0001"
-            );
-            assert_eq!(
-                request,
-                json!({"model":"private-router-speech","input":"synthetic router speech","voice":"router-voice","response_format":"mp3"})
-            );
-            let index = state.3.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            assert!(index < 3);
-            return Response::builder()
-                .header(
-                    "content-type",
-                    if index == 2 {
-                        "audio/pcm"
-                    } else {
-                        "audio/mpeg"
-                    },
-                )
-                .body(Body::from("synthetic-router-audio"))
-                .unwrap();
-        }
         assert_eq!(
             headers["authorization"],
             "Bearer synthetic-speech-credential-0001"
@@ -553,7 +529,6 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
                 .route("/responses", post(provider))
                 .route("/images/generations", post(image_provider))
                 .route("/audio/speech", post(speech_provider))
-                .route("/api/v1/audio/speech", post(speech_provider))
                 .route(
                     "/api/v1/services/audio/tts/SpeechSynthesizer",
                     post(native_provider),
@@ -597,16 +572,15 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["requests"], 58);
+    assert_eq!(report["requests"], 55);
     assert_eq!(report["model_requests"], 7);
     assert_eq!(report["native_audio_requests"], 10);
-    assert_eq!(report["speech_requests"], 9);
+    assert_eq!(report["speech_requests"], 6);
     assert_eq!(observed.1.load(std::sync::atomic::Ordering::SeqCst), 3);
     assert_eq!(observed.2.load(std::sync::atomic::Ordering::SeqCst), 3);
     assert_eq!(observed.3.load(std::sync::atomic::Ordering::SeqCst), 3);
     assert_eq!(observed.4.load(std::sync::atomic::Ordering::SeqCst), 3);
-    assert_eq!(observed.5.load(std::sync::atomic::Ordering::SeqCst), 3);
-    assert_eq!(observed.6.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert_eq!(observed.5.load(std::sync::atomic::Ordering::SeqCst), 2);
     {
         let observed = observed.0.lock().unwrap();
         assert_eq!(observed.len(), 14);

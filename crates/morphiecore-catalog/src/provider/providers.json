@@ -105,16 +105,11 @@
       "responses": {
         "path": "/api/v1/responses",
         "suffix": "/responses"
-      },
-      "speech": {
-        "path": "/api/v1/audio/speech",
-        "suffix": "/audio/speech"
       }
     },
     "sources": [
       "https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties",
-      "https://openrouter.ai/docs/api/reference/responses/overview",
-      "https://openrouter.ai/docs/api/api-reference/tts/create-speech.md"
+      "https://openrouter.ai/docs/api/reference/responses/overview"
     ]
   },
   "modelbest": {

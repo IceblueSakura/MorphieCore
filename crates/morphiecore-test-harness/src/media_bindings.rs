@@ -21,36 +21,6 @@ fn provider(origin: &str, id: &str) -> ProviderDefinition {
     }
 }
 
-pub fn router_speech(
-    origin: &str,
-) -> (
-    ProviderDefinition,
-    speech::ProviderEntry,
-    speech::SpeechRoute,
-) {
-    let provider = provider(origin, "router-fixture");
-    let (_, mut route) = speech_support::binding(origin);
-    route.id = RouteId::new("router-speech").unwrap();
-    route.model = ModelId::new("router-speech").unwrap();
-    route.canonical_model = route.model.clone();
-    route.endpoint.id = EndpointId::new("router-speech").unwrap();
-    route.endpoint.provider = provider.id.clone();
-    route.endpoint.canonical_model = route.canonical_model.clone();
-    route.endpoint.target.path = EndpointPath::new("/api/v1/audio/speech").unwrap();
-    route.endpoint.upstream_model = "private-router-speech".into();
-    route.endpoint.profile = SpeechProfile::OpenRouterMp3;
-    route.endpoint.capabilities.voices = vec!["router-voice".into()];
-    route.endpoint.capabilities.formats = vec![AudioEncoding::Mp3];
-    route.endpoint.capabilities.instructions = false;
-    route.endpoint.capabilities.speed = false;
-    route.endpoint.credential = CredentialBindingId::new("router-key").unwrap();
-    let operation = speech::ProviderEntry {
-        provider: provider.id.clone(),
-        path: route.endpoint.target.path.clone(),
-    };
-    (provider, operation, route)
-}
-
 pub fn native_speech(
     origin: &str,
 ) -> (

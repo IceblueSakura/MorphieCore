@@ -394,11 +394,11 @@ fn tokenplan_audio_stays_explicit_and_each_task_uses_its_fixed_account() {
 #[test]
 fn speech_and_images_do_not_activate_from_generation_accounts() {
     let keys = [
-        ("openrouter", "primary", "synthetic-first"),
+        ("aliyun-tokenplan-cn", "primary", "synthetic-first"),
         ("openai", "backup", "synthetic-second"),
     ];
     let boot=Fixture::new(service(),json!({"models":{
-        "qwen-audio-3.0-tts-flash":{"account":"primary"},"gpt-image-2.6-flare":{"account":"backup"}
+        "qwen-audio-3.0-tts-plus":{"account":"primary"},"gpt-image-2.6-flare":{"account":"backup"}
     }}),&keys).unwrap();
     assert!(boot.gateway.state.entries.is_empty());
     assert_eq!(boot.gateway.state.speech.len(), 1);
@@ -414,11 +414,14 @@ fn speech_and_images_do_not_activate_from_generation_accounts() {
     );
     let view: serde_json::Value = serde_json::from_slice(&boot.gateway.state.models.list).unwrap();
     assert!(view["data"].as_array().unwrap().contains(&json!({
-        "id":"qwen-audio-3.0-tts-flash","object":"model","created":1784592000,"owned_by":"Alibaba"
+        "id":"qwen-audio-3.0-tts-plus","object":"model","created":1784592000,"owned_by":"Alibaba"
     })));
     let generation = Fixture::new(
         service(),
-        selected_models(&["gpt-6-luna", "step-5-preview"], &["openai", "openrouter"]),
+        selected_models(
+            &["gpt-6-luna", "qwen4-max"],
+            &["openai", "aliyun-tokenplan-cn"],
+        ),
         &keys,
     )
     .unwrap();

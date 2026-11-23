@@ -255,23 +255,6 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         headers: HeaderMap,
         axum::Json(request): axum::Json<Value>,
     ) -> Response {
-        if request["model"] == "private-router-speech" {
-            assert_eq!(
-                headers["authorization"],
-                "Bearer synthetic-router-credential-0001"
-            );
-            assert_eq!(
-                request,
-                json!({"model":"private-router-speech","input":"router speech","voice":"router-voice","response_format":"mp3"})
-            );
-            assert!(!headers.contains_key("x-never-forward"));
-            state.0.lock().unwrap().push(request);
-            // Opaque fixture tests transport, not MP3 decoding or generated quality.
-            return Response::builder()
-                .header("content-type", "audio/mpeg")
-                .body(Body::from("synthetic-router-audio"))
-                .unwrap();
-        }
         assert_eq!(
             headers["authorization"],
             "Bearer synthetic-speech-credential-0001"
@@ -307,7 +290,6 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         .route("/embeddings", post(embedding_answer))
         .route("/images/generations", post(image_answer))
         .route("/audio/speech", post(speech_answer))
-        .route("/api/v1/audio/speech", post(speech_answer))
         .route(
             "/api/v1/services/audio/tts/SpeechSynthesizer",
             post(native_answer),
@@ -680,28 +662,6 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         );
         assert_eq!(response.headers()["cache-control"], "no-store");
         assert_eq!(response.bytes().await.unwrap().as_ref(), b"synthetic-audio");
-    }
-    for explicit in [false, true] {
-        let mut payload =
-            json!({"model":"router-speech","input":"router speech","voice":"router-voice"});
-        if explicit {
-            payload["response_format"] = json!("mp3");
-            payload["stream_format"] = json!("audio");
-        }
-        let response = client
-            .post(format!("{url}/v1/audio/speech"))
-            .bearer_auth(support::CLIENT_KEY)
-            .header("x-never-forward", "private-input")
-            .json(&payload)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), 200);
-        assert_eq!(response.headers()["content-type"], "audio/mpeg");
-        assert_eq!(
-            response.bytes().await.unwrap().as_ref(),
-            b"synthetic-router-audio"
-        );
     }
     let response=client.post(format!("{url}/v1/audio/speech")).bearer_auth(support::CLIENT_KEY)
         .header("x-never-forward","private-input")

@@ -13,8 +13,6 @@ def check_models(client: openai.OpenAI) -> int:
         {"id": "public-image", "object": "model", "created": 8, "owned_by": "Synthetic Image Developer"},
         {"id": "public-model", "object": "model", "created": 7, "owned_by": "Synthetic Developer"},
         {"id": "public-speech", "object": "model", "created": 9, "owned_by": "Synthetic Speech Developer"},
-        {"id": "router-image", "object": "model", "created": 10, "owned_by": "Synthetic Router"},
-        {"id": "router-speech", "object": "model", "created": 11, "owned_by": "Synthetic Router"},
     ]
     page = client.models.list()
     requests = 1

@@ -7,7 +7,6 @@ use crate::{
 #[serde(rename_all = "snake_case")]
 pub enum UpstreamAdapter {
     Standard,
-    OpenRouterMp3,
     AliyunMp3,
     Xiaomi,
 }
@@ -19,7 +18,6 @@ impl UpstreamAdapter {
     ) -> Result<serde_json::Value, crate::CodecError> {
         match self {
             Self::Standard => crate::openai::speech::encode_request(request, model),
-            Self::OpenRouterMp3 => crate::openrouter_speech::encode_request(request, model),
             Self::AliyunMp3 => crate::aliyun_speech::encode_request(request, model),
             Self::Xiaomi => crate::xiaomi_audio::encode_speech(request, model),
         }
@@ -34,9 +32,6 @@ impl UpstreamAdapter {
     ) -> Result<Option<crate::semantic::value::AudioEncoding>, crate::CodecError> {
         if self.upstream_sse() {
             return Err(crate::CodecError::invalid());
-        }
-        if self == Self::OpenRouterMp3 {
-            crate::openrouter_speech::validate_task(task)?;
         }
         if self == Self::Xiaomi {
             let mime: mime::Mime = content_type
