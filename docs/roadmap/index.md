@@ -10,7 +10,6 @@ This page owns current scope, planned execution sequence, stage priorities, and 
 - [Planned order](#planned-order)
   - [Execution sequence and work-package rules](#execution-sequence-and-work-package-rules)
   - [Stage 4 scope](#stage-4-scope)
-    - [OpenAI direct binding migration](#openai-direct-binding-migration)
     - [Decision API closure](#decision-api-closure)
     - [Stage-4 operation readiness](#stage-4-operation-readiness)
     - [Grok Imagine adaptation](#grok-imagine-adaptation)
@@ -84,10 +83,6 @@ Each Stage-4 family requires an explicit contract selection before implementatio
 | **S4-4b Multipart Uploads** | Chunked upload sessions, part ordering, and cleanup | Ordered part assembly, cancellation cleanup, and bounded memory use |
 | **S4-4c File-reference integration** | Connect resolved file resources to dependent task inputs | Target-scoped references, stale reference rejection, and direct-input fallback |
 | **S4-5 Video** | Async video generation, job status tracking, and artifact access | Bounded polling, status reconciliation, cancellation, and artifact delivery |
-
-#### OpenAI direct binding migration
-
-The [direct OpenAI catalog migration](../architecture/decisions.md#routing-and-security-decisions) requires a coordinated release/configuration cutover where `gpt-6-luna` still names `openrouter-responses`. Replace that candidate with `openai-luna-responses`, leaving independent ChatGPT OAuth selections intact. Do not reuse protected OpenRouter replay on the direct target. The [GPT Image 2.6](../usage/api-reference.md#static-image-generation) and [small Embedding](../usage/api-reference.md#embeddings) bindings remain opt-in; no deployment or activation is implied.
 
 #### Decision API closure
 
