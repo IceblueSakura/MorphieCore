@@ -27,6 +27,7 @@ async fn every_task_preserves_retry_after_and_releases_a_failed_head() {
                 1 => tasks::images::receive_for_test(
                     upstream,
                     crate::adapter::images::UpstreamAdapter::GptImage,
+                    0,
                     4096,
                     &mut trace,
                 )
@@ -176,6 +177,7 @@ async fn image_read_timeout_keeps_its_wire_policy_and_precise_internal_cause() {
         tasks::images::receive_for_test(
             upstream,
             crate::adapter::images::UpstreamAdapter::GptImage,
+            0,
             4096,
             &mut trace,
         ),

@@ -53,8 +53,35 @@ macro_rules! task_route {
         }
     )*};
 }
+impl TaskRoute for ImageRoute {
+    fn target(&self) -> (&ProviderId, &CredentialBindingId) {
+        (&self.endpoint.provider, &self.endpoint.credential)
+    }
+    fn delivery(&self) -> (&str, &str, &crate::topology::ExecutionContract) {
+        (
+            self.model.as_str(),
+            &self.endpoint.upstream_model,
+            &self.endpoint.execution,
+        )
+    }
+    fn retarget(&mut self, provider: &ProviderDefinition) -> Result<(), StartupError> {
+        if provider.id != self.endpoint.provider {
+            return Err(StartupError::Credentials);
+        }
+        let images = provider
+            .entry(crate::provider::ProviderOperation::Images)
+            .ok_or(StartupError::Binding)?;
+        let edit = provider
+            .entry(crate::provider::ProviderOperation::ImagesEdit)
+            .ok_or(StartupError::Binding)?;
+        self.endpoint.target.origin = provider.origin.clone();
+        self.endpoint.target.path = images.path.clone();
+        self.endpoint.edit_path = edit.path.clone();
+        Ok(())
+    }
+}
 task_route!(
-    ImageRoute => Images, SpeechRoute => Speech,
+    SpeechRoute => Speech,
     TranscriptionRoute => Transcription, EmbeddingRoute => Embeddings
 );
 

@@ -1,6 +1,10 @@
 //! Static GPT Image profile; request admission is independent of upstream report extensions.
 //! Sources: https://developers.openai.com/api/reference/resources/images/methods/generate
+//! https://developers.openai.com/api/reference/resources/images/methods/edit
 //! https://github.com/openai/openai-python/tree/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types
+mod multipart;
+pub use multipart::{MAX_EDIT_UPLOAD_BYTES, decode_edit_request, encode_edit_request};
+
 use crate::{
     CodecError,
     image::Request,
@@ -11,13 +15,6 @@ use crate::{
     },
 };
 use serde_json::{Map, Value, json};
-fn object<'a>(value: &'a Value, allowed: &[&str]) -> Result<&'a Map<String, Value>, CodecError> {
-    let map = value.as_object().ok_or_else(CodecError::invalid)?;
-    if map.keys().any(|key| !allowed.contains(&key.as_str())) {
-        return Err(CodecError::invalid());
-    }
-    Ok(map)
-}
 fn required<'a>(map: &'a Map<String, Value>, key: &str) -> Result<&'a Value, CodecError> {
     map.get(key).ok_or_else(CodecError::invalid)
 }
@@ -54,76 +51,87 @@ fn put<T>(
         }
     }
 }
-fn format(value: &Value) -> Result<ImageFormat, CodecError> {
-    match string(value)? {
+pub(super) fn format_str(raw: &str) -> Result<ImageFormat, CodecError> {
+    match raw {
         "png" => Ok(ImageFormat::Png),
         "jpeg" => Ok(ImageFormat::Jpeg),
         "webp" => Ok(ImageFormat::Webp),
         _ => Err(CodecError::invalid()),
     }
 }
-fn format_value(value: &ImageFormat) -> Value {
-    json!(match value {
+fn format(value: &Value) -> Result<ImageFormat, CodecError> {
+    format_str(string(value)?)
+}
+pub(super) fn format_label(value: &ImageFormat) -> &'static str {
+    match value {
         ImageFormat::Png => "png",
         ImageFormat::Jpeg => "jpeg",
         ImageFormat::Webp => "webp",
         _ => unreachable!("validated format"),
-    })
+    }
 }
-fn valid_model(model: &str) -> bool {
+fn format_value(value: &ImageFormat) -> Value {
+    json!(format_label(value))
+}
+pub(super) fn size_request_str(raw: &str) -> Result<ImageSizeRequest, CodecError> {
+    if raw == "auto" {
+        Ok(ImageSizeRequest::Auto)
+    } else {
+        size_str(raw).map(ImageSizeRequest::Exact)
+    }
+}
+pub(super) fn quality_request_str(raw: &str) -> Result<ImageQualityRequest, CodecError> {
+    if raw == "auto" {
+        Ok(ImageQualityRequest::Auto)
+    } else {
+        Ok(ImageQualityRequest::Exact(
+            raw.parse().map_err(|_| CodecError::invalid())?,
+        ))
+    }
+}
+pub(super) fn background_request_str(raw: &str) -> Result<ImageBackgroundRequest, CodecError> {
+    if raw == "auto" {
+        Ok(ImageBackgroundRequest::Auto)
+    } else {
+        Ok(ImageBackgroundRequest::Exact(
+            raw.parse().map_err(|_| CodecError::invalid())?,
+        ))
+    }
+}
+pub(super) fn valid_model(model: &str) -> bool {
     !model.is_empty()
         && model.len() <= 256
         && !model.chars().any(|c| c.is_control() || c.is_whitespace())
 }
 pub fn decode_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let value = crate::json::decode(bytes)?;
-    let map = object(
-        &value,
-        &[
-            "model",
-            "prompt",
-            "n",
-            "stream",
-            "output_format",
-            "size",
-            "quality",
-            "background",
-            "output_compression",
-            "moderation",
-            "user",
-        ],
-    )?;
+    let map = value.as_object().ok_or_else(CodecError::invalid)?;
+    let allowed = [
+        "model",
+        "prompt",
+        "n",
+        "stream",
+        "output_format",
+        "size",
+        "quality",
+        "background",
+        "output_compression",
+        "moderation",
+        "safety_identifier",
+        "user",
+    ];
+    if map.keys().any(|key| !allowed.contains(&key.as_str())) {
+        return Err(CodecError::invalid());
+    }
     let mut task = ImageGenerationRequest::new(string(required(map, "prompt")?)?)
         .map_err(|_| CodecError::invalid())?;
     task.count = optional(map, "n", |v| {
         u8::try_from(number(v)?).map_err(|_| CodecError::invalid())
     })?;
     task.format = optional(map, "output_format", format)?;
-    task.size = optional(map, "size", |v| {
-        if string(v)? == "auto" {
-            Ok(ImageSizeRequest::Auto)
-        } else {
-            size(v).map(ImageSizeRequest::Exact)
-        }
-    })?;
-    task.quality = optional(map, "quality", |v| {
-        if string(v)? == "auto" {
-            Ok(ImageQualityRequest::Auto)
-        } else {
-            Ok(ImageQualityRequest::Exact(
-                string(v)?.parse().map_err(|_| CodecError::invalid())?,
-            ))
-        }
-    })?;
-    task.background = optional(map, "background", |v| {
-        if string(v)? == "auto" {
-            Ok(ImageBackgroundRequest::Auto)
-        } else {
-            Ok(ImageBackgroundRequest::Exact(
-                string(v)?.parse().map_err(|_| CodecError::invalid())?,
-            ))
-        }
-    })?;
+    task.size = optional(map, "size", |v| size_request_str(string(v)?))?;
+    task.quality = optional(map, "quality", |v| quality_request_str(string(v)?))?;
+    task.background = optional(map, "background", |v| background_request_str(string(v)?))?;
     task.compression = optional(map, "output_compression", |v| {
         u8::try_from(number(v)?).map_err(|_| CodecError::invalid())
     })?;
@@ -142,6 +150,9 @@ pub fn decode_request(bytes: &[u8]) -> Result<Request, CodecError> {
             options: None,
         },
         identity: ClientIdentityHints {
+            safety_identifier: optional(map, "safety_identifier", |v| Ok(string(v)?.into()))?
+                .value()
+                .cloned(),
             user: {
                 let user = optional(map, "user", |v| Ok(string(v)?.into()))?;
                 if user == Presence::Null {
@@ -149,7 +160,6 @@ pub fn decode_request(bytes: &[u8]) -> Result<Request, CodecError> {
                 }
                 user.value().cloned()
             },
-            ..Default::default()
         },
     };
     validate_request(&request)?;
@@ -164,7 +174,6 @@ pub fn validate_request(request: &Request) -> Result<(), CodecError> {
     if !valid_model(&request.model)
         || request.delivery.streaming()
         || request.delivery.options.is_some()
-        || !request.identity.safety_identifier.is_none()
         // This profile defaults to PNG, unlike the protocol-neutral request.
         || request.task.compression.value().is_some()
             && !matches!(request.task.format.value(),Some(ImageFormat::Jpeg|ImageFormat::Webp))
@@ -175,7 +184,7 @@ pub fn validate_request(request: &Request) -> Result<(), CodecError> {
 }
 pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecError> {
     validate_request(request)?;
-    if !valid_model(model) {
+    if request.task.is_edit() || !valid_model(model) {
         return Err(CodecError::invalid());
     }
     let mut map = Map::new();
@@ -211,13 +220,15 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
         let label: &str = (*v).into();
         json!(label)
     });
+    if let Some(value) = &request.identity.safety_identifier {
+        map.insert("safety_identifier".into(), json!(value));
+    }
     if let Some(value) = &request.identity.user {
         map.insert("user".into(), json!(value));
     }
     Ok(Value::Object(map))
 }
-fn size(value: &Value) -> Result<ImageSize, CodecError> {
-    let raw = string(value)?;
+fn size_str(raw: &str) -> Result<ImageSize, CodecError> {
     let (w, h) = raw.split_once('x').ok_or_else(CodecError::invalid)?;
     let size = ImageSize {
         width: w.parse().map_err(|_| CodecError::invalid())?,
@@ -229,24 +240,18 @@ fn size(value: &Value) -> Result<ImageSize, CodecError> {
     }
     Ok(size)
 }
+fn size(value: &Value) -> Result<ImageSize, CodecError> {
+    size_str(string(value)?)
+}
 fn breakdown(value: &Value) -> Result<ImageTokenBreakdown, CodecError> {
-    let map = object(value, &["text_tokens", "image_tokens"])?;
+    let map = value.as_object().ok_or_else(CodecError::invalid)?;
     Ok(ImageTokenBreakdown::text_image(
         number(required(map, "text_tokens")?)?,
         number(required(map, "image_tokens")?)?,
     ))
 }
 fn usage(value: &Value) -> Result<ImageUsage, CodecError> {
-    let map = object(
-        value,
-        &[
-            "input_tokens",
-            "input_tokens_details",
-            "output_tokens",
-            "output_tokens_details",
-            "total_tokens",
-        ],
-    )?;
+    let map = value.as_object().ok_or_else(CodecError::invalid)?;
     let usage = ImageUsage {
         input: Presence::Value(number(required(map, "input_tokens")?)?),
         input_details: Presence::Value(breakdown(required(map, "input_tokens_details")?)?),

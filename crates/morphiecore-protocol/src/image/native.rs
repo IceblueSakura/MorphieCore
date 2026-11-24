@@ -1,4 +1,4 @@
-//! Single-artifact native Generate profiles with Provider-selected encoding.
+//! Single-artifact native Generate and unmasked Edit profiles with Provider-selected encoding.
 use super::Request;
 use crate::{
     CodecError,
@@ -11,12 +11,18 @@ use crate::{
         value::{ImageFormat, Presence},
     },
 };
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 fn admit(request: &Request) -> Result<(), CodecError> {
     crate::openai::images::validate_request(request)?;
     let task = &request.task;
+    if let Some(edit) = task.edit()
+        && (edit.mask.is_some() || !edit.input_fidelity.is_absent())
+    {
+        return Err(CodecError::invalid());
+    }
     if task.requested_count() != 1
         || task.format.value().is_some()
         || matches!(task.size.value(), Some(ImageSizeRequest::Exact(_)))
@@ -26,6 +32,7 @@ fn admit(request: &Request) -> Result<(), CodecError> {
             Some(ImageBackgroundRequest::Exact(_))
         )
         || task.moderation.value().is_some()
+        || request.identity.safety_identifier.is_some()
     {
         return Err(CodecError::invalid());
     }
@@ -37,8 +44,20 @@ pub(crate) fn gemini_request(request: &Request) -> Result<Value, CodecError> {
     if request.identity.user.is_some() {
         return Err(CodecError::invalid());
     }
+    let mut parts = Vec::new();
+    if let Some(edit) = request.task.edit() {
+        for source in &edit.sources {
+            parts.push(json!({
+                "inlineData": {
+                    "mimeType": source.mime(),
+                    "data": STANDARD.encode(source.data()),
+                }
+            }));
+        }
+    }
+    parts.push(json!({"text": request.task.prompt()}));
     Ok(json!({
-        "contents": [{"role":"user","parts":[{"text":request.task.prompt()}]}],
+        "contents": [{"role":"user","parts":parts}],
         "generationConfig": {"responseModalities":["TEXT","IMAGE"]}
     }))
 }
@@ -51,6 +70,21 @@ pub(crate) fn grok_request(request: &Request, model: &str) -> Result<Value, Code
     let mut body = json!({
         "model": model, "prompt": request.task.prompt(), "n": 1, "response_format": "b64_json"
     });
+    if let Some(edit) = request.task.edit() {
+        let mut refs = edit.sources.iter().map(|source| {
+            let data_url = format!(
+                "data:{};base64,{}",
+                source.mime(),
+                STANDARD.encode(source.data())
+            );
+            json!({"type": "image_url", "url": data_url})
+        });
+        if edit.sources.len() == 1 {
+            body["image"] = refs.next().expect("single source");
+        } else {
+            body["images"] = Value::Array(refs.collect());
+        }
+    }
     if let Some(user) = &request.identity.user {
         body["user"] = json!(user);
     }

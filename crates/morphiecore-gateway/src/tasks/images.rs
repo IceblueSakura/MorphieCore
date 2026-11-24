@@ -74,14 +74,17 @@ pub(crate) fn bind(
     }
     Ok(bound)
 }
-fn profile(headers: &HeaderMap, limit: usize) -> Result<bool, ApiError> {
-    admission::headers(headers, limit)?;
+fn profile_header(headers: &HeaderMap) -> Result<bool, ApiError> {
     let mut profiles = headers.get_all(PROFILE_HEADER).iter();
     match (profiles.next(), profiles.next()) {
         (None, None) => Ok(false),
         (Some(profile), None) if profile.as_bytes() == NATIVE_PROFILE.as_bytes() => Ok(true),
         _ => Err(ApiError::invalid()),
     }
+}
+fn profile(headers: &HeaderMap, limit: usize) -> Result<bool, ApiError> {
+    admission::headers(headers, limit)?;
+    profile_header(headers)
 }
 async fn select(
     admitted: &Admission,
@@ -132,6 +135,56 @@ pub(crate) async fn handle(State(runtime): State<Arc<Runtime>>, request: Request
         .await
         .unwrap_or_else(IntoResponse::into_response)
 }
+pub(crate) async fn handle_edit(State(runtime): State<Arc<Runtime>>, request: Request) -> Response {
+    ingress_edit(runtime, request)
+        .await
+        .unwrap_or_else(IntoResponse::into_response)
+}
+fn edit_upload_head(
+    headers: &HeaderMap,
+    limit: usize,
+) -> Result<(String, Option<u64>, bool), ApiError> {
+    let native = profile_header(headers)?;
+    let mut types = headers.get_all("content-type").iter();
+    let raw = types
+        .next()
+        .and_then(|v| v.to_str().ok())
+        .ok_or(ApiError::new(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            crate::error::ErrorKind::UnsupportedMediaType,
+        ))?;
+    if raw.len() > 256 || types.next().is_some() || headers.contains_key("content-encoding") {
+        return Err(ApiError::invalid());
+    }
+    let media: mime::Mime = raw.parse().map_err(|_| ApiError::invalid())?;
+    if media.essence_str() != "multipart/form-data" {
+        return Err(ApiError::new(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            crate::error::ErrorKind::UnsupportedMediaType,
+        ));
+    }
+    let mut lengths = headers.get_all("content-length").iter();
+    let length = lengths
+        .next()
+        .map(|v| {
+            let raw = v.to_str().map_err(|_| ApiError::invalid())?;
+            if raw.is_empty() || !raw.bytes().all(|b| b.is_ascii_digit()) {
+                return Err(ApiError::invalid());
+            }
+            raw.parse::<u64>().map_err(|_| ApiError::invalid())
+        })
+        .transpose()?;
+    if lengths.next().is_some() {
+        return Err(ApiError::invalid());
+    }
+    if length.is_some_and(|n| n > limit as u64) {
+        return Err(ApiError::new(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            crate::error::ErrorKind::RequestTooLarge,
+        ));
+    }
+    Ok((raw.into(), length, native))
+}
 async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, ApiError> {
     let (admitted, native, bytes) =
         Admission::upload(&runtime, request, runtime.limits.request_bytes, profile).await?;
@@ -140,15 +193,63 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
         .get("model")
         .and_then(serde_json::Value::as_str)
         .ok_or(ApiError::invalid())?;
-    let candidates = runtime.images.get(model).ok_or(ApiError::new(
-        StatusCode::NOT_FOUND,
-        crate::error::ErrorKind::ModelNotFound,
-    ))?;
+    let candidates = runtime
+        .images
+        .get(model)
+        .ok_or(ApiError::new(
+            StatusCode::NOT_FOUND,
+            crate::error::ErrorKind::ModelNotFound,
+        ))?
+        .clone();
     let upstream = candidates[0].route.endpoint.profile;
     if native && !upstream.supports_native_static() {
         return Err(ApiError::invalid());
     }
     let request = images::decode_request(&bytes).map_err(|_| ApiError::invalid())?;
+    dispatch(admitted, runtime, &candidates, native, request).await
+}
+async fn ingress_edit(runtime: Arc<Runtime>, request: Request) -> Result<Response, ApiError> {
+    let (admitted, (media, length, native), bytes) = Admission::upload(
+        &runtime,
+        request,
+        runtime.limits.image_edit_request_bytes,
+        edit_upload_head,
+    )
+    .await?;
+    if length.is_some_and(|n| n != bytes.len() as u64) {
+        return Err(ApiError::invalid());
+    }
+    let request = images::decode_edit_request(&media, bytes.into())
+        .await
+        .map_err(|err| match err {
+            crate::protocol::CodecError::Limit => ApiError::new(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                crate::error::ErrorKind::RequestTooLarge,
+            ),
+            _ => ApiError::invalid(),
+        })?;
+    let candidates = runtime
+        .images
+        .get(&request.model)
+        .ok_or(ApiError::new(
+            StatusCode::NOT_FOUND,
+            crate::error::ErrorKind::ModelNotFound,
+        ))?
+        .clone();
+    let upstream = candidates[0].route.endpoint.profile;
+    if native && !upstream.supports_native_static() {
+        return Err(ApiError::invalid());
+    }
+    dispatch(admitted, runtime, &candidates, native, request).await
+}
+async fn dispatch(
+    admitted: Admission,
+    runtime: Arc<Runtime>,
+    candidates: &[Arc<BoundImage>],
+    native: bool,
+    request: crate::protocol::image::Request,
+) -> Result<Response, ApiError> {
+    let upstream = candidates[0].route.endpoint.profile;
     let compatibility = !native && upstream.supports_native_static();
     let wire = if compatibility && upstream != crate::adapter::images::UpstreamAdapter::QwenImage {
         if request
@@ -175,7 +276,13 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
     };
     let entry = select(&admitted, &runtime, candidates).await?;
     let prepared = crate::execution::images::prepare(&entry.route, &entry.provider, &wire)
-        .map_err(|_| ApiError::invalid())?;
+        .map_err(|err| match err {
+            crate::execution::AttemptError::Limit => ApiError::new(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                crate::error::ErrorKind::RequestTooLarge,
+            ),
+            _ => ApiError::invalid(),
+        })?;
     drop(wire);
     admitted
         .respond(
@@ -208,6 +315,7 @@ fn check_budget(
 async fn decode(
     receiver: Receiver,
     codec: crate::adapter::images::UpstreamAdapter,
+    expected_inputs: usize,
     trace: &mut Trace,
 ) -> Result<crate::semantic::task::image_generation::ImageGenerationResponse, ApiError> {
     receiver.require_media("application/json")?;
@@ -221,17 +329,24 @@ async fn decode(
         }
     })?;
     codec
-        .decode_response(&bytes)
+        .decode_response(&bytes, expected_inputs)
         .map_err(|_| ApiError::upstream())
 }
 #[cfg(test)]
 pub(crate) async fn receive_for_test(
     upstream: reqwest::Response,
     codec: crate::adapter::images::UpstreamAdapter,
+    expected_inputs: usize,
     limit: usize,
     trace: &mut Trace,
 ) -> Result<crate::semantic::task::image_generation::ImageGenerationResponse, ApiError> {
-    decode(Receiver::new(upstream, limit, trace)?, codec, trace).await
+    decode(
+        Receiver::new(upstream, limit, trace)?,
+        codec,
+        expected_inputs,
+        trace,
+    )
+    .await
 }
 struct Output {
     request: crate::protocol::image::Request,
@@ -257,7 +372,18 @@ impl TaskOutput for Output {
         lane: &body::Lane<'_>,
         trace: &mut Trace,
     ) -> Result<(), ApiError> {
-        let mut response = decode(receiver, entry.route.endpoint.profile, trace).await?;
+        let expected_inputs = self
+            .request
+            .task
+            .edit()
+            .map_or(0, |edit| edit.sources.len());
+        let mut response = decode(
+            receiver,
+            entry.route.endpoint.profile,
+            expected_inputs,
+            trace,
+        )
+        .await?;
         if self.compatibility {
             check_budget(&response, limits.image_bytes, limits.images_bytes)?;
             for image in &mut response.images {

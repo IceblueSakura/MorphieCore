@@ -264,7 +264,27 @@ class ImageSchemaTests(unittest.TestCase):
         ):
             self.assertFalse(check.is_valid({**request, **controls}))
         check.validate({**request, "n": 2, "output_format": "webp",
-                        "background": "transparent", "output_compression": 80})
+                        "background": "transparent", "output_compression": 80,
+                        "safety_identifier": "sid-1"})
+
+    def test_edit_request_and_multipart_route(self):
+        check = validator("ImageEditRequest")
+        check.validate({"model": "public-image", "prompt": "edit", "image": "png-bytes"})
+        check.validate({
+            "model": "public-image", "prompt": "edit",
+            "image[]": ["a", "b"], "mask": "m",
+            "input_fidelity": "high", "safety_identifier": "sid-1",
+            "output_format": "webp", "output_compression": 80,
+        })
+        for invalid in (
+            {"model": "public-image", "prompt": "edit"},
+            {"model": "public-image", "prompt": "edit", "image": "a", "image[]": ["b"]},
+            {"model": "public-image", "prompt": "edit", "image": "a", "moderation": "low"},
+            {"model": "public-image", "prompt": "edit", "image": "a", "stream": True},
+        ):
+            self.assertFalse(check.is_valid(invalid))
+        post = DOCUMENT["paths"]["/v1/images/edits"]["post"]
+        self.assertEqual(set(post["requestBody"]["content"]), {"multipart/form-data"})
 
     def test_response_collection_shape_and_shared_reports(self):
         check = validator("ImageGenerationResponse")

@@ -347,6 +347,65 @@
         }
       }
     },
+    "/v1/images/edits": {
+      "post": {
+        "operationId": "imageEdit",
+        "summary": "Edit ordered uploaded images through an explicitly activated static image binding",
+        "parameters": [
+          {
+            "name": "X-MorphieCore-Image-Profile",
+            "in": "header",
+            "required": false,
+            "schema": {"type": "string", "const": "native-static-v1"},
+            "description": "Opt out of default OpenAI-shape PNG delivery for Qwen Image, Gemini Nano Banana and Grok Imagine. Omit for GPT Image."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {"$ref": "#/components/schemas/ImageEditRequest"},
+              "encoding": {
+                "image": {"contentType": "image/png, image/jpeg, image/webp, application/octet-stream"},
+                "image[]": {"contentType": "image/png, image/jpeg, image/webp, application/octet-stream"},
+                "mask": {"contentType": "image/png, application/octet-stream"}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Complete inline images after validated EOF. By default the OpenAI response shape applies; native bindings use PNG and locally prepare a delivery timestamp only when created is unreported. The optional native profile preserves the received format and does not fill missing creation time. One target is dispatched.",
+            "headers": {
+              "Cache-Control": {"schema": {"type": "string", "const": "no-store"}},
+              "X-Content-Type-Options": {"schema": {"type": "string", "const": "nosniff"}}
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {"$ref": "#/components/schemas/ImageGenerationResponse"},
+                    {"$ref": "#/components/schemas/NativeStaticImageGenerationResponse"}
+                  ]
+                }
+              }
+            }
+          },
+          "400": {"$ref": "#/components/responses/Error"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "405": {"$ref": "#/components/responses/Error"},
+          "408": {"$ref": "#/components/responses/Error"},
+          "413": {"$ref": "#/components/responses/Error"},
+          "415": {"$ref": "#/components/responses/Error"},
+          "429": {"$ref": "#/components/responses/Error"},
+          "500": {"$ref": "#/components/responses/Error"},
+          "502": {"$ref": "#/components/responses/Error"},
+          "503": {"$ref": "#/components/responses/Error"},
+          "504": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
     "/v1/audio/transcriptions": {
       "post": {
         "operationId": "createTranscription",
@@ -1502,6 +1561,10 @@
               null
             ]
           },
+          "safety_identifier": {
+            "type": ["string", "null"],
+            "maxLength": 128
+          },
           "user": {
             "type": "string",
             "maxLength": 256
@@ -1551,6 +1614,71 @@
             }
           }
         ]
+      },
+      "ImageEditRequest": {
+        "type": "object",
+        "required": ["model", "prompt"],
+        "additionalProperties": false,
+        "oneOf": [
+          {"required": ["image"]},
+          {"required": ["image[]"]}
+        ],
+        "not": {"required": ["image", "image[]"]},
+        "properties": {
+          "model": {"$ref": "#/components/schemas/PublicModelLabel"},
+          "prompt": {"type": "string", "minLength": 1, "maxLength": 32000},
+          "image": {"type": "string", "format": "binary", "minLength": 1, "maxLength": 8388608},
+          "image[]": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {"type": "string", "format": "binary", "minLength": 1, "maxLength": 8388608}
+          },
+          "mask": {
+            "type": "string",
+            "format": "binary",
+            "minLength": 1,
+            "maxLength": 3999999,
+            "description": "Optional PNG mask bound to source index 0 (< 4,000,000 bytes; OpenAI GPT Image targets only)."
+          },
+          "input_fidelity": {"enum": ["high", "low"]},
+          "n": {"type": "integer", "minimum": 1, "maximum": 10},
+          "stream": {"const": false, "default": false},
+          "output_format": {"enum": ["png", "jpeg", "webp"]},
+          "size": {
+            "anyOf": [
+              {"$ref": "#/components/schemas/ImagePixelSize"},
+              {"const": "auto"}
+            ]
+          },
+          "quality": {"enum": ["auto", "low", "medium", "high", "xhigh", "max"]},
+          "background": {"enum": ["auto", "transparent", "opaque"]},
+          "output_compression": {"type": "integer", "minimum": 0, "maximum": 100},
+          "safety_identifier": {"type": "string", "maxLength": 128},
+          "user": {"type": "string", "maxLength": 256}
+        },
+        "allOf": [
+          {
+            "not": {
+              "required": ["output_format", "background"],
+              "properties": {
+                "output_format": {"const": "jpeg"},
+                "background": {"const": "transparent"}
+              }
+            }
+          },
+          {
+            "if": {
+              "required": ["output_compression"],
+              "properties": {"output_compression": {"type": "integer"}}
+            },
+            "then": {
+              "required": ["output_format"],
+              "properties": {"output_format": {"enum": ["jpeg", "webp"]}}
+            }
+          }
+        ],
+        "description": "Multipart, not JSON. Accepts up to 16 PNG/JPEG/WebP sources (image or repeated image[]) with 8 MiB aggregate raw input budget (including optional mask). Native pixel/alpha validation runs upstream; target support for mask, input_fidelity and identity is separate."
       },
       "ImagePixelSize": {
         "type": "string",

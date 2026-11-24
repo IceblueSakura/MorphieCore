@@ -379,15 +379,13 @@ impl Catalog {
         for b in &self.images {
             publication(b.model, b.released_at, b.developer)?;
             for provider in &b.providers {
-                operation(
-                    provider,
-                    ProviderOperation::Images,
-                    if *provider == "grok" {
-                        CredentialKind::OAuth("grok")
-                    } else {
-                        CredentialKind::ApiKey
-                    },
-                )?;
+                let kind = if *provider == "grok" {
+                    CredentialKind::OAuth("grok")
+                } else {
+                    CredentialKind::ApiKey
+                };
+                operation(provider, ProviderOperation::Images, kind)?;
+                operation(provider, ProviderOperation::ImagesEdit, kind)?;
             }
         }
         for b in &self.speech {

@@ -36,6 +36,8 @@ pub struct Limits {
     pub speech_bytes: usize,
     /// Whole multipart envelope, independently bounded from JSON ingress.
     pub transcription_request_bytes: usize,
+    /// Whole image edit multipart envelope, independently bounded from JSON ingress.
+    pub image_edit_request_bytes: usize,
     pub event_bytes: usize,
     pub max_events: usize,
     pub concurrency: usize,
@@ -66,6 +68,7 @@ impl Default for Limits {
             images_bytes: 2 << 20,
             speech_bytes: 8 << 20,
             transcription_request_bytes: crate::protocol::openai::transcription::MAX_UPLOAD_BYTES,
+            image_edit_request_bytes: crate::protocol::openai::images::MAX_EDIT_UPLOAD_BYTES,
             event_bytes: 16 << 20,
             max_events: 1_000_000,
             concurrency: 16,
@@ -121,6 +124,11 @@ impl Limits {
                 "transcription_request_bytes",
                 (1..=crate::protocol::openai::transcription::MAX_UPLOAD_BYTES)
                     .contains(&self.transcription_request_bytes),
+            ),
+            (
+                "image_edit_request_bytes",
+                (1..=crate::protocol::openai::images::MAX_EDIT_UPLOAD_BYTES)
+                    .contains(&self.image_edit_request_bytes),
             ),
             ("event_bytes", (1..=64 << 20).contains(&self.event_bytes)),
             ("max_events", (1..=1_000_000).contains(&self.max_events)),

@@ -645,6 +645,297 @@ mod image_generation {
             usage.total = Presence::Absent;
         }
         assert!(images::encode_response(&incomplete).is_err());
+
+        let forward = br#"{"created":123,"data":[{"b64_json":"AQID"}],"usage":{"input_tokens":3,"input_tokens_details":{"text_tokens":2,"image_tokens":1,"future_detail":1},"output_tokens":5,"total_tokens":8,"future_usage":"ignored"}}"#;
+        let parsed = images::decode_response(forward).unwrap();
+        assert_eq!(parsed.usage.value().unwrap().total, Presence::Value(8));
+    }
+}
+mod image_edit {
+    use morphiecore::{
+        adapter::images::UpstreamAdapter,
+        protocol::{CodecError, image::Request, openai::images},
+        semantic::{
+            task::image_generation::*,
+            value::{ImageFormat, Presence},
+        },
+    };
+    use serde_json::json;
+
+    type PartSpec<'a> = (&'a str, Option<(&'a str, &'a str)>, &'a [u8]);
+
+    fn multipart(boundary: &str, parts: &[PartSpec<'_>]) -> (String, Vec<u8>) {
+        let mut body = Vec::new();
+        for (name, file, data) in parts {
+            body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+            if let Some((filename, ct)) = file {
+                body.extend_from_slice(
+                    format!("Content-Disposition: form-data; name=\"{name}\"; filename=\"{filename}\"\r\nContent-Type: {ct}\r\n\r\n")
+                        .as_bytes(),
+                );
+            } else {
+                body.extend_from_slice(
+                    format!("Content-Disposition: form-data; name=\"{name}\"\r\n\r\n").as_bytes(),
+                );
+            }
+            body.extend_from_slice(data);
+            body.extend_from_slice(b"\r\n");
+        }
+        body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+        (format!("multipart/form-data; boundary={boundary}"), body)
+    }
+
+    #[tokio::test]
+    async fn edit_multipart_decode_enforces_source_order_mask_subset_and_bounds() {
+        let rt_bytes = |data: &[u8]| bytes::Bytes::copy_from_slice(data);
+        let (ct, body) = multipart(
+            "b1",
+            &[
+                ("model", None, b"gpt-image-2.6-flare"),
+                ("prompt", None, b"overlay a badge"),
+                ("image[]", Some(("client/path/a.png", "image/png")), b"png0"),
+                ("image[]", Some(("b.webp", "image/webp")), b"webp1"),
+                ("mask", Some(("m.png", "image/png")), b"mask0"),
+                ("input_fidelity", None, b"high"),
+                ("output_format", None, b"webp"),
+                ("output_compression", None, b"85"),
+                ("safety_identifier", None, b"sid-1"),
+            ],
+        );
+        // Client filename path separators are rejected rather than stripped silently.
+        assert!(
+            images::decode_edit_request(&ct, rt_bytes(&body))
+                .await
+                .is_err()
+        );
+
+        let (ct, body) = multipart(
+            "b1",
+            &[
+                ("model", None, b"gpt-image-2.6-flare"),
+                ("prompt", None, b"overlay a badge"),
+                ("image[]", Some(("a.png", "image/png")), b"png0"),
+                ("image[]", Some(("b.webp", "image/webp")), b"webp1"),
+                ("mask", Some(("m.png", "image/png")), b"mask0"),
+                ("input_fidelity", None, b"high"),
+                ("output_format", None, b"webp"),
+                ("output_compression", None, b"85"),
+                ("safety_identifier", None, b"sid-1"),
+            ],
+        );
+        let request = images::decode_edit_request(&ct, rt_bytes(&body))
+            .await
+            .unwrap();
+        let edit = request.task.edit().unwrap();
+        assert_eq!(edit.sources.len(), 2);
+        assert_eq!(edit.sources[0].format(), ImageFormat::Png);
+        assert_eq!(edit.sources[1].format(), ImageFormat::Webp);
+        assert_eq!(edit.mask.as_ref().unwrap().source_index, 0);
+        assert_eq!(edit.input_fidelity, Presence::Value(InputFidelity::High));
+        assert_eq!(request.identity.safety_identifier.as_deref(), Some("sid-1"));
+
+        // Over aggregate raw 8 MiB budget yields CodecError::Limit.
+        let five_mib = vec![b'x'; 5 << 20];
+        let (ct, body) = multipart(
+            "b2",
+            &[
+                ("model", None, b"gpt-image-2.6-flare"),
+                ("prompt", None, b"over"),
+                ("image[]", Some(("a.png", "image/png")), &five_mib),
+                ("image[]", Some(("b.png", "image/png")), &five_mib),
+            ],
+        );
+        assert!(matches!(
+            images::decode_edit_request(&ct, rt_bytes(&body)).await,
+            Err(CodecError::Limit)
+        ));
+
+        // Mask on non-PNG source[0], >= 4_000_000 bytes, non-PNG mask, mixed image/image[], >16 sources,
+        // unsupported controls, and MIME/extension mismatch must fail closed.
+        let big_mask = vec![b'm'; MAX_EDIT_MASK_BYTES_EXCLUSIVE];
+        for bad in [
+            vec![
+                ("model", None, b"m".as_slice()),
+                ("prompt", None, b"p"),
+                ("image", Some(("a.jpg", "image/jpeg")), b"jpg"),
+                ("mask", Some(("m.png", "image/png")), b"m"),
+            ],
+            vec![
+                ("model", None, b"m"),
+                ("prompt", None, b"p"),
+                ("image", Some(("a.png", "image/png")), b"png"),
+                ("mask", Some(("m.png", "image/png")), &big_mask),
+            ],
+            vec![
+                ("model", None, b"m"),
+                ("prompt", None, b"p"),
+                ("image", Some(("a.png", "image/png")), b"png"),
+                ("mask", Some(("m.webp", "image/webp")), b"webp"),
+            ],
+            vec![
+                ("model", None, b"m"),
+                ("prompt", None, b"p"),
+                ("image", Some(("a.png", "image/png")), b"png"),
+                ("image[]", Some(("b.png", "image/png")), b"png"),
+            ],
+            vec![
+                ("model", None, b"m"),
+                ("prompt", None, b"p"),
+                ("image", Some(("a.png", "image/png")), b"png"),
+                ("stream", None, b"true"),
+            ],
+            vec![
+                ("model", None, b"m"),
+                ("prompt", None, b"p"),
+                ("image", Some(("a.png", "image/png")), b"png"),
+                ("moderation", None, b"low"),
+            ],
+            vec![
+                ("model", None, b"m"),
+                ("prompt", None, b"p"),
+                ("image", Some(("a.png", "image/jpeg")), b"png"),
+            ],
+            vec![
+                ("model", None, b"m"),
+                ("prompt", None, b"p"),
+                ("file_id", None, b"file-123"),
+                ("image", Some(("a.png", "image/png")), b"png"),
+            ],
+        ] {
+            let (ct, body) = multipart("bad", &bad);
+            assert!(
+                images::decode_edit_request(&ct, rt_bytes(&body))
+                    .await
+                    .is_err()
+            );
+        }
+        let mut too_many: Vec<PartSpec<'_>> = vec![("model", None, b"m"), ("prompt", None, b"p")];
+        too_many.extend(std::iter::repeat_n(
+            ("image[]", Some(("a.png", "image/png")), b"png".as_slice()),
+            MAX_EDIT_SOURCES + 1,
+        ));
+        let (ct, body) = multipart("too-many", &too_many);
+        assert!(
+            images::decode_edit_request(&ct, rt_bytes(&body))
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn edit_adapters_encode_independently_and_reject_unsupported_controls() {
+        let png = ImageInput::new(bytes::Bytes::from_static(b"png0"), ImageFormat::Png).unwrap();
+        let webp = ImageInput::new(bytes::Bytes::from_static(b"webp1"), ImageFormat::Webp).unwrap();
+
+        let single = Request::new(
+            "public",
+            ImageGenerationRequest::new_edit("edit one", vec![png.clone()]).unwrap(),
+        );
+        let multi = Request::new(
+            "public",
+            ImageGenerationRequest::new_edit("edit two", vec![png.clone(), webp.clone()]).unwrap(),
+        );
+
+        let gpt = UpstreamAdapter::GptImage
+            .encode_request(&multi, "private-gpt", 64 << 10)
+            .unwrap();
+        assert!(
+            gpt.content_type
+                .starts_with("multipart/form-data; boundary=")
+        );
+        let decoded_gpt =
+            images::decode_edit_request(&gpt.content_type, bytes::Bytes::from(gpt.body))
+                .await
+                .unwrap();
+        assert_eq!(decoded_gpt.model, "private-gpt");
+        assert_eq!(decoded_gpt.task.edit().unwrap().sources.len(), 2);
+
+        let qwen = UpstreamAdapter::QwenImage
+            .encode_request(&multi, "qwen-image-3.0-pro", 64 << 10)
+            .unwrap();
+        assert_eq!(qwen.content_type, "application/json");
+        let qwen_json: serde_json::Value = serde_json::from_slice(&qwen.body).unwrap();
+        assert_eq!(
+            qwen_json["input"]["messages"][0]["content"],
+            json!([
+                {"image": "data:image/png;base64,cG5nMA=="},
+                {"image": "data:image/webp;base64,d2VicDE="},
+                {"text": "edit two"}
+            ])
+        );
+        let qwen_ok = json!({
+            "output":{"choices":[{"finish_reason":"stop","message":{"role":"assistant",
+                "content":[{"image":"data:image/png;base64,AQID"}]}}]},
+            "usage":{"output_width":512,"output_height":512,"output_image_count":1,
+                "input_image_count":2,"input_image_type":"qima_input_1k","output_image_type":"qima_output_1k"}
+        });
+        assert!(
+            UpstreamAdapter::QwenImage
+                .decode_response(&serde_json::to_vec(&qwen_ok).unwrap(), 2)
+                .is_ok()
+        );
+        assert!(
+            UpstreamAdapter::QwenImage
+                .decode_response(&serde_json::to_vec(&qwen_ok).unwrap(), 1)
+                .is_err()
+        );
+
+        let gemini = UpstreamAdapter::GeminiImage
+            .encode_request(&multi, "gemini-nano-banana-2.1", 64 << 10)
+            .unwrap();
+        let gemini_json: serde_json::Value = serde_json::from_slice(&gemini.body).unwrap();
+        assert_eq!(
+            gemini_json["contents"][0]["parts"],
+            json!([
+                {"inlineData": {"mimeType": "image/png", "data": "cG5nMA=="}},
+                {"inlineData": {"mimeType": "image/webp", "data": "d2VicDE="}},
+                {"text": "edit two"}
+            ])
+        );
+
+        let grok_single = UpstreamAdapter::GrokImage
+            .encode_request(&single, "grok-imagine-image-2.0", 64 << 10)
+            .unwrap();
+        let grok_single_json: serde_json::Value =
+            serde_json::from_slice(&grok_single.body).unwrap();
+        assert_eq!(
+            grok_single_json["image"],
+            json!({"type": "image_url", "url": "data:image/png;base64,cG5nMA=="})
+        );
+        assert!(grok_single_json.get("images").is_none());
+
+        let grok_multi = UpstreamAdapter::GrokImage
+            .encode_request(&multi, "grok-imagine-image-2.0", 64 << 10)
+            .unwrap();
+        let grok_multi_json: serde_json::Value = serde_json::from_slice(&grok_multi.body).unwrap();
+        assert_eq!(
+            grok_multi_json["images"],
+            json!([
+                {"type": "image_url", "url": "data:image/png;base64,cG5nMA=="},
+                {"type": "image_url", "url": "data:image/webp;base64,d2VicDE="}
+            ])
+        );
+        assert!(grok_multi_json.get("image").is_none());
+
+        // Native targets reject mask, input_fidelity, and safety_identifier (L5).
+        let mut with_mask = single.clone();
+        with_mask.task.edit_mut().unwrap().mask = Some(ImageMask {
+            source_index: 0,
+            input: png,
+        });
+        let mut with_fidelity = single.clone();
+        with_fidelity.task.edit_mut().unwrap().input_fidelity = Presence::Value(InputFidelity::Low);
+        let mut with_safety = single;
+        with_safety.identity.safety_identifier = Some("sid-1".into());
+        for unsupported in [with_mask, with_fidelity, with_safety] {
+            for adapter in [
+                UpstreamAdapter::QwenImage,
+                UpstreamAdapter::GeminiImage,
+                UpstreamAdapter::GrokImage,
+            ] {
+                assert!(adapter.encode_request(&unsupported, "m", 64 << 10).is_err());
+            }
+        }
     }
 }
 mod speech {

@@ -96,8 +96,8 @@ Selected direction: Dual-SDK support (TypeSafe and OpenAI) backed by a unified D
 | Family | Readiness | Next step |
 |---|---|---|
 | Decision | Dual-SDK direction selected; IR drafts under review | Finalize contract selection and implement codecs |
-| Images Generate | Direct GPT Image 2.6 uses standard static Generate; Qwen Image, Gemini Nano Banana and Grok Imagine default to the OpenAI Images shape, with optional native delivery | Native ratio/resolution tiers and other output controls remain separately selectable |
-| Images Edit & Stream | Research complete; mask boundaries and stream formats unselected | Await static Generate closure |
+| Images Generate & Edit | Static Generate and direct-input multipart Edit cover GPT Image 2.6, Qwen Image, Gemini Nano Banana and Grok Imagine (default OpenAI PNG compatibility and `native-static-v1`) | Native ratio/resolution tiers and other output controls remain separately selectable |
+| Images Stream | Research complete; preview/final stream formats unselected | Select bounded preview SSE profile |
 | Audio (Speech/ASR) | Direct OpenAI `gpt-4o-mini-tts` static binary Speech, `gpt-transcribe` static multipart Transcription (`json`/`text`), and Xiaomi/Aliyun static Speech/Transcription exist; Aliyun speech consumes upstream SSE. Progressive binary/downstream SSE Speech and Transcription SSE remain unselected; Translation is [unscheduled](../roadmap/backlog-and-frozen.md#deferred-generation-semantics) | Select bounded streaming profile |
 | Files & Uploads | Safety requirements defined; storage authority unselected | Select storage authority and ID authorization |
 | Video | Upstream API research available; job lifecycles unselected | Select job status and retrieval contract |

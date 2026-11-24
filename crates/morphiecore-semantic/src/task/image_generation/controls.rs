@@ -38,3 +38,9 @@ pub enum ImageModeration {
     Auto,
     Low,
 }
+#[derive(Clone, Copy, Debug, Eq, PartialEq, strum::EnumString, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+pub enum InputFidelity {
+    High,
+    Low,
+}

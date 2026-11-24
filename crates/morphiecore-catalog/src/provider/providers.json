@@ -173,6 +173,10 @@
         "path": "/api/v1/services/aigc/multimodal-generation/generation",
         "suffix": "/services/aigc/multimodal-generation/generation"
       },
+      "images_edit": {
+        "path": "/api/v1/services/aigc/multimodal-generation/generation",
+        "suffix": "/services/aigc/multimodal-generation/generation"
+      },
       "transcription": {
         "path": "/api/v1/services/aigc/multimodal-generation/generation",
         "suffix": "/services/aigc/multimodal-generation/generation"
@@ -205,6 +209,10 @@
         "suffix": "/services/audio/tts/SpeechSynthesizer"
       },
       "images": {
+        "path": "/api/v1/services/aigc/multimodal-generation/generation",
+        "suffix": "/services/aigc/multimodal-generation/generation"
+      },
+      "images_edit": {
         "path": "/api/v1/services/aigc/multimodal-generation/generation",
         "suffix": "/services/aigc/multimodal-generation/generation"
       },
@@ -263,6 +271,10 @@
         "path": "/v1/images/generations",
         "suffix": "/images/generations"
       },
+      "images_edit": {
+        "path": "/v1/images/edits",
+        "suffix": "/images/edits"
+      },
       "speech": {
         "path": "/v1/audio/speech",
         "suffix": "/audio/speech"
@@ -278,6 +290,7 @@
       "https://developers.openai.com/api/docs/models/text-embedding-3-small",
       "https://developers.openai.com/api/docs/models/text-embedding-3-large",
       "https://developers.openai.com/api/reference/resources/images/methods/generate",
+      "https://developers.openai.com/api/reference/resources/images/methods/edit",
       "https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create",
       "https://developers.openai.com/api/docs/models/gpt-4o-mini-tts",
       "https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create",
@@ -299,6 +312,10 @@
       "images": {
         "path": "/v1/images/generations",
         "suffix": "/images/generations"
+      },
+      "images_edit": {
+        "path": "/v1/images/edits",
+        "suffix": "/images/edits"
       },
       "models": {
         "path": "/v1/models",
@@ -330,6 +347,10 @@
         "suffix": "/models"
       },
       "images": {
+        "path": "/v1beta/models",
+        "suffix": "/models"
+      },
+      "images_edit": {
         "path": "/v1beta/models",
         "suffix": "/models"
       },

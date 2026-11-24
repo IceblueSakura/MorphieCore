@@ -145,6 +145,7 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
     .collect();
     let image = ModelId::new("fixture-image").unwrap();
     let image_path = EndpointPath::new("/images/generations").unwrap();
+    let image_edit_path = EndpointPath::new("/images/edits").unwrap();
     topology::compile(
         vec![provider.clone()],
         endpoints,
@@ -160,6 +161,7 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
         vec![topology::images::ProviderEntry {
             provider: provider.id.clone(),
             path: image_path.clone(),
+            edit_path: image_edit_path.clone(),
         }],
         vec![topology::images::ImageRoute {
             id: RouteId::new("fixture-images").unwrap(),
@@ -173,6 +175,7 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
                     origin: provider.origin,
                     path: image_path,
                 },
+                edit_path: image_edit_path,
                 upstream_model: "private-image".into(),
                 canonical_model: image.clone(),
                 profile: crate::adapter::images::UpstreamAdapter::GptImage,

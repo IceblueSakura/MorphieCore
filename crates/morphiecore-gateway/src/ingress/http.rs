@@ -32,6 +32,7 @@ macro_rules! public_routes {
             "/v1/messages" => post(messages);
             "/v1/embeddings" => post(crate::tasks::embeddings::handle);
             "/v1/images/generations" => post(crate::tasks::images::handle);
+            "/v1/images/edits" => post(crate::tasks::images::handle_edit);
             "/v1/audio/speech" => post(crate::tasks::speech::handle);
             "/v1/audio/transcriptions" => post(crate::tasks::transcription::handle);
         }

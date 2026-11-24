@@ -1,9 +1,10 @@
 //! Independent, static ordered image task. No conversation, runtime target or file service.
 use crate::value::{ImageFormat, Presence};
 use base64::engine::general_purpose::STANDARD;
+use bytes::Bytes;
 mod controls;
 pub use controls::{
-    ImageBackgroundRequest, ImageModeration, ImageQualityRequest, ImageSizeRequest,
+    ImageBackgroundRequest, ImageModeration, ImageQualityRequest, ImageSizeRequest, InputFidelity,
 };
 
 pub const MAX_PROMPT_CHARS: usize = 32_000;
@@ -13,14 +14,130 @@ pub const MAX_IMAGE_BASE64_BYTES: usize = MAX_IMAGE_BYTES.div_ceil(3) * 4;
 pub const MAX_IMAGE_COUNT: u8 = 10;
 /// Fixed aggregate decoded budget, never multiplied by the requested count.
 pub const MAX_IMAGES_BYTES: usize = 8 << 20;
+pub const MAX_EDIT_SOURCES: usize = 16;
+/// Fixed aggregate raw input budget across all edit sources and optional mask.
+pub const MAX_EDIT_INPUT_BYTES: usize = 8 << 20;
+pub const MAX_EDIT_MASK_BYTES_EXCLUSIVE: usize = 4_000_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("invalid or over-budget image generation value")]
 pub struct ImageError;
 
+/// Inert declared source image bytes for direct-input edits.
+#[derive(Clone, Eq, PartialEq)]
+pub struct ImageInput {
+    data: Bytes,
+    format: ImageFormat,
+}
+impl std::fmt::Debug for ImageInput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImageInput")
+            .field("format", &self.format)
+            .field("bytes", &self.data.len())
+            .finish()
+    }
+}
+impl ImageInput {
+    pub fn new(data: Bytes, format: ImageFormat) -> Result<Self, ImageError> {
+        if data.is_empty()
+            || data.len() > MAX_EDIT_INPUT_BYTES
+            || !matches!(
+                format,
+                ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::Webp
+            )
+        {
+            return Err(ImageError);
+        }
+        Ok(Self { data, format })
+    }
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+    pub fn format(&self) -> ImageFormat {
+        self.format
+    }
+    pub fn mime(&self) -> &'static str {
+        self.format.into()
+    }
+    pub fn extension(&self) -> &'static str {
+        match self.format {
+            ImageFormat::Png => "png",
+            ImageFormat::Jpeg => "jpg",
+            ImageFormat::Webp => "webp",
+            _ => unreachable!("validated edit input format"),
+        }
+    }
+}
+
+/// Mask attached to a specific ordered source image (conservative PNG subset on source zero).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ImageMask {
+    pub source_index: usize,
+    pub input: ImageInput,
+}
+impl ImageMask {
+    pub fn validate(&self, sources: &[ImageInput]) -> Result<(), ImageError> {
+        let Some(target) = sources.get(self.source_index) else {
+            return Err(ImageError);
+        };
+        if self.source_index != 0
+            || target.format() != ImageFormat::Png
+            || self.input.format() != ImageFormat::Png
+            || self.input.data().is_empty()
+            || self.input.data().len() >= MAX_EDIT_MASK_BYTES_EXCLUSIVE
+            || self.input.data().len() > MAX_EDIT_INPUT_BYTES
+        {
+            return Err(ImageError);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ImageEdit {
+    pub sources: Vec<ImageInput>,
+    pub mask: Option<ImageMask>,
+    pub input_fidelity: Presence<InputFidelity>,
+}
+impl ImageEdit {
+    pub fn total_input_bytes(&self) -> Result<usize, ImageError> {
+        let mut total = self.sources.iter().try_fold(0usize, |acc, input| {
+            acc.checked_add(input.data().len()).ok_or(ImageError)
+        })?;
+        if let Some(mask) = &self.mask {
+            total = total
+                .checked_add(mask.input.data().len())
+                .ok_or(ImageError)?;
+        }
+        Ok(total)
+    }
+    pub fn validate(&self) -> Result<(), ImageError> {
+        if !(1..=MAX_EDIT_SOURCES).contains(&self.sources.len()) {
+            return Err(ImageError);
+        }
+        for source in &self.sources {
+            ImageInput::new(source.data.clone(), source.format)?;
+        }
+        if let Some(mask) = &self.mask {
+            mask.validate(&self.sources)?;
+        }
+        if self.total_input_bytes()? > MAX_EDIT_INPUT_BYTES {
+            return Err(ImageError);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ImageOperation {
+    Generate,
+    Edit(ImageEdit),
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub struct ImageGenerationRequest {
     prompt: String,
+    pub operation: ImageOperation,
     /// Exact delivery requirement; absent/null means one, not an upstream guarantee.
     pub count: Presence<u8>,
     pub format: Presence<ImageFormat>,
@@ -34,6 +151,7 @@ impl std::fmt::Debug for ImageGenerationRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ImageGenerationRequest")
             .field("prompt", &"[redacted]")
+            .field("operation", &self.operation)
             .field("count", &self.count)
             .field("format", &self.format)
             .field("size", &self.size)
@@ -48,6 +166,29 @@ impl ImageGenerationRequest {
     pub fn new(prompt: impl Into<String>) -> Result<Self, ImageError> {
         let value = Self {
             prompt: prompt.into(),
+            operation: ImageOperation::Generate,
+            count: Presence::Absent,
+            format: Presence::Absent,
+            size: Presence::Absent,
+            quality: Presence::Absent,
+            background: Presence::Absent,
+            compression: Presence::Absent,
+            moderation: Presence::Absent,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+    pub fn new_edit(
+        prompt: impl Into<String>,
+        sources: Vec<ImageInput>,
+    ) -> Result<Self, ImageError> {
+        let value = Self {
+            prompt: prompt.into(),
+            operation: ImageOperation::Edit(ImageEdit {
+                sources,
+                mask: None,
+                input_fidelity: Presence::Absent,
+            }),
             count: Presence::Absent,
             format: Presence::Absent,
             size: Presence::Absent,
@@ -62,12 +203,32 @@ impl ImageGenerationRequest {
     pub fn prompt(&self) -> &str {
         &self.prompt
     }
+    pub fn is_edit(&self) -> bool {
+        matches!(self.operation, ImageOperation::Edit(_))
+    }
+    pub fn edit(&self) -> Option<&ImageEdit> {
+        match &self.operation {
+            ImageOperation::Generate => None,
+            ImageOperation::Edit(edit) => Some(edit),
+        }
+    }
+    pub fn edit_mut(&mut self) -> Option<&mut ImageEdit> {
+        match &mut self.operation {
+            ImageOperation::Generate => None,
+            ImageOperation::Edit(edit) => Some(edit),
+        }
+    }
     pub fn requested_count(&self) -> u8 {
         self.count.value().copied().unwrap_or(1)
     }
     pub fn set_prompt(&mut self, prompt: impl Into<String>) -> Result<(), ImageError> {
-        let next = Self::new(prompt)?;
-        self.prompt = next.prompt;
+        if let ImageOperation::Edit(edit) = &self.operation {
+            let next = Self::new_edit(prompt, edit.sources.clone())?;
+            self.prompt = next.prompt;
+        } else {
+            let next = Self::new(prompt)?;
+            self.prompt = next.prompt;
+        }
         Ok(())
     }
     pub fn validate(&self) -> Result<(), ImageError> {
@@ -80,6 +241,12 @@ impl ImageGenerationRequest {
             })
         {
             return Err(ImageError);
+        }
+        if let ImageOperation::Edit(edit) = &self.operation {
+            edit.validate()?;
+            if !self.moderation.is_absent() {
+                return Err(ImageError);
+            }
         }
         if let Some(ImageSizeRequest::Exact(size)) = self.size.value() {
             size.validate()?;

@@ -10,6 +10,7 @@ use crate::{
         value::{ImageFormat, Presence},
     },
 };
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -27,16 +28,32 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
         || task.compression.value().is_some()
         || task.moderation.value().is_some()
         || request.identity.user.is_some()
+        || request.identity.safety_identifier.is_some()
     {
         return Err(CodecError::invalid());
     }
+    let mut content = Vec::new();
+    if let Some(edit) = task.edit() {
+        if edit.mask.is_some() || !edit.input_fidelity.is_absent() {
+            return Err(CodecError::invalid());
+        }
+        for source in &edit.sources {
+            let data_url = format!(
+                "data:{};base64,{}",
+                source.mime(),
+                STANDARD.encode(source.data())
+            );
+            content.push(json!({"image": data_url}));
+        }
+    }
+    content.push(json!({"text": task.prompt()}));
     let mut parameters = json!({"n": task.requested_count(), "response_format": "b64_json"});
     if let Some(ImageSizeRequest::Exact(size)) = task.size.value() {
         parameters["size"] = json!(format!("{}*{}", size.width, size.height));
     }
     Ok(json!({
         "model": model,
-        "input": {"messages": [{"role": "user", "content": [{"text": task.prompt()}]}]},
+        "input": {"messages": [{"role": "user", "content": content}]},
         "parameters": parameters,
     }))
 }
@@ -76,7 +93,10 @@ struct Metering {
     output_image_type: String,
 }
 
-pub fn decode_response(bytes: &[u8]) -> Result<ImageGenerationResponse, CodecError> {
+pub fn decode_response(
+    bytes: &[u8],
+    expected_inputs: usize,
+) -> Result<ImageGenerationResponse, CodecError> {
     // Accounted dimensions are reports, not inferred from the requested size.
     let envelope: Envelope = serde_json::from_value(crate::json::decode_image_response(bytes)?)
         .map_err(|_| CodecError::invalid())?;
@@ -87,7 +107,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<ImageGenerationResponse, CodecErr
         .usage
         .as_ref()
         .map_or(Ok(Presence::Absent), |usage| {
-            if usage.input_image_count != 0
+            if u32::try_from(expected_inputs).ok() != Some(usage.input_image_count)
                 || usage.input_image_type.is_empty()
                 || usage.output_image_type.is_empty()
             {
@@ -152,7 +172,7 @@ mod tests {
             "usage":{"output_width":512,"output_height":640,"output_image_count":2,
                 "input_image_count":0,"input_image_type":"qima_input_1k","output_image_type":"qima_output_1k"}
         });
-        let decode = |value: &Value| decode_response(&serde_json::to_vec(value).unwrap());
+        let decode = |value: &Value| decode_response(&serde_json::to_vec(value).unwrap(), 0);
         let result = decode(&response).unwrap();
         assert_eq!(result.images[1].data.as_base64(), "BAUG");
         assert_eq!(

@@ -9,11 +9,13 @@ use crate::morphiecore::{
 pub fn binding(origin: &str) -> (ProviderEntry, ImageRoute) {
     let provider = ProviderId::new("fixture").unwrap();
     let path = EndpointPath::new("/images/generations").unwrap();
+    let edit_path = EndpointPath::new("/images/edits").unwrap();
     let canonical = ModelId::new("canonical-image").unwrap();
     (
         ProviderEntry {
             provider: provider.clone(),
             path: path.clone(),
+            edit_path: edit_path.clone(),
         },
         ImageRoute {
             id: RouteId::new("image-route").unwrap(),
@@ -27,13 +29,14 @@ pub fn binding(origin: &str) -> (ProviderEntry, ImageRoute) {
                     origin: TrustedOrigin::parse(origin).unwrap(),
                     path,
                 },
+                edit_path,
                 upstream_model: "private-image".into(),
                 canonical_model: canonical,
                 profile: crate::morphiecore::adapter::images::UpstreamAdapter::GptImage,
                 credential: CredentialBindingId::new("fixture-key").unwrap(),
                 execution: ExecutionContract {
                     streaming: false,
-                    request_body_limit: 256 << 10,
+                    request_body_limit: 12 << 20,
                     response_body_limit: 4 << 20,
                     credential_kind: CredentialKind::ApiKey,
                     timeout_ms: 1000,

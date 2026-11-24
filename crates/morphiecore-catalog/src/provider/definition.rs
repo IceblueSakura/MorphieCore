@@ -150,6 +150,7 @@ pub enum ProviderOperation {
     Interactions,
     Embeddings,
     Images,
+    ImagesEdit,
     Speech,
     Transcription,
 }

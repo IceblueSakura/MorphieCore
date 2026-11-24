@@ -31,7 +31,7 @@ pub(super) fn operation(path: &str) -> &'static str {
         "/v1/responses" => "responses",
         "/v1/messages" => "messages",
         "/v1/embeddings" => "embeddings",
-        "/v1/images/generations" => "images",
+        "/v1/images/generations" | "/v1/images/edits" => "images",
         "/v1/audio/speech" => "speech",
         "/v1/audio/transcriptions" => "transcription",
         _ => "other",

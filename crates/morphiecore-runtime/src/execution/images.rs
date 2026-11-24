@@ -14,24 +14,26 @@ pub fn prepare(
             crate::execution::attempt::ProtocolReason::ImageBindingMismatch,
         ));
     }
-    let value = route
-        .endpoint
-        .profile
-        .encode_request(request, &route.endpoint.upstream_model)?;
-    crate::semantic::value::json_size(&value, route.endpoint.execution.request_body_limit)
-        .map_err(|_| AttemptError::Limit)?;
+    let edit = request.task.is_edit();
+    let encoded = route.endpoint.profile.encode_request(
+        request,
+        &route.endpoint.upstream_model,
+        route.endpoint.execution.request_body_limit,
+    )?;
     Ok(PreparedTaskRequest::new(
         provider,
-        route.endpoint.request_path().map_err(|_| {
+        route.endpoint.request_path(edit).map_err(|_| {
             AttemptError::Protocol(crate::execution::attempt::ProtocolReason::ImageBindingMismatch)
         })?,
-        crate::provider::ProviderOperation::Images,
+        if edit {
+            crate::provider::ProviderOperation::ImagesEdit
+        } else {
+            crate::provider::ProviderOperation::Images
+        },
         vec![
-            ("content-type".into(), "application/json".into()),
+            ("content-type".into(), encoded.content_type),
             ("accept".into(), "application/json".into()),
         ],
-        serde_json::to_vec(&value).map_err(|_| {
-            AttemptError::Protocol(crate::execution::attempt::ProtocolReason::ImageSerialization)
-        })?,
+        encoded.body,
     ))
 }

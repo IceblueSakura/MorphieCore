@@ -38,6 +38,7 @@ Standalone endpoints require explicit model activation:
 |---|---|
 | `POST /v1/embeddings` | Text or model-scoped token IDs, float or Base64 vectors |
 | `POST /v1/images/generations` | Static inline images |
+| `POST /v1/images/edits` | Static multipart image edits |
 | `POST /v1/audio/speech` | Binary audio |
 | `POST /v1/audio/transcriptions` | One bounded audio multipart upload (`json` or `text`) |
 
@@ -45,9 +46,9 @@ The [OpenAPI summary](../openapi.json) describes envelopes and selected constrai
 
 ### Static image generation
 
-Enable `gpt-image-2.6-flare` or `gpt-image-2.6-sunburst` in `models.json` with a named `openai` Platform API-key account. `/v1/images/generations` returns bounded inline Base64 artifacts, defaulting to PNG. Reported creation time, supported image metadata and usage retain their standard meanings. Neither the retired OpenRouter `gpt-image-2.5-flare` label nor Image Edit, preview streaming, SVG or GIF is admitted.
+Enable `gpt-image-2.6-flare` or `gpt-image-2.6-sunburst` in `models.json` with a named `openai` Platform API-key account. `/v1/images/generations` (JSON) and `/v1/images/edits` (`multipart/form-data`, using `image` or repeated `image[]`) return bounded inline Base64 artifacts, defaulting to PNG. Direct-input edits accept up to 16 declared `image/png`, `image/jpeg` or `image/webp` sources within an 8 MiB aggregate raw input budget; on OpenAI GPT Image targets, an optional PNG `mask` (< 4,000,000 bytes, bound to a PNG-declared first source), `input_fidelity` (`high`/`low`) and `safety_identifier` are admitted (`moderation` is Generate-only; pixel/alpha/dimension validation runs upstream). Reported creation time, supported image metadata and usage retain their standard meanings. Neither the retired OpenRouter `gpt-image-2.5-flare` label nor preview streaming, `file_id`/JSON edit references, SVG or GIF is admitted.
 
-`qwen-image-3.0-pro`, `gemini-nano-banana-2.1` and `grok-imagine-image-2.0` can use the default OpenAI response shape without extra headers. Omit `output_format` or set it to `png`; Gemini and Grok take one image and do not accept an exact `size`. Qwen already supplies PNG. Gemini and Grok require an operator-configured [FFmpeg executable](gateway-configuration.md#static-image-transcoding) for default delivery. If the upstream does not report creation time, `created` is the time the gateway prepared the artifact, **not** the original creation time. Native accounting is not included.
+`qwen-image-3.0-pro`, `gemini-nano-banana-2.1` and `grok-imagine-image-2.0` use the same model bindings for static Generate and unmasked Edit (rejecting `mask`, `input_fidelity` and `safety_identifier`), and can use the default OpenAI response shape without extra headers. Omit `output_format` or set it to `png`; Gemini and Grok take one output image and do not accept an exact `size`. Qwen already supplies PNG. Gemini and Grok require an operator-configured [FFmpeg executable](gateway-configuration.md#static-image-transcoding) for default delivery. If the upstream does not report creation time, `created` is the time the gateway prepared the artifact, **not** the original creation time. Native accounting is not included.
 
 To keep the original encoding and bytes and leave unreported `created` absent, explicitly set `X-MorphieCore-Image-Profile: native-static-v1`. This mode is not a strict OpenAI Images response; use the SDK's `extra_headers` and read the raw JSON:
 

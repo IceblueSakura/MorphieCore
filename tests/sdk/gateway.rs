@@ -744,3 +744,162 @@ async fn standard_transcription_sdk_multipart_json_and_text() {
         .unwrap()
         .unwrap();
 }
+
+#[tokio::test]
+#[ignore = "requires pinned OpenAI SDK; synthetic multipart Images Edit loopback"]
+async fn standard_image_edit_sdk_multipart() {
+    use morphiecore::protocol::openai::images as codec;
+    use morphiecore::semantic::{
+        task::image_generation::{ImageBackground, ImageQuality, ImageSizeRequest, InputFidelity},
+        value::{ImageFormat, Presence},
+    };
+    use morphiecore::topology::compile;
+
+    type SeenEdits = Arc<Mutex<Vec<(String, usize)>>>;
+
+    let seen: SeenEdits = Arc::new(Mutex::new(Vec::new()));
+    let state = seen.clone();
+
+    async fn upstream_edit(
+        State(seen): State<SeenEdits>,
+        headers: HeaderMap,
+        body: axum::body::Bytes,
+    ) -> Response {
+        assert_eq!(
+            headers["authorization"],
+            "Bearer synthetic-image-upstream-0001"
+        );
+        let ct = headers["content-type"].to_str().unwrap().to_owned();
+        let decoded = codec::decode_edit_request(&ct, body).await.unwrap();
+        assert_eq!(decoded.model, "private-image");
+        assert_eq!(decoded.task.prompt(), "combine these layers");
+        let edit = decoded.task.edit().unwrap();
+        assert_eq!(edit.sources.len(), 2);
+        assert_eq!(edit.sources[0].format(), ImageFormat::Png);
+        assert_eq!(edit.sources[1].format(), ImageFormat::Webp);
+        assert_eq!(edit.sources[1].data(), b"RIFFwebp");
+        let mask = edit.mask.as_ref().unwrap();
+        assert_eq!(mask.source_index, 0);
+        assert_eq!(mask.input.format(), ImageFormat::Png);
+        assert_eq!(edit.input_fidelity, Presence::Value(InputFidelity::High));
+        assert_eq!(decoded.task.format, Presence::Value(ImageFormat::Webp));
+        assert_eq!(decoded.task.compression, Presence::Value(80));
+        assert_eq!(
+            decoded.task.background,
+            Presence::Value(
+                morphiecore::semantic::task::image_generation::ImageBackgroundRequest::Exact(
+                    ImageBackground::Transparent
+                )
+            )
+        );
+        assert_eq!(
+            decoded.task.quality,
+            Presence::Value(
+                morphiecore::semantic::task::image_generation::ImageQualityRequest::Exact(
+                    ImageQuality::High
+                )
+            )
+        );
+        assert_eq!(
+            decoded.task.size,
+            Presence::Value(ImageSizeRequest::Exact(
+                morphiecore::semantic::task::image_generation::ImageSize {
+                    width: 1024,
+                    height: 1024
+                }
+            ))
+        );
+        assert_eq!(decoded.identity.safety_identifier.as_deref(), Some("sid-1"));
+        seen.lock().unwrap().push((ct, edit.sources.len()));
+        Response::builder()
+            .header("content-type", "application/json")
+            .body(Body::from(
+                r#"{"created":123,"data":[{"b64_json":"AQID"}],"output_format":"webp","size":"1024x1024","background":"transparent","quality":"high","usage":{"input_tokens":8,"input_tokens_details":{"text_tokens":3,"image_tokens":5,"future_detail":1},"output_tokens":5,"total_tokens":13,"future_usage":true}}"#,
+            ))
+            .unwrap()
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let upstream = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/images/edits", post(upstream_edit))
+                .with_state(state),
+        )
+        .await
+        .unwrap();
+    });
+    let _upstream = ServerGuard(upstream.abort_handle());
+
+    let (provider_entry, route) = morphiecore_test_harness::image_generation::binding(&origin);
+    let provider = morphiecore::provider::ProviderDefinition {
+        id: morphiecore::provider::ProviderId::new("fixture").unwrap(),
+        origin: morphiecore::provider::TrustedOrigin::parse(&origin).unwrap(),
+        endpoints: [].into(),
+        auth: morphiecore::provider::AuthScheme::Bearer,
+    };
+    let topology = compile(vec![provider], vec![], vec![], vec![], vec![])
+        .unwrap()
+        .with_images(vec![provider_entry], vec![route])
+        .unwrap()
+        .with_model_metadata([(
+            morphiecore::topology::ModelId::new("canonical-image").unwrap(),
+            morphiecore::topology::ModelMetadata::new(8, "Synthetic Image Developer").unwrap(),
+        )])
+        .unwrap();
+    let gateway = morphiecore::gateway::Gateway::new(
+        topology,
+        morphiecore::gateway::TaskEntries {
+            images: vec![morphiecore::gateway::ImageEntry {
+                model: "public-image".into(),
+            }],
+            ..Default::default()
+        },
+        BTreeMap::from([(
+            morphiecore::provider::CredentialBindingId::new("fixture-key").unwrap(),
+            Arc::new(
+                morphiecore::provider::SecretMaterial::new("synthetic-image-upstream-0001")
+                    .unwrap(),
+            ),
+        )]),
+        BTreeMap::from([(
+            "fixture-agent".into(),
+            morphiecore::provider::SecretMaterial::new(support::CLIENT_KEY).unwrap(),
+        )]),
+        Limits::default(),
+        None,
+    )
+    .unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    let (stop, stopped) = oneshot::channel();
+    let serving = tokio::spawn(gateway.serve(listener, async {
+        let _ = stopped.await;
+    }));
+    let _server = ServerGuard(serving.abort_handle());
+
+    let home = tempfile::tempdir().unwrap();
+    let mut command = super::isolated_sdk_python(home.path());
+    command.args(["tests/sdk/image_edit_loop.py", &base]);
+    let output = super::child_process::run(&mut command, b"", Duration::from_secs(20), 8192)
+        .await
+        .expect("bounded SDK image edit process");
+    assert!(
+        output.status.success(),
+        "SDK image edit failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["requests"], 1);
+    assert_eq!(seen.lock().unwrap().len(), 1);
+
+    stop.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(3), serving)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+}

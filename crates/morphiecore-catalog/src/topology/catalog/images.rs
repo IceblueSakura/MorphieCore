@@ -39,9 +39,15 @@ impl ImageBinding {
             .expect("image entry")
             .path
             .clone();
+        let edit_path = provider
+            .entry(ProviderOperation::ImagesEdit)
+            .expect("image edit entry")
+            .path
+            .clone();
         ProviderEntry {
             provider: provider.id.clone(),
             path,
+            edit_path,
         }
     }
     pub(super) fn route(&self, provider: &str) -> ImageRoute {
@@ -55,6 +61,7 @@ impl ImageBinding {
             "aliyun-tokenplan-cn" | "aliyun-dashscope-cn" => UpstreamAdapter::QwenImage,
             _ => unreachable!("reviewed provider"),
         };
+        let entry = Self::operation(provider.id.as_str());
         ImageRoute {
             id: RouteId::new(&identity).expect("static route"),
             model: canonical.clone(),
@@ -69,8 +76,9 @@ impl ImageBinding {
                 provider: provider.id.clone(),
                 target: EndpointTarget {
                     origin: provider.origin.clone(),
-                    path: Self::operation(provider.id.as_str()).path,
+                    path: entry.path,
                 },
+                edit_path: entry.edit_path,
                 upstream_model: self.model.into(),
                 canonical_model: canonical,
                 profile,
@@ -78,7 +86,7 @@ impl ImageBinding {
                     .expect("catalog Provider identity"),
                 execution: ExecutionContract {
                     streaming: false,
-                    request_body_limit: 256 << 10,
+                    request_body_limit: 12 << 20,
                     response_body_limit: 4 << 20,
                     credential_kind: provider.auth.kind(),
                     timeout_ms: 120_000,

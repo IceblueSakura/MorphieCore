@@ -11,12 +11,14 @@ use std::collections::BTreeMap;
 pub struct ProviderEntry {
     pub provider: ProviderId,
     pub path: EndpointPath,
+    pub edit_path: EndpointPath,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImageEndpoint {
     pub id: EndpointId,
     pub provider: ProviderId,
     pub target: EndpointTarget,
+    pub edit_path: EndpointPath,
     pub upstream_model: String,
     pub canonical_model: ModelId,
     pub profile: crate::adapter::images::UpstreamAdapter,
@@ -24,15 +26,20 @@ pub struct ImageEndpoint {
     pub execution: ExecutionContract,
 }
 impl ImageEndpoint {
-    pub fn request_path(&self) -> Result<EndpointPath, crate::provider::ProviderError> {
+    pub fn request_path(&self, edit: bool) -> Result<EndpointPath, crate::provider::ProviderError> {
+        let base = if edit {
+            &self.edit_path
+        } else {
+            &self.target.path
+        };
         if self.profile == crate::adapter::images::UpstreamAdapter::GeminiImage {
             return crate::provider::GenerationOperation::GoogleGenerateContent.resolve_path(
-                &self.target.path,
+                base,
                 &self.upstream_model,
                 false,
             );
         }
-        Ok(self.target.path.clone())
+        Ok(base.clone())
     }
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -73,7 +80,10 @@ impl CompiledTopology {
             if self.provider(entry.provider.as_str()).is_none() {
                 return Err(TopologyError::UnknownProvider);
             }
-            if paths.insert(entry.provider, entry.path).is_some() {
+            if paths
+                .insert(entry.provider, (entry.path, entry.edit_path))
+                .is_some()
+            {
                 return Err(TopologyError::DuplicateProvider);
             }
         }
@@ -90,11 +100,17 @@ impl CompiledTopology {
                 CredentialKind::ApiKey
             };
             if endpoint.target.origin != provider.origin
-                || paths.get(&endpoint.provider) != Some(&endpoint.target.path)
+                || paths.get(&endpoint.provider)
+                    != Some(&(endpoint.target.path.clone(), endpoint.edit_path.clone()))
                 || provider
                     .entry(crate::provider::ProviderOperation::Images)
                     .is_some_and(|entry| {
                         entry.path != &endpoint.target.path || entry.auth.kind() != kind
+                    })
+                || provider
+                    .entry(crate::provider::ProviderOperation::ImagesEdit)
+                    .is_some_and(|entry| {
+                        entry.path != &endpoint.edit_path || entry.auth.kind() != kind
                     })
                 || provider.auth.kind() != kind
                 || endpoint.execution.credential_kind != kind
@@ -120,7 +136,8 @@ impl CompiledTopology {
             if endpoint.canonical_model != route.canonical_model {
                 return Err(TopologyError::CanonicalModelMismatch);
             }
-            if endpoint.request_path().is_err()
+            if endpoint.request_path(false).is_err()
+                || endpoint.request_path(true).is_err()
                 || endpoint.upstream_model.is_empty()
                 || endpoint.upstream_model.len() > 256
                 || endpoint

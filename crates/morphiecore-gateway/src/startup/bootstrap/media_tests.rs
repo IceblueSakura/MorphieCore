@@ -717,3 +717,146 @@ fn speech_and_images_do_not_activate_from_generation_accounts() {
     );
     assert!(!generation.gateway.state.entries.is_empty());
 }
+
+#[tokio::test]
+async fn image_edit_enforces_multipart_limits_and_native_edit_paths() {
+    use axum::{
+        Json, Router,
+        body::Body,
+        http::{HeaderMap, Request, StatusCode},
+        routing::post,
+    };
+    use std::sync::{Arc, Mutex};
+    use tower::ServiceExt;
+
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let seen = observed.clone();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let upstream = Router::new().route(
+        "/v1/images/edits",
+        post(move |headers: HeaderMap, body: axum::body::Bytes| {
+            let seen = seen.clone();
+            async move {
+                assert_eq!(headers["authorization"], "Bearer synthetic-oauth-access");
+                assert!(!headers.contains_key("x-morphiecore-image-profile"));
+                let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                seen.lock().unwrap().push(value);
+                Json(json!({
+                    "data": [{"b64_json": "AQID", "mime_type": "image/jpeg"}]
+                }))
+            }
+        }),
+    );
+    let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+    let model = "grok-imagine-image-2.0";
+    let mut fixture = Fixture::with_oauth(
+        service(),
+        json!({"models":{(model):{"account":"primary"}}}),
+        "grok",
+        "primary",
+    )
+    .unwrap();
+    fixture.loopback_authority(&base);
+    let router = fixture.gateway.router();
+
+    let multipart_body = concat!(
+        "--e1\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n",
+        "grok-imagine-image-2.0\r\n",
+        "--e1\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\n",
+        "paint blue\r\n",
+        "--e1\r\nContent-Disposition: form-data; name=\"image\"; filename=\"src.png\"\r\n",
+        "Content-Type: image/png\r\n\r\n",
+        "pngdata\r\n",
+        "--e1--\r\n"
+    );
+
+    // 415 on non-multipart Content-Type
+    let non_multipart = router
+        .clone()
+        .oneshot(
+            Request::post("/v1/images/edits")
+                .header(
+                    "authorization",
+                    "Bearer synthetic-gateway-client-token-0001",
+                )
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(non_multipart.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+
+    // 404 on unknown model
+    let unknown_model = multipart_body.replace("grok-imagine-image-2.0", "unknown-image");
+    let not_found = router
+        .clone()
+        .oneshot(
+            Request::post("/v1/images/edits")
+                .header(
+                    "authorization",
+                    "Bearer synthetic-gateway-client-token-0001",
+                )
+                .header("content-type", "multipart/form-data; boundary=e1")
+                .body(Body::from(unknown_model))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(not_found.status(), StatusCode::NOT_FOUND);
+
+    // 200 on native-static-v1 Grok /v1/images/edits
+    let ok = router
+        .clone()
+        .oneshot(
+            Request::post("/v1/images/edits")
+                .header(
+                    "authorization",
+                    "Bearer synthetic-gateway-client-token-0001",
+                )
+                .header("content-type", "multipart/form-data; boundary=e1")
+                .header("x-morphiecore-image-profile", "native-static-v1")
+                .body(Body::from(multipart_body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(ok.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(ok.into_body(), 4096).await.unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+        json!({"output_format":"jpeg","data":[{"b64_json":"AQID"}]})
+    );
+    {
+        let captured = observed.lock().unwrap();
+        assert_eq!(captured.len(), 1);
+        assert_eq!(
+            captured[0]["image"],
+            json!({"type": "image_url", "url": "data:image/png;base64,cG5nZGF0YQ=="})
+        );
+    }
+
+    // 413 when request exceeds image_edit_request_bytes
+    let too_large = router
+        .oneshot(
+            Request::post("/v1/images/edits")
+                .header(
+                    "authorization",
+                    "Bearer synthetic-gateway-client-token-0001",
+                )
+                .header("content-type", "multipart/form-data; boundary=e1")
+                .header(
+                    "content-length",
+                    (crate::protocol::openai::images::MAX_EDIT_UPLOAD_BYTES + 1).to_string(),
+                )
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(too_large.status(), StatusCode::PAYLOAD_TOO_LARGE);
+
+    server.abort();
+    let _ = server.await;
+}
