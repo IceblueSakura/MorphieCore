@@ -925,23 +925,33 @@ mod image_edit {
         );
         assert!(grok_multi_json.get("image").is_none());
 
-        // Native targets reject mask, input_fidelity, and safety_identifier (L5).
+        // Native targets reject mask (L5) and omit advisory input_fidelity / safety_identifier (L4).
         let mut with_mask = single.clone();
         with_mask.task.edit_mut().unwrap().mask = Some(ImageMask {
             source_index: 0,
             input: png,
         });
+        for adapter in [
+            UpstreamAdapter::QwenImage,
+            UpstreamAdapter::GeminiImage,
+            UpstreamAdapter::GrokImage,
+        ] {
+            assert!(adapter.encode_request(&with_mask, "m", 64 << 10).is_err());
+        }
         let mut with_fidelity = single.clone();
         with_fidelity.task.edit_mut().unwrap().input_fidelity = Presence::Value(InputFidelity::Low);
         let mut with_safety = single;
         with_safety.identity.safety_identifier = Some("sid-1".into());
-        for unsupported in [with_mask, with_fidelity, with_safety] {
+        for omitted in [with_fidelity, with_safety] {
             for adapter in [
                 UpstreamAdapter::QwenImage,
                 UpstreamAdapter::GeminiImage,
                 UpstreamAdapter::GrokImage,
             ] {
-                assert!(adapter.encode_request(&unsupported, "m", 64 << 10).is_err());
+                let encoded = adapter.encode_request(&omitted, "m", 64 << 10).unwrap();
+                let wire_text = String::from_utf8_lossy(&encoded.body);
+                assert!(!wire_text.contains("input_fidelity"));
+                assert!(!wire_text.contains("safety_identifier"));
             }
         }
     }
@@ -1084,18 +1094,20 @@ mod tokenplan_speech {
             aliyun_speech::encode_request(&request, "upstream").unwrap(),
             json!({"model":"upstream","input":{"text":"Hi.","voice":"longanlingxin","format":"mp3"}})
         );
-        for control in [
-            json!({"instructions":""}),
-            json!({"speed":1}),
-            json!({"response_format":"wav"}),
-        ] {
+        for control in [json!({"instructions":""}), json!({"speed":1})] {
             let mut v = json!({"model":"synthetic","input":"Hi.","voice":"longanlingxin"});
             v.as_object_mut()
                 .unwrap()
                 .extend(control.as_object().unwrap().clone());
             let r = speech::decode_request(&serde_json::to_vec(&v).unwrap()).unwrap();
-            assert!(aliyun_speech::encode_request(&r, "upstream").is_err());
+            let encoded = aliyun_speech::encode_request(&r, "upstream").unwrap();
+            assert_eq!(encoded["input"]["format"], "mp3");
         }
+        let wav_only = speech::decode_request(
+            br#"{"model":"synthetic","input":"Hi.","voice":"longanlingxin","response_format":"wav"}"#,
+        )
+        .unwrap();
+        assert!(aliyun_speech::encode_request(&wav_only, "upstream").is_err());
         let mut changed: Request = request;
         changed.task.set_input("Edited").unwrap();
         assert_eq!(
@@ -1242,10 +1254,11 @@ mod tokenplan_asr {
             .is_err()
         );
         let mut edited = request;
-        for language in ["not-a-language", "xx"] {
-            edited.task.language = Some(language.into());
-            assert!(aliyun_asr::encode_request(&edited, "upstream-asr").is_err());
-        }
+        edited.task.language = Some("not-a-language".into());
+        assert!(aliyun_asr::encode_request(&edited, "upstream-asr").is_err());
+        edited.task.language = Some("xx".into());
+        let encoded = aliyun_asr::encode_request(&edited, "upstream-asr").unwrap();
+        assert!(encoded["parameters"].get("language_hints").is_none());
     }
     #[test]
     fn tokenplan_asr_preserves_last_sentence_reports_and_explicit_json_projection() {
@@ -1529,8 +1542,8 @@ mod openai_asr {
             let req = transcription::decode_request(media, wire.into_bytes().into())
                 .await
                 .unwrap();
-            assert!(aliyun_asr::encode_request(&req, "qwen-audio-3.0-asr-flash").is_err());
-            assert!(xiaomi_audio::encode_transcription(&req, "mimo-v2.5-asr").is_err());
+            assert!(aliyun_asr::encode_request(&req, "qwen-audio-3.0-asr-flash").is_ok());
+            assert!(xiaomi_audio::encode_transcription(&req, "mimo-v2.5-asr").is_ok());
         }
     }
 }
@@ -1732,11 +1745,9 @@ mod media_sse {
                 .is_err()
         );
         let encoded = transcription::encode_sse_event(&done).unwrap();
-        assert!(
-            std::str::from_utf8(&encoded)
-                .unwrap()
-                .contains("transcript.text.done")
-        );
+        let encoded_str = std::str::from_utf8(&encoded).unwrap();
+        assert!(encoded_str.contains("transcript.text.done"));
+        assert!(!encoded_str.contains("\"usage\""));
     }
 
     #[tokio::test]
@@ -1866,6 +1877,25 @@ mod media_sse {
             std::str::from_utf8(&encoded)
                 .unwrap()
                 .contains("\"type\":\"image_generation.completed\"")
+        );
+
+        let emulated = ImageStreamEvent::Completed {
+            data: morphiecore::semantic::task::image_generation::ImageData::new("AQID").unwrap(),
+            event_time: 12,
+            settings: morphiecore::semantic::task::image_generation::ImageStreamSettings {
+                format: ImageFormat::Png,
+                size: ImageSizeRequest::Auto,
+                quality: ImageQualityRequest::Auto,
+                background: ImageBackgroundRequest::Auto,
+            },
+            safety_identifier: Presence::Absent,
+            usage: None,
+        };
+        let emulated_wire = images::encode_sse_event(&emulated, false).unwrap();
+        assert!(
+            !std::str::from_utf8(&emulated_wire)
+                .unwrap()
+                .contains("\"usage\"")
         );
     }
 }

@@ -4,9 +4,8 @@ use crate::{
     CodecError,
     semantic::{
         task::image_generation::{
-            GeneratedImage, ImageBackgroundRequest, ImageBilling, ImageData,
-            ImageGenerationResponse, ImageQualityRequest, ImageSizeRequest, ImageTokenBreakdown,
-            ImageUsage, UsdAmount,
+            GeneratedImage, ImageBackground, ImageBackgroundRequest, ImageBilling, ImageData,
+            ImageGenerationResponse, ImageSizeRequest, ImageTokenBreakdown, ImageUsage, UsdAmount,
         },
         value::{ImageFormat, Presence},
     },
@@ -19,22 +18,18 @@ fn admit(request: &Request) -> Result<(), CodecError> {
     crate::openai::images::validate_request(request)?;
     let task = &request.task;
     if let Some(edit) = task.edit()
-        && (edit.mask.is_some() || !edit.input_fidelity.is_absent())
+        && edit.mask.is_some()
     {
         return Err(CodecError::invalid());
     }
     if request.delivery.streaming()
-        || !task.partial_images.is_absent()
         || task.requested_count() != 1
         || task.format.value().is_some()
         || matches!(task.size.value(), Some(ImageSizeRequest::Exact(_)))
-        || matches!(task.quality.value(), Some(ImageQualityRequest::Exact(_)))
         || matches!(
             task.background.value(),
-            Some(ImageBackgroundRequest::Exact(_))
+            Some(ImageBackgroundRequest::Exact(ImageBackground::Transparent))
         )
-        || task.moderation.value().is_some()
-        || request.identity.safety_identifier.is_some()
     {
         return Err(CodecError::invalid());
     }
@@ -43,9 +38,6 @@ fn admit(request: &Request) -> Result<(), CodecError> {
 
 pub(crate) fn gemini_request(request: &Request) -> Result<Value, CodecError> {
     admit(request)?;
-    if request.identity.user.is_some() {
-        return Err(CodecError::invalid());
-    }
     let mut parts = Vec::new();
     if let Some(edit) = request.task.edit() {
         for source in &edit.sources {

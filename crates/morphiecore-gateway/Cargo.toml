@@ -9,7 +9,6 @@ description = "HTTP ingress, startup bootstrap, routing, recovery and diagnostic
 test-hooks = [
     "morphiecore-runtime/test-hooks",
     "dep:morphiecore-test-support",
-    "dep:tempfile",
     "opentelemetry_sdk/testing",
 ]
 
@@ -48,7 +47,7 @@ tracing-opentelemetry.workspace = true
 url.workspace = true
 
 morphiecore-test-support = { workspace = true, optional = true }
-tempfile = { workspace = true, optional = true }
+tempfile.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true

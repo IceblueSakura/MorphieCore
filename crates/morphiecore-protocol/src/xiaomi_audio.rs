@@ -42,7 +42,7 @@ pub fn encode_speech(request: &crate::speech::Request, model: &str) -> Result<Va
         return Err(CodecError::invalid());
     }
     let task = &request.task;
-    if task.speed.is_some() || !VOICES.contains(&task.voice()) {
+    if !VOICES.contains(&task.voice()) {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     let format = match task.requested_format() {
@@ -79,21 +79,6 @@ pub fn encode_transcription(
     {
         return Err(CodecError::invalid());
     }
-    if request
-        .task
-        .language
-        .as_deref()
-        .is_some_and(|v| !["zh", "en"].contains(&v))
-    {
-        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-    }
-    if !request.task.languages.is_empty()
-        || !request.task.keywords.is_empty()
-        || request.task.prompt.is_some()
-        || request.task.temperature.is_some()
-    {
-        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-    }
     let (format, mime) = match request.task.audio.format() {
         InputFormat::Wav => ("wav", "audio/wav"),
         InputFormat::Mp3 => ("mp3", "audio/mpeg"),
@@ -106,7 +91,12 @@ pub fn encode_transcription(
     let mut value = json!({"model":model,"stream":false,"messages":[{"role":"user","content":[
         {"type":"input_audio","input_audio":{"data":data,"format":format}}
     ]}]});
-    if let Some(language) = &request.task.language {
+    if let Some(language) = request
+        .task
+        .language
+        .as_deref()
+        .filter(|v| matches!(*v, "zh" | "en"))
+    {
         value["asr_options"] = json!({"language":language});
     }
     Ok(value)
@@ -280,12 +270,19 @@ mod tests {
             .unwrap()
             .replace("\"stop\"", "\"length\"");
         assert!(decode_speech(incomplete.as_bytes(), &task).is_err());
-        let mut unsupported = request;
-        unsupported.task.speed = Some(
+        let mut with_omitted_speed = request;
+        with_omitted_speed.task.speed = Some(
             crate::semantic::task::speech_synthesis::Speed::new(serde_json::Number::from(2))
                 .unwrap(),
         );
-        assert!(encode_speech(&unsupported, "mimo-v2.5-tts").is_err());
+        let encoded = encode_speech(&with_omitted_speed, "mimo-v2.5-tts").unwrap();
+        assert!(encoded.get("speed").is_none());
+
+        let bad_voice = crate::speech::Request::new(
+            "mimo-v2.5-tts",
+            SpeechRequest::new("Hello.", "alloy").unwrap(),
+        );
+        assert!(encode_speech(&bad_voice, "mimo-v2.5-tts").is_err());
     }
 
     #[test]
@@ -315,6 +312,9 @@ mod tests {
         );
         assert!(result.report().last_sentence.is_none());
         request.task.language = Some("ja".into());
+        let encoded = encode_transcription(&request, "mimo-v2.5-asr").unwrap();
+        assert!(encoded.get("asr_options").is_none());
+        request.stream = true;
         assert!(encode_transcription(&request, "mimo-v2.5-asr").is_err());
         let malformed = String::from_utf8(wire.to_vec())
             .unwrap()

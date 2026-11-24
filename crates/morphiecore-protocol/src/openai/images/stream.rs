@@ -160,7 +160,7 @@ impl StreamDecoder {
                 event_time,
                 settings,
                 safety_identifier,
-                usage: Box::new(usage),
+                usage: Some(Box::new(usage)),
             })
         } else {
             Err(CodecError::invalid())
@@ -233,9 +233,11 @@ pub fn encode_sse_event(event: &ImageStreamEvent, is_edit: bool) -> Result<Bytes
             usage,
         } => {
             settings.validate().map_err(|_| CodecError::invalid())?;
-            usage.validate().map_err(|_| CodecError::invalid())?;
-            if !crate::image::projection::standard_tokens_representable(usage) {
-                return Err(CodecError::invalid());
+            if let Some(usage) = usage {
+                usage.validate().map_err(|_| CodecError::invalid())?;
+                if !crate::image::projection::standard_tokens_representable(usage) {
+                    return Err(CodecError::invalid());
+                }
             }
             let kind = if is_edit {
                 "image_edit.completed"
@@ -250,7 +252,9 @@ pub fn encode_sse_event(event: &ImageStreamEvent, is_edit: bool) -> Result<Bytes
             super::put(&mut map, "safety_identifier", safety_identifier, |v| {
                 json!(v)
             });
-            map.insert("usage".into(), super::usage_value(usage));
+            if let Some(usage) = usage {
+                map.insert("usage".into(), super::usage_value(usage));
+            }
             (kind, map)
         }
     };

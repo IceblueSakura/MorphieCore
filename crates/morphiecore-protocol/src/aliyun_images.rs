@@ -4,8 +4,8 @@ use crate::{
     image::Request,
     semantic::{
         task::image_generation::{
-            GeneratedImage, ImageBackgroundRequest, ImageData, ImageGenerationResponse,
-            ImageQualityRequest, ImageSize, ImageSizeRequest,
+            GeneratedImage, ImageBackground, ImageBackgroundRequest, ImageData,
+            ImageGenerationResponse, ImageSize, ImageSizeRequest,
         },
         value::{ImageFormat, Presence},
     },
@@ -19,24 +19,18 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
     let task = &request.task;
     if !crate::openai::speech::valid_model(model)
         || request.delivery.streaming()
-        || !task.partial_images.is_absent()
         || task.requested_count() > 6
         || task.format.value().is_some_and(|f| *f != ImageFormat::Png)
-        || matches!(task.quality.value(), Some(ImageQualityRequest::Exact(_)))
         || matches!(
             task.background.value(),
-            Some(ImageBackgroundRequest::Exact(_))
+            Some(ImageBackgroundRequest::Exact(ImageBackground::Transparent))
         )
-        || task.compression.value().is_some()
-        || task.moderation.value().is_some()
-        || request.identity.user.is_some()
-        || request.identity.safety_identifier.is_some()
     {
         return Err(CodecError::invalid());
     }
     let mut content = Vec::new();
     if let Some(edit) = task.edit() {
-        if edit.mask.is_some() || !edit.input_fidelity.is_absent() {
+        if edit.mask.is_some() {
             return Err(CodecError::invalid());
         }
         for source in &edit.sources {

@@ -384,6 +384,12 @@ pub fn encode_sse_event(event: &RecognitionEvent) -> Result<Bytes, CodecError> {
             else {
                 unreachable!("json projection");
             };
+            // OpenAI TranscriptionTextDoneEvent only accepts `usage.type == "tokens"`.
+            if matches!(result.report().usage, Some(RecognitionUsage::Duration(_)))
+                && let Some(map) = obj.as_object_mut()
+            {
+                map.remove("usage");
+            }
             obj["type"] = json!("transcript.text.done");
             ("transcript.text.done", obj)
         }

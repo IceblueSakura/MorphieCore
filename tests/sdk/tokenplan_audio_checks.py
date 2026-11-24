@@ -18,13 +18,13 @@ def check_native_audio(client: openai.OpenAI) -> int:
     with client.audio.speech.with_streaming_response.create(**speech) as response:
         check(response.headers["content-type"] == "application/octet-stream")
         check(b"".join(response.iter_bytes(chunk_size=2)) == b"native-audio")
-    for control in ({"speed": 1}, {"instructions": ""}):
+    for invalid in ({"voice": "wrong-voice"}, {"speed": 100}):
         try:
-            client.audio.speech.create(**{**speech, **control})
+            client.audio.speech.create(**{**speech, **invalid})
         except openai.APIStatusError as error:
             check(error.status_code == 400)
         else:
-            check(False, "unsupported native controls cannot dispatch")
+            check(False, "invalid native speech controls cannot dispatch")
     try:
         client.audio.speech.create(**speech)
     except openai.APIStatusError as error:
@@ -47,13 +47,13 @@ def check_native_audio(client: openai.OpenAI) -> int:
     check(raw.parse().to_dict() == result.to_dict())
     # Keep zero/boolean multipart serialization and streaming error consumption here;
     # the complete control and target-value matrices belong to Rust codec/admission tests.
-    for control in ({"temperature": 0}, {"stream": True}):
+    for invalid in ({"response_format": "verbose_json"}, {"response_format": "text", "stream": True}):
         try:
-            client.audio.transcriptions.create(**{**params, **control})
+            client.audio.transcriptions.create(**{**params, **invalid})
         except openai.APIStatusError as error:
             check(error.status_code == 400)
         else:
-            check(False, "unsupported transcription controls cannot dispatch")
+            check(False, "invalid transcription controls cannot dispatch")
     try:
         client.audio.transcriptions.create(**params)
     except openai.APIStatusError as error:

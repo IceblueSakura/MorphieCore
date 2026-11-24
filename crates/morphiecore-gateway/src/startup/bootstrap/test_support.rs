@@ -116,6 +116,12 @@ impl Fixture {
             .limits
             .force_upstream_stream = true;
     }
+    pub fn set_ffmpeg(&mut self, path: std::path::PathBuf) {
+        std::sync::Arc::get_mut(&mut self.boot.gateway.state)
+            .expect("unshared fixture runtime")
+            .limits
+            .ffmpeg = Some(path);
+    }
 
     pub fn directory(&self) -> &Path {
         self._directory.path()

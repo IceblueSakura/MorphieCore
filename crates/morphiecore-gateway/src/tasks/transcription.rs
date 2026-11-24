@@ -8,7 +8,8 @@ use crate::{
     diagnostics::{Stage, Trace},
     protocol::openai::transcription as codec,
     semantic::task::speech_recognition::{
-        MAX_TEXT_BYTES, OutputFormat, RecognitionEvent, RecognitionResult,
+        InputFormat, MAX_INPUT_BYTES, MAX_TEXT_BYTES, OutputFormat, RecognitionEvent,
+        RecognitionResult,
     },
     topology::{CompiledTopology, transcription::TranscriptionRoute},
 };
@@ -104,9 +105,44 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
         .clone();
     let format = request.task.response_format;
     let stream = request.stream;
-    let prepared =
-        crate::execution::transcription::prepare(&entry.route, &entry.provider, &request)
-            .map_err(|_| ApiError::invalid())?;
+    let profile = entry.route.endpoint.profile;
+    let needs_audio_transcode = profile != crate::adapter::transcription::UpstreamAdapter::Standard
+        && !matches!(
+            request.task.audio.format(),
+            InputFormat::Wav | InputFormat::Mp3
+        );
+    let native_sse = stream && profile.supports_streaming();
+    let wire = if needs_audio_transcode || (stream && !native_sse) {
+        let mut wire = request.clone();
+        if needs_audio_transcode {
+            let ffmpeg = runtime.limits.ffmpeg.as_deref().ok_or_else(|| {
+                ApiError::new(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    crate::error::ErrorKind::Unavailable,
+                )
+            })?;
+            let deadline =
+                admitted.deadline(&runtime.limits, entry.route.endpoint.execution.timeout_ms);
+            wire.task.audio = tokio::time::timeout_at(
+                deadline,
+                crate::tasks::transcode::transcription_input_to_mp3(
+                    Some(ffmpeg),
+                    &request.task.audio,
+                    MAX_INPUT_BYTES,
+                ),
+            )
+            .await
+            .map_err(|_| ApiError::timeout())??;
+        }
+        if stream && !native_sse {
+            wire.stream = false;
+        }
+        std::borrow::Cow::Owned(wire)
+    } else {
+        std::borrow::Cow::Borrowed(&request)
+    };
+    let prepared = crate::execution::transcription::prepare(&entry.route, &entry.provider, &wire)
+        .map_err(|_| ApiError::invalid())?;
     admitted
         .respond(runtime, entry, prepared, Output { format, stream })
         .await
@@ -169,7 +205,7 @@ impl TaskOutput for Output {
         lane: &body::Lane<'_>,
         trace: &mut Trace,
     ) -> Result<(), ApiError> {
-        if self.stream {
+        if self.stream && entry.route.endpoint.profile.supports_streaming() {
             let decoder = codec::StreamDecoder::new(MAX_TEXT_BYTES, limits.max_events);
             return exchange::stream_sse(
                 receiver,
@@ -198,6 +234,19 @@ impl TaskOutput for Output {
         }
         let result = decode(receiver, entry.route.endpoint.profile, self.format, trace).await?;
         trace.stage(Stage::Projection);
+        if self.stream {
+            if !result.text().is_empty() {
+                let delta = codec::encode_sse_event(&RecognitionEvent::TextDelta {
+                    delta: result.text().to_owned(),
+                })
+                .map_err(|_| ApiError::upstream())?;
+                body::send_frame(lane, delta, trace).await?;
+            }
+            let done = codec::encode_sse_event(&RecognitionEvent::Done(result))
+                .map_err(|_| ApiError::upstream())?;
+            body::send_final_frame(lane, done, trace).await?;
+            return Ok(());
+        }
         let projected =
             codec::project_result(&result, self.format).map_err(|_| ApiError::upstream())?;
         let bytes = match projected.output {

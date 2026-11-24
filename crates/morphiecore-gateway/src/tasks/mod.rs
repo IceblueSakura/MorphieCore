@@ -4,6 +4,7 @@ mod exchange;
 pub(crate) mod images;
 mod lifecycle;
 pub(crate) mod speech;
+pub(crate) mod transcode;
 pub(crate) mod transcription;
 
 use crate::{

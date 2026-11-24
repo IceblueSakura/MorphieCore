@@ -80,6 +80,7 @@
             inputsFrom = [ rust ];
             inherit (rust) RUST_SRC_PATH LLVM_COV LLVM_PROFDATA;
             packages = with pkgs; [
+              ffmpeg-headless
               python313
               uv
               nodejs_24

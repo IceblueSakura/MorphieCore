@@ -529,7 +529,7 @@ pub enum ImageStreamEvent {
         event_time: u64,
         settings: ImageStreamSettings,
         safety_identifier: Presence<String>,
-        usage: Box<ImageUsage>,
+        usage: Option<Box<ImageUsage>>,
     },
 }
 impl std::fmt::Debug for ImageStreamEvent {

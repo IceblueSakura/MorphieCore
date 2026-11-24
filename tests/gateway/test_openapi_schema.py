@@ -313,14 +313,15 @@ class ImageSchemaTests(unittest.TestCase):
         # Base64 syntax, decoded budgets, count satisfaction and EOF are runtime
         # constraints; contentEncoding alone is not a binary validator.
 
-    def test_native_static_does_not_weaken_the_standard_timestamp_requirement(self):
-        response = {"data": [{"b64_json": "AQID"}], "output_format": "png", "size": "512x512"}
-        native = validator("NativeStaticImageGenerationResponse")
-        native.validate(response)
-        native.validate({"data": response["data"], "output_format": "jpeg"})
-        self.assertFalse(validator("ImageGenerationResponse").is_valid(response))
-        self.assertFalse(native.is_valid({**response, "data": [{"url": "https://example.invalid"}]}))
-        self.assertFalse(native.is_valid({**response, "usage": {"total_tokens": 1}}))
+    def test_standard_images_routes_omit_custom_profile_header(self):
+        for path in ("/v1/images/generations", "/v1/images/edits"):
+            post = DOCUMENT["paths"][path]["post"]
+            self.assertNotIn("parameters", post)
+            self.assertEqual(
+                post["responses"]["200"]["content"]["application/json"]["schema"],
+                {"$ref": "#/components/schemas/ImageGenerationResponse"},
+            )
+        self.assertNotIn("NativeStaticImageGenerationResponse", SCHEMAS)
 
 
 class ModelsSchemaTests(unittest.TestCase):

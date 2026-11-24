@@ -51,10 +51,7 @@ fn merge_reference(old: &mut AudioReference, next: AudioReference) -> Result<(),
 }
 pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecError> {
     speech::validate_request(request)?;
-    if request.task.requested_format() != crate::semantic::value::AudioEncoding::Mp3
-        || request.task.instructions.is_some()
-        || request.task.speed.is_some()
-    {
+    if request.task.requested_format() != crate::semantic::value::AudioEncoding::Mp3 {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     if !speech::valid_model(model) {

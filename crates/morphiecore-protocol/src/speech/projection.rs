@@ -1,4 +1,4 @@
-//! Explicit single-target admission; unsupported speech controls are never dropped.
+//! Explicit single-target admission; unsupported advisory controls (`instructions`, `speed`) take L4 omission.
 use crate::semantic::{
     task::speech_synthesis::{SpeechError, SpeechRequest, valid_voice},
     value::AudioEncoding,
@@ -33,8 +33,6 @@ pub fn check_request(
     target.validate()?;
     if !target.voices.iter().any(|v| v == request.voice())
         || !target.formats.contains(&request.requested_format())
-        || request.instructions.is_some() && !target.instructions
-        || request.speed.is_some() && !target.speed
     {
         return Err(SpeechError);
     }

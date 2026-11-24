@@ -60,23 +60,19 @@ pub fn catalog() -> Result<Value, StartupError> {
         let rows: Vec<_> = topology
             .image_bindings(binding.model)
             .map(|route| {
-                let mut row = task(
+                task(
                     binding.model,
                     route.endpoint.provider.as_str(),
                     route.endpoint.id.as_str(),
                     &route.endpoint.execution,
                     "images",
-                );
-                if route.endpoint.profile.supports_native_static() {
-                    row["image_profile"] = json!(crate::tasks::images::NATIVE_PROFILE);
-                }
-                row
+                )
             })
             .collect();
         if let [row] = rows.as_slice() {
             models.push(row.clone());
         } else {
-            models.push(json!({"model":binding.model,"task":"images","selection":"candidates","image_profile":crate::tasks::images::NATIVE_PROFILE,"candidates":rows}));
+            models.push(json!({"model":binding.model,"task":"images","selection":"candidates","candidates":rows}));
         }
     }
     for binding in catalog::speech_bindings() {

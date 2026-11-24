@@ -376,12 +376,6 @@ pub fn encode_response(response: &ImageGenerationResponse) -> Result<Value, Code
     if response.created.value().is_none() {
         return Err(CodecError::invalid());
     }
-    encode_native_static_response(response)
-}
-/// Explicit native-static client profile. An upstream creation report may be absent.
-pub fn encode_native_static_response(
-    response: &ImageGenerationResponse,
-) -> Result<Value, CodecError> {
     response.validate().map_err(|_| CodecError::invalid())?;
     if !response.model.is_absent() {
         return Err(CodecError::invalid());

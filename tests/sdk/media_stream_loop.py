@@ -80,4 +80,20 @@ with httpx.Client(trust_env=False) as http:
         ("image_edit.completed", None, "BAUG"),
     ]
 
-print(json.dumps({"requests": 4}))
+    # 5. Emulated completed-only Image SSE on a non-streaming native binding (usage omitted)
+    qwen_events = list(
+        client.images.generate(
+            model="qwen-static-stream",
+            prompt="static stream cat",
+            stream=True,
+            partial_images=1,
+            quality="high",
+        )
+    )
+    assert len(qwen_events) == 1
+    assert qwen_events[0].type == "image_generation.completed"
+    assert qwen_events[0].b64_json == "BAUG"
+    assert qwen_events[0].size == "512x512"
+    assert qwen_events[0].usage is None
+
+print(json.dumps({"requests": 5}))

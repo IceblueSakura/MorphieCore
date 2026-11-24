@@ -96,8 +96,8 @@ Selected direction: Dual-SDK support (TypeSafe and OpenAI) backed by a unified D
 | Family | Readiness | Next step |
 |---|---|---|
 | Decision | Dual-SDK direction selected; IR drafts under review | Finalize contract selection and implement codecs |
-| Images Generate & Edit | Static Generate/Edit across GPT Image 2.6, Qwen Image, Gemini Nano Banana and Grok Imagine plus OpenAI preview/completed SSE (`n = 1`, `partial_images` 0–3) | Native ratio/resolution tiers and other output controls remain separately selectable; progressive binary chunking and subtitle/diarized streams remain unselected |
-| Audio (Speech/ASR) | Static and SSE Speech (`gpt-4o-mini-tts` and Aliyun `qwen-audio-3.0-tts-plus`), static/SSE Transcription (`gpt-transcribe`), and Xiaomi/Aliyun static Speech/ASR exist; Translation is [unscheduled](../roadmap/backlog-and-frozen.md#deferred-generation-semantics) | Subtitle/diarized Transcription streams and progressive non-SSE binary Speech remain unselected |
+| Images Generate & Edit | Unified OpenAI Generate/Edit across GPT Image 2.6, Qwen Image, Gemini Nano Banana and Grok Imagine (`png`/`jpeg`/`webp` + `output_compression` via bounded `delivery.ffmpeg` without resizing; OpenAI preview SSE and completed-only SSE fallback on static targets for `n = 1`) | Native ratio/resolution tiers and other output controls remain separately selectable; preview SSE on non-native targets is intentionally deferred |
+| Audio (Speech/ASR) | Unified OpenAI Speech (all 6 formats + native/chunked SSE on OpenAI, Aliyun, Xiaomi) and Transcription (all 9 input formats via FFmpeg-to-MP3 normalization on Aliyun/Xiaomi + native/static JSON SSE fallback); Translation is [unscheduled](../roadmap/backlog-and-frozen.md#deferred-generation-semantics) | Subtitle/diarized Transcription streams and progressive non-SSE binary Speech remain unselected |
 | Files & Uploads | Safety requirements defined; storage authority unselected | Select storage authority and ID authorization |
 | Video | Upstream API research available; job lifecycles unselected | Select job status and retrieval contract |
 

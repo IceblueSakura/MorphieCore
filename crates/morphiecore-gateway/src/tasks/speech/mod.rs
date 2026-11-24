@@ -8,10 +8,10 @@ use crate::{
     ApiError, Credentials, Runtime, SpeechEntry, StartupError, body,
     diagnostics::{Stage, Trace},
     ingress::admission,
-    protocol::openai::speech as codec,
+    protocol::{openai::speech as codec, speech::StreamFormat},
     semantic::{
         task::speech_synthesis::{SpeechEvent, SpeechRequest},
-        value::{AudioArtifact, MAX_AUDIO_BYTES},
+        value::{AudioArtifact, AudioEncoding, MAX_AUDIO_BYTES},
     },
     topology::{CompiledTopology, speech::SpeechRoute},
 };
@@ -63,10 +63,55 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
         ))?
         .clone();
     let request = codec::decode_request(&bytes).map_err(|_| ApiError::invalid())?;
-    let prepared = crate::execution::speech::prepare(&entry.route, &entry.provider, &request)
+    let profile = entry.route.endpoint.profile;
+    let requested = request.task.requested_format();
+    let (wire_format, needs_transcode) = match profile {
+        crate::adapter::speech::UpstreamAdapter::Standard => (requested, false),
+        crate::adapter::speech::UpstreamAdapter::AliyunMp3 => {
+            (AudioEncoding::Mp3, requested != AudioEncoding::Mp3)
+        }
+        crate::adapter::speech::UpstreamAdapter::Xiaomi => {
+            if crate::protocol::xiaomi_audio::FORMATS.contains(&requested) {
+                (requested, false)
+            } else {
+                (AudioEncoding::Wav, true)
+            }
+        }
+    };
+    let native_sse = request.streaming() && profile.supports_streaming() && !needs_transcode;
+    let wire = if needs_transcode || (request.streaming() && !native_sse) {
+        let mut wire = request.clone();
+        wire.task.format = Some(wire_format);
+        wire.stream_format = if native_sse {
+            Some(StreamFormat::Sse)
+        } else {
+            None
+        };
+        std::borrow::Cow::Owned(wire)
+    } else {
+        std::borrow::Cow::Borrowed(&request)
+    };
+    let prepared = crate::execution::speech::prepare(&entry.route, &entry.provider, &wire)
         .map_err(|_| ApiError::invalid())?;
+    if needs_transcode && runtime.limits.ffmpeg.is_none() {
+        return Err(ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            crate::error::ErrorKind::Unavailable,
+        ));
+    }
+    let wire_task = wire.into_owned().task;
     admitted
-        .respond(runtime, entry, prepared, Output(request))
+        .respond(
+            runtime,
+            entry,
+            prepared,
+            Output {
+                request,
+                wire_task,
+                native_sse,
+                needs_transcode,
+            },
+        )
         .await
 }
 async fn decode(
@@ -105,12 +150,17 @@ pub(crate) async fn receive_for_test(
     )
     .await
 }
-struct Output(crate::protocol::speech::Request);
+struct Output {
+    request: crate::protocol::speech::Request,
+    wire_task: SpeechRequest,
+    native_sse: bool,
+    needs_transcode: bool,
+}
 impl TaskOutput for Output {
     type Route = SpeechRoute;
 
     fn response_type(&self) -> body::ResponseType {
-        if self.0.streaming() {
+        if self.request.streaming() {
             body::ResponseType::EventStream
         } else {
             body::ResponseType::Audio
@@ -123,7 +173,7 @@ impl TaskOutput for Output {
         limits: &crate::Limits,
         wire_limit: usize,
     ) -> usize {
-        if entry.route.endpoint.profile.upstream_sse() || self.0.streaming() {
+        if entry.route.endpoint.profile.upstream_sse() || self.native_sse {
             wire_limit
         } else {
             limits.speech_bytes.min(wire_limit).min(MAX_AUDIO_BYTES)
@@ -142,7 +192,7 @@ impl TaskOutput for Output {
             .response_bytes
             .min(entry.route.endpoint.execution.response_body_limit);
         let audio_limit = limits.speech_bytes.min(wire_limit).min(MAX_AUDIO_BYTES);
-        if self.0.streaming() {
+        if self.native_sse {
             let map_event = |event: SpeechEvent| -> Result<SseStep, ApiError> {
                 let is_done = matches!(event, SpeechEvent::Done { .. });
                 let bytes = codec::encode_sse_event(&event).map_err(|_| ApiError::upstream())?;
@@ -198,7 +248,7 @@ impl TaskOutput for Output {
             )
             .await;
         }
-        let audio = if entry.route.endpoint.profile.upstream_sse() {
+        let mut audio = if entry.route.endpoint.profile.upstream_sse() {
             let result = aliyun::decode(
                 receiver,
                 audio_limit,
@@ -212,10 +262,38 @@ impl TaskOutput for Output {
                 .map_err(|_| ApiError::upstream())?
                 .audio
         } else {
-            decode(receiver, &self.0.task, entry.route.endpoint.profile, trace).await?
+            decode(
+                receiver,
+                &self.wire_task,
+                entry.route.endpoint.profile,
+                trace,
+            )
+            .await?
         };
+        if self.needs_transcode {
+            audio = crate::tasks::transcode::speech_audio(
+                limits.ffmpeg.as_deref(),
+                audio,
+                self.request.task.requested_format(),
+                audio_limit,
+            )
+            .await?;
+        }
         trace.stage(Stage::Projection);
-        body::send_final_audio(lane, audio, trace).await?;
+        if self.request.streaming() {
+            for chunk in audio.into_data().chunks(64 << 10) {
+                let frame = codec::encode_sse_event(&SpeechEvent::AudioDelta {
+                    audio: bytes::Bytes::copy_from_slice(chunk),
+                })
+                .map_err(|_| ApiError::upstream())?;
+                body::send_frame(lane, frame, trace).await?;
+            }
+            let done = codec::encode_sse_event(&SpeechEvent::Done { usage: None })
+                .map_err(|_| ApiError::upstream())?;
+            body::send_final_frame(lane, done, trace).await?;
+        } else {
+            body::send_final_audio(lane, audio, trace).await?;
+        }
         Ok(())
     }
 }

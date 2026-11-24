@@ -40,23 +40,6 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
     {
         return Err(CodecError::invalid());
     }
-    if request.task.language.as_ref().is_some_and(|s| {
-        ![
-            "zh", "en", "ja", "ko", "vi", "th", "id", "ms", "tl", "hi", "ar", "fr", "de", "es",
-            "pt", "ru", "it", "nl", "sv", "da", "fi", "no", "el", "pl", "cs", "hu", "ro", "bg",
-            "hr", "sk",
-        ]
-        .contains(&s.as_str())
-    }) {
-        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-    }
-    if !request.task.languages.is_empty()
-        || !request.task.keywords.is_empty()
-        || request.task.prompt.is_some()
-        || request.task.temperature.is_some()
-    {
-        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-    }
     let (format, mime) = match request.task.audio.format() {
         InputFormat::Wav => ("wav", "audio/wav"),
         InputFormat::Mp3 => ("mp3", "audio/mpeg"),
@@ -69,7 +52,14 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
     let mut result = json!({"model":model,"input":{"messages":[{"role":"user","content":[
         {"type":"input_audio","input_audio":{"data":data}}
     ]}]},"parameters":{"format":format}});
-    if let Some(language) = &request.task.language {
+    if let Some(language) = request.task.language.as_deref().filter(|s| {
+        [
+            "zh", "en", "ja", "ko", "vi", "th", "id", "ms", "tl", "hi", "ar", "fr", "de", "es",
+            "pt", "ru", "it", "nl", "sv", "da", "fi", "no", "el", "pl", "cs", "hu", "ro", "bg",
+            "hr", "sk",
+        ]
+        .contains(s)
+    }) {
         result["parameters"]["language_hints"] = json!([language]);
     }
     Ok(result)

@@ -21,7 +21,7 @@
   },
   "delivery": {
     "exchange_timeout_ms": 3600000,
-    "image_ffmpeg": null,
+    "ffmpeg": null,
     "delta_coalescing": {
       "max_delay_ms": 50,
       "max_pending_bytes": 16384

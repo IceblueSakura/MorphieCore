@@ -30,7 +30,6 @@ async fn assert_native_jpeg(
                 post(
                     move |headers: HeaderMap, Json(body): Json<serde_json::Value>| {
                         assert_eq!(headers[auth.0], auth.1);
-                        assert!(!headers.contains_key("x-morphiecore-image-profile"));
                         assert_eq!(body, wire);
                         let report = report.clone();
                         async { Json(report) }
@@ -40,6 +39,28 @@ async fn assert_native_jpeg(
         )
         .into_future(),
     );
+    // Without configured ffmpeg, Gemini/Grok reject P4 before upstream dispatch.
+    let no_ffmpeg = gateway
+        .gateway
+        .router()
+        .oneshot(
+            Request::post("/v1/images/generations")
+                .header(
+                    "authorization",
+                    "Bearer synthetic-gateway-client-token-0001",
+                )
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"model":model,"prompt":"pattern","output_format":"jpeg"}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(no_ffmpeg.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+    // With configured ffmpeg, requesting output_format="jpeg" matches the native JPEG output with zero FFmpeg invocation.
+    gateway.set_ffmpeg(std::env::current_exe().unwrap());
     let response = gateway
         .gateway
         .router()
@@ -50,9 +71,8 @@ async fn assert_native_jpeg(
                     "Bearer synthetic-gateway-client-token-0001",
                 )
                 .header("content-type", "application/json")
-                .header("x-morphiecore-image-profile", "native-static-v1")
                 .body(Body::from(
-                    json!({"model":model,"prompt":"pattern"}).to_string(),
+                    json!({"model":model,"prompt":"pattern","output_format":"jpeg","quality":"high"}).to_string(),
                 ))
                 .unwrap(),
         )
@@ -62,8 +82,17 @@ async fn assert_native_jpeg(
     let body = axum::body::to_bytes(response.into_body(), 4096)
         .await
         .unwrap();
+    let mut delivered: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(
+        delivered
+            .as_object_mut()
+            .unwrap()
+            .remove("created")
+            .unwrap()
+            .is_u64()
+    );
     assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+        delivered,
         json!({"output_format":"jpeg","data":[{"b64_json":"AQID"}]})
     );
     server.abort();
@@ -148,7 +177,6 @@ async fn native_image_routes_new_requests_around_cooldown_without_replaying() {
             let mut calls = observed.lock().unwrap();
             calls.push("plan");
             assert_eq!(headers["authorization"], "Bearer synthetic-plan-key");
-            assert!(!headers.contains_key("x-morphiecore-image-profile"));
             assert_eq!(body, json!({
                 "model":"qwen-image-3.0-pro",
                 "input":{"messages":[{"role":"user","content":[{"text":"a blue circle"}]}]},
@@ -195,34 +223,35 @@ async fn native_image_routes_new_requests_around_cooldown_without_replaying() {
     let gateway =
         Fixture::with_accounts(service(), configured(catalog_candidates), &keys, accounts).unwrap();
     let router = gateway.gateway.router();
-    let send = |profile: Option<&'static str>| {
-        let mut request = Request::builder()
-            .method("POST")
-            .uri("/v1/images/generations")
-            .header(
-                "authorization",
-                "Bearer synthetic-gateway-client-token-0001",
-            )
-            .header("content-type", "application/json");
-        if let Some(profile) = profile {
-            request = request.header("x-morphiecore-image-profile", profile);
-        }
-        router.clone().oneshot(request.body(Body::from(
-            r#"{"model":"qwen-image-3.0-pro","prompt":"a blue circle","size":"512x512","output_format":"png"}"#,
-        )).unwrap())
+    let send = |body: &'static str| {
+        router.clone().oneshot(
+            Request::post("/v1/images/generations")
+                .header(
+                    "authorization",
+                    "Bearer synthetic-gateway-client-token-0001",
+                )
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
     };
+    let ok_body = r#"{"model":"qwen-image-3.0-pro","prompt":"a blue circle","size":"512x512","output_format":"png","quality":"high"}"#;
     assert_eq!(
-        send(Some("native-static-v2")).await.unwrap().status(),
+        send(
+            r#"{"model":"qwen-image-3.0-pro","prompt":"a blue circle","background":"transparent"}"#
+        )
+        .await
+        .unwrap()
+        .status(),
         StatusCode::BAD_REQUEST
     );
     assert!(calls.lock().unwrap().is_empty());
-    let profile = Some("native-static-v1");
     let expected = json!({"data":[{"b64_json":"AQID"}],"output_format":"png","size":"512x512"});
     let before = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    let first = send(None).await.unwrap();
+    let first = send(ok_body).await.unwrap();
     assert_eq!(first.status(), StatusCode::OK);
     let first = axum::body::to_bytes(first.into_body(), 4096).await.unwrap();
     let mut delivered: serde_json::Value = serde_json::from_slice(&first).unwrap();
@@ -241,17 +270,23 @@ async fn native_image_routes_new_requests_around_cooldown_without_replaying() {
     assert_eq!(delivered, expected);
     assert_eq!(*calls.lock().unwrap(), ["plan"]);
     assert_eq!(
-        send(profile).await.unwrap().status(),
+        send(ok_body).await.unwrap().status(),
         StatusCode::TOO_MANY_REQUESTS
     );
     assert_eq!(*calls.lock().unwrap(), ["plan", "plan"]);
-    let next = send(profile).await.unwrap();
+    let next = send(ok_body).await.unwrap();
     assert_eq!(next.status(), StatusCode::OK);
     let next = axum::body::to_bytes(next.into_body(), 4096).await.unwrap();
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&next).unwrap(),
-        expected
+    let mut next_delivered: serde_json::Value = serde_json::from_slice(&next).unwrap();
+    assert!(
+        next_delivered
+            .as_object_mut()
+            .unwrap()
+            .remove("created")
+            .unwrap()
+            .is_u64()
     );
+    assert_eq!(next_delivered, expected);
     assert_eq!(*calls.lock().unwrap(), ["plan", "plan", "metered"]);
     server.abort();
     let _ = server.await;
@@ -739,7 +774,6 @@ async fn image_edit_enforces_multipart_limits_and_native_edit_paths() {
             let seen = seen.clone();
             async move {
                 assert_eq!(headers["authorization"], "Bearer synthetic-oauth-access");
-                assert!(!headers.contains_key("x-morphiecore-image-profile"));
                 let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
                 seen.lock().unwrap().push(value);
                 Json(json!({
@@ -758,6 +792,7 @@ async fn image_edit_enforces_multipart_limits_and_native_edit_paths() {
     )
     .unwrap();
     fixture.loopback_authority(&base);
+    fixture.set_ffmpeg(std::env::current_exe().unwrap());
     let router = fixture.gateway.router();
 
     let multipart_body = concat!(
@@ -765,6 +800,8 @@ async fn image_edit_enforces_multipart_limits_and_native_edit_paths() {
         "grok-imagine-image-2.0\r\n",
         "--e1\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\n",
         "paint blue\r\n",
+        "--e1\r\nContent-Disposition: form-data; name=\"output_format\"\r\n\r\n",
+        "jpeg\r\n",
         "--e1\r\nContent-Disposition: form-data; name=\"image\"; filename=\"src.png\"\r\n",
         "Content-Type: image/png\r\n\r\n",
         "pngdata\r\n",
@@ -806,7 +843,7 @@ async fn image_edit_enforces_multipart_limits_and_native_edit_paths() {
         .unwrap();
     assert_eq!(not_found.status(), StatusCode::NOT_FOUND);
 
-    // 200 on native-static-v1 Grok /v1/images/edits
+    // 200 on standard Grok /v1/images/edits with matching output_format=jpeg
     let ok = router
         .clone()
         .oneshot(
@@ -816,7 +853,6 @@ async fn image_edit_enforces_multipart_limits_and_native_edit_paths() {
                     "Bearer synthetic-gateway-client-token-0001",
                 )
                 .header("content-type", "multipart/form-data; boundary=e1")
-                .header("x-morphiecore-image-profile", "native-static-v1")
                 .body(Body::from(multipart_body))
                 .unwrap(),
         )
@@ -824,8 +860,17 @@ async fn image_edit_enforces_multipart_limits_and_native_edit_paths() {
         .unwrap();
     assert_eq!(ok.status(), StatusCode::OK);
     let body = axum::body::to_bytes(ok.into_body(), 4096).await.unwrap();
+    let mut delivered: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(
+        delivered
+            .as_object_mut()
+            .unwrap()
+            .remove("created")
+            .unwrap()
+            .is_u64()
+    );
     assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+        delivered,
         json!({"output_format":"jpeg","data":[{"b64_json":"AQID"}]})
     );
     {
@@ -1019,6 +1064,210 @@ async fn media_sse_streams_incrementally_holds_terminal_behind_eof_and_aborts_ho
     drop(tx);
     let err = body.next().await.unwrap();
     assert!(err.is_err());
+
+    server.abort();
+    let _ = server.await;
+}
+
+#[tokio::test]
+async fn non_native_media_emulates_sse_omits_advisory_controls_and_guards_ffmpeg_p4() {
+    use axum::{
+        Json, Router,
+        body::Body,
+        http::{Request, StatusCode},
+        routing::post,
+    };
+    use futures_util::StreamExt;
+    use tower::ServiceExt;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let upstream = Router::new()
+        .route(
+            "/v1/chat/completions",
+            post(|Json(body): Json<serde_json::Value>| async move {
+                assert_eq!(body["stream"], false);
+                assert!(body.get("speed").is_none());
+                if body["model"] == "mimo-v2.5-tts" {
+                    Json(json!({
+                        "id": "sp1", "object": "chat.completion", "created": 1, "model": "mimo-v2.5-tts",
+                        "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": null, "audio": {"id": "a1", "data": "AQID"}}}],
+                        "usage": null
+                    }))
+                } else {
+                    assert!(body.get("asr_options").is_none());
+                    Json(json!({
+                        "id": "asr1",
+                        "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": "nihao", "audio": null}}],
+                        "usage": {"seconds": 3}
+                    }))
+                }
+            }),
+        )
+        .route(
+            "/api/v1/services/aigc/multimodal-generation/generation",
+            post(|Json(body): Json<serde_json::Value>| async move {
+                assert!(body.get("quality").is_none());
+                assert!(body.get("stream").is_none());
+                Json(json!({
+                    "output": {"choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": [{"image": "data:image/png;base64,AQID"}]}}]},
+                    "usage": {"output_width": 512, "output_height": 512, "output_image_count": 1, "input_image_count": 0, "input_image_type": "qima_input_1k", "output_image_type": "qima_output_1k"}
+                }))
+            }),
+        );
+    let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+    let mut fixture = Fixture::new(
+        service(),
+        json!({"models":{
+            "qwen-audio-3.0-tts-plus":{"account":"ali"},
+            "qwen-audio-3.0-asr-flash":{"binding":"tokenplan-qwen-asr","account":"ali"},
+            "mimo-v2.5-tts":{"account":"mi"},
+            "mimo-v2.5-asr":{"account":"mi"},
+            "qwen-image-3.0-pro":{"candidates":[{"binding":"aliyun-tokenplan-cn-qwen-image-3.0-pro-images","account":"ali"}]}
+        }}),
+        &[
+            ("aliyun-tokenplan-cn", "ali", "synthetic-ali"),
+            ("xiaomi", "mi", "synthetic-mi"),
+        ],
+    )
+    .unwrap();
+    fixture.loopback_authority(&origin);
+    let router = fixture.gateway.router();
+
+    // 1. P4 checks: missing ffmpeg returns 503 when transcoding is needed; invalid guarantees still 400 first.
+    let bad_voice = router
+        .clone()
+        .oneshot(
+            Request::post("/v1/audio/speech")
+                .header("authorization", "Bearer synthetic-gateway-client-token-0001")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"model":"qwen-audio-3.0-tts-plus","input":"Hi","voice":"alloy","response_format":"opus"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(bad_voice.status(), StatusCode::BAD_REQUEST);
+
+    let need_speech_ffmpeg = router
+        .clone()
+        .oneshot(
+            Request::post("/v1/audio/speech")
+                .header("authorization", "Bearer synthetic-gateway-client-token-0001")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"model":"qwen-audio-3.0-tts-plus","input":"Hi","voice":"longanlingxin","response_format":"opus"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(need_speech_ffmpeg.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+    let need_image_ffmpeg = router
+        .clone()
+        .oneshot(
+            Request::post("/v1/images/generations")
+                .header(
+                    "authorization",
+                    "Bearer synthetic-gateway-client-token-0001",
+                )
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"model":"qwen-image-3.0-pro","prompt":"cat","output_format":"webp"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(need_image_ffmpeg.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+    let flac_asr = "--b1\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nqwen-audio-3.0-asr-flash\r\n--b1\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.flac\"\r\nContent-Type: audio/flac\r\n\r\nfLaC\r\n--b1--\r\n";
+    let need_asr_ffmpeg = router
+        .clone()
+        .oneshot(
+            Request::post("/v1/audio/transcriptions")
+                .header(
+                    "authorization",
+                    "Bearer synthetic-gateway-client-token-0001",
+                )
+                .header("content-type", "multipart/form-data; boundary=b1")
+                .body(Body::from(flac_asr))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(need_asr_ffmpeg.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+    // 2. Emulated Speech SSE on Xiaomi (omitting speed + no fabricated usage)
+    let sp_sse = router
+        .clone()
+        .oneshot(
+            Request::post("/v1/audio/speech")
+                .header("authorization", "Bearer synthetic-gateway-client-token-0001")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"model":"mimo-v2.5-tts","input":"Hi","voice":"Chloe","speed":1.5,"stream_format":"sse"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(sp_sse.status(), StatusCode::OK);
+    let sp_bytes = axum::body::to_bytes(sp_sse.into_body(), 8192)
+        .await
+        .unwrap();
+    let sp_text = std::str::from_utf8(&sp_bytes).unwrap();
+    assert!(sp_text.contains("speech.audio.delta"));
+    assert!(sp_text.contains("speech.audio.done"));
+    assert!(!sp_text.contains("\"usage\""));
+
+    // 3. Emulated ASR SSE on Xiaomi (WAV passthrough, advisory prompt omitted, duration usage omitted from SSE)
+    let wav_sse = "--b2\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nmimo-v2.5-asr\r\n--b2\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\nignore me\r\n--b2\r\nContent-Disposition: form-data; name=\"stream\"\r\n\r\ntrue\r\n--b2\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.wav\"\r\nContent-Type: audio/wav\r\n\r\nRIFF\r\n--b2--\r\n";
+    let asr_sse = router
+        .clone()
+        .oneshot(
+            Request::post("/v1/audio/transcriptions")
+                .header(
+                    "authorization",
+                    "Bearer synthetic-gateway-client-token-0001",
+                )
+                .header("content-type", "multipart/form-data; boundary=b2")
+                .body(Body::from(wav_sse))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(asr_sse.status(), StatusCode::OK);
+    let asr_bytes = axum::body::to_bytes(asr_sse.into_body(), 8192)
+        .await
+        .unwrap();
+    let asr_text = std::str::from_utf8(&asr_bytes).unwrap();
+    assert!(asr_text.contains("transcript.text.delta") && asr_text.contains("\"delta\":\"nihao\""));
+    assert!(asr_text.contains("transcript.text.done") && !asr_text.contains("\"usage\""));
+
+    // 4. Emulated completed-only Image SSE on Qwen PNG (quality/partial_images omitted, no fabricated usage)
+    let img_sse = router
+        .oneshot(
+            Request::post("/v1/images/generations")
+                .header("authorization", "Bearer synthetic-gateway-client-token-0001")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"model":"qwen-image-3.0-pro","prompt":"cat","stream":true,"partial_images":2,"quality":"high"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(img_sse.status(), StatusCode::OK);
+    let mut frames = img_sse.into_body().into_data_stream();
+    let only = frames.next().await.unwrap().unwrap();
+    let img_text = std::str::from_utf8(&only).unwrap();
+    assert!(img_text.contains("image_generation.completed"));
+    assert!(img_text.contains("\"size\":\"512x512\""));
+    assert!(!img_text.contains("\"usage\""));
+    assert!(frames.next().await.is_none());
 
     server.abort();
     let _ = server.await;

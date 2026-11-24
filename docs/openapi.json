@@ -260,16 +260,7 @@
     "/v1/images/generations": {
       "post": {
         "operationId": "imageGeneration",
-        "summary": "Generate an ordered collection of inline static images",
-        "parameters": [
-          {
-            "name": "X-MorphieCore-Image-Profile",
-            "in": "header",
-            "required": false,
-            "schema": {"type": "string", "const": "native-static-v1"},
-            "description": "Opt out of default OpenAI-shape PNG delivery for Qwen Image, Gemini Nano Banana and Grok Imagine. Omit for GPT Image."
-          }
-        ],
+        "summary": "Generate an ordered collection of inline images or SSE completed/preview stream",
         "requestBody": {
           "required": true,
           "content": {
@@ -282,7 +273,7 @@
         },
         "responses": {
           "200": {
-            "description": "Complete inline images after validated EOF. By default the OpenAI response shape applies; native bindings use PNG and locally prepare a delivery timestamp only when created is unreported. The optional native profile preserves the received format and does not fill missing creation time. One target is dispatched.",
+            "description": "Standard OpenAI Images JSON or text/event-stream response. Native bindings transcode to requested png/jpeg/webp without resizing and supply a gateway preparation timestamp when created is unreported. Native accounting is not projected as OpenAI usage.",
             "headers": {
               "Cache-Control": {
                 "schema": {
@@ -300,10 +291,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {"$ref": "#/components/schemas/ImageGenerationResponse"},
-                    {"$ref": "#/components/schemas/NativeStaticImageGenerationResponse"}
-                  ]
+                  "$ref": "#/components/schemas/ImageGenerationResponse"
                 }
               },
               "text/event-stream": {
@@ -353,16 +341,7 @@
     "/v1/images/edits": {
       "post": {
         "operationId": "imageEdit",
-        "summary": "Edit ordered uploaded images through an explicitly activated static image binding",
-        "parameters": [
-          {
-            "name": "X-MorphieCore-Image-Profile",
-            "in": "header",
-            "required": false,
-            "schema": {"type": "string", "const": "native-static-v1"},
-            "description": "Opt out of default OpenAI-shape PNG delivery for Qwen Image, Gemini Nano Banana and Grok Imagine. Omit for GPT Image."
-          }
-        ],
+        "summary": "Edit ordered uploaded images through an explicitly activated binding",
         "requestBody": {
           "required": true,
           "content": {
@@ -378,7 +357,7 @@
         },
         "responses": {
           "200": {
-            "description": "Complete inline images after validated EOF. By default the OpenAI response shape applies; native bindings use PNG and locally prepare a delivery timestamp only when created is unreported. The optional native profile preserves the received format and does not fill missing creation time. One target is dispatched.",
+            "description": "Standard OpenAI Images JSON or text/event-stream response. Native bindings transcode to requested png/jpeg/webp without resizing and supply a gateway preparation timestamp when created is unreported. Native accounting is not projected as OpenAI usage.",
             "headers": {
               "Cache-Control": {"schema": {"type": "string", "const": "no-store"}},
               "X-Content-Type-Options": {"schema": {"type": "string", "const": "nosniff"}}
@@ -386,10 +365,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {"$ref": "#/components/schemas/ImageGenerationResponse"},
-                    {"$ref": "#/components/schemas/NativeStaticImageGenerationResponse"}
-                  ]
+                  "$ref": "#/components/schemas/ImageGenerationResponse"
                 }
               },
               "text/event-stream": {
@@ -1888,22 +1864,6 @@
             }
           }
         ]
-      },
-      "NativeStaticImageGenerationResponse": {
-        "type": "object",
-        "required": ["data", "output_format"],
-        "additionalProperties": false,
-        "properties": {
-          "data": {
-            "allOf": [
-              {"$ref": "#/components/schemas/ImageGenerationResponse/properties/data"},
-              {"maxItems": 6}
-            ]
-          },
-          "output_format": {"enum": ["png", "jpeg", "webp"]},
-          "size": {"$ref": "#/components/schemas/ImagePixelSize"}
-        },
-        "description": "This opt-in response reports bounded inline images, the reported encoding and any published size without inventing a creation timestamp or token usage."
       },
       "PublicModelLabel": {
         "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_.-]+(?![\\s\\S])",

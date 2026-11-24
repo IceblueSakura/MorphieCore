@@ -1011,6 +1011,19 @@ async fn media_sse_sdk_loopback() {
             .unwrap()
     }
 
+    async fn upstream_qwen_static(
+        State(seen): State<Arc<std::sync::atomic::AtomicUsize>>,
+        axum::Json(body): axum::Json<Value>,
+    ) -> Response {
+        assert!(body.get("stream").is_none());
+        assert!(body.get("quality").is_none());
+        seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        axum::response::IntoResponse::into_response(axum::Json(json!({
+            "output": {"choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": [{"image": "data:image/png;base64,BAUG"}]}}]},
+            "usage": {"output_width": 512, "output_height": 512, "output_image_count": 1, "input_image_count": 0, "input_image_type": "qima_input_1k", "output_image_type": "qima_output_1k"}
+        })))
+    }
+
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let origin = format!("http://{}", listener.local_addr().unwrap());
     let upstream = tokio::spawn(async move {
@@ -1021,6 +1034,7 @@ async fn media_sse_sdk_loopback() {
                 .route("/audio/transcriptions", post(upstream_transcribe))
                 .route("/images/generations", post(upstream_img_gen))
                 .route("/images/edits", post(upstream_img_edit))
+                .route("/qwen/images", post(upstream_qwen_static))
                 .with_state(seen),
         )
         .await
@@ -1032,6 +1046,62 @@ async fn media_sse_sdk_loopback() {
     let (asr_prov, asr_entry, asr_route) =
         morphiecore_test_harness::media_bindings::standard_transcription(&origin);
     let (im_entry, im_route) = morphiecore_test_harness::image_generation::binding(&origin);
+    let mut qwen_prov = morphiecore::provider::ProviderDefinition {
+        id: morphiecore::provider::ProviderId::new("qwen-fixture").unwrap(),
+        origin: morphiecore::provider::TrustedOrigin::parse(&origin).unwrap(),
+        endpoints: [].into(),
+        auth: morphiecore::provider::AuthScheme::Bearer,
+    };
+    let qwen_path = morphiecore::provider::EndpointPath::new("/qwen/images").unwrap();
+    qwen_prov.endpoints.insert(
+        morphiecore::provider::ProviderOperation::Images,
+        morphiecore::provider::ProviderEndpoint {
+            path: qwen_path.clone(),
+            suffix: qwen_path.clone(),
+            auth: None,
+        },
+    );
+    qwen_prov.endpoints.insert(
+        morphiecore::provider::ProviderOperation::ImagesEdit,
+        morphiecore::provider::ProviderEndpoint {
+            path: qwen_path.clone(),
+            suffix: qwen_path.clone(),
+            auth: None,
+        },
+    );
+    let qwen_entry = morphiecore::topology::images::ProviderEntry {
+        provider: qwen_prov.id.clone(),
+        path: qwen_path.clone(),
+        edit_path: qwen_path.clone(),
+    };
+    let qwen_canonical = morphiecore::topology::ModelId::new("canonical-qwen-image").unwrap();
+    let qwen_route = morphiecore::topology::images::ImageRoute {
+        id: morphiecore::topology::RouteId::new("qwen-image-route").unwrap(),
+        model: morphiecore::topology::ModelId::new("qwen-static-stream").unwrap(),
+        canonical_model: qwen_canonical.clone(),
+        accounting:
+            morphiecore::protocol::image::projection::AccountingPolicy::NativeStaticArtifacts,
+        endpoint: morphiecore::topology::images::ImageEndpoint {
+            id: morphiecore::topology::EndpointId::new("qwen-image-endpoint").unwrap(),
+            provider: qwen_prov.id.clone(),
+            target: morphiecore::topology::EndpointTarget {
+                origin: qwen_prov.origin.clone(),
+                path: qwen_path.clone(),
+            },
+            edit_path: qwen_path,
+            upstream_model: "private-qwen".into(),
+            canonical_model: qwen_canonical,
+            profile: morphiecore::adapter::images::UpstreamAdapter::QwenImage,
+            credential: morphiecore::provider::CredentialBindingId::new("qwen-key").unwrap(),
+            execution: morphiecore::topology::ExecutionContract {
+                streaming: false,
+                request_body_limit: 64 << 10,
+                response_body_limit: 16 << 20,
+                credential_kind: morphiecore::provider::CredentialKind::ApiKey,
+                timeout_ms: 2000,
+            },
+        },
+    };
     let im_prov = morphiecore::provider::ProviderDefinition {
         id: morphiecore::provider::ProviderId::new("fixture").unwrap(),
         origin: morphiecore::provider::TrustedOrigin::parse(&origin).unwrap(),
@@ -1041,7 +1111,7 @@ async fn media_sse_sdk_loopback() {
     let sp_prov = morphiecore_test_harness::speech::provider(&origin);
 
     let topology = compile(
-        vec![sp_prov, asr_prov, im_prov],
+        vec![sp_prov, asr_prov, im_prov, qwen_prov],
         vec![],
         vec![],
         vec![],
@@ -1052,7 +1122,7 @@ async fn media_sse_sdk_loopback() {
     .unwrap()
     .with_transcriptions(vec![asr_entry], vec![asr_route])
     .unwrap()
-    .with_images(vec![im_entry], vec![im_route])
+    .with_images(vec![im_entry, qwen_entry], vec![im_route, qwen_route])
     .unwrap()
     .with_model_metadata([
         (
@@ -1067,6 +1137,10 @@ async fn media_sse_sdk_loopback() {
             morphiecore::topology::ModelId::new("canonical-image").unwrap(),
             morphiecore::topology::ModelMetadata::new(9, "Synthetic Image").unwrap(),
         ),
+        (
+            morphiecore::topology::ModelId::new("canonical-qwen-image").unwrap(),
+            morphiecore::topology::ModelMetadata::new(10, "Synthetic Qwen Image").unwrap(),
+        ),
     ])
     .unwrap();
 
@@ -1080,9 +1154,14 @@ async fn media_sse_sdk_loopback() {
                 model: "standard-transcription".into(),
                 binding: None,
             }],
-            images: vec![morphiecore::gateway::ImageEntry {
-                model: "public-image".into(),
-            }],
+            images: vec![
+                morphiecore::gateway::ImageEntry {
+                    model: "public-image".into(),
+                },
+                morphiecore::gateway::ImageEntry {
+                    model: "qwen-static-stream".into(),
+                },
+            ],
             ..Default::default()
         },
         BTreeMap::from([
@@ -1103,6 +1182,12 @@ async fn media_sse_sdk_loopback() {
                 morphiecore::provider::CredentialBindingId::new("fixture-key").unwrap(),
                 Arc::new(
                     morphiecore::provider::SecretMaterial::new("synthetic-image-upstream").unwrap(),
+                ),
+            ),
+            (
+                morphiecore::provider::CredentialBindingId::new("qwen-key").unwrap(),
+                Arc::new(
+                    morphiecore::provider::SecretMaterial::new("synthetic-qwen-upstream").unwrap(),
                 ),
             ),
         ]),
@@ -1135,8 +1220,8 @@ async fn media_sse_sdk_loopback() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["requests"], 4);
-    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 4);
+    assert_eq!(report["requests"], 5);
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 5);
 
     stop.send(()).unwrap();
     tokio::time::timeout(Duration::from_secs(3), serving)
