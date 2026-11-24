@@ -475,14 +475,18 @@ impl ResponseDelivery {
             .projection
             .adapter
             .get_or_insert_with(|| {
-                crate::adapter::ClientProjection::new(
+                let adapter = crate::adapter::ClientProjection::new(
                     self.client.clone(),
                     attempt.is_native(),
                     streaming,
                 )
-                .with_limits(self.limits)
-                .with_grouping(attempt.is_native() || attempt.is_responses())
-                .with_messages_terminal(
+                .with_limits(self.limits);
+                let adapter = if attempt.is_native() || attempt.is_responses() {
+                    adapter.with_grouping(true)
+                } else {
+                    adapter.with_chat_source()
+                };
+                adapter.with_messages_terminal(
                     self.projection.messages_without_stops,
                     self.projection.messages_ambiguous_stops,
                     self.projection.messages_terminal,

@@ -124,6 +124,11 @@ impl ClientProjection {
         }
         self
     }
+    pub fn with_chat_source(mut self) -> Self {
+        self.grouping = (self.client.protocol() == ClientProtocol::Chat)
+            .then(crate::openai::lowering::native_response::EventProjection::for_chat_source);
+        self
+    }
     pub fn update_fidelity(&mut self, source: &FidelityRecords) -> Result<(), CodecError> {
         self.fidelity.copy_response_records(source);
         if let Some(state) = &self.state {
@@ -623,8 +628,10 @@ impl ClientProjection {
                     }
                 }
                 if self.client.protocol() == ClientProtocol::Chat
-                    && !self.native
-                    && self.grouping.is_some()
+                    && self
+                        .grouping
+                        .as_ref()
+                        .is_some_and(|grouping| grouping.is_responses_to_chat())
                 {
                     match &event {
                         StreamEvent::ItemStarted { item, kind, .. } => {

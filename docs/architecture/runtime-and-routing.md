@@ -197,7 +197,7 @@ The pinned [OpenAI SDK created-event contract](https://github.com/openai/openai-
 
 Queued EOF, cancellation and errors cannot fabricate progress or successful completion.
 
-The Chat stream decoder closes open reasoning and text owners when the first call opens, because Chat admits no later reasoning; content after a call opens a new message owner in the same assistant envelope. Block-ordered clients therefore stream calls and argument deltas before `finish_reason`.
+The Chat stream decoder closes open reasoning and text owners when the first call opens, because Chat admits no later reasoning; content after a call opens a new message owner in the same assistant envelope. Block-ordered clients therefore stream calls and argument deltas before `finish_reason`, while same-protocol Chat downstream delivery rejoins split assistant owners into the single Chat assistant message stream without loss receipts.
 
 Messages downstream delivery uses one active wire block in semantic owner/part declaration order, independently of numeric IDs. The head streams incrementally; successors wait for its actual owner finish, including a delayed thinking signature. Thinking emits one signature immediately before block stop; redacted blocks keep their native shape. Reports retain their existing independent timing and authority.
 

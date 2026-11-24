@@ -135,8 +135,26 @@ impl ClientAdapter {
                             | crate::semantic::task::generation::Item::CustomCall(_)
                     )
                 }));
-        let mut projection =
-            projection::ClientProjection::new(self.clone(), native, false).with_grouping(group);
+        let chat_source = self.protocol() == ClientProtocol::Chat
+            && !native
+            && wire.semantic.message_envelopes().len() == 1
+            && wire.semantic.message_envelopes()[0].role()
+                == crate::semantic::task::generation::MessageEnvelopeRole::Assistant
+            && messages.iter().all(|message| message.phase.is_none())
+            && wire.semantic.items().iter().all(|(id, item)| {
+                !matches!(
+                    item,
+                    crate::semantic::task::generation::Item::Message(_)
+                        | crate::semantic::task::generation::Item::ToolCall(_)
+                        | crate::semantic::task::generation::Item::CustomCall(_)
+                ) || wire.semantic.message_envelopes()[0].members().contains(id)
+            });
+        let projection = projection::ClientProjection::new(self.clone(), native, false);
+        let mut projection = if chat_source {
+            projection.with_chat_source()
+        } else {
+            projection.with_grouping(group)
+        };
         projection.update_fidelity(&wire.fidelity)?;
         wire.metadata = projection.metadata(&wire.metadata)?;
         projection::emit(&wire, |event| projection.project(&[event]).map(|_| ()))?;

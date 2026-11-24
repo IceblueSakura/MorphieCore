@@ -11,19 +11,28 @@ struct TextPart {
     finished: bool,
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Mode {
+    Native,
+    ResponsesToChat,
+    ChatSource,
+}
+
 fn order() -> CodecError {
     CodecError::Unsupported(CarrierReason::Unavailable)
 }
 pub struct EventProjection {
     losses: Vec<crate::conversion::generation::Effect>,
     profile: GenerationApi,
-    phase_only: bool,
+    mode: Mode,
     message: Option<ItemId>,
     reasoning: Vec<ItemId>,
     text_owners: BTreeMap<ItemId, ItemId>,
     text_messages: Vec<(ItemId, bool)>,
     active_text_message: usize,
     text_part: Option<(PartId, PartKind)>,
+    audio_part: Option<PartId>,
+    audio_parts: std::collections::BTreeSet<(ItemId, PartId)>,
     text_parts: usize,
     /// Later parts wait for earlier parts to finish. Source reduction bounds their
     /// total retained text; arrival order is not message-content order.
@@ -47,13 +56,15 @@ impl EventProjection {
         Self {
             losses: vec![],
             profile,
-            phase_only: false,
+            mode: Mode::Native,
             message: None,
             reasoning: vec![],
             text_owners: BTreeMap::new(),
             text_messages: vec![],
             active_text_message: 0,
             text_part: None,
+            audio_part: None,
+            audio_parts: Default::default(),
             text_parts: 0,
             text_queue: VecDeque::new(),
             buffered_text_bytes: 0,
@@ -72,12 +83,21 @@ impl EventProjection {
     }
     pub fn for_phase() -> Self {
         Self {
-            phase_only: true,
+            mode: Mode::ResponsesToChat,
             ..Self::new(GenerationApi::Chat)
         }
     }
+    pub fn for_chat_source() -> Self {
+        Self {
+            mode: Mode::ChatSource,
+            ..Self::new(GenerationApi::Chat)
+        }
+    }
+    pub fn is_responses_to_chat(&self) -> bool {
+        self.mode == Mode::ResponsesToChat
+    }
     fn record(&mut self, loss: crate::conversion::generation::Effect) {
-        if !self.losses.contains(&loss) {
+        if self.mode != Mode::ChatSource && !self.losses.contains(&loss) {
             self.losses.push(loss);
         }
     }
@@ -128,7 +148,7 @@ impl EventProjection {
                 if metadata.is_some_and(|(id, active)| active && self.text_owners.contains_key(&id))
                 {
                     self.text_metadata = true;
-                    if self.text_parts > 1 {
+                    if self.text_parts > 1 && self.mode != Mode::ChatSource {
                         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                     }
                 }
@@ -143,7 +163,7 @@ impl EventProjection {
                                 self.reasoning.push(*item);
                             }
                             ItemKind::Message { phase } if self.profile == GenerationApi::Chat => {
-                                if self.phase_only && phase.take().is_some() {
+                                if self.mode == Mode::ResponsesToChat && phase.take().is_some() {
                                     use crate::{
                                         conversion::generation::ConversionBoundary,
                                         lowering::disposition::Rule,
@@ -153,7 +173,7 @@ impl EventProjection {
                                             .effect(ConversionBoundary::EventProject),
                                     );
                                 }
-                                if !self.calls.is_empty() {
+                                if self.mode != Mode::ChatSource && !self.calls.is_empty() {
                                     return Err(CodecError::Unsupported(
                                         CarrierReason::Unavailable,
                                     ));
@@ -194,47 +214,77 @@ impl EventProjection {
                             *kind = PartKind::Arguments;
                         }
                         if self.text_owners.contains_key(item) {
-                            if self.text_parts >= MAX_ITEMS {
-                                return Err(CodecError::Limit);
-                            }
-                            let message_order = self
-                                .text_messages
-                                .iter()
-                                .position(|(id, _)| id == item)
-                                .ok_or(CodecError::invalid())?;
-                            let position = self
-                                .text_queue
-                                .iter()
-                                .position(|p| p.message_order > message_order)
-                                .unwrap_or(self.text_queue.len());
-                            self.text_queue.insert(
-                                position,
-                                TextPart {
-                                    key: (*item, *part),
-                                    message_order,
-                                    deltas: vec![],
-                                    finished: false,
-                                },
-                            );
-                            self.text_parts += 1;
-                            if let Some((_, old_kind)) = self.text_part {
-                                if self.text_metadata
-                                    || *kind != PartKind::Text
-                                    || old_kind != PartKind::Text
+                            if *kind == PartKind::Audio {
+                                if self.audio_part.is_some()
+                                    || self
+                                        .text_part
+                                        .is_some_and(|(_, old_kind)| old_kind == PartKind::Refusal)
                                 {
                                     return Err(CodecError::Unsupported(
                                         CarrierReason::Unavailable,
                                     ));
                                 }
-                                self.record(super::envelope_loss(
-                                    self.profile,
-                                    crate::conversion::generation::ConversionBoundary::EventProject,
-                                ));
-                                continue;
+                                self.audio_part = Some(*part);
+                                self.audio_parts.insert((*item, *part));
+                            } else {
+                                if self.audio_part.is_some() || self.text_parts >= MAX_ITEMS {
+                                    return Err(if self.audio_part.is_some() {
+                                        CodecError::Unsupported(CarrierReason::Unavailable)
+                                    } else {
+                                        CodecError::Limit
+                                    });
+                                }
+                                let message_order = self
+                                    .text_messages
+                                    .iter()
+                                    .position(|(id, _)| id == item)
+                                    .ok_or(CodecError::invalid())?;
+                                let position = self
+                                    .text_queue
+                                    .iter()
+                                    .position(|p| p.message_order > message_order)
+                                    .unwrap_or(self.text_queue.len());
+                                self.text_queue.insert(
+                                    position,
+                                    TextPart {
+                                        key: (*item, *part),
+                                        message_order,
+                                        deltas: vec![],
+                                        finished: false,
+                                    },
+                                );
+                                self.text_parts += 1;
+                                if let Some((_, old_kind)) = self.text_part {
+                                    if (self.text_metadata && self.mode != Mode::ChatSource)
+                                        || *kind != PartKind::Text
+                                        || old_kind != PartKind::Text
+                                    {
+                                        return Err(CodecError::Unsupported(
+                                            CarrierReason::Unavailable,
+                                        ));
+                                    }
+                                    self.record(super::envelope_loss(
+                                        self.profile,
+                                        crate::conversion::generation::ConversionBoundary::EventProject,
+                                    ));
+                                    continue;
+                                }
+                                self.text_part = Some((*part, *kind));
                             }
-                            self.text_part = Some((*part, *kind));
                         }
                         *item = self.text_owners.get(item).copied().unwrap_or(*item);
+                    }
+                    StreamEvent::AudioDelta { item, part, .. }
+                        if self.text_owners.contains_key(item) =>
+                    {
+                        *item = self.text_owners[item];
+                        *part = self.audio_part.ok_or(CodecError::invalid())?;
+                    }
+                    StreamEvent::PartFinished { item, part }
+                    | StreamEvent::ValueFinished { item, part }
+                        if self.audio_parts.contains(&(*item, *part)) =>
+                    {
+                        continue;
                     }
                     StreamEvent::PartFinished { item, part }
                         if self.text_owners.contains_key(item) =>
@@ -339,7 +389,7 @@ impl EventProjection {
                         }
                         continue;
                     }
-                    StreamEvent::Progress(_) if !self.phase_only => continue,
+                    StreamEvent::Progress(_) if self.mode == Mode::Native => continue,
                     StreamEvent::Terminal { terminal, .. }
                         if self.profile == GenerationApi::Chat =>
                     {
@@ -389,6 +439,11 @@ impl EventProjection {
             out.extend(self.text_metadata_end.take());
             out.push(StreamEvent::PartFinished { item, part });
             self.text_closed = true;
+        }
+        if let Some(part) = self.audio_part.take() {
+            let item = self.message.expect("audio message");
+            out.push(StreamEvent::ValueFinished { item, part });
+            out.push(StreamEvent::PartFinished { item, part });
         }
         Ok(())
     }

@@ -2193,3 +2193,293 @@ fn chat_delivery_uses_terminal_service_reports_without_rewriting_opening_facts()
         assert_eq!(attempt.response().unwrap(), &source);
     }
 }
+
+fn deliver_chat_upstream(
+    client: &ClientAdapter,
+    frames: &[Value],
+    stream: bool,
+    mut options: crate::semantic::context::StreamOptions,
+) -> (Attempt, ResponseDelivery, Vec<u8>) {
+    options.include_obfuscation = Some(false);
+    let mut attempt = Attempt::new(
+        GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None),
+        1 << 20,
+        Default::default(),
+    );
+    attempt.begin(200, "text/event-stream").unwrap();
+    let mut delivery = ResponseDelivery::new(
+        client.clone(),
+        "public",
+        Default::default(),
+        options,
+        Obfuscation::Disabled,
+        stream,
+    );
+    let mut sse_bytes = Vec::new();
+    for frame in frames {
+        let raw = format!("data: {frame}\n\n");
+        let (used, events) = attempt.push(raw.as_bytes()).unwrap();
+        assert_eq!(used, raw.len());
+        if stream {
+            sse_bytes.extend(
+                delivery
+                    .encode_events(&attempt, &events)
+                    .unwrap()
+                    .into_bytes()
+                    .concat(),
+            );
+        } else {
+            delivery.observe_events(&attempt, &events).unwrap();
+        }
+    }
+    let (used, done_events) = attempt.push(b"data: [DONE]\n\n").unwrap();
+    assert_eq!(used, b"data: [DONE]\n\n".len());
+    if stream {
+        sse_bytes.extend(
+            delivery
+                .encode_events(&attempt, &done_events)
+                .unwrap()
+                .into_bytes()
+                .concat(),
+        );
+    } else {
+        delivery.observe_events(&attempt, &done_events).unwrap();
+    }
+    attempt.finish().unwrap();
+    if stream {
+        sse_bytes.extend(
+            delivery
+                .finish_stream(&attempt)
+                .unwrap()
+                .into_bytes()
+                .concat(),
+        );
+    }
+    (attempt, delivery, sse_bytes)
+}
+
+#[test]
+fn chat_upstream_post_call_text_streams_and_snapshots_to_chat() {
+    let client = ClientAdapter::openai(
+        GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None),
+        TargetContract::full(),
+    );
+    let cases = [
+        (
+            "preamble_interleaved_and_tail",
+            vec![
+                json!({"id":"c1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant","content":"I'll read both files."},"finish_reason":null}]}),
+                json!({"id":"c1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"read","arguments":"{\"path\":\"a\"}"}}]},"finish_reason":null}]}),
+                json!({"id":"c1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"\n"},"finish_reason":null}]}),
+                json!({"id":"c1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_2","type":"function","function":{"name":"read","arguments":"{\"path\":\"b\"}"}}]},"finish_reason":null}]}),
+                json!({"id":"c1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"Done."},"finish_reason":null}]}),
+                json!({"id":"c1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}),
+                json!({"id":"c1","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}),
+            ],
+            "I'll read both files.\nDone.",
+            2usize,
+        ),
+        (
+            "tool_calls_then_tail_text",
+            vec![
+                json!({"id":"c2","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"read","arguments":"{\"path\":\"a\"}"}}]},"finish_reason":null}]}),
+                json!({"id":"c2","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"tail"},"finish_reason":null}]}),
+                json!({"id":"c2","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}),
+                json!({"id":"c2","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}),
+            ],
+            "tail",
+            1usize,
+        ),
+    ];
+    let options = crate::semantic::context::StreamOptions {
+        include_usage: Some(true),
+        ..Default::default()
+    };
+    for (name, frames, expected_content, expected_calls) in cases {
+        for stream in [true, false] {
+            let (attempt, mut delivery, sse_bytes) =
+                deliver_chat_upstream(&client, &frames, stream, options.clone());
+            if stream {
+                let wire = String::from_utf8(sse_bytes).unwrap();
+                assert!(wire.ends_with("data: [DONE]\n\n"), "{name}: {wire}");
+                let chunks: Vec<Value> = wire
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("data: "))
+                    .filter(|line| *line != "[DONE]")
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect();
+                let content: String = chunks
+                    .iter()
+                    .filter_map(|c| {
+                        c.pointer("/choices/0/delta/content")
+                            .and_then(Value::as_str)
+                    })
+                    .collect();
+                assert_eq!(content, expected_content, "{name}");
+                assert_eq!(
+                    chunks
+                        .iter()
+                        .filter_map(|c| c
+                            .pointer("/choices/0/finish_reason")
+                            .and_then(Value::as_str))
+                        .collect::<Vec<_>>(),
+                    vec!["tool_calls"],
+                    "{name}"
+                );
+                assert_eq!(
+                    chunks.last().unwrap().pointer("/usage/total_tokens"),
+                    Some(&json!(15)),
+                    "{name}"
+                );
+                let (_, snap) = delivery.snapshot(&attempt).unwrap();
+                let snap: Value = serde_json::from_slice(&snap).unwrap();
+                assert_eq!(
+                    snap["choices"][0]["message"]["content"], expected_content,
+                    "{name}"
+                );
+                assert_eq!(
+                    snap["choices"][0]["message"]["tool_calls"]
+                        .as_array()
+                        .unwrap()
+                        .len(),
+                    expected_calls,
+                    "{name}"
+                );
+            } else {
+                let json_body: Value =
+                    serde_json::from_slice(&delivery.encode_json(&attempt).unwrap()).unwrap();
+                assert_eq!(
+                    json_body["choices"][0]["message"]["content"], expected_content,
+                    "{name}"
+                );
+                assert_eq!(
+                    json_body["choices"][0]["message"]["tool_calls"]
+                        .as_array()
+                        .unwrap()
+                        .len(),
+                    expected_calls,
+                    "{name}"
+                );
+                assert_eq!(
+                    json_body["choices"][0]["finish_reason"], "tool_calls",
+                    "{name}"
+                );
+            }
+            assert!(
+                delivery.effects().is_empty(),
+                "{name}: {:?}",
+                delivery.effects()
+            );
+        }
+    }
+}
+
+#[test]
+fn chat_upstream_text_then_tool_call_incomplete_length_streams_to_chat() {
+    let client = ClientAdapter::openai(
+        GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None),
+        TargetContract::full(),
+    );
+    let frames = [
+        json!({"id":"c3","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant","content":"Working..."},"finish_reason":null}]}),
+        json!({"id":"c3","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"read","arguments":"{\"path\":\"a\"}"}}]},"finish_reason":null}]}),
+        json!({"id":"c3","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}),
+        json!({"id":"c3","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}),
+    ];
+    let options = crate::semantic::context::StreamOptions {
+        include_usage: Some(true),
+        ..Default::default()
+    };
+    for stream in [true, false] {
+        let (attempt, mut delivery, sse_bytes) =
+            deliver_chat_upstream(&client, &frames, stream, options.clone());
+        if stream {
+            let wire = String::from_utf8(sse_bytes).unwrap();
+            assert!(wire.ends_with("data: [DONE]\n\n"));
+            let chunks: Vec<Value> = wire
+                .lines()
+                .filter_map(|line| line.strip_prefix("data: "))
+                .filter(|line| *line != "[DONE]")
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
+            let content: String = chunks
+                .iter()
+                .filter_map(|c| {
+                    c.pointer("/choices/0/delta/content")
+                        .and_then(Value::as_str)
+                })
+                .collect();
+            assert_eq!(content, "Working...");
+            assert_eq!(
+                chunks
+                    .iter()
+                    .filter_map(|c| c
+                        .pointer("/choices/0/finish_reason")
+                        .and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                vec!["length"]
+            );
+        } else {
+            let json_body: Value =
+                serde_json::from_slice(&delivery.encode_json(&attempt).unwrap()).unwrap();
+            assert_eq!(json_body["choices"][0]["message"]["content"], "Working...");
+            assert_eq!(json_body["choices"][0]["finish_reason"], "length");
+            assert_eq!(
+                json_body["choices"][0]["message"]["tool_calls"]
+                    .as_array()
+                    .unwrap()
+                    .len(),
+                1
+            );
+        }
+        assert!(delivery.effects().is_empty(), "{:?}", delivery.effects());
+    }
+}
+
+#[test]
+fn chat_upstream_text_then_audio_streams_through_chat_source_projection() {
+    let client = ClientAdapter::openai(
+        GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None),
+        TargetContract::full(),
+    );
+    let frames = [
+        json!({"id":"c4","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant","content":"hello"},"finish_reason":null}]}),
+        json!({"id":"c4","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"audio":{"id":"aud_1","data":"AQID","transcript":"he"}},"finish_reason":null}]}),
+        json!({"id":"c4","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"audio":{"transcript":"llo"}},"finish_reason":null}]}),
+        json!({"id":"c4","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"audio":{"expires_at":999}},"finish_reason":null}]}),
+        json!({"id":"c4","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}),
+        json!({"id":"c4","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"usage":{"prompt_tokens":4,"completion_tokens":3,"total_tokens":7}}),
+    ];
+    let options = crate::semantic::context::StreamOptions {
+        include_usage: Some(true),
+        ..Default::default()
+    };
+    for stream in [true, false] {
+        let (attempt, mut delivery, sse_bytes) =
+            deliver_chat_upstream(&client, &frames, stream, options.clone());
+        if stream {
+            let wire = String::from_utf8(sse_bytes).unwrap();
+            assert!(wire.ends_with("data: [DONE]\n\n"));
+            let (_, snap) = delivery.snapshot(&attempt).unwrap();
+            let snap: Value = serde_json::from_slice(&snap).unwrap();
+            assert_eq!(snap["choices"][0]["message"]["content"], "hello");
+            assert_eq!(snap["choices"][0]["message"]["audio"]["id"], "aud_1");
+            assert_eq!(snap["choices"][0]["message"]["audio"]["data"], "AQID");
+            assert_eq!(
+                snap["choices"][0]["message"]["audio"]["transcript"],
+                "hello"
+            );
+        } else {
+            let json_body: Value =
+                serde_json::from_slice(&delivery.encode_json(&attempt).unwrap()).unwrap();
+            assert_eq!(json_body["choices"][0]["message"]["content"], "hello");
+            assert_eq!(json_body["choices"][0]["message"]["audio"]["id"], "aud_1");
+            assert_eq!(json_body["choices"][0]["message"]["audio"]["data"], "AQID");
+            assert_eq!(
+                json_body["choices"][0]["message"]["audio"]["transcript"],
+                "hello"
+            );
+        }
+        assert!(delivery.effects().is_empty(), "{:?}", delivery.effects());
+    }
+}
