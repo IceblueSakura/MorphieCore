@@ -1509,7 +1509,8 @@ fn request_diagnostics_are_source_bound_not_public_facts() {
     );
 }
 #[test]
-fn bailian_created_drift_is_chat_only_and_preserves_identity() {
+fn chat_chunk_created_drift_binds_first_timestamp_while_responses_stays_strict() {
+    use morphiecore::protocol::{CodecError, failure::ShapeReason};
     assert_eq!(
         GenerationCodec::new(GenerationApi::Responses, Dialect::Bailian, None)
             .adaptation
@@ -1522,23 +1523,42 @@ fn bailian_created_drift_is_chat_only_and_preserves_identity() {
         "choices":[{"index":0,"delta":{"role":"assistant","content":"pong"},"finish_reason":null}]});
     let last = json!({"id":"r","object":"chat.completion.chunk","model":"synthetic","created":2,
         "choices":[{"index":0,"delta":{},"finish_reason":"stop"}]});
-    for (dialect, admitted) in [(Dialect::Standard, false), (Dialect::Bailian, true)] {
+    for dialect in [Dialect::Standard, Dialect::OpenCodeGo, Dialect::Bailian] {
         let provider = adapter(dialect);
         let mut decoder = provider.event_decoder();
         decoder.push(&first).unwrap();
-        assert_eq!(decoder.push(&last).is_ok(), admitted);
-        if admitted {
-            decoder.done().unwrap();
-            let decoded = decoder.materialize().unwrap();
-            assert_eq!(
-                provider
-                    .encode_response(&decoded, &Contract::full())
-                    .unwrap()["created"],
-                1
-            );
-        } else {
-            assert!(decoder.finish().is_err());
-        }
+        decoder.push(&last).unwrap();
+        decoder.done().unwrap();
+        let decoded = decoder.materialize().unwrap();
+        assert_eq!(
+            provider
+                .encode_response(&decoded, &Contract::full())
+                .unwrap()["created"],
+            1
+        );
+    }
+    for dialect in [Dialect::Standard, Dialect::Bailian] {
+        let provider = GenerationCodec::new(GenerationApi::Responses, dialect, None);
+        let mut created = crate::wire::response(2);
+        created["status"] = json!("in_progress");
+        created["output"] = json!([]);
+        created["completed_at"] = Value::Null;
+        created["usage"] = Value::Null;
+        created["created_at"] = json!(1);
+        let mut completed = crate::wire::response(2);
+        completed["output"] = json!([]);
+        completed["created_at"] = json!(2);
+        let mut decoder = provider.event_decoder();
+        decoder
+            .push(&json!({"type":"response.created","sequence_number":0,"response":created}))
+            .unwrap();
+        assert!(matches!(
+            decoder.push(
+                &json!({"type":"response.completed","sequence_number":1,"response":completed})
+            ),
+            Err(CodecError::Invalid(ShapeReason::MetadataCreatedChanged))
+        ));
+        assert!(decoder.finish().is_err());
     }
     for (key, old, changed) in [
         ("id", json!("r"), json!("other")),
@@ -1547,14 +1567,16 @@ fn bailian_created_drift_is_chat_only_and_preserves_identity() {
         ("system_fingerprint", json!("a"), json!("b")),
         ("service_tier", json!("priority"), json!("default")),
     ] {
-        let mut a = first.clone();
-        let mut b = last.clone();
-        a[key] = old;
-        b[key] = changed;
-        let mut decoder = adapter(Dialect::Bailian).event_decoder();
-        decoder.push(&a).unwrap();
-        assert!(decoder.push(&b).is_err(), "{key}");
-        assert!(decoder.done().is_err());
+        for dialect in [Dialect::Standard, Dialect::Bailian] {
+            let mut a = first.clone();
+            let mut b = last.clone();
+            a[key] = old.clone();
+            b[key] = changed.clone();
+            let mut decoder = adapter(dialect).event_decoder();
+            decoder.push(&a).unwrap();
+            assert!(decoder.push(&b).is_err(), "{dialect:?} {key}");
+            assert!(decoder.done().is_err());
+        }
     }
 }
 

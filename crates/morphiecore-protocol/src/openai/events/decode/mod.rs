@@ -359,9 +359,10 @@ impl EventDecoder {
             crate::conversion::generation::ConversionBoundary::EventDecode,
         )?;
         if let Some(old) = &self.metadata {
-            // Response identity is strict; providers re-stamp scalar facts such
-            // as `created` and `system_fingerprint` per chunk, so the first
-            // reported value binds and later drift is normalized away.
+            // Response identity is strict. Chat chunks carry a per-frame
+            // `created` timestamp that providers frequently re-stamp across
+            // chunks, so Chat binds the first valid value while Responses
+            // snapshots keep `created_at` strict unless the dialect opts in.
             if old.id != m.id {
                 return Err(CodecError::Invalid(ShapeReason::MetadataIdChanged));
             }
@@ -369,8 +370,9 @@ impl EventDecoder {
                 return Err(CodecError::Invalid(ShapeReason::MetadataModelChanged));
             }
             if old.created != m.created {
-                if self.adaptation.rules.metadata.chunk
-                    == crate::openai::dialect::adaptation::ChunkMetadata::Strict
+                if self.profile == GenerationApi::Responses
+                    && self.adaptation.rules.metadata.chunk
+                        == crate::openai::dialect::adaptation::ChunkMetadata::Strict
                 {
                     return Err(CodecError::Invalid(ShapeReason::MetadataCreatedChanged));
                 }

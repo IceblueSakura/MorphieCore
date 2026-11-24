@@ -14,10 +14,10 @@ pub enum ChatFinishReason {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum ChunkMetadata {
+    /// Identity and Responses `created_at` stay strict; Chat binds the first
+    /// valid `created` timestamp and still rejects `system_fingerprint` drift.
     #[default]
     Strict,
-    /// Bind the first timestamp; reject fingerprint drift.
-    StableCreated,
     /// Bind first timestamp and fingerprint; model and identity stay strict.
     StableCreatedAndFingerprint,
 }

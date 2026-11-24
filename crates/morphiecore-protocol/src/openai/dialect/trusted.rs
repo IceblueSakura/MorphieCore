@@ -224,7 +224,6 @@ impl Dialect {
                     },
                     metadata: MetadataRules {
                         chat_stop_diagnostics: true,
-                        chunk: ChunkMetadata::StableCreated,
                         ..Default::default()
                     },
                     accounting: AccountingRules {
@@ -273,7 +272,6 @@ impl Dialect {
                     },
                     metadata: MetadataRules {
                         // Both billing plans use the same upstream wire dialect.
-                        chunk: ChunkMetadata::StableCreated,
                         responses_reported_schema_alias: true,
                         response_extras: true,
                         ..Default::default()
@@ -411,7 +409,6 @@ impl Dialect {
             cache.key = false;
         }
         if self == Self::Bailian && profile != GenerationApi::Chat {
-            rules.metadata.chunk = ChunkMetadata::Strict;
             rules.stream.empty_continuation_call_id = false;
         }
         Adaptation {
