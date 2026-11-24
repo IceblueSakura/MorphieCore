@@ -18,6 +18,7 @@ pub const MAX_EDIT_SOURCES: usize = 16;
 /// Fixed aggregate raw input budget across all edit sources and optional mask.
 pub const MAX_EDIT_INPUT_BYTES: usize = 8 << 20;
 pub const MAX_EDIT_MASK_BYTES_EXCLUSIVE: usize = 4_000_000;
+pub const MAX_PARTIAL_IMAGES: u8 = 3;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("invalid or over-budget image generation value")]
@@ -140,6 +141,7 @@ pub struct ImageGenerationRequest {
     pub operation: ImageOperation,
     /// Exact delivery requirement; absent/null means one, not an upstream guarantee.
     pub count: Presence<u8>,
+    pub partial_images: Presence<u8>,
     pub format: Presence<ImageFormat>,
     pub size: Presence<ImageSizeRequest>,
     pub quality: Presence<ImageQualityRequest>,
@@ -153,6 +155,7 @@ impl std::fmt::Debug for ImageGenerationRequest {
             .field("prompt", &"[redacted]")
             .field("operation", &self.operation)
             .field("count", &self.count)
+            .field("partial_images", &self.partial_images)
             .field("format", &self.format)
             .field("size", &self.size)
             .field("quality", &self.quality)
@@ -168,6 +171,7 @@ impl ImageGenerationRequest {
             prompt: prompt.into(),
             operation: ImageOperation::Generate,
             count: Presence::Absent,
+            partial_images: Presence::Absent,
             format: Presence::Absent,
             size: Presence::Absent,
             quality: Presence::Absent,
@@ -190,6 +194,7 @@ impl ImageGenerationRequest {
                 input_fidelity: Presence::Absent,
             }),
             count: Presence::Absent,
+            partial_images: Presence::Absent,
             format: Presence::Absent,
             size: Presence::Absent,
             quality: Presence::Absent,
@@ -236,6 +241,10 @@ impl ImageGenerationRequest {
             || self.prompt.len() > MAX_PROMPT_BYTES
             || self.prompt.chars().count() > MAX_PROMPT_CHARS
             || !(1..=MAX_IMAGE_COUNT).contains(&self.requested_count())
+            || self
+                .partial_images
+                .value()
+                .is_some_and(|n| *n > MAX_PARTIAL_IMAGES)
             || self.format.value().is_some_and(|f| {
                 !matches!(f, ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::Webp)
             })
@@ -476,5 +485,80 @@ impl ImageGenerationResponse {
             usage.validate()?;
         }
         Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ImageStreamSettings {
+    pub format: ImageFormat,
+    pub size: ImageSizeRequest,
+    pub quality: ImageQualityRequest,
+    pub background: ImageBackgroundRequest,
+}
+impl ImageStreamSettings {
+    pub fn validate(&self) -> Result<(), ImageError> {
+        if !matches!(
+            self.format,
+            ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::Webp
+        ) {
+            return Err(ImageError);
+        }
+        if let ImageSizeRequest::Exact(size) = self.size {
+            size.validate()?;
+        }
+        if self.background == ImageBackgroundRequest::Exact(ImageBackground::Transparent)
+            && self.format == ImageFormat::Jpeg
+        {
+            return Err(ImageError);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub enum ImageStreamEvent {
+    Preview {
+        output_slot: u8,
+        preview_index: u8,
+        data: ImageData,
+        event_time: u64,
+        settings: ImageStreamSettings,
+    },
+    Completed {
+        data: ImageData,
+        event_time: u64,
+        settings: ImageStreamSettings,
+        safety_identifier: Presence<String>,
+        usage: Box<ImageUsage>,
+    },
+}
+impl std::fmt::Debug for ImageStreamEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Preview {
+                output_slot,
+                preview_index,
+                event_time,
+                settings,
+                ..
+            } => f
+                .debug_struct("Preview")
+                .field("output_slot", output_slot)
+                .field("preview_index", preview_index)
+                .field("event_time", event_time)
+                .field("settings", settings)
+                .finish(),
+            Self::Completed {
+                event_time,
+                settings,
+                usage,
+                ..
+            } => f
+                .debug_struct("Completed")
+                .field("event_time", event_time)
+                .field("settings", settings)
+                .field("usage", usage)
+                .finish(),
+        }
     }
 }

@@ -860,3 +860,166 @@ async fn image_edit_enforces_multipart_limits_and_native_edit_paths() {
     server.abort();
     let _ = server.await;
 }
+
+#[tokio::test]
+async fn media_sse_streams_incrementally_holds_terminal_behind_eof_and_aborts_honestly() {
+    use axum::{
+        Router,
+        body::{Body, Bytes},
+        http::{Request, StatusCode},
+        routing::post,
+    };
+    use futures_util::StreamExt;
+    use tokio::sync::mpsc;
+    use tower::ServiceExt;
+
+    type ChunkTx = mpsc::Sender<Result<Bytes, std::io::Error>>;
+
+    let (sp_open_tx, mut sp_rx) = mpsc::channel::<ChunkTx>(2);
+    let (im_open_tx, mut im_rx) = mpsc::channel::<ChunkTx>(2);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let sp_open = sp_open_tx.clone();
+    let im_open = im_open_tx.clone();
+    let upstream = Router::new()
+        .route(
+            "/api/v1/services/audio/tts/SpeechSynthesizer",
+            post(move || {
+                let sp_open = sp_open.clone();
+                async move {
+                    let (tx, mut rx) = mpsc::channel::<Result<Bytes, std::io::Error>>(8);
+                    sp_open.send(tx).await.unwrap();
+                    (
+                        [("content-type", "text/event-stream")],
+                        Body::from_stream(futures_util::stream::poll_fn(move |cx| {
+                            rx.poll_recv(cx)
+                        })),
+                    )
+                }
+            }),
+        )
+        .route(
+            "/v1/images/generations",
+            post(move || {
+                let im_open = im_open.clone();
+                async move {
+                    let (tx, mut rx) = mpsc::channel::<Result<Bytes, std::io::Error>>(8);
+                    im_open.send(tx).await.unwrap();
+                    (
+                        [("content-type", "text/event-stream")],
+                        Body::from_stream(futures_util::stream::poll_fn(move |cx| {
+                            rx.poll_recv(cx)
+                        })),
+                    )
+                }
+            }),
+        );
+    let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+    let mut fixture = Fixture::new(
+        service(),
+        json!({"models":{
+            "qwen-audio-3.0-tts-plus":{"account":"ali"},
+            "gpt-image-2.6-flare":{"account":"oai"}
+        }}),
+        &[
+            ("aliyun-tokenplan-cn", "ali", "synthetic-ali"),
+            ("openai", "oai", "synthetic-oai"),
+        ],
+    )
+    .unwrap();
+    fixture.loopback_authority(&origin);
+    let router = fixture.gateway.router();
+
+    // 1. Aliyun Speech SSE emits delta before upstream EOF, holds speech.audio.done until EOF.
+    let speech_task = tokio::spawn(
+        router.clone().oneshot(
+            Request::post("/v1/audio/speech")
+                .header(
+                    "authorization",
+                    "Bearer synthetic-gateway-client-token-0001",
+                )
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"model":"qwen-audio-3.0-tts-plus","input":"Hi","voice":"longanlingxin","stream_format":"sse"}"#,
+                ))
+                .unwrap(),
+        ),
+    );
+    let tx = sp_rx.recv().await.unwrap();
+    tx.send(Ok(Bytes::from(format!(
+        "data: {}\n\ndata: {}\n\n",
+        json!({"request_id":"r1","output":{"finish_reason":"null","type":"sentence-begin","sentence":{"index":0,"words":[]},"audio":{"data":""}}}),
+        json!({"request_id":"r1","output":{"finish_reason":"null","type":"sentence-synthesis","original_text":"Hi","sentence":{"index":0,"words":[]},"audio":{"data":"AQID"}}}),
+    ))))
+    .await
+    .unwrap();
+    let speech_resp = speech_task.await.unwrap().unwrap();
+    assert_eq!(speech_resp.status(), StatusCode::OK);
+    assert_eq!(speech_resp.headers()["content-type"], "text/event-stream");
+    let mut body = speech_resp.into_body().into_data_stream();
+    let first = body.next().await.unwrap().unwrap();
+    let first_text = std::str::from_utf8(&first).unwrap();
+    assert!(first_text.contains("speech.audio.delta"));
+    assert!(first_text.contains("\"audio\":\"AQID\""));
+
+    // Send sentence-end and stop BEFORE closing upstream stream: terminal must wait for EOF.
+    tx.send(Ok(Bytes::from(format!(
+        "data: {}\n\ndata: {}\n\n",
+        json!({"request_id":"r1","output":{"finish_reason":"null","type":"sentence-end","original_text":"Hi","sentence":{"index":0,"words":[]},"audio":{"data":""}}}),
+        json!({"request_id":"r1","output":{"finish_reason":"stop","audio":{"data":""}},"usage":{"characters":2}}),
+    ))))
+    .await
+    .unwrap();
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(50), body.next())
+            .await
+            .is_err(),
+        "terminal event must not be emitted before upstream EOF"
+    );
+    drop(tx);
+    let last = body.next().await.unwrap().unwrap();
+    let last_text = std::str::from_utf8(&last).unwrap();
+    assert!(last_text.contains("speech.audio.done"));
+    assert!(!last_text.contains("usage"));
+    assert!(body.next().await.is_none());
+
+    // 2. OpenAI Image Preview SSE emits partial_image before EOF, then aborts honestly on mid-stream truncation without fabricating completed.
+    let image_task = tokio::spawn(
+        router.oneshot(
+            Request::post("/v1/images/generations")
+                .header(
+                    "authorization",
+                    "Bearer synthetic-gateway-client-token-0001",
+                )
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"model":"gpt-image-2.6-flare","prompt":"cat","stream":true,"partial_images":1}"#,
+                ))
+                .unwrap(),
+        ),
+    );
+    let tx = im_rx.recv().await.unwrap();
+    tx.send(Ok(Bytes::from(format!(
+        "event: image_generation.partial_image\ndata: {}\n\n",
+        json!({"type":"image_generation.partial_image","partial_image_index":0,"b64_json":"AQID","created_at":10,"output_format":"png","size":"auto","quality":"auto","background":"auto"})
+    ))))
+    .await
+    .unwrap();
+    let image_resp = image_task.await.unwrap().unwrap();
+    assert_eq!(image_resp.status(), StatusCode::OK);
+    let mut body = image_resp.into_body().into_data_stream();
+    let first = body.next().await.unwrap().unwrap();
+    assert!(
+        std::str::from_utf8(&first)
+            .unwrap()
+            .contains("image_generation.partial_image")
+    );
+    // Truncate upstream without emitting completed: downstream sees stream error, never completed.
+    drop(tx);
+    let err = body.next().await.unwrap();
+    assert!(err.is_err());
+
+    server.abort();
+    let _ = server.await;
+}

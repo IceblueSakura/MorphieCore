@@ -25,6 +25,9 @@ impl UpstreamAdapter {
     pub fn upstream_sse(self) -> bool {
         self == Self::AliyunMp3
     }
+    pub fn supports_streaming(self) -> bool {
+        matches!(self, Self::Standard | Self::AliyunMp3)
+    }
     pub fn reported_encoding(
         self,
         content_type: &str,

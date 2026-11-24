@@ -35,6 +35,9 @@ pub const FORMATS: &[AudioEncoding] = &[
 
 pub fn encode_speech(request: &crate::speech::Request, model: &str) -> Result<Value, CodecError> {
     super::openai::speech::validate_request(request)?;
+    if request.streaming() {
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+    }
     if !super::openai::speech::valid_model(model) {
         return Err(CodecError::invalid());
     }
@@ -68,6 +71,9 @@ pub fn encode_transcription(
     model: &str,
 ) -> Result<Value, CodecError> {
     request.task.validate().map_err(|_| CodecError::invalid())?;
+    if request.stream {
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+    }
     if !super::openai::speech::valid_model(&request.model)
         || !super::openai::speech::valid_model(model)
     {
@@ -292,6 +298,7 @@ mod tests {
         let mut request = crate::transcription::Request {
             model: "mimo-v2.5-asr".into(),
             task,
+            stream: false,
         };
         assert_eq!(
             encode_transcription(&request, "mimo-v2.5-asr").unwrap(),

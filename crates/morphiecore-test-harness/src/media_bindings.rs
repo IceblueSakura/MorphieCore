@@ -134,7 +134,7 @@ pub fn standard_transcription(
                 profile: crate::morphiecore::adapter::transcription::UpstreamAdapter::Standard,
                 credential: CredentialBindingId::new("asr-key").unwrap(),
                 execution: crate::morphiecore::topology::ExecutionContract {
-                    streaming: false,
+                    streaming: true,
                     request_body_limit: 6 << 20,
                     ..speech.endpoint.execution
                 },

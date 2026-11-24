@@ -903,3 +903,245 @@ async fn standard_image_edit_sdk_multipart() {
         .unwrap()
         .unwrap();
 }
+
+#[tokio::test]
+#[ignore = "requires pinned OpenAI SDK; synthetic media SSE loopback across speech, transcription and images"]
+async fn media_sse_sdk_loopback() {
+    use morphiecore::topology::compile;
+
+    let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let seen = count.clone();
+
+    async fn upstream_speech(
+        State(seen): State<Arc<std::sync::atomic::AtomicUsize>>,
+        headers: HeaderMap,
+        axum::Json(body): axum::Json<Value>,
+    ) -> Response {
+        assert_eq!(headers["authorization"], "Bearer synthetic-speech-upstream");
+        assert_eq!(headers["accept"], "text/event-stream");
+        assert_eq!(body["stream_format"], "sse");
+        seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let sse = concat!(
+            "event: speech.audio.delta\n",
+            "data: {\"type\":\"speech.audio.delta\",\"audio\":\"AQID\"}\n\n",
+            "event: speech.audio.done\n",
+            "data: {\"type\":\"speech.audio.done\",\"usage\":{\"input_tokens\":2,\"output_tokens\":3,\"total_tokens\":5}}\n\n",
+        );
+        Response::builder()
+            .header("content-type", "text/event-stream")
+            .body(Body::from(sse))
+            .unwrap()
+    }
+
+    async fn upstream_transcribe(
+        State(seen): State<Arc<std::sync::atomic::AtomicUsize>>,
+        headers: HeaderMap,
+        body: axum::body::Bytes,
+    ) -> Response {
+        assert_eq!(headers["authorization"], "Bearer synthetic-asr-upstream");
+        assert_eq!(headers["accept"], "text/event-stream");
+        let ct = headers["content-type"].to_str().unwrap().to_owned();
+        let req = morphiecore::protocol::openai::transcription::decode_request(&ct, body)
+            .await
+            .unwrap();
+        assert!(req.stream);
+        seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let sse = concat!(
+            "event: transcript.text.delta\n",
+            "data: {\"type\":\"transcript.text.delta\",\"delta\":\"Hel\"}\n\n",
+            "event: transcript.text.delta\n",
+            "data: {\"type\":\"transcript.text.delta\",\"delta\":\"lo\"}\n\n",
+            "event: transcript.text.done\n",
+            "data: {\"type\":\"transcript.text.done\",\"text\":\"Hello\",\"languages\":[{\"code\":\"en\"}],\"usage\":{\"type\":\"tokens\",\"input_tokens\":5,\"output_tokens\":2,\"total_tokens\":7,\"input_token_details\":{\"audio_tokens\":4,\"text_tokens\":1}}}\n\n",
+        );
+        Response::builder()
+            .header("content-type", "text/event-stream")
+            .body(Body::from(sse))
+            .unwrap()
+    }
+
+    async fn upstream_img_gen(
+        State(seen): State<Arc<std::sync::atomic::AtomicUsize>>,
+        headers: HeaderMap,
+        axum::Json(body): axum::Json<Value>,
+    ) -> Response {
+        assert_eq!(headers["authorization"], "Bearer synthetic-image-upstream");
+        assert_eq!(headers["accept"], "text/event-stream");
+        assert_eq!(body["stream"], true);
+        assert_eq!(body["partial_images"], 1);
+        seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let sse = concat!(
+            "event: image_generation.partial_image\n",
+            "data: {\"type\":\"image_generation.partial_image\",\"b64_json\":\"AQID\",\"background\":\"auto\",\"created_at\":100,\"output_format\":\"png\",\"partial_image_index\":0,\"quality\":\"auto\",\"size\":\"auto\"}\n\n",
+            "event: image_generation.completed\n",
+            "data: {\"type\":\"image_generation.completed\",\"b64_json\":\"BAUG\",\"background\":\"auto\",\"created_at\":101,\"output_format\":\"png\",\"quality\":\"auto\",\"size\":\"auto\",\"usage\":{\"input_tokens\":4,\"input_tokens_details\":{\"text_tokens\":4,\"image_tokens\":0},\"output_tokens\":6,\"total_tokens\":10}}\n\n",
+        );
+        Response::builder()
+            .header("content-type", "text/event-stream")
+            .body(Body::from(sse))
+            .unwrap()
+    }
+
+    async fn upstream_img_edit(
+        State(seen): State<Arc<std::sync::atomic::AtomicUsize>>,
+        headers: HeaderMap,
+        body: axum::body::Bytes,
+    ) -> Response {
+        assert_eq!(headers["authorization"], "Bearer synthetic-image-upstream");
+        assert_eq!(headers["accept"], "text/event-stream");
+        let ct = headers["content-type"].to_str().unwrap().to_owned();
+        let req = morphiecore::protocol::openai::images::decode_edit_request(&ct, body)
+            .await
+            .unwrap();
+        assert!(req.delivery.streaming());
+        assert_eq!(
+            req.task.partial_images,
+            morphiecore::semantic::value::Presence::Value(1)
+        );
+        seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let sse = concat!(
+            "event: image_edit.partial_image\n",
+            "data: {\"type\":\"image_edit.partial_image\",\"b64_json\":\"AQID\",\"background\":\"auto\",\"created_at\":200,\"output_format\":\"webp\",\"partial_image_index\":0,\"quality\":\"auto\",\"size\":\"auto\"}\n\n",
+            "event: image_edit.completed\n",
+            "data: {\"type\":\"image_edit.completed\",\"b64_json\":\"BAUG\",\"background\":\"auto\",\"created_at\":201,\"output_format\":\"webp\",\"quality\":\"auto\",\"size\":\"auto\",\"usage\":{\"input_tokens\":8,\"input_tokens_details\":{\"text_tokens\":3,\"image_tokens\":5},\"output_tokens\":6,\"total_tokens\":14}}\n\n",
+        );
+        Response::builder()
+            .header("content-type", "text/event-stream")
+            .body(Body::from(sse))
+            .unwrap()
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let upstream = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/audio/speech", post(upstream_speech))
+                .route("/audio/transcriptions", post(upstream_transcribe))
+                .route("/images/generations", post(upstream_img_gen))
+                .route("/images/edits", post(upstream_img_edit))
+                .with_state(seen),
+        )
+        .await
+        .unwrap();
+    });
+    let _upstream = ServerGuard(upstream.abort_handle());
+
+    let (sp_entry, sp_route) = morphiecore_test_harness::speech::binding(&origin);
+    let (asr_prov, asr_entry, asr_route) =
+        morphiecore_test_harness::media_bindings::standard_transcription(&origin);
+    let (im_entry, im_route) = morphiecore_test_harness::image_generation::binding(&origin);
+    let im_prov = morphiecore::provider::ProviderDefinition {
+        id: morphiecore::provider::ProviderId::new("fixture").unwrap(),
+        origin: morphiecore::provider::TrustedOrigin::parse(&origin).unwrap(),
+        endpoints: [].into(),
+        auth: morphiecore::provider::AuthScheme::Bearer,
+    };
+    let sp_prov = morphiecore_test_harness::speech::provider(&origin);
+
+    let topology = compile(
+        vec![sp_prov, asr_prov, im_prov],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    )
+    .unwrap()
+    .with_speech(vec![sp_entry], vec![sp_route])
+    .unwrap()
+    .with_transcriptions(vec![asr_entry], vec![asr_route])
+    .unwrap()
+    .with_images(vec![im_entry], vec![im_route])
+    .unwrap()
+    .with_model_metadata([
+        (
+            morphiecore::topology::ModelId::new("canonical-speech").unwrap(),
+            morphiecore::topology::ModelMetadata::new(7, "Synthetic Speech").unwrap(),
+        ),
+        (
+            morphiecore::topology::ModelId::new("standard-transcription").unwrap(),
+            morphiecore::topology::ModelMetadata::new(8, "Synthetic ASR").unwrap(),
+        ),
+        (
+            morphiecore::topology::ModelId::new("canonical-image").unwrap(),
+            morphiecore::topology::ModelMetadata::new(9, "Synthetic Image").unwrap(),
+        ),
+    ])
+    .unwrap();
+
+    let gateway = morphiecore::gateway::Gateway::new(
+        topology,
+        morphiecore::gateway::TaskEntries {
+            speech: vec![morphiecore::gateway::SpeechEntry {
+                model: "public-speech".into(),
+            }],
+            transcriptions: vec![morphiecore::gateway::TranscriptionEntry {
+                model: "standard-transcription".into(),
+                binding: None,
+            }],
+            images: vec![morphiecore::gateway::ImageEntry {
+                model: "public-image".into(),
+            }],
+            ..Default::default()
+        },
+        BTreeMap::from([
+            (
+                morphiecore::provider::CredentialBindingId::new("speech-key").unwrap(),
+                Arc::new(
+                    morphiecore::provider::SecretMaterial::new("synthetic-speech-upstream")
+                        .unwrap(),
+                ),
+            ),
+            (
+                morphiecore::provider::CredentialBindingId::new("asr-key").unwrap(),
+                Arc::new(
+                    morphiecore::provider::SecretMaterial::new("synthetic-asr-upstream").unwrap(),
+                ),
+            ),
+            (
+                morphiecore::provider::CredentialBindingId::new("fixture-key").unwrap(),
+                Arc::new(
+                    morphiecore::provider::SecretMaterial::new("synthetic-image-upstream").unwrap(),
+                ),
+            ),
+        ]),
+        BTreeMap::from([(
+            "fixture-agent".into(),
+            morphiecore::provider::SecretMaterial::new(support::CLIENT_KEY).unwrap(),
+        )]),
+        Limits::default(),
+        None,
+    )
+    .unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    let (stop, stopped) = oneshot::channel();
+    let serving = tokio::spawn(gateway.serve(listener, async {
+        let _ = stopped.await;
+    }));
+    let _server = ServerGuard(serving.abort_handle());
+
+    let home = tempfile::tempdir().unwrap();
+    let mut command = super::isolated_sdk_python(home.path());
+    command.args(["tests/sdk/media_stream_loop.py", &base]);
+    let output = super::child_process::run(&mut command, b"", Duration::from_secs(20), 8192)
+        .await
+        .expect("bounded SDK media SSE process");
+    assert!(
+        output.status.success(),
+        "SDK media SSE failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["requests"], 4);
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 4);
+
+    stop.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(3), serving)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+}

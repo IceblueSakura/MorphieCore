@@ -6,13 +6,14 @@ use crate::{
     openai::speech,
     semantic::{
         task::speech_synthesis::{
-            AudioReference, SpeechReport, SpeechResult, SpeechSentence, SpeechWord,
+            AudioReference, SpeechEvent, SpeechReport, SpeechResult, SpeechSentence, SpeechWord,
         },
         value::{AudioArtifact, MAX_AUDIO_BYTES},
     },
     speech::Request,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
+use bytes::Bytes;
 use serde_json::{Map, Value, json};
 
 fn object<'a>(v: &'a Value, keys: &[&str]) -> Result<&'a Map<String, Value>, CodecError> {
@@ -66,6 +67,8 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
 
 pub struct Decoder {
     bytes: Vec<u8>,
+    retain_bytes: bool,
+    total_bytes: usize,
     report: SpeechReport,
     active: Option<(SpeechSentence, usize)>,
     complete: bool,
@@ -76,8 +79,21 @@ pub struct Decoder {
 }
 impl Decoder {
     pub fn new(byte_limit: usize, report_budget: usize, max_events: usize) -> Self {
+        Self::with_retention(byte_limit, report_budget, max_events, true)
+    }
+    pub fn new_streaming(byte_limit: usize, report_budget: usize, max_events: usize) -> Self {
+        Self::with_retention(byte_limit, report_budget, max_events, false)
+    }
+    fn with_retention(
+        byte_limit: usize,
+        report_budget: usize,
+        max_events: usize,
+        retain_bytes: bool,
+    ) -> Self {
         Self {
             bytes: vec![],
+            retain_bytes,
+            total_bytes: 0,
             report: SpeechReport::default(),
             active: None,
             complete: false,
@@ -89,6 +105,9 @@ impl Decoder {
     }
     /// Every failure poisons the reduction; a later stop cannot repair missing data.
     pub fn push(&mut self, value: &Value) -> Result<(), CodecError> {
+        self.push_stream(value).map(|_| ())
+    }
+    pub fn push_stream(&mut self, value: &Value) -> Result<Option<SpeechEvent>, CodecError> {
         if self.poisoned {
             return Err(CodecError::invalid());
         }
@@ -98,7 +117,7 @@ impl Decoder {
         }
         result
     }
-    fn push_inner(&mut self, value: &Value) -> Result<(), CodecError> {
+    fn push_inner(&mut self, value: &Value) -> Result<Option<SpeechEvent>, CodecError> {
         if self.complete || self.remaining_events == 0 {
             return Err(CodecError::invalid());
         }
@@ -150,7 +169,7 @@ impl Decoder {
         reference.validate().map_err(|_| CodecError::invalid())?;
         if stop {
             if self.active.is_some()
-                || self.bytes.is_empty()
+                || self.total_bytes == 0
                 || !data.is_empty()
                 || ["type", "original_text", "sentence"]
                     .iter()
@@ -164,7 +183,7 @@ impl Decoder {
                 .and_then(|v| v.get("characters"))
                 .is_some();
             self.complete = true;
-            return Ok(());
+            return Ok(Some(SpeechEvent::Done { usage: None }));
         }
         let kind = text(required(output, "type")?)?;
         if kind == "sentence-begin" {
@@ -183,7 +202,7 @@ impl Decoder {
                     words: vec![],
                     reference: AudioReference::default(),
                 },
-                self.bytes.len(),
+                self.total_bytes,
             ));
         } else if !matches!(kind, "sentence-synthesis" | "sentence-end") {
             return Err(CodecError::invalid());
@@ -225,37 +244,55 @@ impl Decoder {
                 }
             }
         }
+        let mut emitted = None;
         if kind == "sentence-synthesis" {
             if data.is_empty()
-                || data.len() > self.byte_limit.saturating_sub(self.bytes.len()).div_ceil(3) * 4
+                || data.len() > self.byte_limit.saturating_sub(self.total_bytes).div_ceil(3) * 4
             {
                 return Err(CodecError::Limit);
             }
             let chunk = STANDARD.decode(data).map_err(|_| CodecError::invalid())?;
-            if self.bytes.len().saturating_add(chunk.len()) > self.byte_limit {
-                return Err(CodecError::Limit);
+            if chunk.is_empty() {
+                return Err(CodecError::invalid());
             }
-            self.bytes.extend_from_slice(&chunk);
+            self.total_bytes = self
+                .total_bytes
+                .checked_add(chunk.len())
+                .filter(|n| *n <= self.byte_limit)
+                .ok_or(CodecError::Limit)?;
+            if self.retain_bytes {
+                self.bytes.extend_from_slice(&chunk);
+            } else {
+                emitted = Some(SpeechEvent::AudioDelta {
+                    audio: Bytes::from(chunk),
+                });
+            }
         } else if !data.is_empty() {
             return Err(CodecError::invalid());
         }
         if kind == "sentence-end" {
-            if self.bytes.len() == *start {
+            if self.total_bytes == *start {
                 return Err(CodecError::invalid());
             }
             let (sentence, _) = self.active.take().ok_or_else(CodecError::invalid)?;
             self.report.sentences.push(sentence);
             self.report.validate().map_err(|_| CodecError::invalid())?;
         }
-        Ok(())
+        Ok(emitted)
     }
     /// The caller must independently establish strict SSE framing and transport EOF.
     pub fn finish(self) -> Result<SpeechResult, CodecError> {
-        if self.poisoned || !self.complete || self.active.is_some() {
+        if self.poisoned || !self.complete || self.active.is_some() || !self.retain_bytes {
             return Err(CodecError::invalid());
         }
         let audio =
             AudioArtifact::new(self.bytes.into(), None).map_err(|_| CodecError::invalid())?;
         SpeechResult::new(audio, self.report).map_err(|_| CodecError::invalid())
+    }
+    pub fn finish_stream(&self) -> Result<(), CodecError> {
+        if self.poisoned || !self.complete || self.active.is_some() || self.total_bytes == 0 {
+            return Err(CodecError::invalid());
+        }
+        Ok(())
     }
 }

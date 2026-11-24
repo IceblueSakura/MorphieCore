@@ -439,7 +439,7 @@ mod image_binding {
                         TrustedOrigin::parse("https://other.invalid").unwrap()
                 }
                 1 => route.endpoint.canonical_model = ModelId::new("other").unwrap(),
-                2 => route.endpoint.execution.streaming = true,
+                2 => route.endpoint.execution.streaming = false,
                 3 => route.endpoint.execution.response_body_limit = 0,
                 4 => route.endpoint.upstream_model = "".into(),
                 _ => {
@@ -549,7 +549,8 @@ mod image_generation {
     fn image_generation_request_rejects_unsupported_semantics_and_duplicate_keys() {
         for patch in [
             json!({"n":11}),
-            json!({"stream":true}),
+            json!({"stream":true,"n":2}),
+            json!({"partial_images":1}),
             json!({"output_format":"bmp"}),
             json!({"response_format":"b64_json"}),
             json!({"size":"not-a-size"}),
@@ -783,6 +784,13 @@ mod image_edit {
                 ("prompt", None, b"p"),
                 ("image", Some(("a.png", "image/png")), b"png"),
                 ("stream", None, b"true"),
+                ("n", None, b"2"),
+            ],
+            vec![
+                ("model", None, b"m"),
+                ("prompt", None, b"p"),
+                ("image", Some(("a.png", "image/png")), b"png"),
+                ("partial_images", None, b"1"),
             ],
             vec![
                 ("model", None, b"m"),
@@ -959,7 +967,7 @@ mod speech {
             ("speed", json!(null)),
             ("response_format", json!(null)),
             ("stream_format", json!(null)),
-            ("stream_format", json!("sse")),
+            ("stream_format", json!("invalid")),
             ("stream", json!(false)),
             ("provider", json!(null)),
             ("response_format", json!("pcm16")),
@@ -1180,7 +1188,7 @@ mod openai_speech {
                 "stream_format": "audio",
             })
         );
-        assert!(!route.endpoint.execution.streaming);
+        assert!(route.endpoint.execution.streaming);
         assert!(topology.model("gpt-4o-mini-tts").is_none());
         let mut foreign_voice = request;
         foreign_voice.task.set_voice("nonexistent-voice").unwrap();
@@ -1217,6 +1225,7 @@ mod tokenplan_asr {
         let request = Request {
             model: "public-asr".into(),
             task,
+            stream: false,
         };
         assert_eq!(
             aliyun_asr::encode_request(&request, "upstream-asr").unwrap(),
@@ -1313,7 +1322,12 @@ mod tokenplan_asr {
         assert_eq!(request.task.audio.format(), InputFormat::Wav);
         for fields in [
             vec![("model", "one"), ("model", "two")],
-            vec![("model", "one"), ("stream", "true")],
+            vec![
+                ("model", "one"),
+                ("stream", "true"),
+                ("response_format", "text"),
+            ],
+            vec![("model", "one"), ("stream", "maybe")],
             vec![("model", "one"), ("response_format", "verbose_json")],
             vec![("model", "one"), ("timestamp_granularities[]", "word")],
             vec![("model", "one"), ("language", "en"), ("languages[]", "zh")],
@@ -1518,5 +1532,340 @@ mod openai_asr {
             assert!(aliyun_asr::encode_request(&req, "qwen-audio-3.0-asr-flash").is_err());
             assert!(xiaomi_audio::encode_transcription(&req, "mimo-v2.5-asr").is_err());
         }
+    }
+}
+
+mod media_sse {
+    use morphiecore::{
+        adapter::{
+            images::UpstreamAdapter as ImageAdapter, speech::UpstreamAdapter as SpeechAdapter,
+            transcription::UpstreamAdapter as AsrAdapter,
+        },
+        execution::{images as exec_images, speech as exec_speech, transcription as exec_asr},
+        protocol::{
+            CodecError, aliyun_speech,
+            openai::{images, speech, transcription},
+            xiaomi_audio,
+        },
+        provider::SecretMaterial,
+        semantic::{
+            task::{
+                image_generation::{
+                    ImageBackground, ImageBackgroundRequest, ImageQuality, ImageQualityRequest,
+                    ImageSizeRequest, ImageStreamEvent,
+                },
+                speech_recognition::{RecognitionEvent, RecognitionUsage},
+                speech_synthesis::{SpeechEvent, SpeechTokenUsage},
+            },
+            value::{ImageFormat, Presence},
+        },
+        topology::catalog,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn speech_sse_decodes_openai_and_aliyun_streams_and_rejects_xiaomi_sse() {
+        let req = speech::decode_request(
+            br#"{"model":"gpt-4o-mini-tts","input":"Hi","voice":"coral","stream_format":"sse"}"#,
+        )
+        .unwrap();
+        assert!(req.streaming());
+        assert_eq!(
+            speech::encode_request(&req, "gpt-4o-mini-tts").unwrap()["stream_format"],
+            "sse"
+        );
+
+        // Xiaomi admits static Speech only and rejects stream_format="sse" at L5.
+        let mut mimo = req.clone();
+        mimo.task.set_voice("mimo_default").unwrap();
+        assert!(xiaomi_audio::encode_speech(&mimo, "mimo-v2.5-tts").is_err());
+
+        // OpenAI Speech SSE decoder: delta -> done (with unknown extension fields ignored) -> EOF.
+        let mut dec = speech::StreamDecoder::new(1024, 16);
+        let d1 = dec
+            .push(&json!({"type":"speech.audio.delta","audio":"AQID","future":1}))
+            .unwrap();
+        assert_eq!(
+            d1,
+            SpeechEvent::AudioDelta {
+                audio: bytes::Bytes::from_static(&[1, 2, 3])
+            }
+        );
+        let done = dec
+            .push(&json!({"type":"speech.audio.done","usage":{"input_tokens":2,"output_tokens":5,"total_tokens":7,"extra":true}}))
+            .unwrap();
+        assert_eq!(
+            done,
+            SpeechEvent::Done {
+                usage: Some(SpeechTokenUsage {
+                    input_tokens: 2,
+                    output_tokens: 5,
+                    total_tokens: 7
+                })
+            }
+        );
+        dec.finish().unwrap();
+        assert!(
+            dec.push(&json!({"type":"speech.audio.delta","audio":"BAUG"}))
+                .is_err()
+        );
+        assert!(
+            speech::StreamDecoder::new(1024, 16)
+                .push(&json!({"type":"speech.audio.done"}))
+                .is_err()
+        );
+        assert!(matches!(
+            speech::StreamDecoder::new(2, 16)
+                .push(&json!({"type":"speech.audio.delta","audio":"AQID"})),
+            Err(CodecError::Limit)
+        ));
+
+        // Encoded SSE event parses back through standard SSE decoder cleanly.
+        let wire = speech::encode_sse_event(&done).unwrap();
+        let text = std::str::from_utf8(&wire).unwrap();
+        assert!(text.starts_with("event: speech.audio.done\ndata: "));
+
+        // Aliyun streaming adapter maps sentence-synthesis -> AudioDelta and stop -> Done { usage: None } without retaining audio.
+        let topology = catalog::default_topology().unwrap();
+        let route = topology.speech_route("qwen-audio-3.0-tts-plus").unwrap();
+        let provider = topology.provider("aliyun-tokenplan-cn").unwrap();
+        let mut ali_req = req;
+        ali_req.model = "qwen-audio-3.0-tts-plus".into();
+        ali_req.task.set_voice("longanlingxin").unwrap();
+        let prepared = exec_speech::prepare(route, provider, &ali_req)
+            .unwrap()
+            .authorize(provider, &SecretMaterial::new("synthetic").unwrap())
+            .unwrap();
+        assert!(
+            prepared
+                .safe_headers
+                .contains(&("x-dashscope-sse".into(), "enable".into()))
+        );
+        let mut ali = aliyun_speech::Decoder::new_streaming(16, 4096, 16);
+        assert!(
+            ali.push_stream(&json!({"request_id":"r1","output":{"finish_reason":"null","type":"sentence-begin","sentence":{"index":0,"words":[]},"audio":{"data":""}}}))
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            ali.push_stream(&json!({"request_id":"r1","output":{"finish_reason":"null","type":"sentence-synthesis","original_text":"Hi","sentence":{"index":0,"words":[]},"audio":{"data":"AQID"}}}))
+                .unwrap(),
+            Some(SpeechEvent::AudioDelta {
+                audio: bytes::Bytes::from_static(&[1, 2, 3])
+            })
+        );
+        assert!(
+            ali.push_stream(&json!({"request_id":"r1","output":{"finish_reason":"null","type":"sentence-end","original_text":"Hi","sentence":{"index":0,"words":[]},"audio":{"data":""}}}))
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            ali.push_stream(&json!({"request_id":"r1","output":{"finish_reason":"stop","audio":{"data":""}},"usage":{"characters":2}}))
+                .unwrap(),
+            Some(SpeechEvent::Done { usage: None })
+        );
+        ali.finish_stream().unwrap();
+    }
+
+    #[tokio::test]
+    async fn transcription_sse_decodes_deltas_and_rejects_native_streaming() {
+        let boundary = "tr-sse";
+        let media = format!("multipart/form-data; boundary={boundary}");
+        let body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\ngpt-transcribe\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"stream\"\r\n\r\ntrue\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.wav\"\r\nContent-Type: audio/wav\r\n\r\nRIFF\r\n--{boundary}--\r\n"
+        );
+        let req = transcription::decode_request(&media, body.into())
+            .await
+            .unwrap();
+        assert!(req.stream);
+
+        let topology = catalog::default_topology().unwrap();
+        let route = topology.transcription_route("gpt-transcribe").unwrap();
+        let provider = topology.provider("openai").unwrap();
+        let wire = exec_asr::prepare(route, provider, &req)
+            .unwrap()
+            .authorize(provider, &SecretMaterial::new("synthetic").unwrap())
+            .unwrap();
+        assert!(
+            wire.safe_headers
+                .contains(&("accept".into(), "text/event-stream".into()))
+        );
+
+        let qwen_route = topology
+            .transcription_bindings("qwen-audio-3.0-asr-flash")
+            .next()
+            .unwrap();
+        assert!(!qwen_route.endpoint.profile.supports_streaming());
+        assert!(
+            exec_asr::prepare(
+                qwen_route,
+                topology
+                    .provider(qwen_route.endpoint.provider.as_str())
+                    .unwrap(),
+                &req
+            )
+            .is_err()
+        );
+        assert!(AsrAdapter::Standard.supports_streaming());
+        assert!(SpeechAdapter::AliyunMp3.supports_streaming());
+
+        let mut dec = transcription::StreamDecoder::new(1024, 16);
+        assert_eq!(
+            dec.push(&json!({"type":"transcript.text.delta","delta":"Hi"}))
+                .unwrap(),
+            RecognitionEvent::TextDelta { delta: "Hi".into() }
+        );
+        let done = dec
+            .push(&json!({"type":"transcript.text.done","text":"Hi","languages":[{"code":"en"}],"usage":{"type":"duration","seconds":1}}))
+            .unwrap();
+        let RecognitionEvent::Done(result) = &done else {
+            panic!("expected done");
+        };
+        assert_eq!(result.text(), "Hi");
+        assert_eq!(
+            result.report().usage,
+            Some(RecognitionUsage::duration_seconds(1))
+        );
+        dec.finish().unwrap();
+        assert!(
+            dec.push(&json!({"type":"transcript.text.delta","delta":"extra"}))
+                .is_err()
+        );
+        let encoded = transcription::encode_sse_event(&done).unwrap();
+        assert!(
+            std::str::from_utf8(&encoded)
+                .unwrap()
+                .contains("transcript.text.done")
+        );
+    }
+
+    #[tokio::test]
+    async fn images_preview_sse_enforces_operation_format_index_and_native_rejections() {
+        let req = images::decode_request(
+            br#"{"model":"gpt-image-2.6-flare","prompt":"cat","stream":true,"partial_images":1,"output_format":"webp"}"#,
+        )
+        .unwrap();
+        assert!(req.delivery.streaming());
+        assert_eq!(req.task.partial_images, Presence::Value(1));
+        assert_eq!(
+            images::encode_request(&req, "gpt-image-2.6-flare").unwrap()["partial_images"],
+            1
+        );
+
+        let topology = catalog::default_topology().unwrap();
+        let route = topology.image_route("gpt-image-2.6-flare").unwrap();
+        let provider = topology.provider("openai").unwrap();
+        let prepared = exec_images::prepare(route, provider, &req)
+            .unwrap()
+            .authorize(provider, &SecretMaterial::new("synthetic").unwrap())
+            .unwrap();
+        assert!(
+            prepared
+                .safe_headers
+                .contains(&("accept".into(), "text/event-stream".into()))
+        );
+
+        // Native bindings reject stream=true and partial_images at L5.
+        for model in [
+            "qwen-image-3.0-pro",
+            "gemini-nano-banana-2.1",
+            "grok-imagine-image-2.0",
+        ] {
+            let native_route = topology.image_bindings(model).next().unwrap();
+            assert!(!ImageAdapter::supports_streaming(
+                native_route.endpoint.profile
+            ));
+            let native_provider = topology
+                .provider(native_route.endpoint.provider.as_str())
+                .unwrap();
+            assert!(exec_images::prepare(native_route, native_provider, &req).is_err());
+        }
+
+        // Stream decoder enforces operation event family, monotonic index, format match, and completion.
+        let mut dec = images::StreamDecoder::new(false, Some(1), ImageFormat::Webp, 1024, 4096, 16);
+        let preview = dec
+            .push(&json!({
+                "type":"image_generation.partial_image","partial_image_index":0,"b64_json":"AQID",
+                "created_at":10,"output_format":"webp","size":"auto","quality":"auto","background":"auto"
+            }))
+            .unwrap();
+        assert!(matches!(
+            preview,
+            ImageStreamEvent::Preview {
+                output_slot: 0,
+                preview_index: 0,
+                ..
+            }
+        ));
+        // Second preview exceeds requested partial_images=1 ceiling.
+        let mut overflow =
+            images::StreamDecoder::new(false, Some(1), ImageFormat::Webp, 1024, 4096, 16);
+        overflow
+            .push(&json!({
+                "type":"image_generation.partial_image","partial_image_index":0,"b64_json":"AQID",
+                "created_at":10,"output_format":"webp","size":"auto","quality":"auto","background":"auto"
+            }))
+            .unwrap();
+        assert!(
+            overflow
+                .push(&json!({
+                    "type":"image_generation.partial_image","partial_image_index":1,"b64_json":"AQID",
+                    "created_at":11,"output_format":"webp","size":"auto","quality":"auto","background":"auto"
+                }))
+                .is_err()
+        );
+        // Wrong operation family event rejects.
+        assert!(
+            images::StreamDecoder::new(true, Some(1), ImageFormat::Png, 1024, 4096, 16)
+                .push(&json!({
+                    "type":"image_generation.partial_image","partial_image_index":0,"b64_json":"AQID",
+                    "created_at":10,"output_format":"png","size":"auto","quality":"auto","background":"auto"
+                }))
+                .is_err()
+        );
+        // Partial=0 rejects any partial image.
+        assert!(
+            images::StreamDecoder::new(false, Some(0), ImageFormat::Png, 1024, 4096, 16)
+                .push(&json!({
+                    "type":"image_generation.partial_image","partial_image_index":0,"b64_json":"AQID",
+                    "created_at":10,"output_format":"png","size":"auto","quality":"auto","background":"auto"
+                }))
+                .is_err()
+        );
+
+        let completed = dec
+            .push(&json!({
+                "type":"image_generation.completed","b64_json":"BAUG","created_at":11,
+                "output_format":"webp","size":"1024x1024","quality":"high","background":"opaque",
+                "safety_identifier":"sid-1",
+                "usage":{"input_tokens":3,"input_tokens_details":{"text_tokens":2,"image_tokens":1},"output_tokens":4,"total_tokens":7}
+            }))
+            .unwrap();
+        dec.finish().unwrap();
+        if let ImageStreamEvent::Completed { settings, .. } = &completed {
+            assert_eq!(
+                settings.quality,
+                ImageQualityRequest::Exact(ImageQuality::High)
+            );
+            assert_eq!(
+                settings.background,
+                ImageBackgroundRequest::Exact(ImageBackground::Opaque)
+            );
+            assert_eq!(
+                settings.size,
+                ImageSizeRequest::Exact(morphiecore::semantic::task::image_generation::ImageSize {
+                    width: 1024,
+                    height: 1024
+                })
+            );
+        } else {
+            panic!("expected completed");
+        }
+        let encoded = images::encode_sse_event(&completed, false).unwrap();
+        assert!(
+            std::str::from_utf8(&encoded)
+                .unwrap()
+                .contains("\"type\":\"image_generation.completed\"")
+        );
     }
 }

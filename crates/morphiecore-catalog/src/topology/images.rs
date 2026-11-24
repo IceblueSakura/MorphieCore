@@ -147,7 +147,7 @@ impl CompiledTopology {
             {
                 return Err(TopologyError::InvalidModelBinding);
             }
-            if endpoint.execution.streaming
+            if endpoint.execution.streaming != endpoint.profile.supports_streaming()
                 || endpoint.execution.request_body_limit == 0
                 || endpoint.execution.response_body_limit == 0
                 || endpoint.execution.timeout_ms == 0

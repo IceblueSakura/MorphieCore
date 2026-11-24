@@ -334,6 +334,7 @@ fn xiaomi_audio_is_explicit_and_prepares_its_own_json_contracts() {
             )
             .unwrap(),
         ),
+        stream: false,
     };
     for prepared in [
         crate::execution::speech::prepare(

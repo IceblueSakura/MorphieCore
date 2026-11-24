@@ -3,4 +3,5 @@
 pub struct Request {
     pub model: String,
     pub task: crate::semantic::task::speech_recognition::RecognitionRequest,
+    pub stream: bool,
 }

@@ -312,6 +312,13 @@ pub(super) async fn send_error_frames(
     }
     Ok(())
 }
+pub(super) async fn send_frame(
+    lane: &Lane<'_>,
+    bytes: Bytes,
+    trace: &mut Trace,
+) -> Result<(), ApiError> {
+    send_chunk(lane, bytes, None, false, trace).await
+}
 pub(super) async fn send_final_frame(
     lane: &Lane<'_>,
     bytes: Bytes,

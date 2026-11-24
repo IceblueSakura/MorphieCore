@@ -19,6 +19,9 @@ impl UpstreamAdapter {
     pub fn supports_native_static(self) -> bool {
         self != Self::GptImage
     }
+    pub fn supports_streaming(self) -> bool {
+        self == Self::GptImage
+    }
 
     pub fn encode_request(
         self,

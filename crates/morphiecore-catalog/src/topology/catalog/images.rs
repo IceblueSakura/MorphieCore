@@ -85,9 +85,13 @@ impl ImageBinding {
                 credential: CredentialBindingId::new(provider.id.as_str())
                     .expect("catalog Provider identity"),
                 execution: ExecutionContract {
-                    streaming: false,
+                    streaming: profile.supports_streaming(),
                     request_body_limit: 12 << 20,
-                    response_body_limit: 4 << 20,
+                    response_body_limit: if profile.supports_streaming() {
+                        48 << 20
+                    } else {
+                        4 << 20
+                    },
                     credential_kind: provider.auth.kind(),
                     timeout_ms: 120_000,
                 },

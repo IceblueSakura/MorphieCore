@@ -129,3 +129,27 @@ impl SpeechResult {
         self.report = SpeechReport::default();
     }
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SpeechTokenUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub total_tokens: u64,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub enum SpeechEvent {
+    AudioDelta { audio: bytes::Bytes },
+    Done { usage: Option<SpeechTokenUsage> },
+}
+impl std::fmt::Debug for SpeechEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AudioDelta { audio } => f
+                .debug_struct("AudioDelta")
+                .field("bytes", &audio.len())
+                .finish(),
+            Self::Done { usage } => f.debug_struct("Done").field("usage", usage).finish(),
+        }
+    }
+}

@@ -23,7 +23,9 @@ fn admit(request: &Request) -> Result<(), CodecError> {
     {
         return Err(CodecError::invalid());
     }
-    if task.requested_count() != 1
+    if request.delivery.streaming()
+        || !task.partial_images.is_absent()
+        || task.requested_count() != 1
         || task.format.value().is_some()
         || matches!(task.size.value(), Some(ImageSizeRequest::Exact(_)))
         || matches!(task.quality.value(), Some(ImageQualityRequest::Exact(_)))

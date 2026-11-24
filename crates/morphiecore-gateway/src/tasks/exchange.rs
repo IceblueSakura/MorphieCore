@@ -247,3 +247,80 @@ impl Receiver {
         Ok(bytes)
     }
 }
+
+pub(super) fn parse_sse_json(
+    event: &crate::protocol::sse::SseEvent,
+    allowed_names: &[&str],
+    check_openai_type: bool,
+) -> Result<serde_json::Value, ApiError> {
+    let name = event.event();
+    if let Some(name) = name
+        && name != "message"
+        && !allowed_names.contains(&name)
+    {
+        return Err(ApiError::upstream());
+    }
+    let value =
+        crate::protocol::json::decode(event.data().as_bytes()).map_err(|_| ApiError::upstream())?;
+    if check_openai_type
+        && let Some(name) = name
+        && name != "message"
+        && value.get("type").and_then(serde_json::Value::as_str) != Some(name)
+    {
+        return Err(ApiError::upstream());
+    }
+    Ok(value)
+}
+
+pub(super) enum SseStep {
+    Ignore,
+    EmitDelta(bytes::Bytes),
+    HoldTerminal(bytes::Bytes),
+}
+
+pub(super) async fn stream_sse<D>(
+    mut receiver: Receiver,
+    limits: &crate::Limits,
+    lane: &crate::body::Lane<'_>,
+    trace: &mut Trace,
+    mut decoder: D,
+    mut on_event: impl FnMut(&mut D, &crate::protocol::sse::SseEvent) -> Result<SseStep, ApiError>,
+    finish: impl FnOnce(&D) -> Result<(), ApiError>,
+) -> Result<(), ApiError> {
+    receiver.require_media("text/event-stream")?;
+    let mut framer = crate::protocol::sse::SseDecoder::new(limits.event_bytes);
+    let mut events = 0usize;
+    let mut terminal = None;
+    trace.stage(Stage::Intake);
+    while let Some(chunk) = receiver.next(trace).await? {
+        let mut offset = 0;
+        while offset < chunk.len() {
+            let (event, used) = framer
+                .push_until_event(&chunk[offset..])
+                .map_err(|_| ApiError::upstream())?;
+            offset += used;
+            if let Some(event) = event {
+                events += 1;
+                if events > limits.max_events || event.data().is_empty() || terminal.is_some() {
+                    return Err(ApiError::upstream());
+                }
+                match on_event(&mut decoder, &event)? {
+                    SseStep::Ignore => {}
+                    SseStep::EmitDelta(bytes) => {
+                        crate::body::send_frame(lane, bytes, trace).await?;
+                    }
+                    SseStep::HoldTerminal(bytes) => {
+                        terminal = Some(bytes);
+                    }
+                }
+            }
+        }
+    }
+    trace.stage(Stage::Terminal);
+    framer.finish_strict().map_err(|_| ApiError::upstream())?;
+    finish(&decoder)?;
+    let final_bytes = terminal.ok_or_else(ApiError::upstream)?;
+    trace.stage(Stage::Projection);
+    crate::body::send_final_frame(lane, final_bytes, trace).await?;
+    Ok(())
+}

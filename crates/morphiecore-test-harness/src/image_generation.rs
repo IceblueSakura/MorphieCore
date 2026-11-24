@@ -35,9 +35,9 @@ pub fn binding(origin: &str) -> (ProviderEntry, ImageRoute) {
                 profile: crate::morphiecore::adapter::images::UpstreamAdapter::GptImage,
                 credential: CredentialBindingId::new("fixture-key").unwrap(),
                 execution: ExecutionContract {
-                    streaming: false,
+                    streaming: true,
                     request_body_limit: 12 << 20,
-                    response_body_limit: 4 << 20,
+                    response_body_limit: 48 << 20,
                     credential_kind: CredentialKind::ApiKey,
                     timeout_ms: 1000,
                 },

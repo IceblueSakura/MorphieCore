@@ -2,7 +2,7 @@
 mod transcode;
 
 use super::{
-    exchange::Receiver,
+    exchange::{self, Receiver, SseStep},
     lifecycle::{Admission, TaskOutput},
 };
 use crate::{
@@ -10,7 +10,10 @@ use crate::{
     diagnostics::{Stage, Trace},
     ingress::admission,
     protocol::openai::images,
-    semantic::value::{ImageFormat, Presence},
+    semantic::{
+        task::image_generation::ImageStreamEvent,
+        value::{ImageFormat, Presence},
+    },
     topology::{CompiledTopology, images::ImageRoute},
 };
 use axum::{
@@ -357,11 +360,19 @@ impl TaskOutput for Output {
     type Route = ImageRoute;
 
     fn response_type(&self) -> body::ResponseType {
-        body::ResponseType::Json
+        if self.request.delivery.streaming() {
+            body::ResponseType::EventStream
+        } else {
+            body::ResponseType::Json
+        }
     }
 
     fn receive_limit(&self, _: &BoundImage, _: &crate::Limits, wire_limit: usize) -> usize {
-        wire_limit.min(crate::semantic::value::JsonLimits::IMAGE_RESPONSE.bytes)
+        if self.request.delivery.streaming() {
+            wire_limit
+        } else {
+            wire_limit.min(crate::semantic::value::JsonLimits::IMAGE_RESPONSE.bytes)
+        }
     }
 
     async fn publish(
@@ -372,6 +383,55 @@ impl TaskOutput for Output {
         lane: &body::Lane<'_>,
         trace: &mut Trace,
     ) -> Result<(), ApiError> {
+        if self.request.delivery.streaming() {
+            let is_edit = self.request.task.is_edit();
+            let expected_format = self
+                .request
+                .task
+                .format
+                .value()
+                .copied()
+                .unwrap_or(ImageFormat::Png);
+            let per_image_limit = limits.image_bytes.min(limits.images_bytes);
+            let max_total_decoded_bytes = per_image_limit.saturating_mul(4);
+            let allowed = if is_edit {
+                ["image_edit.partial_image", "image_edit.completed"]
+            } else {
+                [
+                    "image_generation.partial_image",
+                    "image_generation.completed",
+                ]
+            };
+            let decoder = images::StreamDecoder::new(
+                is_edit,
+                self.request.task.partial_images.value().copied(),
+                expected_format,
+                per_image_limit,
+                max_total_decoded_bytes,
+                limits.max_events,
+            );
+            return exchange::stream_sse(
+                receiver,
+                limits,
+                lane,
+                trace,
+                decoder,
+                |decoder, event| {
+                    let value = exchange::parse_sse_json(event, &allowed, true)?;
+                    let step = decoder.push(&value).map_err(|_| ApiError::upstream())?;
+                    let is_completed = matches!(step, ImageStreamEvent::Completed { .. });
+                    let bytes = images::encode_sse_event(&step, is_edit)
+                        .map_err(|_| ApiError::upstream())?;
+                    if is_completed {
+                        Ok(SseStep::HoldTerminal(bytes))
+                    } else {
+                        Ok(SseStep::EmitDelta(bytes))
+                    }
+                },
+                |decoder| decoder.finish().map_err(|_| ApiError::upstream()),
+            )
+            .await;
+        }
         let expected_inputs = self
             .request
             .task

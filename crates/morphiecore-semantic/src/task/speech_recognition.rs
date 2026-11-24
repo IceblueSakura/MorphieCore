@@ -371,3 +371,20 @@ impl RecognitionResult {
         Ok(())
     }
 }
+
+#[derive(Clone, Eq, PartialEq)]
+pub enum RecognitionEvent {
+    TextDelta { delta: String },
+    Done(RecognitionResult),
+}
+impl std::fmt::Debug for RecognitionEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TextDelta { delta } => f
+                .debug_struct("TextDelta")
+                .field("bytes", &delta.len())
+                .finish(),
+            Self::Done(result) => f.debug_tuple("Done").field(result).finish(),
+        }
+    }
+}

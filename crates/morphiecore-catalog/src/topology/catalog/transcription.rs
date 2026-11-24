@@ -59,7 +59,7 @@ impl TranscriptionBinding {
                 profile: self.profile,
                 credential: self.credential(),
                 execution: ExecutionContract {
-                    streaming: false,
+                    streaming: self.profile.supports_streaming(),
                     request_body_limit: 6 << 20,
                     response_body_limit: 2 << 20,
                     credential_kind: CredentialKind::ApiKey,

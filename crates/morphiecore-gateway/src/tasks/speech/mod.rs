@@ -1,7 +1,7 @@
 //! Authenticated Speech admission and bounded static binary delivery.
 pub(crate) mod aliyun;
 use crate::tasks::{
-    exchange::Receiver,
+    exchange::{self, Receiver, SseStep},
     lifecycle::{Admission, TaskOutput},
 };
 use crate::{
@@ -10,7 +10,7 @@ use crate::{
     ingress::admission,
     protocol::openai::speech as codec,
     semantic::{
-        task::speech_synthesis::SpeechRequest,
+        task::speech_synthesis::{SpeechEvent, SpeechRequest},
         value::{AudioArtifact, MAX_AUDIO_BYTES},
     },
     topology::{CompiledTopology, speech::SpeechRoute},
@@ -110,7 +110,11 @@ impl TaskOutput for Output {
     type Route = SpeechRoute;
 
     fn response_type(&self) -> body::ResponseType {
-        body::ResponseType::Audio
+        if self.0.streaming() {
+            body::ResponseType::EventStream
+        } else {
+            body::ResponseType::Audio
+        }
     }
 
     fn receive_limit(
@@ -119,7 +123,7 @@ impl TaskOutput for Output {
         limits: &crate::Limits,
         wire_limit: usize,
     ) -> usize {
-        if entry.route.endpoint.profile.upstream_sse() {
+        if entry.route.endpoint.profile.upstream_sse() || self.0.streaming() {
             wire_limit
         } else {
             limits.speech_bytes.min(wire_limit).min(MAX_AUDIO_BYTES)
@@ -138,6 +142,62 @@ impl TaskOutput for Output {
             .response_bytes
             .min(entry.route.endpoint.execution.response_body_limit);
         let audio_limit = limits.speech_bytes.min(wire_limit).min(MAX_AUDIO_BYTES);
+        if self.0.streaming() {
+            let map_event = |event: SpeechEvent| -> Result<SseStep, ApiError> {
+                let is_done = matches!(event, SpeechEvent::Done { .. });
+                let bytes = codec::encode_sse_event(&event).map_err(|_| ApiError::upstream())?;
+                if is_done {
+                    Ok(SseStep::HoldTerminal(bytes))
+                } else {
+                    Ok(SseStep::EmitDelta(bytes))
+                }
+            };
+            if entry.route.endpoint.profile.upstream_sse() {
+                let decoder = crate::protocol::aliyun_speech::Decoder::new_streaming(
+                    audio_limit,
+                    wire_limit,
+                    limits.max_events,
+                );
+                return exchange::stream_sse(
+                    receiver,
+                    limits,
+                    lane,
+                    trace,
+                    decoder,
+                    |decoder, event| {
+                        let value = exchange::parse_sse_json(event, &["result"], false)?;
+                        match decoder
+                            .push_stream(&value)
+                            .map_err(|_| ApiError::upstream())?
+                        {
+                            None => Ok(SseStep::Ignore),
+                            Some(step) => map_event(step),
+                        }
+                    },
+                    |decoder| decoder.finish_stream().map_err(|_| ApiError::upstream()),
+                )
+                .await;
+            }
+            let decoder = codec::StreamDecoder::new(audio_limit, limits.max_events);
+            return exchange::stream_sse(
+                receiver,
+                limits,
+                lane,
+                trace,
+                decoder,
+                |decoder, event| {
+                    let value = exchange::parse_sse_json(
+                        event,
+                        &["speech.audio.delta", "speech.audio.done"],
+                        true,
+                    )?;
+                    let step = decoder.push(&value).map_err(|_| ApiError::upstream())?;
+                    map_event(step)
+                },
+                |decoder| decoder.finish().map_err(|_| ApiError::upstream()),
+            )
+            .await;
+        }
         let audio = if entry.route.endpoint.profile.upstream_sse() {
             let result = aliyun::decode(
                 receiver,

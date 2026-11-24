@@ -19,9 +19,14 @@ pub struct EncodedBody {
 }
 
 impl UpstreamAdapter {
-    pub fn expected_response_media(self, format: OutputFormat) -> &'static str {
-        match (self, format) {
-            (Self::Standard, OutputFormat::Text) => "text/plain",
+    pub fn supports_streaming(self) -> bool {
+        self == Self::Standard
+    }
+
+    pub fn expected_response_media(self, format: OutputFormat, stream: bool) -> &'static str {
+        match (self, format, stream) {
+            (Self::Standard, _, true) => "text/event-stream",
+            (Self::Standard, OutputFormat::Text, false) => "text/plain",
             _ => "application/json",
         }
     }

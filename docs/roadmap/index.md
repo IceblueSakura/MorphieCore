@@ -96,9 +96,8 @@ Selected direction: Dual-SDK support (TypeSafe and OpenAI) backed by a unified D
 | Family | Readiness | Next step |
 |---|---|---|
 | Decision | Dual-SDK direction selected; IR drafts under review | Finalize contract selection and implement codecs |
-| Images Generate & Edit | Static Generate and direct-input multipart Edit cover GPT Image 2.6, Qwen Image, Gemini Nano Banana and Grok Imagine (default OpenAI PNG compatibility and `native-static-v1`) | Native ratio/resolution tiers and other output controls remain separately selectable |
-| Images Stream | Research complete; preview/final stream formats unselected | Select bounded preview SSE profile |
-| Audio (Speech/ASR) | Direct OpenAI `gpt-4o-mini-tts` static binary Speech, `gpt-transcribe` static multipart Transcription (`json`/`text`), and Xiaomi/Aliyun static Speech/Transcription exist; Aliyun speech consumes upstream SSE. Progressive binary/downstream SSE Speech and Transcription SSE remain unselected; Translation is [unscheduled](../roadmap/backlog-and-frozen.md#deferred-generation-semantics) | Select bounded streaming profile |
+| Images Generate & Edit | Static Generate/Edit across GPT Image 2.6, Qwen Image, Gemini Nano Banana and Grok Imagine plus OpenAI preview/completed SSE (`n = 1`, `partial_images` 0–3) | Native ratio/resolution tiers and other output controls remain separately selectable; progressive binary chunking and subtitle/diarized streams remain unselected |
+| Audio (Speech/ASR) | Static and SSE Speech (`gpt-4o-mini-tts` and Aliyun `qwen-audio-3.0-tts-plus`), static/SSE Transcription (`gpt-transcribe`), and Xiaomi/Aliyun static Speech/ASR exist; Translation is [unscheduled](../roadmap/backlog-and-frozen.md#deferred-generation-semantics) | Subtitle/diarized Transcription streams and progressive non-SSE binary Speech remain unselected |
 | Files & Uploads | Safety requirements defined; storage authority unselected | Select storage authority and ID authorization |
 | Video | Upstream API research available; job lifecycles unselected | Select job status and retrieval contract |
 

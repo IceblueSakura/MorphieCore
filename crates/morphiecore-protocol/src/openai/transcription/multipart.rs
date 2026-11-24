@@ -141,9 +141,12 @@ pub async fn decode_request(content_type: &str, bytes: Bytes) -> Result<Request,
         }
     }
     let model = fields.remove("model").ok_or_else(CodecError::invalid)?;
-    if !crate::openai::speech::valid_model(&model)
-        || fields.get("stream").is_some_and(|s| s != "false")
-    {
+    let stream = match fields.remove("stream").as_deref() {
+        None | Some("false") => false,
+        Some("true") => true,
+        Some(_) => return Err(CodecError::invalid()),
+    };
+    if !crate::openai::speech::valid_model(&model) {
         return Err(CodecError::invalid());
     }
     let response_format = match fields.remove("response_format").as_deref() {
@@ -151,6 +154,9 @@ pub async fn decode_request(content_type: &str, bytes: Bytes) -> Result<Request,
         Some("text") => OutputFormat::Text,
         Some(_) => return Err(CodecError::invalid()),
     };
+    if stream && response_format != OutputFormat::Json {
+        return Err(CodecError::invalid());
+    }
     let temperature = fields
         .remove("temperature")
         .map(|raw| {
@@ -170,7 +176,11 @@ pub async fn decode_request(content_type: &str, bytes: Bytes) -> Result<Request,
     task.temperature = temperature;
     task.response_format = response_format;
     task.validate().map_err(|_| CodecError::invalid())?;
-    Ok(Request { model, task })
+    Ok(Request {
+        model,
+        task,
+        stream,
+    })
 }
 
 fn input_format(

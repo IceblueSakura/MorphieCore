@@ -31,7 +31,7 @@ def check_speech(client: openai.OpenAI) -> int:
         check("synthetic-private" not in error.response.text)
     else:
         check(False, "an upstream JSON error must not become successful audio")
-    for controls in ({"stream_format": "sse"}, {"voice": {"id": "voice_fixture"}}):
+    for controls in ({"stream_format": "invalid"}, {"voice": {"id": "voice_fixture"}}):
         try:
             client.audio.speech.create(**{**params, **controls})
         except openai.APIStatusError as error:

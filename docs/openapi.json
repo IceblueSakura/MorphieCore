@@ -305,6 +305,9 @@
                     {"$ref": "#/components/schemas/NativeStaticImageGenerationResponse"}
                   ]
                 }
+              },
+              "text/event-stream": {
+                "schema": {"type": "string"}
               }
             }
           },
@@ -388,6 +391,9 @@
                     {"$ref": "#/components/schemas/NativeStaticImageGenerationResponse"}
                   ]
                 }
+              },
+              "text/event-stream": {
+                "schema": {"type": "string"}
               }
             }
           },
@@ -428,7 +434,8 @@
             },
             "content": {
               "application/json": {"schema": {"$ref": "#/components/schemas/TranscriptionResponse"}},
-              "text/plain": {"schema": {"type": "string", "maxLength": 1048576}}
+              "text/plain": {"schema": {"type": "string", "maxLength": 1048576}},
+              "text/event-stream": {"schema": {"type": "string"}}
             }
           },
           "400": {"$ref": "#/components/responses/Error"},
@@ -468,7 +475,8 @@
               "audio/aac": {"schema": {"type": "string", "format": "binary"}},
               "audio/flac": {"schema": {"type": "string", "format": "binary"}},
               "audio/wav": {"schema": {"type": "string", "format": "binary"}},
-              "audio/pcm": {"schema": {"type": "string", "format": "binary"}}
+              "audio/pcm": {"schema": {"type": "string", "format": "binary"}},
+              "text/event-stream": {"schema": {"type": "string"}}
             }
           },
           "400": {"$ref": "#/components/responses/Error"},
@@ -1400,7 +1408,18 @@
       },
       "TranscriptionRequest": {
         "type": "object", "required": ["model", "file"], "additionalProperties": false,
-        "not": {"required": ["language", "languages[]"]},
+        "allOf": [
+          {"not": {"required": ["language", "languages[]"]}},
+          {
+            "not": {
+              "required": ["stream", "response_format"],
+              "properties": {
+                "stream": {"const": true},
+                "response_format": {"const": "text"}
+              }
+            }
+          }
+        ],
         "properties": {
           "model": {"$ref": "#/components/schemas/PublicModelLabel"},
           "file": {"type": "string", "format": "binary", "minLength": 1, "maxLength": 4194304,
@@ -1411,9 +1430,9 @@
           "prompt": {"type": "string", "maxLength": 4096},
           "temperature": {"type": "number", "minimum": 0, "maximum": 1},
           "response_format": {"enum": ["json", "text"], "default": "json"},
-          "stream": {"const": false, "default": false}
+          "stream": {"type": "boolean", "default": false}
         },
-        "description": "Multipart, not JSON. Scalar fields occur at most once; languages[] and keywords[] repeat as form parts. Upload ceiling: 4 MiB plus 64 KiB framing; operator limits may be smaller. No local persistence or audio decoding."
+        "description": "Multipart, not JSON. Scalar fields occur at most once; languages[] and keywords[] repeat as form parts. Streaming admits JSON format only on supported targets. Upload ceiling: 4 MiB plus 64 KiB framing; operator limits may be smaller. No local persistence or audio decoding."
       },
       "TranscriptionResponse": {
         "type": "object", "required": ["text"], "additionalProperties": false,
@@ -1474,9 +1493,9 @@
           "instructions": {"type": "string", "maxLength": 4096},
           "speed": {"type": "number", "minimum": 0.25, "maximum": 4, "default": 1},
           "response_format": {"enum": ["mp3", "opus", "aac", "flac", "wav", "pcm"], "default": "mp3"},
-          "stream_format": {"const": "audio", "default": "audio"}
+          "stream_format": {"enum": ["audio", "sse"], "default": "audio"}
         },
-        "description": "Bounded binary Speech profile. Fields are non-nullable; target voice/format/control admission is separate. Input and instructions also have 16384-byte bounds. PCM is signed 16-bit little-endian, 24 kHz mono. No SSE or injected token cap."
+        "description": "Bounded binary or SSE Speech profile. Fields are non-nullable; target voice/format/control/SSE admission is separate. Input and instructions also have 16384-byte bounds. PCM is signed 16-bit little-endian, 24 kHz mono. No injected token cap."
       },
       "ImageGenerationRequest": {
         "type": "object",
@@ -1498,13 +1517,15 @@
             "type": ["integer", "null"],
             "minimum": 1,
             "maximum": 10,
-            "description": "Required delivered count; absent/null means one. A short upstream result fails without supplemental requests."
+            "description": "Required delivered count; absent/null means one. Streaming requires n = 1."
+          },
+          "partial_images": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "maximum": 3
           },
           "stream": {
-            "enum": [
-              false,
-              null
-            ]
+            "type": ["boolean", "null"]
           },
           "output_format": {
             "enum": [
@@ -1612,6 +1633,18 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "required": ["stream"],
+              "properties": {"stream": {"const": true}}
+            },
+            "then": {
+              "properties": {"n": {"enum": [1, null]}}
+            },
+            "else": {
+              "properties": {"partial_images": {"type": "null"}}
+            }
           }
         ]
       },
@@ -1643,7 +1676,8 @@
           },
           "input_fidelity": {"enum": ["high", "low"]},
           "n": {"type": "integer", "minimum": 1, "maximum": 10},
-          "stream": {"const": false, "default": false},
+          "partial_images": {"type": "integer", "minimum": 0, "maximum": 3},
+          "stream": {"type": "boolean", "default": false},
           "output_format": {"enum": ["png", "jpeg", "webp"]},
           "size": {
             "anyOf": [
@@ -1676,9 +1710,21 @@
               "required": ["output_format"],
               "properties": {"output_format": {"enum": ["jpeg", "webp"]}}
             }
+          },
+          {
+            "if": {
+              "required": ["stream"],
+              "properties": {"stream": {"const": true}}
+            },
+            "then": {
+              "properties": {"n": {"const": 1}}
+            },
+            "else": {
+              "not": {"required": ["partial_images"]}
+            }
           }
         ],
-        "description": "Multipart, not JSON. Accepts up to 16 PNG/JPEG/WebP sources (image or repeated image[]) with 8 MiB aggregate raw input budget (including optional mask). Native pixel/alpha validation runs upstream; target support for mask, input_fidelity and identity is separate."
+        "description": "Multipart, not JSON. Accepts up to 16 PNG/JPEG/WebP sources (image or repeated image[]) with 8 MiB aggregate raw input budget (including optional mask). Native pixel/alpha validation runs upstream; target support for mask, input_fidelity, identity and streaming is separate."
       },
       "ImagePixelSize": {
         "type": "string",

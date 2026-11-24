@@ -1,14 +1,15 @@
-//! Standard Speech audio branch. No custom voice resources, SSE, sniffing or transcoding.
+//! Standard Speech binary and SSE delivery branch. No custom voice resources, sniffing or transcoding.
 //! Sources: https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create
 //! https://developers.openai.com/api/docs/guides/text-to-speech
 use crate::{
     CodecError,
     semantic::{
-        task::speech_synthesis::{SpeechRequest, Speed},
-        value::{AudioArtifact, AudioEncoding},
+        task::speech_synthesis::{SpeechEvent, SpeechRequest, SpeechTokenUsage, Speed},
+        value::{AudioArtifact, AudioEncoding, MAX_AUDIO_BYTES},
     },
-    speech::Request,
+    speech::{Request, StreamFormat},
 };
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use bytes::Bytes;
 use serde_json::{Value, json};
 
@@ -92,10 +93,11 @@ pub fn decode_request(bytes: &[u8]) -> Result<Request, CodecError> {
         .transpose()?;
     let mut request = Request::new(required("model")?, task);
     if let Some(delivery) = map.get("stream_format") {
-        if delivery.as_str() != Some("audio") {
-            return Err(CodecError::invalid());
-        }
-        request.explicit_audio_delivery = true;
+        request.stream_format = Some(match delivery.as_str() {
+            Some("audio") => StreamFormat::Audio,
+            Some("sse") => StreamFormat::Sse,
+            _ => return Err(CodecError::invalid()),
+        });
     }
     validate_request(&request)?;
     Ok(request)
@@ -123,8 +125,11 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
     if let Some(format) = request.task.format {
         value["response_format"] = json!(format_label(format));
     }
-    if request.explicit_audio_delivery {
-        value["stream_format"] = json!("audio");
+    if let Some(stream_format) = request.stream_format {
+        value["stream_format"] = json!(match stream_format {
+            StreamFormat::Audio => "audio",
+            StreamFormat::Sse => "sse",
+        });
     }
     Ok(value)
 }
@@ -180,4 +185,136 @@ pub fn project_result(
     result: &crate::semantic::task::speech_synthesis::SpeechResult,
 ) -> Result<crate::speech::projection::BinaryProjection, CodecError> {
     crate::speech::projection::project_binary(result).map_err(|_| CodecError::invalid())
+}
+
+pub struct StreamDecoder {
+    audio_limit: usize,
+    decoded_bytes: usize,
+    remaining_events: usize,
+    saw_delta: bool,
+    done: bool,
+    poisoned: bool,
+}
+impl StreamDecoder {
+    pub fn new(audio_limit: usize, max_events: usize) -> Self {
+        Self {
+            audio_limit: audio_limit.min(MAX_AUDIO_BYTES),
+            decoded_bytes: 0,
+            remaining_events: max_events.min(65536),
+            saw_delta: false,
+            done: false,
+            poisoned: false,
+        }
+    }
+    pub fn push(&mut self, value: &Value) -> Result<SpeechEvent, CodecError> {
+        if self.poisoned {
+            return Err(CodecError::invalid());
+        }
+        let result = self.push_inner(value);
+        if result.is_err() {
+            self.poisoned = true;
+        }
+        result
+    }
+    fn push_inner(&mut self, value: &Value) -> Result<SpeechEvent, CodecError> {
+        if self.done || self.remaining_events == 0 {
+            return Err(CodecError::invalid());
+        }
+        self.remaining_events -= 1;
+        let map = value.as_object().ok_or_else(CodecError::invalid)?;
+        let kind = map
+            .get("type")
+            .and_then(Value::as_str)
+            .ok_or_else(CodecError::invalid)?;
+        match kind {
+            "speech.audio.delta" => {
+                let encoded = map
+                    .get("audio")
+                    .and_then(Value::as_str)
+                    .ok_or_else(CodecError::invalid)?;
+                if encoded.is_empty() {
+                    return Err(CodecError::invalid());
+                }
+                let remaining = self.audio_limit.saturating_sub(self.decoded_bytes);
+                if encoded.len() > remaining.div_ceil(3) * 4 {
+                    return Err(CodecError::Limit);
+                }
+                let chunk = STANDARD
+                    .decode(encoded)
+                    .map_err(|_| CodecError::invalid())?;
+                if chunk.is_empty() {
+                    return Err(CodecError::invalid());
+                }
+                self.decoded_bytes = self
+                    .decoded_bytes
+                    .checked_add(chunk.len())
+                    .filter(|n| *n <= self.audio_limit)
+                    .ok_or(CodecError::Limit)?;
+                self.saw_delta = true;
+                Ok(SpeechEvent::AudioDelta {
+                    audio: Bytes::from(chunk),
+                })
+            }
+            "speech.audio.done" => {
+                if !self.saw_delta {
+                    return Err(CodecError::invalid());
+                }
+                let usage = match map.get("usage") {
+                    None | Some(Value::Null) => None,
+                    Some(raw) => {
+                        let obj = raw.as_object().ok_or_else(CodecError::invalid)?;
+                        let field = |k| {
+                            obj.get(k)
+                                .and_then(Value::as_u64)
+                                .ok_or_else(CodecError::invalid)
+                        };
+                        Some(SpeechTokenUsage {
+                            input_tokens: field("input_tokens")?,
+                            output_tokens: field("output_tokens")?,
+                            total_tokens: field("total_tokens")?,
+                        })
+                    }
+                };
+                self.done = true;
+                Ok(SpeechEvent::Done { usage })
+            }
+            _ => Err(CodecError::invalid()),
+        }
+    }
+    pub fn finish(&self) -> Result<(), CodecError> {
+        if self.poisoned || !self.done || !self.saw_delta {
+            return Err(CodecError::invalid());
+        }
+        Ok(())
+    }
+}
+
+pub fn encode_sse_event(event: &SpeechEvent) -> Result<Bytes, CodecError> {
+    let (name, payload) = match event {
+        SpeechEvent::AudioDelta { audio } => {
+            if audio.is_empty() || audio.len() > MAX_AUDIO_BYTES {
+                return Err(CodecError::invalid());
+            }
+            (
+                "speech.audio.delta",
+                json!({
+                    "type": "speech.audio.delta",
+                    "audio": STANDARD.encode(audio),
+                }),
+            )
+        }
+        SpeechEvent::Done { usage } => {
+            let mut obj = json!({"type": "speech.audio.done"});
+            if let Some(usage) = usage {
+                obj["usage"] = json!({
+                    "input_tokens": usage.input_tokens,
+                    "output_tokens": usage.output_tokens,
+                    "total_tokens": usage.total_tokens,
+                });
+            }
+            ("speech.audio.done", obj)
+        }
+    };
+    let encoded = serde_json::to_string(&payload).map_err(|_| CodecError::invalid())?;
+    Ok(Bytes::from(format!("event: {name}\ndata: {encoded}\n\n")))
 }

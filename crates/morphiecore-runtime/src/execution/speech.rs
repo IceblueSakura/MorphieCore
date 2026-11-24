@@ -11,7 +11,8 @@ pub fn prepare(
     if request.model != route.model.as_str()
         || provider.id != route.endpoint.provider
         || provider.origin != route.endpoint.target.origin
-        || route.endpoint.execution.streaming != route.endpoint.profile.upstream_sse()
+        || route.endpoint.execution.streaming != route.endpoint.profile.supports_streaming()
+        || (request.streaming() && !route.endpoint.execution.streaming)
     {
         return Err(AttemptError::Protocol(
             crate::execution::attempt::ProtocolReason::SpeechBindingMismatch,
@@ -28,13 +29,15 @@ pub fn prepare(
     crate::semantic::value::json_size(&value, route.endpoint.execution.request_body_limit)
         .map_err(|_| AttemptError::Limit)?;
     let mut headers = vec![("content-type".into(), "application/json".into())];
-    if route.endpoint.profile.upstream_sse() {
+    if route.endpoint.profile.upstream_sse() || request.streaming() {
         headers.push(("accept".into(), "text/event-stream".into()));
-        headers.push(("x-dashscope-sse".into(), "enable".into()));
     } else if route.endpoint.profile == crate::adapter::speech::UpstreamAdapter::Xiaomi {
         headers.push(("accept".into(), "application/json".into()));
     } else {
         headers.push(("accept".into(), "application/octet-stream".into()));
+    }
+    if route.endpoint.profile.upstream_sse() {
+        headers.push(("x-dashscope-sse".into(), "enable".into()));
     }
     Ok(PreparedTaskRequest::new(
         provider,

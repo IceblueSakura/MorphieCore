@@ -181,7 +181,7 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
                 profile: crate::adapter::images::UpstreamAdapter::GptImage,
                 credential: CredentialBindingId::new("fixture-key").unwrap(),
                 execution: ExecutionContract {
-                    streaming: false,
+                    streaming: true,
                     ..execution
                 },
             },

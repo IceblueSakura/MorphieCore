@@ -18,6 +18,8 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
     crate::openai::images::validate_request(request)?;
     let task = &request.task;
     if !crate::openai::speech::valid_model(model)
+        || request.delivery.streaming()
+        || !task.partial_images.is_absent()
         || task.requested_count() > 6
         || task.format.value().is_some_and(|f| *f != ImageFormat::Png)
         || matches!(task.quality.value(), Some(ImageQualityRequest::Exact(_)))

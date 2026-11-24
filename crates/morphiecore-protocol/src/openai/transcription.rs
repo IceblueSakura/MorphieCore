@@ -4,10 +4,12 @@ use crate::{
     CodecError,
     multipart::{EncodedMultipart, Part},
     semantic::task::speech_recognition::{
-        MAX_TEXT_BYTES, OutputFormat, RecognitionReport, RecognitionResult, RecognitionUsage,
+        MAX_TEXT_BYTES, OutputFormat, RecognitionEvent, RecognitionReport, RecognitionResult,
+        RecognitionUsage,
     },
     transcription::Request,
 };
+use bytes::Bytes;
 use serde_json::{Map, Value, json};
 
 mod multipart;
@@ -46,7 +48,10 @@ pub fn encode_request(
     limit: usize,
 ) -> Result<EncodedMultipart, CodecError> {
     request.task.validate().map_err(|_| CodecError::invalid())?;
-    if !super::speech::valid_model(&request.model) || !super::speech::valid_model(model) {
+    if !super::speech::valid_model(&request.model)
+        || !super::speech::valid_model(model)
+        || (request.stream && request.task.response_format != OutputFormat::Json)
+    {
         return Err(CodecError::invalid());
     }
     let format = request.task.audio.format();
@@ -62,7 +67,7 @@ pub fn encode_request(
     };
 
     let mut parts =
-        Vec::with_capacity(4 + request.task.languages.len() + request.task.keywords.len());
+        Vec::with_capacity(5 + request.task.languages.len() + request.task.keywords.len());
     parts.push(Part::Text {
         name: "model",
         value: model,
@@ -101,6 +106,12 @@ pub fn encode_request(
         name: "response_format",
         value: response_format,
     });
+    if request.stream {
+        parts.push(Part::Text {
+            name: "stream",
+            value: "true",
+        });
+    }
     parts.push(Part::File {
         name: "file",
         filename: &filename,
@@ -110,15 +121,9 @@ pub fn encode_request(
     crate::multipart::encode(&parts, limit)
 }
 
-pub fn decode_response_json(bytes: &[u8]) -> Result<RecognitionResult, CodecError> {
-    let value = crate::json::decode(bytes)?;
-    let map = value.as_object().ok_or_else(CodecError::invalid)?;
-    let text = required(map, "text")?
-        .as_str()
-        .ok_or_else(CodecError::invalid)?
-        .to_owned();
-    let detected_languages = match map.get("languages") {
-        None | Some(Value::Null) => None,
+fn parse_languages(map: &Map<String, Value>) -> Result<Option<Vec<String>>, CodecError> {
+    match map.get("languages") {
+        None | Some(Value::Null) => Ok(None),
         Some(value) => {
             let items = value.as_array().ok_or_else(CodecError::invalid)?;
             let mut codes = Vec::with_capacity(items.len());
@@ -130,17 +135,20 @@ pub fn decode_response_json(bytes: &[u8]) -> Result<RecognitionResult, CodecErro
                     .to_owned();
                 codes.push(code);
             }
-            Some(codes)
+            Ok(Some(codes))
         }
-    };
-    let usage = match map.get("usage") {
-        None | Some(Value::Null) => None,
+    }
+}
+
+fn parse_usage(map: &Map<String, Value>) -> Result<Option<RecognitionUsage>, CodecError> {
+    match map.get("usage") {
+        None | Some(Value::Null) => Ok(None),
         Some(value) => {
             let usage = value.as_object().ok_or_else(CodecError::invalid)?;
             let kind = required(usage, "type")?
                 .as_str()
                 .ok_or_else(CodecError::invalid)?;
-            Some(match kind {
+            Ok(Some(match kind {
                 "duration" => {
                     let seconds = required(usage, "seconds")?
                         .as_number()
@@ -168,9 +176,20 @@ pub fn decode_response_json(bytes: &[u8]) -> Result<RecognitionResult, CodecErro
                     }
                 }
                 _ => return Err(CodecError::invalid()),
-            })
+            }))
         }
-    };
+    }
+}
+
+pub fn decode_response_json(bytes: &[u8]) -> Result<RecognitionResult, CodecError> {
+    let value = crate::json::decode(bytes)?;
+    let map = value.as_object().ok_or_else(CodecError::invalid)?;
+    let text = required(map, "text")?
+        .as_str()
+        .ok_or_else(CodecError::invalid)?
+        .to_owned();
+    let detected_languages = parse_languages(map)?;
+    let usage = parse_usage(map)?;
     RecognitionResult::new(
         text,
         RecognitionReport {
@@ -269,4 +288,106 @@ pub fn project_result(
             })
         }
     }
+}
+
+pub struct StreamDecoder {
+    max_text_bytes: usize,
+    delta_bytes: usize,
+    remaining_events: usize,
+    done: bool,
+    poisoned: bool,
+}
+impl StreamDecoder {
+    pub fn new(max_text_bytes: usize, max_events: usize) -> Self {
+        Self {
+            max_text_bytes: max_text_bytes.min(MAX_TEXT_BYTES),
+            delta_bytes: 0,
+            remaining_events: max_events.min(65536),
+            done: false,
+            poisoned: false,
+        }
+    }
+    pub fn push(&mut self, value: &Value) -> Result<RecognitionEvent, CodecError> {
+        if self.poisoned {
+            return Err(CodecError::invalid());
+        }
+        let result = self.push_inner(value);
+        if result.is_err() {
+            self.poisoned = true;
+        }
+        result
+    }
+    fn push_inner(&mut self, value: &Value) -> Result<RecognitionEvent, CodecError> {
+        if self.done || self.remaining_events == 0 {
+            return Err(CodecError::invalid());
+        }
+        self.remaining_events -= 1;
+        let map = value.as_object().ok_or_else(CodecError::invalid)?;
+        let kind = required(map, "type")?
+            .as_str()
+            .ok_or_else(CodecError::invalid)?;
+        match kind {
+            "transcript.text.delta" => {
+                let delta = required(map, "delta")?
+                    .as_str()
+                    .ok_or_else(CodecError::invalid)?
+                    .to_owned();
+                self.delta_bytes = self
+                    .delta_bytes
+                    .checked_add(delta.len())
+                    .filter(|n| *n <= self.max_text_bytes)
+                    .ok_or(CodecError::Limit)?;
+                Ok(RecognitionEvent::TextDelta { delta })
+            }
+            "transcript.text.done" => {
+                let text = required(map, "text")?
+                    .as_str()
+                    .ok_or_else(CodecError::invalid)?
+                    .to_owned();
+                if text.len() > self.max_text_bytes {
+                    return Err(CodecError::Limit);
+                }
+                let detected_languages = parse_languages(map)?;
+                let usage = parse_usage(map)?;
+                let result = RecognitionResult::new(
+                    text,
+                    RecognitionReport {
+                        request_id: None,
+                        usage,
+                        detected_languages,
+                        last_sentence: None,
+                    },
+                )
+                .map_err(|_| CodecError::invalid())?;
+                self.done = true;
+                Ok(RecognitionEvent::Done(result))
+            }
+            _ => Err(CodecError::invalid()),
+        }
+    }
+    pub fn finish(&self) -> Result<(), CodecError> {
+        if self.poisoned || !self.done {
+            return Err(CodecError::invalid());
+        }
+        Ok(())
+    }
+}
+
+pub fn encode_sse_event(event: &RecognitionEvent) -> Result<Bytes, CodecError> {
+    let (name, payload) = match event {
+        RecognitionEvent::TextDelta { delta } => (
+            "transcript.text.delta",
+            json!({"type": "transcript.text.delta", "delta": delta}),
+        ),
+        RecognitionEvent::Done(result) => {
+            let ProjectedOutput::Json(mut obj) = project_result(result, OutputFormat::Json)?.output
+            else {
+                unreachable!("json projection");
+            };
+            obj["type"] = json!("transcript.text.done");
+            ("transcript.text.done", obj)
+        }
+    };
+    let encoded = serde_json::to_string(&payload).map_err(|_| CodecError::invalid())?;
+    Ok(Bytes::from(format!("event: {name}\ndata: {encoded}\n\n")))
 }

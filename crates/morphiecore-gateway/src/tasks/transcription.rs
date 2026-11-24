@@ -1,13 +1,15 @@
 //! Authenticated file transcription, bounded native/standard intake and JSON/text projection.
 use super::{
-    exchange::Receiver,
+    exchange::{self, Receiver, SseStep},
     lifecycle::{Admission, TaskOutput},
 };
 use crate::{
     ApiError, Credentials, Runtime, StartupError, TranscriptionEntry, body,
     diagnostics::{Stage, Trace},
     protocol::openai::transcription as codec,
-    semantic::task::speech_recognition::{OutputFormat, RecognitionResult},
+    semantic::task::speech_recognition::{
+        MAX_TEXT_BYTES, OutputFormat, RecognitionEvent, RecognitionResult,
+    },
     topology::{CompiledTopology, transcription::TranscriptionRoute},
 };
 use axum::{
@@ -101,11 +103,12 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
         ))?
         .clone();
     let format = request.task.response_format;
+    let stream = request.stream;
     let prepared =
         crate::execution::transcription::prepare(&entry.route, &entry.provider, &request)
             .map_err(|_| ApiError::invalid())?;
     admitted
-        .respond(runtime, entry, prepared, Output { format })
+        .respond(runtime, entry, prepared, Output { format, stream })
         .await
 }
 async fn decode(
@@ -114,7 +117,7 @@ async fn decode(
     format: OutputFormat,
     trace: &mut Trace,
 ) -> Result<RecognitionResult, ApiError> {
-    receiver.require_media(profile.expected_response_media(format))?;
+    receiver.require_media(profile.expected_response_media(format, false))?;
     let bytes = receiver.collect(trace).await?;
     profile
         .decode_response(&bytes, format)
@@ -138,14 +141,19 @@ pub(crate) async fn receive_for_test(
 }
 struct Output {
     format: OutputFormat,
+    stream: bool,
 }
 impl TaskOutput for Output {
     type Route = TranscriptionRoute;
 
     fn response_type(&self) -> body::ResponseType {
-        match self.format {
-            OutputFormat::Json => body::ResponseType::Json,
-            OutputFormat::Text => body::ResponseType::Text,
+        if self.stream {
+            body::ResponseType::EventStream
+        } else {
+            match self.format {
+                OutputFormat::Json => body::ResponseType::Json,
+                OutputFormat::Text => body::ResponseType::Text,
+            }
         }
     }
 
@@ -161,6 +169,33 @@ impl TaskOutput for Output {
         lane: &body::Lane<'_>,
         trace: &mut Trace,
     ) -> Result<(), ApiError> {
+        if self.stream {
+            let decoder = codec::StreamDecoder::new(MAX_TEXT_BYTES, limits.max_events);
+            return exchange::stream_sse(
+                receiver,
+                limits,
+                lane,
+                trace,
+                decoder,
+                |decoder, event| {
+                    let value = exchange::parse_sse_json(
+                        event,
+                        &["transcript.text.delta", "transcript.text.done"],
+                        true,
+                    )?;
+                    let step = decoder.push(&value).map_err(|_| ApiError::upstream())?;
+                    let is_done = matches!(step, RecognitionEvent::Done(_));
+                    let bytes = codec::encode_sse_event(&step).map_err(|_| ApiError::upstream())?;
+                    if is_done {
+                        Ok(SseStep::HoldTerminal(bytes))
+                    } else {
+                        Ok(SseStep::EmitDelta(bytes))
+                    }
+                },
+                |decoder| decoder.finish().map_err(|_| ApiError::upstream()),
+            )
+            .await;
+        }
         let result = decode(receiver, entry.route.endpoint.profile, self.format, trace).await?;
         trace.stage(Stage::Projection);
         let projected =

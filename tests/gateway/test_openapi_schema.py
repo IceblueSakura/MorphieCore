@@ -257,12 +257,14 @@ class ImageSchemaTests(unittest.TestCase):
         for n in (0, -1, 11, 1.5, True, "2", [], {}):
             self.assertFalse(check.is_valid({**request, "n": n}))
         for controls in (
-            {"stream": True}, {"provider": {}}, {"_openbridge": {}},
+            {"provider": {}}, {"_openbridge": {}},
             {"output_compression": 1}, {"output_format": "png", "output_compression": 0},
             {"output_format": "jpeg", "background": "transparent"},
             {"size": "0x1"}, {"size": "65537x1"}, {"user": None},
+            {"stream": True, "n": 2}, {"partial_images": 1}, {"partial_images": 4},
         ):
             self.assertFalse(check.is_valid({**request, **controls}))
+        check.validate({**request, "stream": True, "partial_images": 3, "n": 1})
         check.validate({**request, "n": 2, "output_format": "webp",
                         "background": "transparent", "output_compression": 80,
                         "safety_identifier": "sid-1"})
@@ -275,14 +277,18 @@ class ImageSchemaTests(unittest.TestCase):
             "image[]": ["a", "b"], "mask": "m",
             "input_fidelity": "high", "safety_identifier": "sid-1",
             "output_format": "webp", "output_compression": 80,
+            "stream": True, "partial_images": 2, "n": 1,
         })
         for invalid in (
             {"model": "public-image", "prompt": "edit"},
             {"model": "public-image", "prompt": "edit", "image": "a", "image[]": ["b"]},
             {"model": "public-image", "prompt": "edit", "image": "a", "moderation": "low"},
-            {"model": "public-image", "prompt": "edit", "image": "a", "stream": True},
+            {"model": "public-image", "prompt": "edit", "image": "a", "stream": True, "n": 2},
+            {"model": "public-image", "prompt": "edit", "image": "a", "partial_images": 1},
         ):
             self.assertFalse(check.is_valid(invalid))
+        for path in ("/v1/images/generations", "/v1/images/edits"):
+            self.assertIn("text/event-stream", DOCUMENT["paths"][path]["post"]["responses"]["200"]["content"])
         post = DOCUMENT["paths"]["/v1/images/edits"]["post"]
         self.assertEqual(set(post["requestBody"]["content"]), {"multipart/form-data"})
 
@@ -435,7 +441,7 @@ class SpeechSchemaTests(unittest.TestCase):
         for encoding in ("mp3", "opus", "aac", "flac", "wav", "pcm"):
             check.validate({**request, "response_format": encoding, "stream_format": "audio",
                             "instructions": "", "speed": 0.25})
-        check.validate({**request, "speed": 4, "input": "你" * 4096})
+        check.validate({**request, "stream_format": "sse", "speed": 4, "input": "你" * 4096})
         for field in ("model", "input", "voice"):
             changed = dict(request)
             del changed[field]
@@ -445,16 +451,16 @@ class SpeechSchemaTests(unittest.TestCase):
         for controls in (
             {"voice": {"id": "voice_fixture"}}, {"voice": "alloy\n"},
             {"input": ""}, {"input": "你" * 4097}, {"instructions": "a" * 4097},
-            {"stream_format": "sse"}, {"speed": True}, {"speed": "1"},
+            {"stream_format": "invalid"}, {"speed": True}, {"speed": "1"},
             {"speed": 0.249}, {"speed": 4.001}, {"response_format": "pcm16"},
             {"stream": False}, {"provider": None}, {"_openbridge": {}},
         ):
             self.assertFalse(check.is_valid({**request, **controls}))
 
-    def test_success_is_binary_not_a_private_json_envelope(self):
+    def test_success_is_binary_or_sse_not_a_private_json_envelope(self):
         success = DOCUMENT["paths"]["/v1/audio/speech"]["post"]["responses"]["200"]
         self.assertNotIn("application/json", success["content"])
-        self.assertNotIn("text/event-stream", success["content"])
+        self.assertIn("text/event-stream", success["content"])
         for media in ("application/octet-stream", "audio/mpeg", "audio/wav"):
             self.assertEqual(success["content"][media]["schema"]["format"], "binary")
 
@@ -464,7 +470,7 @@ class TranscriptionSchemaTests(unittest.TestCase):
         check = validator("TranscriptionRequest")
         request = {"model": "public-asr", "file": "synthetic-file"}
         check.validate(request)
-        check.validate({**request, "language": "zh", "response_format": "json", "stream": False})
+        check.validate({**request, "language": "zh", "response_format": "json", "stream": True})
         check.validate({
             **request,
             "languages[]": ["en", "zh"],
@@ -478,14 +484,18 @@ class TranscriptionSchemaTests(unittest.TestCase):
             {**request, "file": ["one", "two"]}, {**request, "language": None},
             {**request, "language": "en", "languages[]": ["en"]},
             {**request, "keywords[]": [""]},
-            {**request, "response_format": "verbose_json"}, {**request, "stream": True},
+            {**request, "response_format": "verbose_json"},
+            {**request, "response_format": "text", "stream": True},
             {**request, "prompt": "a" * 4097}, {**request, "temperature": 1.1},
             {**request, "provider": {}}, {**request, "file_url": "https://example.invalid"},
         ):
             self.assertFalse(check.is_valid(value))
         post = DOCUMENT["paths"]["/v1/audio/transcriptions"]["post"]
         self.assertEqual(set(post["requestBody"]["content"]), {"multipart/form-data"})
-        self.assertEqual(set(post["responses"]["200"]["content"]), {"application/json", "text/plain"})
+        self.assertEqual(
+            set(post["responses"]["200"]["content"]),
+            {"application/json", "text/plain", "text/event-stream"},
+        )
 
     def test_result_has_text_and_only_reported_duration(self):
         check = validator("TranscriptionResponse")

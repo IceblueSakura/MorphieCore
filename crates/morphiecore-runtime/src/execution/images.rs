@@ -9,6 +9,8 @@ pub fn prepare(
     if request.model != route.model.as_str()
         || provider.id != route.endpoint.provider
         || provider.origin != route.endpoint.target.origin
+        || route.endpoint.execution.streaming != route.endpoint.profile.supports_streaming()
+        || (request.delivery.streaming() && !route.endpoint.execution.streaming)
     {
         return Err(AttemptError::Protocol(
             crate::execution::attempt::ProtocolReason::ImageBindingMismatch,
@@ -20,6 +22,11 @@ pub fn prepare(
         &route.endpoint.upstream_model,
         route.endpoint.execution.request_body_limit,
     )?;
+    let accept = if request.delivery.streaming() {
+        "text/event-stream"
+    } else {
+        "application/json"
+    };
     Ok(PreparedTaskRequest::new(
         provider,
         route.endpoint.request_path(edit).map_err(|_| {
@@ -32,7 +39,7 @@ pub fn prepare(
         },
         vec![
             ("content-type".into(), encoded.content_type),
-            ("accept".into(), "application/json".into()),
+            ("accept".into(), accept.into()),
         ],
         encoded.body,
     ))

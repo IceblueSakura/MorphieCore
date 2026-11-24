@@ -16,7 +16,8 @@ pub fn prepare(
         || provider.origin != endpoint.target.origin
         || provider.auth.kind() != CredentialKind::ApiKey
         || endpoint.execution.credential_kind != CredentialKind::ApiKey
-        || endpoint.execution.streaming
+        || endpoint.execution.streaming != endpoint.profile.supports_streaming()
+        || (request.stream && !endpoint.execution.streaming)
     {
         return Err(AttemptError::Protocol(
             crate::execution::attempt::ProtocolReason::TranscriptionBinding,
@@ -33,7 +34,7 @@ pub fn prepare(
             "accept".into(),
             endpoint
                 .profile
-                .expected_response_media(request.task.response_format)
+                .expected_response_media(request.task.response_format, request.stream)
                 .into(),
         ),
     ];

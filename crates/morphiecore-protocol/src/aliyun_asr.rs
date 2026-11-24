@@ -32,6 +32,9 @@ fn text(m: &Map<String, Value>, key: &str) -> Result<String, CodecError> {
 }
 pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecError> {
     request.task.validate().map_err(|_| CodecError::invalid())?;
+    if request.stream {
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+    }
     if !super::openai::speech::valid_model(&request.model)
         || !super::openai::speech::valid_model(model)
     {

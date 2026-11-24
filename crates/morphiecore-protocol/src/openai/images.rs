@@ -3,7 +3,9 @@
 //! https://developers.openai.com/api/reference/resources/images/methods/edit
 //! https://github.com/openai/openai-python/tree/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types
 mod multipart;
+mod stream;
 pub use multipart::{MAX_EDIT_UPLOAD_BYTES, decode_edit_request, encode_edit_request};
+pub use stream::{StreamDecoder, encode_sse_event};
 
 use crate::{
     CodecError,
@@ -110,6 +112,7 @@ pub fn decode_request(bytes: &[u8]) -> Result<Request, CodecError> {
         "model",
         "prompt",
         "n",
+        "partial_images",
         "stream",
         "output_format",
         "size",
@@ -126,6 +129,9 @@ pub fn decode_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let mut task = ImageGenerationRequest::new(string(required(map, "prompt")?)?)
         .map_err(|_| CodecError::invalid())?;
     task.count = optional(map, "n", |v| {
+        u8::try_from(number(v)?).map_err(|_| CodecError::invalid())
+    })?;
+    task.partial_images = optional(map, "partial_images", |v| {
         u8::try_from(number(v)?).map_err(|_| CodecError::invalid())
     })?;
     task.format = optional(map, "output_format", format)?;
@@ -172,8 +178,9 @@ pub fn validate_request(request: &Request) -> Result<(), CodecError> {
         .validate()
         .map_err(|_| CodecError::invalid())?;
     if !valid_model(&request.model)
-        || request.delivery.streaming()
         || request.delivery.options.is_some()
+        || (request.delivery.streaming() && request.task.requested_count() != 1)
+        || (!request.delivery.streaming() && request.task.partial_images.value().is_some())
         // This profile defaults to PNG, unlike the protocol-neutral request.
         || request.task.compression.value().is_some()
             && !matches!(request.task.format.value(),Some(ImageFormat::Jpeg|ImageFormat::Webp))
@@ -191,6 +198,12 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
     map.insert("model".into(), json!(model));
     map.insert("prompt".into(), json!(request.task.prompt()));
     put(&mut map, "n", &request.task.count, |n| json!(n));
+    put(
+        &mut map,
+        "partial_images",
+        &request.task.partial_images,
+        |n| json!(n),
+    );
     if let Some(stream) = request.delivery.stream {
         map.insert("stream".into(), json!(stream));
     }

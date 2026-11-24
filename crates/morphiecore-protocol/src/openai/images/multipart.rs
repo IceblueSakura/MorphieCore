@@ -133,6 +133,7 @@ pub async fn decode_edit_request(content_type: &str, bytes: Bytes) -> Result<Req
             "model",
             "prompt",
             "n",
+            "partial_images",
             "size",
             "quality",
             "background",
@@ -244,6 +245,7 @@ pub async fn decode_edit_request(content_type: &str, bytes: Bytes) -> Result<Req
     let stream = match fields.remove("stream").as_deref() {
         None => None,
         Some("false") => Some(false),
+        Some("true") => Some(true),
         Some(_) => return Err(CodecError::invalid()),
     };
 
@@ -261,6 +263,9 @@ pub async fn decode_edit_request(content_type: &str, bytes: Bytes) -> Result<Req
     }
     if let Some(raw) = fields.remove("n") {
         task.count = Presence::Value(parse_u8(&raw)?);
+    }
+    if let Some(raw) = fields.remove("partial_images") {
+        task.partial_images = Presence::Value(parse_u8(&raw)?);
     }
     if let Some(raw) = fields.remove("output_format") {
         task.format = Presence::Value(super::format_str(&raw)?);
@@ -308,6 +313,7 @@ pub fn encode_edit_request(
     };
 
     let count = request.task.count.value().map(|n| n.to_string());
+    let partial_images = request.task.partial_images.value().map(|n| n.to_string());
     let compression = request.task.compression.value().map(|c| c.to_string());
     let size = request.task.size.value().map(|s| match s {
         crate::semantic::task::image_generation::ImageSizeRequest::Auto => "auto".to_owned(),
@@ -316,7 +322,7 @@ pub fn encode_edit_request(
         }
     });
 
-    let mut parts = Vec::with_capacity(edit.sources.len() + 14);
+    let mut parts = Vec::with_capacity(edit.sources.len() + 15);
     parts.push(Part::Text {
         name: "model",
         value: model,
@@ -329,6 +335,12 @@ pub fn encode_edit_request(
         parts.push(Part::Text {
             name: "n",
             value: count,
+        });
+    }
+    if let Some(ref partial_images) = partial_images {
+        parts.push(Part::Text {
+            name: "partial_images",
+            value: partial_images,
         });
     }
     if let Some(stream) = request.delivery.stream {

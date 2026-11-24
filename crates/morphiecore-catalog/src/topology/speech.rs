@@ -103,7 +103,7 @@ impl CompiledTopology {
             if !endpoint.profile.supports(&endpoint.capabilities) {
                 return Err(TopologyError::ContractUnsatisfiable);
             }
-            if endpoint.execution.streaming != endpoint.profile.upstream_sse()
+            if endpoint.execution.streaming != endpoint.profile.supports_streaming()
                 || endpoint.execution.request_body_limit == 0
                 || endpoint.execution.response_body_limit == 0
                 || endpoint.execution.timeout_ms == 0

@@ -3,7 +3,10 @@ use crate::value::AudioEncoding;
 use serde_json::Number;
 use std::cmp::Ordering;
 mod result;
-pub use result::{AudioReference, SpeechReport, SpeechResult, SpeechSentence, SpeechWord};
+pub use result::{
+    AudioReference, SpeechEvent, SpeechReport, SpeechResult, SpeechSentence, SpeechTokenUsage,
+    SpeechWord,
+};
 
 pub const MAX_INPUT_CHARS: usize = 4096;
 pub const MAX_INPUT_BYTES: usize = MAX_INPUT_CHARS * 4;
