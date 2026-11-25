@@ -2,7 +2,6 @@
 use super::*;
 use crate::{
     protocol::{
-        anthropic::messages::client::GoogleTerminalPolicy,
         failure::CarrierReason,
         openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
     },
@@ -390,25 +389,7 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
         false,
     );
     attempt.finish().unwrap();
-    let chat = ResponseDelivery::new(
-        ClientAdapter::openai(
-            crate::protocol::openai::GenerationCodec::new(
-                crate::protocol::openai::GenerationApi::Chat,
-                crate::protocol::openai::Dialect::MorphieCore,
-                None,
-            ),
-            crate::protocol::openai::TargetContract::full(),
-        ),
-        "public",
-        Default::default(),
-        Default::default(),
-        Obfuscation::Disabled,
-        false,
-    )
-    .with_request(&endpoint, &request, &request);
-    assert!(chat.projection.messages_terminal.is_none());
-    for guard in ["unbound", "stops", "disabled"] {
-        let mut selected = endpoint.clone();
+    for guard in ["unbound", "stops"] {
         let mut request = request.clone();
         if guard == "stops" {
             let mut settings = request.task.semantic.settings().clone();
@@ -417,14 +398,6 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
                 .stop_sequences
                 .push(crate::semantic::value::Text::new("END", "stop", 16).unwrap());
             request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
-        }
-        if guard == "disabled" {
-            let crate::lowering::target::TargetContract::GoogleInteractions(c) =
-                &mut selected.representation
-            else {
-                unreachable!()
-            };
-            c.messages_terminal_projection = false;
         }
         let mut d = if guard == "unbound" {
             ResponseDelivery::new(
@@ -436,20 +409,17 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
                 false,
             )
         } else {
-            delivery(&selected, &request, false)
+            delivery(&endpoint, &request, false)
         };
-        assert!(d.projection.messages_terminal.is_none());
-        if guard == "disabled" || guard == "stops" {
-            // Generic call-free derivation uses admitted request context;
-            // the Google-only flag still owns its separate rule.
+        if guard == "stops" {
+            // Generic call-free derivation uses admitted request context.
             let wire: serde_json::Value =
                 serde_json::from_slice(&d.encode_json(&attempt).unwrap()).unwrap();
             assert_eq!(wire["stop_reason"], "end_turn");
-            assert_eq!(
+            assert!(
                 d.effects()
                     .iter()
-                    .any(|effect| effect.rule() == "messages.ambiguous-stop-as-end-turn.v1"),
-                guard == "stops"
+                    .any(|effect| effect.rule() == "messages.ambiguous-stop-as-end-turn.v1")
             );
             continue;
         }
@@ -462,54 +432,6 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
                 ))
             ),
             "{error:?}"
-        );
-    }
-    // Knowing an outcome, or having calls, never turns an unspecified failure into success.
-    let mut incomplete = attempt
-        .response()
-        .unwrap()
-        .semantic
-        .clone()
-        .with_details(TerminalDetails::default())
-        .unwrap()
-        .with_progress(InteractionProgress::Unreported)
-        .unwrap();
-    incomplete = GenerationResponse::new(incomplete.items().to_vec(), Outcome::Incomplete)
-        .unwrap()
-        .with_details(TerminalDetails {
-            incomplete: Some(IncompleteReason::Unspecified),
-            ..Default::default()
-        })
-        .unwrap();
-    let policy = GoogleTerminalPolicy::InteractionsWithoutStops;
-    assert!(
-        policy
-            .project(
-                &incomplete,
-                crate::protocol::conversion::generation::ConversionBoundary::EventEncode
-            )
-            .unwrap()
-            .is_none()
-    );
-    for progress in [
-        InteractionProgress::Unreported,
-        InteractionProgress::NeedsContinuation,
-    ] {
-        let unknown = attempt
-            .response()
-            .unwrap()
-            .semantic
-            .clone()
-            .with_progress(progress)
-            .unwrap();
-        assert!(
-            policy
-                .project(
-                    &unknown,
-                    crate::protocol::conversion::generation::ConversionBoundary::EventEncode
-                )
-                .unwrap()
-                .is_none()
         );
     }
     let (endpoint, request, frames) = fixture(false);

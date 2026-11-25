@@ -80,28 +80,6 @@ impl TargetContract {
             Self::GoogleInteractions(c) => &c.dispositions,
         }
     }
-    pub fn messages_terminal_policy(
-        &self,
-        request: &crate::GenerationRequestEnvelope,
-    ) -> Option<anthropic::messages::client::GoogleTerminalPolicy> {
-        // Interactions forwards nonempty stop controls unchanged and never
-        // inserts defaults. Absence here is therefore an effective-request fact.
-        if !request.task.semantic.controls().stop_sequences.is_empty() {
-            return None;
-        }
-        self.google_messages_terminal_profile()
-    }
-    pub fn google_messages_terminal_profile(
-        &self,
-    ) -> Option<anthropic::messages::client::GoogleTerminalPolicy> {
-        use anthropic::messages::client::GoogleTerminalPolicy as Policy;
-        match self {
-            Self::GoogleInteractions(c) if c.messages_terminal_projection => {
-                Some(Policy::InteractionsWithoutStops)
-            }
-            _ => None,
-        }
-    }
     pub fn cache(&self) -> CacheTargetPolicy {
         match self {
             Self::OpenAi(c) => c.cache,

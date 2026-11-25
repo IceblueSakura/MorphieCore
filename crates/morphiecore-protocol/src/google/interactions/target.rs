@@ -60,8 +60,6 @@ pub struct TargetContract {
     pub model_limits: crate::model_limits::ModelLimits,
     pub cache: CacheTargetPolicy,
     pub reasoning_policy: Option<crate::reasoning::ReasoningRequestPolicy>,
-    /// Selected downstream terminal projection; native source facts stay unchanged.
-    pub messages_terminal_projection: bool,
 }
 impl Default for TargetContract {
     fn default() -> Self {
@@ -72,7 +70,6 @@ impl Default for TargetContract {
             model_limits: Default::default(),
             cache: CacheTargetPolicy::default(),
             reasoning_policy: None,
-            messages_terminal_projection: false,
         }
     }
 }

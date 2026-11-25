@@ -654,25 +654,6 @@
   ],
   "google": [
     {
-      "model": "gemini-3.8-flash",
-      "upstream": "gemini-3.8-flash",
-      "released_at": 1788307200,
-      "developer": "Google",
-      "provider": "google",
-      "scope_effort": {
-        "rule": "google.gemini-3.8-flash.response-effort-to-thinking.v1",
-        "from": "response",
-        "to": "reasoning",
-        "levels": [["low", "low"], ["medium", "medium"], ["high", "high"]]
-      },
-      "messages_terminal_projection": true,
-      "limits": {
-        "allowed_effort": ["low", "medium", "high"],
-        "maximum_input_tokens": 1048576,
-        "maximum_output_tokens": 65536
-      }
-    },
-    {
       "model": "gemini-4-argon",
       "upstream": "gemini-4-argon",
       "released_at": 1791849600,

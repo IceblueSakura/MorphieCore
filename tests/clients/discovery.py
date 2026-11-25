@@ -40,7 +40,6 @@ def main():
         "minicpm5-2b": ["modelbest-minicpm5-2b-chat"],
         "MiniCPM-V-4.7-1B": ["modelbest-minicpm-v-4.7-1b-chat"],
         "MiniCPM-V-4.7-35B-A3B": ["modelbest-minicpm-v-4.7-35b-a3b-chat"],
-        "gemini-3.8-flash": ["google-gemini-3.8-flash-interactions"],
         "gemini-4-hydrogen": ["google-gemini-4-hydrogen-interactions"],
         "qwen4-max": ["tokenplan-qwen4-responses"],
         "kimi-k3.1-pro": ["dashscope-kimi-chat"],
@@ -74,9 +73,9 @@ def main():
         check(set(rows) == set(bindings), "public_model_identity")
         deepseek = rows["deepseek-v4.1-flash-1017"]["token_limits"]
         check(deepseek["context_window_tokens"] == 1048576, "native_service_capacity_missing")
-        check(rows["gemini-3.8-flash"]["token_limits"]["context_window_tokens"] is None
-              and rows["gemini-3.8-flash"]["token_limits"]["max_input_tokens"] == 1048576,
-              "input_capacity_is_not_total")
+        check(rows["gemini-4-hydrogen"]["token_limits"]["context_window_tokens"] == 1048576
+              and rows["gemini-4-hydrogen"]["token_limits"]["max_input_tokens"] is None,
+              "unified_context_window_is_not_input_capacity")
         check(rows["qwen3.8-flash"]["token_limits"]["context_window_tokens"] is None,
               "unknown_candidate_is_not_native_capacity")
         check(rows["mimo-v2.6-pro"]["token_limits"]["max_output_tokens"] is None,

@@ -234,10 +234,6 @@ Responses capabilities mark experimental stored projections as rejected. Returne
 
 Phase cases describe exact native Responses assistant labels. Chat and Messages preserve visible content/order but omit phase under `generation.omit-delivery-message-phase.v1`; returned phase is not supported there. These cases do not promise phase-aware UI, client retention, or successful conversion of other content/terminals. Request-side phase transfer and cache-retention policies remain unassessed by this partial route-wide view.
 
-Selected Google Messages entries additionally declare `interactions_completed_without_configured_sequences` with their terminal rules.
-
-The general ambiguity rejection is scoped outside that selected no-stop profile.
-
 These cases still require valid outcome/progress/call shape, representable usage and successful EOF; they do not admit configured stops, unknown failure reasons or unsupported reports.
 
 Google ordinary-text/call signatures have no standard Chat/Messages/stateless Responses carrier and reject instead of creating a reasoning/thinking manifest.

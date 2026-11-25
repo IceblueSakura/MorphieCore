@@ -68,7 +68,6 @@ pub struct ClientProjection {
     limits: crate::stream::SseLimits,
     without_stops: bool,
     ambiguous_stops: bool,
-    terminal_policy: Option<crate::anthropic::messages::client::GoogleTerminalPolicy>,
     metadata: Option<ResponseMetadata>,
     fidelity: FidelityRecords,
     source_lifecycles: BTreeMap<ItemId, ItemLifecycle>,
@@ -103,7 +102,6 @@ impl ClientProjection {
             limits: Default::default(),
             without_stops: false,
             ambiguous_stops: false,
-            terminal_policy: None,
             metadata: None,
             fidelity: Default::default(),
             source_lifecycles: BTreeMap::new(),
@@ -147,15 +145,9 @@ impl ClientProjection {
     pub fn fidelity(&self) -> &FidelityRecords {
         &self.fidelity
     }
-    pub fn with_messages_terminal(
-        mut self,
-        without_stops: bool,
-        ambiguous_stops: bool,
-        policy: Option<crate::anthropic::messages::client::GoogleTerminalPolicy>,
-    ) -> Self {
+    pub fn with_messages_terminal(mut self, without_stops: bool, ambiguous_stops: bool) -> Self {
         self.without_stops = without_stops;
         self.ambiguous_stops = ambiguous_stops;
-        self.terminal_policy = policy;
         self
     }
     fn loss(&mut self, rule: Rule, owner: Owner) {
@@ -800,15 +792,6 @@ impl ClientProjection {
                     )?
                     .with_progress(progress)?
                     .with_details(details.clone())?;
-                    if let Some(policy) = self.terminal_policy
-                        && let Some((view, effect)) = policy.project(
-                            &source,
-                            crate::conversion::generation::ConversionBoundary::EventProject,
-                        )?
-                    {
-                        *details = view;
-                        self.losses.push(effect);
-                    }
                     if !self.native
                         && *terminal == StreamTerminal::Completed
                         && calls

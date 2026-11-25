@@ -18,7 +18,7 @@ async fn exercise_rejected(messages: bool) {
         let (path, body) = if messages {
             (
                 "messages",
-                json!({"model":"gemini-3.8-flash","max_tokens":256,"stream":stream,
+                json!({"model":"gemini-4-argon","max_tokens":256,"stream":stream,
                 "thinking":{"type":"adaptive"},"output_config":{"effort":"low"},
                 "tools":[{"name":"read","input_schema":{"type":"object","properties":{
                     "path":{"type":"string"}},"required":["path"]}}],
@@ -27,7 +27,7 @@ async fn exercise_rejected(messages: bool) {
         } else {
             (
                 "chat/completions",
-                json!({"model":"gemini-3.8-flash","max_completion_tokens":256,"stream":stream,
+                json!({"model":"gemini-4-argon","max_completion_tokens":256,"stream":stream,
                 "reasoning_effort":"low","messages":[{"role":"user","content":"Read."}],
                 "tools":[{"type":"function","function":{"name":"read","strict":false,"parameters":{
                     "type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}}]}),
@@ -92,7 +92,7 @@ async fn stateless_responses_do_not_publish_success_or_store_signed_calls() {
         let fixture = fixture::start(GenerationApi::Responses, false).await;
         let mut response = client.post(format!("{}/responses", fixture.base))
                 .bearer_auth(fixture::KEY)
-                .json(&json!({"model":"gemini-3.8-flash","input":"Read.","store":false,
+                .json(&json!({"model":"gemini-4-argon","input":"Read.","store":false,
                     "stream":stream,"max_output_tokens":256,"reasoning":{"effort":"low","summary":"auto"},
                     "tools":[{"type":"function","name":"read","strict":false,"parameters":{
                         "type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}]}))

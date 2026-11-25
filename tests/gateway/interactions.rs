@@ -65,7 +65,7 @@ async fn answer(
         .any(|i| i["type"] == "function_result");
     state.seen.lock().unwrap().push(body.clone());
     let mut events = vec![
-        json!({"event_type":"interaction.created","interaction":{"object":"interaction","model":"gemini-3.8-flash"}}),
+        json!({"event_type":"interaction.created","interaction":{"object":"interaction","model":"gemini-4-argon"}}),
         json!({"event_type":"interaction.status_update","status":"in_progress"}),
     ];
     if hold || replay || plain {

@@ -100,7 +100,7 @@ fn output_ceiling_does_not_leak_to_another_binding_for_the_same_model() {
 fn google_response_effort_is_a_selected_direction_not_native_support() {
     use morphiecore::{execution::admit, topology::*};
     let binding = &google_bindings()[0];
-    let rule = "google.gemini-3.8-flash.response-effort-to-thinking.v1";
+    let rule = "google.gemini-4-argon.response-effort-to-thinking.v1";
     for mut endpoint in [binding.endpoint()] {
         assert!(
             !endpoint
@@ -256,7 +256,7 @@ fn google_scope_mapping_approximates_levels_without_weakening_activation_or_hist
             let (wire, rules) = projected(&endpoint, &request);
             assert_eq!(
                 rules,
-                ["google.gemini-3.8-flash.response-effort-to-thinking.v1"]
+                ["google.gemini-4-argon.response-effort-to-thinking.v1"]
             );
             assert_eq!(
                 wire["generation_config"],
@@ -280,7 +280,7 @@ fn google_scope_mapping_approximates_levels_without_weakening_activation_or_hist
                     rules,
                     [
                         "generation.adaptive-preserve-explicit-effort.v1",
-                        "google.gemini-3.8-flash.response-effort-to-thinking.v1"
+                        "google.gemini-4-argon.response-effort-to-thinking.v1"
                     ]
                 );
                 assert_eq!(

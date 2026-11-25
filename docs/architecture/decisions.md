@@ -87,7 +87,6 @@ See [Architecture Overview](index.md) for system boundaries and core IR semantic
 | Go truncated tool-stream closure | Intake | Trusted Messages intake closes an open tool-input block at explicit max-token termination when received bytes form a valid unfinished object prefix, marking the call incomplete without executable completion. Standard decoding and partial-tool non-execution remain protected. [Response rules](adaptation-and-dialects.md#response-rules) |
 | Messages missing ceiling default | Messages | Go/Haiku injects `32000` default output tokens when the client request omits `max_tokens`. |
 | Tool-result error wrapping | Tools | Prefixes tool results with boolean status text for targets lacking native error flags. |
-| Google terminal projection | Google | Gemini 3.8 Flash completions map to Messages `tool_use` or `end_turn` under request-grounded inference. |
 
 ### History and cache decisions
 

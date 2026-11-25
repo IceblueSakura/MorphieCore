@@ -69,7 +69,7 @@ pub(super) async fn answer(
     if state.strict {
         config["tool_choice"] = json!("validated");
     }
-    let mut expected = json!({"model":"gemini-3.8-flash","store":false,"stream":true,
+    let mut expected = json!({"model":"gemini-4-argon","store":false,"stream":true,
         "input":expected_input(turn, state.messages), "generation_config":config,
         "tools":[{"type":"function","name":"read","parameters":{
             "type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}]});
@@ -93,7 +93,7 @@ pub(super) async fn answer(
     seen.push(body);
     drop(seen);
     let mut frames = vec![
-        json!({"event_type":"interaction.created","interaction":{"model":"gemini-3.8-flash"}}),
+        json!({"event_type":"interaction.created","interaction":{"model":"gemini-4-argon"}}),
         json!({"event_type":"interaction.status_update","status":"in_progress"}),
     ];
     let mut steps = vec![];

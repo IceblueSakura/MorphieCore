@@ -5,54 +5,6 @@ use crate::{
 };
 use serde_json::Value;
 
-/// Selected only for a trusted Google binding whose effective request has no
-/// stop sequences. This is client delivery policy, never native source decoding.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum GoogleTerminalPolicy {
-    InteractionsWithoutStops,
-}
-impl GoogleTerminalPolicy {
-    pub fn project(
-        self,
-        source: &GenerationResponse,
-        direction: crate::conversion::generation::ConversionBoundary,
-    ) -> Result<Option<(TerminalDetails, crate::conversion::generation::Effect)>, CodecError> {
-        source.details().validate(source.outcome())?;
-        if source.outcome() != Outcome::Completed {
-            return Ok(None);
-        }
-        let calls = source
-            .items()
-            .iter()
-            .any(|(_, i)| matches!(i, Item::ToolCall(_)));
-        let (completion, rule, action) = match (
-            self,
-            source.progress(),
-            calls,
-            source.details().completion.as_ref(),
-        ) {
-            (Self::InteractionsWithoutStops, InteractionProgress::TurnFinished, false, None) => (
-                Some(CompletionCause::Natural),
-                "messages.interactions-completed-as-end-turn.v1",
-                crate::conversion::generation::Change::InferFromRequest,
-            ),
-            _ => return Ok(None),
-        };
-        let mut details = source.details().clone();
-        details.completion = completion;
-        Ok(Some((
-            details,
-            crate::conversion::generation::Effect::Field {
-                rule: crate::conversion::generation::RuleId::new(rule),
-                field: crate::conversion::generation::Field::CompletionCause,
-                boundary: direction,
-                change: action,
-                owner: crate::conversion::generation::Owner::Root,
-            },
-        )))
-    }
-}
-
 /// The caller supplies the admitted/effective no-stop premise. Source reports
 /// remain unchanged; the Messages target derives both end-turn facts.
 pub fn completed_without_stops(

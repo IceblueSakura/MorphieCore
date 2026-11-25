@@ -26,7 +26,7 @@
         }
       ]
     },
-    "gemini-3.8-flash": {
+    "gemini-4-argon": {
       "total_timeout_ms": 180000,
       "thinking_tokens": {
         "minimal": 1024,
@@ -38,15 +38,15 @@
       },
       "candidates": [
         {
-          "binding": "google-gemini-3.8-flash-generate-content",
-          "upstream_model": "gemini-3.8-flash",
+          "binding": "google-gemini-4-argon-interactions",
+          "upstream_model": "gemini-4-argon",
           "allowed_effort": [
             "low",
             "medium",
             "high"
           ],
           "maximum_output_tokens": 32768,
-          "thinking_conversion": "effort_to_budget"
+          "thinking_conversion": "budget_to_effort"
         }
       ]
     }

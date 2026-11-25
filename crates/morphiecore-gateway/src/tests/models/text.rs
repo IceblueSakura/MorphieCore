@@ -661,14 +661,14 @@ fn text_reasoning_uses_source_scopes_and_never_advertises_noop_activation_or_def
     entry.candidates = vec![Arc::new(candidate.clone())];
     let value = descriptor(entry.clone());
     assert_eq!(value["token_limits"]["max_output_tokens"], 65536);
-    assert_eq!(value["token_limits"]["max_input_tokens"], 1_048_576);
-    assert_eq!(value["token_limits"]["context_window_tokens"], Value::Null);
+    assert_eq!(value["token_limits"]["max_input_tokens"], Value::Null);
+    assert_eq!(value["token_limits"]["context_window_tokens"], 1_048_576);
     assert_eq!(
         value["reasoning"]["effort"]["response"],
         json!({
             "state":"approved_adaptation","values":["low","medium","high"],
             "compatibility_values":["xhigh","max"],
-            "rules":["google.gemini-3.8-flash.response-effort-to-thinking.v1"]
+            "rules":["google.gemini-4-argon.response-effort-to-thinking.v1"]
         })
     );
     assert_eq!(

@@ -510,9 +510,6 @@ fn delivery_code(e: &DeliveryReason) -> &'static str {
         DeliveryReason::NoDeliverableOutput => "delivery.no_deliverable_output",
         DeliveryReason::PaddingConsumed => "delivery.padding_consumed",
         DeliveryReason::StreamAlreadyStarted => "delivery.stream_already_started",
-        DeliveryReason::TerminalProjectionSourceChanged => {
-            "delivery.terminal_projection_source_changed"
-        }
         DeliveryReason::TerminalRequiresValidatedUpstreamEOF => {
             "delivery.terminal_requires_validated_upstream_eof"
         }

@@ -16,8 +16,6 @@ pub struct GoogleBinding {
     #[serde(default)]
     pub(super) limits: crate::protocol::model_limits::ModelLimits,
     pub(super) scope_effort: Option<super::data::ScopeEffort>,
-    #[serde(default)]
-    messages_terminal_projection: bool,
 }
 
 impl GoogleBinding {
@@ -75,7 +73,6 @@ impl GoogleBinding {
                 sampling: crate::protocol::google::SamplingPolicy::Ignored,
                 model_limits: self.limits.clone(),
                 reasoning_policy: self.reasoning_policy(),
-                messages_terminal_projection: self.messages_terminal_projection,
                 ..Default::default()
             }
             .into(),

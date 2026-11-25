@@ -232,25 +232,13 @@ impl<'a> Entry<'a> {
             required.rules.push("responses.infer-required-settings.v1");
             delivery.push(required);
         }
-        use crate::protocol::anthropic::messages::client::GoogleTerminalPolicy as GoogleTerminal;
-        let interactions = protocol == ClientProtocol::Messages
-            && entry.candidates.iter().any(|c| {
-                c.endpoint.representation.google_messages_terminal_profile()
-                    == Some(GoogleTerminal::InteractionsWithoutStops)
-            });
-        // General ambiguity remains rejected. Selected Google delivery additionally
-        // needs request context, so expose that smaller domain rather than broad support.
         for (domain, exact) in [
             (
                 "natural_or_matched_stop_without_tool_continuation",
                 protocol == ClientProtocol::Messages,
             ),
             (
-                if interactions {
-                    "ambiguous_stop_outside_selected_google_no_stop_profile"
-                } else {
-                    "ambiguous_stop_without_tool_continuation"
-                },
+                "ambiguous_stop_without_tool_continuation",
                 protocol == ClientProtocol::Chat,
             ),
         ] {
@@ -273,16 +261,6 @@ impl<'a> Entry<'a> {
                 }
                 _ => {}
             }
-            delivery.push(case);
-        }
-        if interactions {
-            let mut case = Case::new(
-                "generation.completion_cause",
-                "interactions_completed_without_configured_sequences",
-                Treatment::ApprovedAdaptation,
-            );
-            case.rules
-                .push("messages.interactions-completed-as-end-turn.v1");
             delivery.push(case);
         }
         let mut history = if protocol == ClientProtocol::Responses {

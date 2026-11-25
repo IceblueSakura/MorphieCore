@@ -159,7 +159,6 @@ pub enum DeliveryReason {
     NoDeliverableOutput,
     PaddingConsumed,
     StreamAlreadyStarted,
-    TerminalProjectionSourceChanged,
     TerminalRequiresValidatedUpstreamEOF,
     UpstreamWasNotAStream,
 }
@@ -439,15 +438,6 @@ impl Attempt {
         self.adapter.openai().is_ok_and(|adapter| {
             adapter.protocol == crate::protocol::openai::GenerationApi::Responses
         })
-    }
-    pub fn messages_terminal_source(
-        &self,
-    ) -> Option<crate::protocol::anthropic::messages::client::GoogleTerminalPolicy> {
-        use crate::protocol::anthropic::messages::client::GoogleTerminalPolicy as Policy;
-        match self.adapter {
-            UpstreamAdapter::GoogleInteractions { .. } => Some(Policy::InteractionsWithoutStops),
-            _ => None,
-        }
     }
     pub fn new(adapter: impl Into<UpstreamAdapter>, body_limit: usize, limits: SseLimits) -> Self {
         Self {

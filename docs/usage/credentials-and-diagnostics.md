@@ -231,7 +231,7 @@ morphiecore-upstream probe opencode-go \
   --accounts "$ROOT/accounts.json" --store "$ROOT/credentials"
 
 morphiecore-upstream probe google \
-  --model gemini-3.8-flash --protocol google --account primary \
+  --model gemini-4-hydrogen --protocol google --account primary \
   --accounts "$ROOT/accounts.json" --store "$ROOT/credentials"
 
 morphiecore-upstream probe openai \

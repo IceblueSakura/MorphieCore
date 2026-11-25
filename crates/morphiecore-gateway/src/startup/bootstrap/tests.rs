@@ -857,7 +857,7 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
         let (rule, input, output, preset) = evidence[0];
         assert_eq!(
             rule.as_str(),
-            "google.gemini-3.8-flash.response-effort-to-thinking.v1"
+            "google.gemini-4-argon.response-effort-to-thinking.v1"
         );
         assert_eq!(
             input.effort.as_ref(),
@@ -900,8 +900,8 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
         ("maximum_output_tokens", serde_json::json!(1.5)),
         ("context_window_tokens", serde_json::json!(0)),
         ("context_window_tokens", serde_json::json!(-1)),
+        ("context_window_tokens", serde_json::json!(1048577)),
         ("maximum_input_tokens", serde_json::json!(0)),
-        ("maximum_input_tokens", serde_json::json!(1048577)),
     ] {
         let mut invalid = limits_config.clone();
         invalid["models"][google.model]["candidates"][0][name] = value;
@@ -999,7 +999,7 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
         .unwrap();
     assert!(
         scoped_rules.contains(&"generation.project-effort.v1")
-            && !scoped_rules.contains(&"google.gemini-3.8-flash.response-effort-to-thinking.v1"),
+            && !scoped_rules.contains(&"google.gemini-4-argon.response-effort-to-thinking.v1"),
         "an explicit numeric policy replaces, rather than chains with, the scope policy"
     );
     models["models"][google.model]["thinking_tokens"]["medium"] = serde_json::json!(5000);

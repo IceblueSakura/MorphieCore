@@ -30,7 +30,7 @@ def run_messages_rejection(base, api, stream):
             anthropic.Anthropic(base_url=base.removesuffix("/v1"), api_key=KEY,
                             max_retries=0, timeout=5.0, http_client=http,
                             _strict_response_validation=True) as client:
-        params = dict(model="gemini-3.8-flash", max_tokens=256,
+        params = dict(model="gemini-4-argon", max_tokens=256,
                   thinking={"type": "adaptive"}, output_config={"effort": "low"},
                   tools=[{"name": "read", "input_schema": {"type": "object",
                       "properties": {"path": {"type": "string"}}, "required": ["path"]}}],
@@ -58,7 +58,7 @@ def run_chat_rejection(base, api, stream):
     with httpx.Client(trust_env=False, event_hooks={"request": [transmissions.append]}) as http, \
             openai.OpenAI(base_url=base, api_key=KEY, max_retries=0, timeout=5.0,
                           http_client=http, _strict_response_validation=True) as client:
-        params = dict(model="gemini-3.8-flash", max_completion_tokens=256,
+        params = dict(model="gemini-4-argon", max_completion_tokens=256,
                       reasoning_effort="low", tools=[{"type":"function","function":{
                           "name":"read","strict":False,"parameters":{"type":"object",
                           "properties":{"path":{"type":"string"}},"required":["path"]}}}],

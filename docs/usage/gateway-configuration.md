@@ -351,11 +351,11 @@ Candidate projection preserves explicit effort over a conflicting numeric budget
 
 Nearest-level projection and model-maximum clamping remain bounded; malformed source controls and explicit guarantees retain validation.
 
-The existing Gemini 3.8 Flash bindings inherit the selected [response-effort scope approximation](../architecture/adaptation-and-dialects.md#google-response-effort-projection) without a new configuration field.
+The existing Gemini 4 bindings inherit the selected [response-effort scope approximation](../architecture/adaptation-and-dialects.md#google-response-effort-projection) without a new configuration field.
 
 Omitted `thinking_conversion` retains it; an explicit numeric conversion replaces it, never chains the two.
 
-Messages delivery uses [request-grounded end-turn derivation and the separately selected Google tool-stop projection](../architecture/adaptation-and-dialects.md#messages-terminal-projection).
+Messages delivery uses [request-grounded end-turn derivation](../architecture/adaptation-and-dialects.md#messages-terminal-projection).
 
 These adaptations do not promise equivalent Claude effort behavior or complete Google protocol support; further [Google API expansion is paused](../roadmap/backlog-and-frozen.md#google-api-pause).
 

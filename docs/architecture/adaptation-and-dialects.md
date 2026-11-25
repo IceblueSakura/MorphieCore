@@ -596,10 +596,6 @@ Explicit stop causes are preserved. Unbound requests, declared stop sequences, c
 
 A completed outcome whose only ambiguity is a declared stop sequence on a non-Messages target maps to `end_turn` under a named approximation (L3), because the source cannot say which cause applied. A Chat `stop` finish accompanied by function calls maps to `tool_use` (L2), as forced tool choice reports `stop` with calls. Incomplete, failed and cancelled outcomes remain unchanged.
 
-Existing Gemini 3.8 Flash bindings retain their narrower rules:
-- `messages.google-stop-without-sequences.v1` and `messages.interactions-completed-as-end-turn.v1` use the same request-grounded inference classification for their call-free completions.
-- `messages.google-tool-stop.v1` remains a separately selected tool-stop projection. Disabling that Google-specific policy does not disable generic call-free inference and does not permit the ambiguous tool-stop case.
-
 ### Reasoning controls
 
 #### Reasoning activation and effort scope
@@ -681,13 +677,11 @@ No new format, task budget, `clear_at`, thinking mode or weaker content/explicit
 
 The model-qualified `google.<model>.response-effort-to-thinking.v1` rules map response-scoped effort to Gemini thinking effort via [`ReasoningConversion::Scope`](../../crates/morphiecore-lowering/src/reasoning.rs).
 
-Gemini 3.8 Flash, Gemini 4 Argon and Carbon map low/medium/high; Hydrogen also carries xhigh as native `XHIGH` on GenerateContent and `xhigh` on Interactions.
+Gemini 4 Argon and Carbon map low/medium/high; Hydrogen also carries xhigh as native `xhigh` on Interactions.
 
 Gemini 4 planning records its unified context window rather than relabeling it as independent input capacity.
 
 Sampling is ignored by these selected models; the existing named omission rules preserve that distinction.
-
-The selected 3.8-only terminal projections remain unchanged.
 
 #### Reasoning level calibration
 

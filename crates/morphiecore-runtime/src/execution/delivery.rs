@@ -99,7 +99,6 @@ struct Envelope {
 
 struct Projection {
     content_ready: bool,
-    messages_terminal: Option<crate::protocol::anthropic::messages::client::GoogleTerminalPolicy>,
     messages_without_stops: bool,
     messages_ambiguous_stops: bool,
     source: Option<std::sync::Arc<()>>,
@@ -176,7 +175,6 @@ impl ResponseDelivery {
             },
             projection: Projection {
                 content_ready: false,
-                messages_terminal: None,
                 messages_without_stops: false,
                 messages_ambiguous_stops: false,
                 adapter: None,
@@ -243,11 +241,6 @@ impl ResponseDelivery {
                 .stop_sequences
                 .is_empty()
                 && settings.controls.stop_sequences.is_empty();
-            self.projection.messages_terminal = if self.projection.messages_without_stops {
-                endpoint.representation.messages_terminal_policy(request)
-            } else {
-                None
-            };
             self.projection.messages_ambiguous_stops = !self.projection.messages_without_stops
                 && endpoint.protocol != crate::topology::GenerationProtocol::AnthropicMessages;
         }
@@ -273,14 +266,6 @@ impl ResponseDelivery {
     // Wire IDs can repeat across attempts; only the execution-owned token binds
     // this delivery. A different attempt needs a fresh uncommitted delivery.
     fn bind(&mut self, attempt: &Attempt) -> Result<(), AttemptError> {
-        if self.projection.messages_terminal.is_some()
-            && self.projection.messages_terminal != attempt.messages_terminal_source()
-        {
-            self.projection.phase = ProjectionPhase::Rejected;
-            return Err(AttemptError::Delivery(
-                crate::execution::attempt::DeliveryReason::TerminalProjectionSourceChanged,
-            ));
-        }
         if self
             .projection
             .source
@@ -489,7 +474,6 @@ impl ResponseDelivery {
                 adapter.with_messages_terminal(
                     self.projection.messages_without_stops,
                     self.projection.messages_ambiguous_stops,
-                    self.projection.messages_terminal,
                 )
             })
             .project(events)?;
