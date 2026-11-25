@@ -639,6 +639,70 @@ fn application_instruction_carriers_are_dialect_local_and_never_become_user() {
 }
 
 #[test]
+fn bailian_chat_preserves_instruction_parts_while_zhipu_requires_strings() {
+    use morphiecore::protocol::{
+        CodecError, ConversionCause, anthropic::messages::client::decode_client_request,
+        failure::CarrierReason,
+    };
+
+    let messages = decode_client_request(
+        br#"{
+        "model":"public","max_tokens":64,
+        "system":[{"type":"text","text":"Root A"},{"type":"text","text":"Root B"}],
+        "messages":[{"role":"user","content":"Start"}]
+    }"#,
+    )
+    .unwrap();
+    let responses = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+        .decode_client_request(br#"{"model":"public","instructions":"Root","input":[
+            {"role":"developer","content":[{"type":"input_text","text":"Lead A"},{"type":"input_text","text":"Lead B"}]},
+            {"role":"user","content":"Start"},
+            {"role":"assistant","content":"Ready"},
+            {"role":"developer","content":[{"type":"input_text","text":"Mid A"},{"type":"input_text","text":"Mid B"}]},
+            {"role":"developer","content":[{"type":"input_text","text":"Single"}]},
+            {"role":"user","content":"Continue"}
+        ]}"#).unwrap();
+
+    let bailian = adapter(Dialect::Bailian);
+    let zhipu = adapter(Dialect::Zhipu);
+    let contract = Contract::full();
+    for (source, expected) in [
+        (
+            messages,
+            json!([
+                {"role":"system","content":[{"type":"text","text":"Root A"},{"type":"text","text":"Root B"}]},
+                {"role":"user","content":"Start"}
+            ]),
+        ),
+        (
+            responses,
+            json!([
+                {"role":"system","content":"Root"},
+                {"role":"system","content":[{"type":"text","text":"Lead A"},{"type":"text","text":"Lead B"}]},
+                {"role":"user","content":"Start"},
+                {"role":"assistant","content":"Ready"},
+                {"role":"system","content":[{"type":"text","text":"Mid A"},{"type":"text","text":"Mid B"}]},
+                {"role":"system","content":"Single"},
+                {"role":"user","content":"Continue"}
+            ]),
+        ),
+    ] {
+        let (wire, rules) = bailian
+            .encode_request_with_rules(&source, "qwen3.8-flash", &contract)
+            .unwrap();
+        assert_eq!(wire["messages"], expected);
+        assert!(rules.is_empty(), "{rules:?}");
+        assert_eq!(
+            zhipu
+                .encode_request(&source, "glm-5.3", &contract)
+                .unwrap_err()
+                .cause,
+            ConversionCause::Codec(CodecError::Unsupported(CarrierReason::Unavailable))
+        );
+    }
+}
+
+#[test]
 fn binding_parallel_omission_preserves_serial_guarantees_and_source() {
     use morphiecore::{
         semantic::task::generation::Feature,

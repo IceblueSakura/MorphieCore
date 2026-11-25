@@ -266,7 +266,6 @@ impl Dialect {
                 WireRules {
                     request: RequestRules {
                         system_instruction_messages: profile == GenerationApi::Chat,
-                        chat_string_instructions: profile == GenerationApi::Chat,
                         chat_video_url: true,
                         ..Default::default()
                     },

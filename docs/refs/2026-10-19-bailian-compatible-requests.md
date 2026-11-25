@@ -10,6 +10,7 @@ Baseline checked **2026-10-19**, with source corrections on **2026-10-29**, **20
 - [Responses output-format refresh, 2026-11-08](#responses-output-format-refresh-2026-11-08)
 - [Responses tool-policy refresh, 2026-11-08](#responses-tool-policy-refresh-2026-11-08)
 - [Function-guarantee recheck, 2026-11-09](#function-guarantee-recheck-2026-11-09)
+- [Chat system instruction arrays, 2026-11-25](#chat-system-instruction-arrays-2026-11-25)
 
 ## Primary sources
 
@@ -102,3 +103,7 @@ The subsequent user-selected [shared service policy](../architecture/provider-di
 [Development](../development.md#overall-acceptance-status) summarizes overall acceptance.
 
 The positive-evidence audit finds no qualified Bailian function-strict pair: Qwen Flash/Max Chat flags and serialization checks do not establish enforcement; the two early combined strict/named DeepSeek samples and non-strict Agent loops do not transfer native DeepSeek beta's guarantee to Bailian. The implementation's verified set therefore starts empty and is independent of generic canonical capabilities. The user's same-upstream/two-plan selection applies this policy to DashScope and TokenPlan together; credentials, origins and billing remain isolated.
+
+## Chat system instruction arrays, 2026-11-25
+
+Bounded direct probes of `aliyun-dashscope-cn` at `/compatible-mode/v1/chat/completions` confirmed that `qwen3.8-flash`, `kimi-k3.1-pro`, `glm-5.3`, `glm-5.3-prime`, and `deepseek-v4.1-flash-1017` accept multi-part `role: "system"` text arrays both at the start and mid-conversation. All returned HTTP 200 and echoed distinct markers from every part. Qwen and Kimi rejected `role: "developer"` with HTTP 400. These probes did not cover TokenPlan or native Zhipu.

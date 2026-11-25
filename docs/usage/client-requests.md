@@ -59,7 +59,7 @@ supports_websockets = false
 
 - `gpt-6.2-sol` (OpenAI Responses / SIWC) supports Code Mode (`exec` inside `namespace: "functions"`), including unqualified historical `custom_tool_call` / `function_call` replay for default `functions` tools.
 - Non-OpenAI routes (such as Anthropic Messages and OpenRouter Chat) run default namespaced functions (e.g., `multi_agent_v1`) via reversible namespace aliases (`generation.alias-tool-namespaces.v1`) and grammar-free plain custom-text tools via single-string object wrappers (`generation.wrap-plain-custom-tools.v1`).
-- Hosted `web_search`, WebSockets (`supports_websockets = true`), grammar-constrained custom tools (`code_mode` / `apply_patch_freeform` Lark/regex) on non-grammar targets, and multi-part developer messages toward string-only Chat dialects (e.g., Bailian/Zhipu `chat_string_instructions`) reject explicitly rather than weakening schemas or instructions.
+- Hosted `web_search`, WebSockets (`supports_websockets = true`), grammar-constrained custom tools (`code_mode` / `apply_patch_freeform` Lark/regex) on non-grammar targets, and multi-part developer messages toward string-only Chat dialects such as Zhipu (`chat_string_instructions`) reject explicitly rather than weakening schemas or instructions.
 
 ### Chat Completions
 
