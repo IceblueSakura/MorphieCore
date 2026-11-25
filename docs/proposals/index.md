@@ -331,7 +331,7 @@ These sources informed the proposal. Web references are mutable; recheck them an
 
 | Contract | Official source |
 |---|---|
-| Decisions | [Dated four-Provider and SDK findings](../refs/2026-10-23-decision-contracts.md), with official schema/source links and unresolved discrepancies |
+| Decisions | [2026-10-23 four-Provider findings](../refs/2026-10-23-decision-contracts.md) and [2026-11-25 expansion findings](../refs/2026-11-25-decision-contracts.md), with official schema/source links, P1/P2 standing, and unresolved discrepancies |
 | Responses input counting | [Count input tokens](https://developers.openai.com/api/reference/resources/responses/subresources/input_tokens/methods/count) |
 | Messages counting | [Count tokens](https://platform.claude.com/docs/en/api/messages/count_tokens), [counting semantics](https://platform.claude.com/docs/en/build-with-claude/token-counting) |
 | Compaction and state | [Compact](https://developers.openai.com/api/reference/resources/responses/methods/compact), [conversation state](https://developers.openai.com/api/docs/guides/conversation-state) |

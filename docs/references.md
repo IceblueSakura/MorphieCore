@@ -116,6 +116,7 @@ Keep dated evidence that is not better owned by a current source guide, accepted
 | [NVIDIA Embedding expansion, 2026-11-19](refs/2026-11-19-nvidia-embedding-expansion.md) | Hosted versus NIM contracts, purpose and vector representation, account-scoped text evidence, cross-provider discriminators and a proposed first Stage-4 slice |
 | [MiniMax H3 video, 2026-10-22](refs/2026-10-22-minimax-h3-video.md) | v2 task/content/error/callback protocol versus incompatible v1 file-ID envelope |
 | [Decision APIs, 2026-10-23](refs/2026-10-23-decision-contracts.md) | OpenAI/TypeSafe and alternative API differences, confidence/grouping/media and discovery/compression gaps |
+| [Decision APIs expansion, 2026-11-25](refs/2026-11-25-decision-contracts.md) | Gemini Decision 1 P1 OpenAPI/SDK evidence, Qwen/Microsoft/Perplexity v1.3/Liquid/Inception/OpenRouter P2 boundaries, and IR/limit constraints |
 | [Downstream OAuth, 2026-10-23](refs/2026-10-23-downstream-oauth.md) | Device Flow, Rust authorization-server comparisons, refresh/revocation and deployment boundaries |
 | [Account recovery sources, 2026-11-02](refs/2026-11-02-account-recovery-sources.md) | Current stable dependency selection, locked HTTP/TLS failure-chain evidence, verbatim SIWC registration/rotation/error boundaries and headless callback input references |
 
