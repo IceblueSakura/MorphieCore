@@ -1,8 +1,8 @@
-# Gateway Configuration and Deployment
+# Gateway Configuration
 
-This guide covers gateway configuration templates, Agent API keys, model definitions, failure diagnostics, delta coalescing, daemon startup, and reverse-proxy deployment with Nginx.
+This guide defines the private JSON configuration schemas (`gateway.json`, `auth.json`, `models.json`), public configuration templates, failure diagnostics settings, model activation schema, and streaming delta coalescing.
 
-See [Credentials and Diagnostics](credentials-and-diagnostics.md) for auth setup, [Client Requests](client-requests.md) for client protocols, and [Architecture Runtime](../architecture/runtime-and-routing.md) for failover mechanics.
+See [Credentials and Diagnostics](credentials-and-diagnostics.md) for `accounts.json` and credential provisioning, [Deployment](deployment.md) for daemon startup, SSH releases, Nginx, and loopback receivers, and [Architecture Runtime](../architecture/runtime-and-routing.md) for routing and failover mechanics.
 
 ## Contents
 
@@ -11,12 +11,11 @@ See [Credentials and Diagnostics](credentials-and-diagnostics.md) for auth setup
   - [Agent API keys](#agent-api-keys)
   - [Failure diagnostics](#failure-diagnostics)
   - [Model configuration](#model-configuration)
+    - [Qwen image candidates](#qwen-image-candidates)
+    - [Media format transcoding](#media-format-transcoding)
   - [Delta coalescing](#delta-coalescing)
     - [Choosing a window](#choosing-a-window)
   - [Private failure context](#private-failure-context)
-- [Start the gateway](#start-the-gateway)
-  - [Binary-only SSH releases](#binary-only-ssh-releases)
-- [Reverse-proxy deployment](#reverse-proxy-deployment)
 
 ## Configure the gateway
 
@@ -29,21 +28,21 @@ The repository's [`config/`](../../config/) directory contains public templates,
 | Template | Purpose |
 |---|---|
 | [`gateway.example.json`](../../config/gateway.example.json) | All current service fields, default 50 ms / 16 KiB coalescing, disabled failure diagnostics |
-| [`auth.example.json`](../../config/auth.example.json) | Two independent Agent identities with deliberately too-short key placeholders; the unchanged file cannot start a gateway |
+| [`auth.example.json`](../../config/auth.example.json) | Two independent Agent identities with placeholder keys (must be replaced before starting) |
 | [`accounts.example.json`](../../config/accounts.example.json) | Ordered named API-key accounts referencing protected credential aliases, independently of model activation |
 | [`models.example.json`](../../config/models.example.json) | Narrow starting point: Qwen 3.8 Flash through the Token Plan Chat binding with standard Chat delivery |
 | [`models.advanced.example.json`](../../config/models.advanced.example.json) | Optional Generation controls: Messages/Google bindings, output limits, inherited-default clearing and both numeric thinking conversions |
 | [`models.tasks.example.json`](../../config/models.tasks.example.json) | Optional existing Embedding, Images, Speech and explicit Transcription binding selection, without Generation overrides |
 | [`pi-deepseek.example.json`](../../config/pi-deepseek.example.json) | Optional pi client model declaration for DeepSeek through the gateway; merge into pi's `models.json`, not gateway model configuration. See [Chat Completions](client-requests.md#chat-completions) |
-| [`nginx.example.conf`](../../config/nginx.example.conf) | Optional TLS virtual host, gzip SSE, proxy safety controls and example pre-authentication connection/upload limits; include from `http {}` |
-| [`otelcol.example.yaml`](../../config/otelcol.example.yaml), [`otelcol.example.service`](../../config/otelcol.example.service) | Optional loopback diagnostics receiver and user unit; see [setup and retention](#loopback-file-receiver) |
+| [`nginx.example.conf`](../../config/nginx.example.conf) | Optional TLS virtual host, gzip SSE, proxy safety controls and example pre-authentication limits; include from `http {}` |
+| [`otelcol.example.yaml`](../../config/otelcol.example.yaml), [`otelcol.example.service`](../../config/otelcol.example.service) | Optional loopback diagnostics receiver and user unit; see [setup and retention](deployment.md#loopback-file-receiver) |
 
-Choose one model template as `models.json`, or deliberately combine selected entries under one `models` object. The loader does not merge files, expand placeholders or discover templates. The advanced Messages candidate clears its output default, so uncapped requests require an explicit cap. Account targets remain independently configured.
+Choose one model template as `models.json`, or combine selected entries under one `models` object. The loader does not merge files, expand placeholders or discover templates. Unused Provider declarations in `accounts.json` must be removed before validation if those accounts are not provisioned.
 
-For a **new** Unix installation, run from the repository root. This refuses to overwrite existing files or symlinks:
+For a **new** Unix installation from the repository root (refuses to overwrite existing files or symlinks):
 
 ```sh
-ROOT="${ROOT:-$HOME/.local/share/morphiecore}"  # Or set ROOT to a fresh private directory.
+ROOT="${ROOT:-$HOME/.local/share/morphiecore}"
 (
     set -eu
     config="$ROOT"
@@ -60,23 +59,11 @@ ROOT="${ROOT:-$HOME/.local/share/morphiecore}"  # Or set ROOT to a fresh private
 )
 ```
 
-Replace **each** Agent-key placeholder with an independently generated high-entropy key of at least 32 printable non-space ASCII characters; keep values out of source and shell output.
+Replace **each** Agent-key placeholder with an independently generated high-entropy key of at least 32 printable non-space ASCII characters, and provision every referenced account with `--accounts "$ROOT/accounts.json" --store "$ROOT/credentials"`.
 
-Provision every referenced account with `--accounts "$ROOT/accounts.json" --store "$ROOT/credentials"`.
+`proxy: null` leaves environment-proxy fallback in effect rather than forcing direct connections. Provider metadata is compiled into the binary; there is no runtime `providers.json` template. Keep edited copies, credentials, certificates and captures outside the repository.
 
-The shipped account template declares `primary` for `aliyun-tokenplan-cn`, `opencode-go`, `google`, `openai` and `openrouter`; each references its Provider-local `example` alias.
-
-Remove unused Provider declarations before validation if those accounts will not be provisioned.
-
-Task models explicitly select `primary`.
-
-Templates are configuration examples, not live acceptance evidence.
-
-`proxy: null` leaves the documented environment-proxy fallback in effect; it does not force direct connections. To enable failure diagnostics, replace `null` with the trusted destination object below; private body context remains off unless explicitly selected. Upstream credential stores are managed formats, not hand-edited templates. Provider metadata remains compiled into the program; there is no runtime `providers.json` template.
-
-Keep edited copies, credentials, certificates and captures outside the repository. Git ignores non-template files under `config/` as a secondary guard, not as permission to put secrets in public `*.example.*` files.
-
-`gateway.json` owns service settings, not key values:
+`gateway.json` schema:
 
 ```json
 {
@@ -92,37 +79,34 @@ Keep edited copies, credentials, certificates and captures outside the repositor
 | Field | Meaning |
 |---|---|
 | `version` | Required current schema version, `1` |
-| `auth_file` | Optional path, default `auth.json` beside this file; the resolved private Agent-key file must exist and validate |
+| `auth_file` | Optional path, default `auth.json` beside this file; resolved private file must exist and validate |
 | `bind` | Loopback listener; default `127.0.0.1:8080` |
-| `models_file` | Optional path, default `models.json` beside this file; the resolved model configuration must exist and validate |
-| `accounts_file` | Optional path, default `accounts.json` beside this file; the resolved account configuration must exist and validate |
+| `models_file` | Optional path, default `models.json` beside this file; resolved file must exist and validate |
+| `accounts_file` | Optional path, default `accounts.json` beside this file; resolved file must exist and validate |
 | `credentials_dir` | Optional credential-store path; omission retains the independent home-relative default |
-| `proxy` | Outbound proxy |
+| `proxy` | Outbound proxy URL (or `null`) |
 | `routing` | Global affinity, pre-dispatch wait and downstream retry-hint policy |
 | `oauth` | Global credential-maintenance timing |
-| `delivery` | Total request deadline and text batching |
+| `delivery` | Total request deadline, FFmpeg executable (`ffmpeg`), and text batching (`delta_coalescing`) |
 | `resources` | Concurrent exchanges, request/response body budgets and upload deadline |
 | `diagnostics` | Optional trusted OTLP Logs/Traces destination and bounded private-body policy; see [Failure diagnostics](#failure-diagnostics) |
 
-Paths in the service file resolve relative to that file, not the process working directory. CLI paths remain explicit process-relative or absolute paths.
-
-The configuration uses **version 1**. Policy fields belong to the following objects. Omit a group or field to use its default. Groups and numeric/boolean fields reject `null`; `delivery.delta_coalescing:null` explicitly disables batching. `auth_file`, `models_file` and `accounts_file` may be omitted but reject `null`. `credentials_dir`, `proxy` and `diagnostics` accept `null`.
+Paths inside `gateway.json` resolve relative to `gateway.json`, not the process working directory. Policy groups omit to defaults and reject `null`, except `delivery.delta_coalescing: null` disables batching; `auth_file`, `models_file` and `accounts_file` reject `null`; `credentials_dir`, `proxy`, `delivery.ffmpeg` and `diagnostics` accept `null`.
 
 | Group | Fields and defaults | Bounds / effect |
 |---|---|---|
-| `routing` | `implicit_cache_affinity: true`, `affinity_ttl_ms: 3600000`, `affinity_capacity: 4096`, `max_wait_ms: 10000`, `retry_hint_horizon_ms: 60000` | Timing choices remain operator-owned. Zero TTL/capacity retains no bindings; zero wait disables waiting. The hint horizon limits credible **downstream** `Retry-After` values |
-| `oauth` | `scan_interval_ms: 15000`, `refresh_ahead_seconds: 120`, `renewal_timeout_ms: 90000`, `failed_renewal_delay_ms: 60000`, `minimum_renewal_interval_ms: 60000` | Zero scan interval keeps the startup check only; zero renewal timeout disables renewal |
-| `delivery` | `exchange_timeout_ms: 3600000` | 1–86400000 ms; begins **before body collection and admission**, covers execution/delivery, and bounds model-local deadlines |
-| `delivery` | `delta_coalescing: {"max_delay_ms":50,"max_pending_bytes":16384}` | Delay 1–100 ms, pending bytes 1024–1048576; see [batching](#delta-coalescing) |
+| `routing` | `implicit_cache_affinity: true`, `affinity_ttl_ms: 3600000`, `affinity_capacity: 4096`, `max_wait_ms: 10000`, `retry_hint_horizon_ms: 60000` | Zero TTL/capacity retains no bindings; zero wait disables waiting. Hint horizon bounds downstream `Retry-After` |
+| `oauth` | `scan_interval_ms: 15000`, `refresh_ahead_seconds: 120`, `renewal_timeout_ms: 90000`, `failed_renewal_delay_ms: 60000`, `minimum_renewal_interval_ms: 60000` | Zero scan interval checks startup only; zero renewal timeout disables renewal |
+| `delivery` | `exchange_timeout_ms: 3600000` | 1–86400000 ms; begins **before body collection and admission**, covering execution/delivery and bounding model deadlines |
+| `delivery` | `delta_coalescing: {"max_delay_ms":50,"max_pending_bytes":16384}` | Delay 1–100 ms, pending bytes 1024–1048576; see [Delta coalescing](#delta-coalescing) |
+| `delivery` | `ffmpeg: null` | Absolute path to trusted FFmpeg binary for non-native image/audio transcoding; see [Media format transcoding](#media-format-transcoding) |
 | `resources` | `concurrency: 16` | 1–256; body collection occupies a permit |
-| `resources` | `request_bytes: 33554432`, `response_bytes: 67108864` | Each 1–67108864 bytes; intersect with endpoint/task limits. A budget too small to publish discovery rejects startup |
-| `resources` | `body_timeout_ms: 60000` | 1–60000 ms; additional upload ceiling within the total request budget; whichever deadline expires first ends collection |
+| `resources` | `request_bytes: 33554432`, `response_bytes: 67108864` | Each 1–67108864 bytes; intersect with endpoint/task limits. Too small to publish discovery rejects startup |
+| `resources` | `body_timeout_ms: 60000` | 1–60000 ms; upload ceiling within the total request budget |
 
-These are deployment budgets, not new protocol capabilities. Transcription retains its independent multipart upload ceiling; image/audio/event and internal queue ceilings remain code-owned. Compiled Generation attempts retain a one-hour ceiling and standalone task operations retain their own ceilings (currently 120 seconds). OAuth HTTP operations retain a 30-second ceiling and a 10-second connection timeout. Raising an outer deadline does not enlarge these inner ceilings.
+Inner ceilings remain code-owned: compiled Generation attempts retain a 1-hour ceiling, standalone tasks retain 120 s (with Transcription's independent 4 MiB upload cap), and OAuth HTTP retains 30 s total / 10 s connect timeouts. Decoded static images default to 2 MiB per image / 2 MiB aggregate at the gateway (semantic ceiling 8 MiB); binary Speech defaults to 8 MiB (semantic ceiling 16 MiB). Raising an outer limit does not enlarge these inner bounds. See [Limits](../../crates/morphiecore-gateway/src/startup/limits.rs) and [stateful history](../architecture/history-and-replay.md#stateful-history).
 
-Decoded static images default to 2 MiB per image and 2 MiB in aggregate at the gateway, below the semantic 8 MiB ceilings. Binary Speech defaults to 8 MiB below its 16 MiB semantic ceiling. Effective limits also respect tighter endpoint and response bounds. These media budgets are not fields in `gateway.json`. See [stateful history](../architecture/history-and-replay.md#stateful-history) for the separate Responses admission boundary.
-
-Inspect available bindings without configuration or credentials, then validate or explain an explicit setup without starting a listener, renewal, diagnostics:
+Inspect available bindings without configuration or credentials, or validate/explain a setup without starting listeners:
 
 ```sh
 morphiecore --catalog
@@ -131,40 +115,26 @@ morphiecore --config "$ROOT/gateway.json" --validate
 morphiecore --config "$ROOT/gateway.json" --explain --json
 ```
 
-Explanation uses the production loader and requires valid local credentials.
-
-It reports resolved service defaults, Provider recovery, ordered account selections (including disabled candidates), inherited/configured output defaults, resolved task bindings, endpoint limits and destination-free diagnostics state.
-
-It never prints keys, credential aliases, private paths, custom upstream model strings or target URLs.
-
-Context/input capacities are planning metadata; output maxima clamp a present ceiling and do not impose a universal token/spending budget.
-
-Only Messages defaults fill absent output ceilings.
-
-Errors identify the configuration domain and safe field/index location without echoing rejected values; numbered Provider/model maps follow sorted key order.
+`--explain` uses the production loader (requiring valid local credentials) and prints safe resolved configuration without echoing keys, aliases, private paths, custom upstream model strings, or target URLs.
 
 ### Agent API keys
 
-`auth.json` has one versioned schema. Start from [`auth.example.json`](../../config/auth.example.json) and replace its intentionally invalid key placeholders; never deploy shared example keys.
+`auth.json` has one versioned schema. Start from [`auth.example.json`](../../config/auth.example.json) and replace its invalid key placeholders.
 
 | Field | Contract |
 |---|---|
 | `version` | Required integer `1`; unsupported versions reject |
 | `agents` | Required array of 1–256 records |
-| `agent_id` | Required unique, case-sensitive identity: 1–128 ASCII bytes, starts with a letter/digit, then letters/digits or `.`, `_`, `-` |
+| `agent_id` | Required unique, case-sensitive identity: 1–128 ASCII bytes, starts with letter/digit, then letters/digits or `.`, `_`, `-` |
 | `key` | Required globally unique secret: 32–4096 printable non-space ASCII bytes |
-| `name` | Optional mutable display label; defaults to empty, at most 256 UTF-8 bytes, no control characters |
-| `desc` | Optional maintenance description; defaults to empty, at most 2048 UTF-8 bytes |
+| `name` | Optional display label; defaults to empty, up to 256 UTF-8 bytes, no control characters |
+| `desc` | Optional maintenance description; defaults to empty, up to 2048 UTF-8 bytes |
 
-Records reject unknown fields; supplied fields must have their declared types, not null. Both duplicate IDs and duplicate keys reject startup. The file must exist and pass the same private-file checks as other configuration; there is no environment-key or anonymous fallback.
-
-Use the Agent's `key` in the SDK. Authentication determines `agent_id`; request headers, metadata and business content cannot choose it. Names and descriptions are private maintenance metadata, not authentication or public discovery fields. The runtime retains key digests, not plaintext keys; ordinary inference diagnostics record only the authenticated ID.
-
-All configured Agents share the current model access policy; stored-response operations remain disabled. This is not a per-Agent ACL or quota system. Keep `agent_id` unchanged when renaming an Agent or replacing its key. Remove a record to revoke access, then restart: running gateways retain their loaded keys and in-flight requests are not forcibly cancelled. There is no persistent identity registry or deletion tombstone; operators must not reuse a retired ID for a different Agent. OAuth, remote registration and credential-management APIs remain deferred.
+Records reject unknown fields and unexpected `null` values; duplicate IDs or keys reject startup. Authentication binds `agent_id` strictly from `key` (via Bearer or `x-api-key`); headers/body cannot select or override it. There is no per-Agent ACL or quota system—keep `agent_id` stable when rotating a key, remove a record and restart to revoke access, and never reuse a retired `agent_id` for a different Agent.
 
 ### Failure diagnostics
 
-Diagnostics are opt-in. Set `diagnostics` to an explicit trusted OTLP/HTTP base URL:
+Diagnostics are opt-in via `diagnostics`:
 
 ```json
 {
@@ -179,193 +149,41 @@ Diagnostics are opt-in. Set `diagnostics` to an explicit trusted OTLP/HTTP base 
 
 | Field | Contract |
 |---|---|
-| `endpoint` | HTTP/HTTPS OTLP base URL with a host; no userinfo, query or fragment. Logs and traces append `/v1/logs` and `/v1/traces` respectively; a trusted deployment prefix is allowed |
-| `level` | `error`, `warn`, `info` (default) or `debug`; filters logs independently of trace collection. INFO includes HTTP lifecycle and operation summaries; span milestones remain available independently of log verbosity |
-| `private_bodies` | Default `false`; explicit opt-in for [private failure context](#private-failure-context) |
+| `endpoint` | HTTP/HTTPS OTLP base URL with host (no userinfo/query/fragment). Appends `/v1/logs` and `/v1/traces` |
+| `level` | `error`, `warn`, `info` (default) or `debug`; filters logs independently of traces |
+| `private_bodies` | Default `false`; explicit opt-in for [Private failure context](#private-failure-context) |
 | `body_bytes` | Shared retained-body allowance in bytes; default `16384`, accepted `1024–65536` |
 
-Omit `diagnostics` or set it to `null` to disable both exporters. Export disables proxy inheritance and redirects; ambient `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_LOGS_HEADERS` and `OTEL_EXPORTER_OTLP_TRACES_HEADERS` are rejected rather than used as another authentication path. Resources and initial all-on sampling are explicit rather than ambient Resource/Sampler enrichment. Use an existing trusted local Collector if backend authentication or persistent queuing is needed. This configuration does not deploy a receiver.
-
-Use the [observability contract](../architecture/runtime-and-routing.md#observability) to interpret span lifetimes, milestones, severity and failure attribution. For failure queries, start at WARN/ERROR and filter the available `request_id`, `agent_id`, `operation`, `provider`, `account`, `model`, `upstream_model`, `attempt`, `stage`, `error.type` and `retry.planned` fields. Follow native trace/span IDs rather than caller/session headers.
-
-- `http.response.status_code` describes the observed head on that side of the exchange, whereas `gateway.error.status_code` is the chosen local error presentation. For a completed operation, inspect `morphiecore.response.outcome` separately for incomplete or failed Generation.
-- Decode failures can include `conversion.boundary` and `decode.operation` (`push` or `finish`). Responses SSE can also include `source.last_event.type`, `.ordinal` and `.sequence`; a last complete frame is context, not proof that it caused the failure. `handling.error.type` separates a later handling error from the retained original source failure. Google strict-tool rejection exposes a declaration index and closed constraint, not tool/property names or values.
-- The two SDK queues hold up to 2,048 signals each, scheduled on a 100 ms flush. Batches hold up to four log records or 128 spans. HTTP export has a two-second timeout and a 1 MiB request bound; the two providers share a five-second shutdown budget. These are fixed safeguards, not configuration knobs. Private capture is never enabled by raising log verbosity. Embedded owners stop producers before calling `shutdown_diagnostics`; `flush_diagnostics` only requests a flush.
-
-The receiver owns retention, access and durability. The application owns no diagnostic files, rotation, tail recovery or metrics pipeline. Set `MORPHIECORE_REVISION` when building a release to populate `morphiecore.build.revision`; otherwise it is `unknown`.
-
-#### Loopback file receiver
-
-The minimal receiver is official `otelcol` with its OTLP HTTP receiver, memory limiter and file exporter. [Release pin and source](../references.md#telemetry-dependency-selection) own the selected version. Use [collector configuration](../../config/otelcol.example.yaml) and [user service](../../config/otelcol.example.service); no container, Collector-to-backend forwarding, external listener or custom receiver is required.
-
-Install the verified binary at `~/.local/lib/morphiecore-otel/0.165.0/otelcol`, create `~/.local/share/morphiecore-otel/logs` with mode `0700`, and copy the configuration to `~/.local/share/morphiecore-otel/collector.yaml`. Copy the unit to `~/.config/systemd/user/morphiecore-otel.service`. Keep configuration/unit files private. Validate from the configured working directory before enabling:
-
-```sh
-cd ~/.local/share/morphiecore-otel
-~/.local/lib/morphiecore-otel/0.165.0/otelcol validate --config=collector.yaml
-systemctl --user daemon-reload
-systemctl --user enable --now morphiecore-otel.service
-```
-
-The template listens only on `127.0.0.1:4318` and disables Collector metrics serving. Point MorphieCore diagnostics there with `private_bodies:false`. The file exporter is alpha; verify reception, restart preservation, rotation, access and isolated write failures with synthetic records before relying on it.
-
-The selected exporter creates mode-`0644` files on rotation despite the service umask. **The mode-`0700` parent directory is the access boundary**; do not move those files into a shared directory. Logs and Traces each retain one current file and at most eight 16-MiB backups. Cleanup may transiently retain extra backups. `max_days` applies only to rotated files and is not strict TTL. Neither HTTP acceptance nor successful file writes promise fsync durability or zero loss.
-
-Files contain newline-delimited OTLP JSON **batches**, not one event per line. Query through SSH, bound the time/row range, and select metadata instead of printing bodies. For example, show the last 20 records' metadata with Python:
-
-```sh
-python3 - <<'PY'
-import collections, json, pathlib
-rows = collections.deque(maxlen=20)
-root = pathlib.Path.home() / ".local/share/morphiecore-otel/logs"
-for path in sorted(root.glob("generation*.jsonl"), key=lambda p: p.stat().st_mtime):
-    with path.open() as source:
-        for line in source:
-            for resource in json.loads(line).get("resourceLogs", []):
-                for scope in resource.get("scopeLogs", []):
-                    for record in scope.get("logRecords", []):
-                        rows.append({key: record[key] for key in
-                                     ("timeUnixNano", "eventName", "severityText", "traceId", "spanId", "attributes")
-                                     if key in record})
-for row in rows:
-    print(json.dumps(row))
-PY
-```
-
-#### Indexed development query
-
-Use only synthetic traffic and a disposable trusted backend. In a private scratch copy of the [Collector example](../../config/otelcol.example.yaml), add an `otlp_http` exporter for the local development backend to both pipelines. Keep the Collector and the backend's published ports on loopback. The file-only receiver does not answer indexed queries.
-
-With the Collector validated and running, use the existing gateway failure fixture. It disables private capture and rejects non-loopback export destinations:
-
-```sh
-MORPHIECORE_TEST_INDEXED_OTLP=http://127.0.0.1:4318 \
-  cargo test --locked --offline --test gateway \
-  bootstrap::emit_failure_for_indexed_query -- --ignored --exact
-```
-
-With the [pinned development backend](../references.md#telemetry-dependency-selection), query Loki with `{service_name="morphiecore"} | stage="intake"`, bounded to the fixture's time window and a small row limit. Confirm `error_type=recovery.request`; use the indexed log's `trace_id` to open the Tempo trace and its `span_id` to select `gateway.attempt`. Follow `parentSpanId` to `gateway.operation` and `gateway.request`. When querying the Tempo JSON API directly, normalize base64 IDs to hex before comparison. The test alone sends the fixture; the query verifies indexing and lineage. Stop the test backend and discard its scratch data afterward.
+Export disables proxy inheritance and redirects, and rejects ambient `OTEL_EXPORTER_OTLP*_HEADERS`. Two SDK queues hold up to 2,048 signals each (100 ms flush, batches of 4 logs or 128 spans, 2 s HTTP timeout, 1 MiB request bound, 5 s shared shutdown budget). Use [Deployment](deployment.md#diagnostics-receivers) for loopback collector and development backend instructions, and [Observability](../architecture/runtime-and-routing.md#observability) for field/span semantics. Key log/trace filters: `request_id`, `agent_id`, `operation`, `provider`, `account`, `model`, `upstream_model`, `attempt`, `stage`, `error.type`, `retry.planned`, `http.response.status_code`, `gateway.error.status_code`, `morphiecore.response.outcome`, `conversion.boundary`, `decode.operation`, `source.last_event.{type,ordinal,sequence}`, and `handling.error.type`. Set `MORPHIECORE_REVISION` at build time to populate `morphiecore.build.revision`.
 
 ### Model configuration
 
-`models.json` owns explicit public-model selection and ordered upstream candidates. Start with [`models.example.json`](../../config/models.example.json); the separate [advanced](../../config/models.advanced.example.json) and [standalone-task](../../config/models.tasks.example.json) templates demonstrate optional configuration shapes without expanding the default activation.
-
-Use `morphiecore --catalog` to select a registered public label and its catalog endpoint IDs. Each candidate expands that Provider's enabled accounts in declaration order; account names, targets and credential references belong only in [accounts.json](credentials-and-diagnostics.md#configure-accounts). Binding definitions are in [the catalog](../../crates/morphiecore-catalog/src/topology/catalog.rs). Omitted model controls inherit the binding's values.
-
-`deepseek-v4.1-flash-1017` is the public DeepSeek ID. Native upstream requests use `deepseek-flash`; DashScope uses its exact dated upstream name. Select Provider `deepseek` with `deepseek-chat` or `deepseek-responses`: their default paths are `/beta/chat/completions` and `/beta/responses`, using the same account domain. Non-strict requests stay non-strict. A complete account API-root override supplies its own prefix; use `https://api.deepseek.com/beta` to retain the default beta paths. The public label does not pin the native service's moving alias to an immutable revision.
+`models.json` activates explicit public models and ordered upstream candidates (`64` models max, `64` candidates per model, `64` expanded account targets per entry). Use `morphiecore --catalog` for registered public model IDs and catalog `binding` IDs; account targets and credentials belong in [accounts.json](credentials-and-diagnostics.md#configure-accounts). See [the catalog](../../crates/morphiecore-catalog/src/topology/catalog.rs), [service loading](../../crates/morphiecore-gateway/src/startup/bootstrap.rs), and [model assembly](../../crates/morphiecore-gateway/src/startup/models.rs).
 
 | Scope | Field | Meaning |
 |---|---|---|
 | File | `version` | Required current schema version, `1` |
-| Model | `candidates` | Nonempty ordered array of existing bindings for this public model |
-| Model | `total_timeout_ms` | Optional model-local total deadline from the same request start, bounded by the service ceiling; route resolution cannot restart the clock |
-| Standalone task | `account` | Required enabled API-key account name in the selected binding's Provider |
-| Model | `thinking_tokens` | Optional six-level numeric table shared by this model's candidates |
-| Candidate | `binding` | Required catalog endpoint ID; fixes protocol, dialect, canonical model and authentication kind |
-| Candidate | `upstream_model` | Wire spelling only; does not change canonical identity or model capabilities |
-| Candidate | `thinking_conversion` | `budget_to_effort` fallback; exact model-supported controls take precedence. Omission performs no numeric conversion |
-| Candidate | `allowed_effort` | Optional nonempty array of distinct `minimal`, `low`, `medium`, `high`, `xhigh`, `max` levels; narrows the catalog declaration when present |
-| Candidate | `context_window_tokens` | Optional positive `u64` total-context planning capacity; narrows a known declaration or explicitly supplies an unknown one |
-| Candidate | `maximum_input_tokens` | Optional positive `u64` independent input planning maximum; never inferred from context/output and cannot widen a known declaration |
-| Candidate | `maximum_output_tokens` | Optional positive `u64` model-output maximum, not a default; cannot exceed a catalog-declared maximum |
-| Candidate | `default_output_tokens` | Messages only: omit to inherit the binding default, set a positive `u64` to replace it, or `null` to clear it and require explicit request caps |
+| Model | `candidates` | Nonempty ordered array of Generation bindings for this public model |
+| Model | `total_timeout_ms` | Optional model-local total deadline from request start, bounded by service ceiling |
+| Standalone task | `account` | Required enabled API-key/task account name in the selected binding's Provider |
+| Model | `thinking_tokens` | Optional six-level numeric table (`minimal`, `low`, `medium`, `high`, `xhigh`, `max`) shared by this model's candidates |
+| Candidate | `binding` | Required catalog endpoint ID; fixes protocol, dialect, canonical model and auth kind |
+| Candidate | `upstream_model` | Wire spelling override; does not change canonical identity or model capabilities |
+| Candidate | `thinking_conversion` | `budget_to_effort` fallback; omitted performs no numeric conversion |
+| Candidate | `allowed_effort` | Optional nonempty array of distinct `minimal`..`max` levels; narrows catalog declaration |
+| Candidate | `context_window_tokens` | Optional positive `u64` total-context planning capacity; narrows known or supplies unknown |
+| Candidate | `maximum_input_tokens` | Optional positive `u64` independent input planning maximum; cannot widen known |
+| Candidate | `maximum_output_tokens` | Optional positive `u64` model-output clamp (not a default); cannot exceed catalog maximum |
+| Candidate | `default_output_tokens` | Messages only: omit to inherit binding default, positive `u64` to replace, or `null` to clear |
 
-Omitted model-value fields inherit the binding's declaration.
+Key inheritance and validation rules:
+- **Omitted fields** inherit catalog defaults; model optional fields reject `null` except Messages `default_output_tokens`. Standalone tasks reject Generation fields even if empty.
+- **Account overrides & replay:** Overriding an account's base URL, path, or `upstream_model` clears inherited context/input discovery evidence and alters the normalized deployment replay fingerprint ([history contract](../architecture/history-and-replay.md)).
+- **Messages defaults:** `default_output_tokens` must not exceed `maximum_output_tokens` at startup; uncapped requests on Messages candidates without an effective default reject locally ([missing output ceilings](../architecture/provider-dialects.md#missing-output-ceilings)).
+- **Thinking conversion:** Supply all six positive keys in `thinking_tokens` (requires at least one candidate selecting a conversion); `thinking_conversion: "budget_to_effort"` uses the [shared preset](../architecture/adaptation.md#thinking-budget-quantization) if `thinking_tokens` is omitted. Exact effort controls take precedence over numeric quantization; reviewed Gemini 4 bindings inherit response-effort scope projection unless overridden ([Google dialects](../architecture/provider-dialects.md#google-interactions)).
+- **Capability & history semantics:** Output clamping, effort nearest-level narrowing, cache-control policies, and reasoning-history handling follow [Adaptation](../architecture/adaptation.md#model-effective-values), [Provider Dialects](../architecture/provider-dialects.md), and [Client Requests](client-requests.md).
 
-Effort/output limits apply during candidate projection, including numeric/qualitative effort conversions and retained per-message updates.
-
-Output ceilings above a known maximum clamp to it; unsupported effort levels resolve to the nearest supported level, ties upward, with named loss receipts.
-
-These rules do not grant missing protocol carriers or weaken explicit constraints.
-
-Context/input capacities are discovery planning metadata only, not local token counting or a new inference check.
-
-Replacing the binding's origin, endpoint path or upstream model clears inherited context/input evidence; explicit declarations can supply the new deployment's facts.
-
-See [model-effective values](../architecture/adaptation.md#model-effective-values) and [discovery ownership](../architecture/adaptation.md#generation-text-model-discovery).
-
-The Go/Haiku Messages binding declares a `32000` default; generic Messages targets do not.
-
-`default_output_tokens` is independent of `maximum_output_tokens`: it may be raised or lowered, but a resolved default above the effective maximum rejects startup.
-
-For example, narrowing the maximum to `8192` requires overriding the inherited `32000` with a value at most `8192`, or clearing it with `null`.
-
-Zero, malformed values and this field on a non-Messages candidate (including `null`) reject.
-
-Defaults fill absence only; explicit request caps still take the model-maximum clamp above.
-
-An uncapped Messages candidate with no effective default rejects locally.
-
-Defaults are neither a promise to generate that amount nor a model-limit guarantee.
-
-See [missing output ceilings](../architecture/provider-dialects.md#missing-output-ceilings).
-
-Account selection happens before dispatch. Generation may retry one explicitly eligible unpublished network/server failure on that exact target, with the same credential material and wire request. Rate/quota/auth/permission/request failures, malformed output, trust/local faults and ambiguous post-dispatch timeouts do not authorize the additional send. A returned failure never causes another account or Provider to be dispatched in that request.
-
-Cooling targets are never tried early. If every otherwise-legal target is cooling, the gateway returns 429 for rate/quota-only blocking and 503 otherwise. It supplies `Retry-After` only for a credible positive delay within `routing.retry_hint_horizon_ms`. [Health and recovery](../architecture/runtime-and-routing.md#health-and-recovery) defines cooldown scopes, delay bounds and cancellation.
-
-All Generation client protocols use the same configured candidate array. To send Responses clients through Chat, select a Chat binding.
-
-For `claude-haiku-5-5`, `opencode-go-haiku-messages` candidates natively carry Messages owner-local `cache_control` markers, caller-selected 5m/1h automatic policy, ordered function `input_examples` and per-use document `context`.
-
-Mixed routes no longer close public cache admission: each candidate preserves supported carriers or applies its selected named projection.
-
-Explicit strictness, media and output guarantees still require a carrier.
-
-The native profile also has ordered effort, block-binding and tool-change carriers; public intake restrictions remain listed [below](client-requests.md#messages-profile-and-cache-markers).
-
-Credentials alone never activate a binding.
-
-Trusted deployment overrides retain the selected binding's contract and do not establish support for a different model.
-
-[Bounded acceptance](../development.md#overall-acceptance-status) does not prove elapsed cache retention or invoices.
-
-On an admitted Messages route, request-wide automatic caching uses root `"cache_control":{"type":"ephemeral","ttl":"1h"}` or `"ttl":"5m"`; omitting `ttl` means 5m. Missing root policy retains the binding's marker-free default, not a client disable instruction. Explicit owner markers, four-marker limits and TTL conflicts retain their [existing rules](../architecture/provider-dialects.md#caller-selected-automatic-cache-admission).
-
-Account-level API roots apply consistently to Generation, model-list diagnostics and standalone task operations; no caller-controlled path or API-version guessing is introduced. See [target composition](credentials-and-diagnostics.md#configure-accounts).
-
-Replay fingerprints include the normalized deployment origin/path. Changing either makes existing opaque replay foreign; the URL itself never reaches clients. This also replaces the former Provider/model-only fingerprints. Required compacted history cannot migrate across that boundary.
-
-For `thinking_tokens`, provide all six positive values, for example:
-
-```json
-{
-  "minimal": 1024,
-  "low": 2048,
-  "medium": 3072,
-  "high": 8192,
-  "xhigh": 16384,
-  "max": 24576
-}
-```
-
-Place this object on the public model, alongside `candidates`. At least one candidate must select a conversion when a custom table is supplied. A conversion without a custom table uses the [shared preset](../architecture/adaptation.md#thinking-budget-quantization). Duplicate token values are allowed; nearest-budget matching and highest-level ties retain the existing algorithm.
-
-The table is consulted only when exact carriage is unavailable. For example, an exact reasoning-level `medium` request stays qualitative on Google even when `budget_to_effort` and a custom `medium:7000` preset are configured, whereas an actual numeric conversion must still fit the caller ceiling and target limits; the gateway never raises the ceiling to make it fit.
-
-`budget_to_effort` uses the target's declared effort scope: response-wide for Messages, reasoning-only for the other current protocols.
-
-An existing OpenAI qualitative level calibration cannot be combined with a numeric conversion.
-
-Candidate projection preserves explicit effort over a conflicting numeric budget, omitting an uncarriable budget with its named receipt; it quantizes a budget only when explicit effort is absent.
-
-Nearest-level projection and model-maximum clamping remain bounded; malformed source controls and explicit guarantees retain validation.
-
-The existing Gemini 4 bindings inherit the selected [response-effort scope approximation](../architecture/provider-dialects.md#google-response-effort-projection) without a new configuration field.
-
-Omitted `thinking_conversion` retains it; an explicit numeric conversion replaces it, never chains the two.
-
-Messages delivery uses [request-grounded end-turn derivation](../architecture/adaptation.md#messages-terminal-projection).
-
-These adaptations do not promise equivalent Claude effort behavior or complete Google protocol coverage beyond the reviewed catalog bindings in [Provider dialects](../architecture/provider-dialects.md#google-interactions).
-
-Those reviewed Google bindings omit temperature/top-p/top-k that the model ignores, with field-specific adaptation evidence. Generic codecs and other models do not inherit that policy; request labels cannot select it. Interactions v1 has no carrier for those controls. See the [target-effective sampling contract](../architecture/adaptation.md#selected-request-approximations); this does not change routing or activate structured-result admission.
-
-History reasoning is never converted into assistant text. Readable reasoning without this target's native carrier, including reasoning demonstrably belonging to another target, is omitted under the named visible-history transfer policy, never promoted to an assistant answer. Visible messages and real call/results remain; partial reasoning, damaged compatible replay and required compacted/cached context cannot be repaired by omission. Valid native carriers remain available.
-
-Only listed models are activated. GPT Image, Gemini Nano Banana, Grok Imagine, Speech and Embeddings select one account explicitly, for example `"text-embedding-3-large":{"account":"primary"}`. They retain single-target task execution without Generation overrides or multi-account recovery. `gemini-nano-banana-2.1` requires a named `google` API-key account; `grok-imagine-image-2.0` requires a named, already provisioned `grok` OAuth account. The name in `models.json` must match the account declaration, not a credential alias. See [account provisioning](credentials-and-diagnostics.md#prepare-credentials).
-
-Transcription also requires `account`. A shared model requires an explicit model-level `binding`, not a Generation `candidates` list:
+Standalone tasks (`GPT Image`, `Gemini Nano Banana`, `Grok Imagine`, `Embeddings`, `Speech`, `Transcription`) configure a single `account` (and explicit `binding` when shared across origins, e.g. `qwen-audio-3.0-asr-flash` selecting `dashscope-qwen-asr` or `tokenplan-qwen-asr`) without multi-account recovery:
 
 ```json
 {
@@ -379,176 +197,26 @@ Transcription also requires `account`. A shared model requires an explicit model
 }
 ```
 
-Select `dashscope-qwen-asr` for metered DashScope or `tokenplan-qwen-asr` for Token Plan. Both expose `qwen-audio-3.0-asr-flash`; trusted origins and account namespaces remain separate. Missing, disabled or mismatched selections reject at startup. Execution uses exactly the selected binding/account, even when other accounts are enabled.
-
-Model optional fields reject explicit null except the named Messages default-clearing field. Standalone tasks reject Generation-only fields even when an array is empty. Candidate controls are validated for disabled accounts as well as enabled ones; enablement only selects routing participation.
-
-The file supports at most 64 models and 64 candidates per model, with at most 64 expanded account targets per public-model/client entry. Unknown bindings, mismatched model identities, duplicate deployments and invalid account references fail startup. See [service loading](../../crates/morphiecore-gateway/src/startup/bootstrap.rs) and [model assembly](../../crates/morphiecore-gateway/src/startup/models.rs).
-
 #### Qwen image candidates
 
-
-Use the ordered `candidates` array in the [task template](../../config/models.tasks.example.json) to activate `qwen-image-3.0-pro`. Each entry requires exactly a `binding` and the name of an enabled API-key `account` owned by that binding's Provider. Neither installed credentials nor a shared account name activates metered fallback. Configure either candidate alone or both; when both are present, Token Plan must precede DashScope. See [pre-dispatch image selection](../architecture/runtime-and-routing.md#standalone-image-candidates) and the [client profile](api-reference.md#static-image-generation).
+Use the ordered `candidates` array in [`models.tasks.example.json`](../../config/models.tasks.example.json) to activate `qwen-image-3.0-pro`. Each entry requires `binding` and an enabled API-key `account` owned by that binding's Provider. Configure either candidate alone or both; when both are present, `tokenplan-qwen-image` must precede `dashscope-qwen-image`. See [pre-dispatch image selection](../architecture/runtime-and-routing.md#standalone-image-candidates) and [static image generation](api-reference.md#static-image-generation).
 
 #### Media format transcoding
 
-Set `delivery.ffmpeg` to the **absolute path** of a trusted FFmpeg executable available to the gateway service, for example `/usr/bin/ffmpeg` (the `default` Nix devShell includes `ffmpeg-headless`; the static release binary does not bundle FFmpeg). Requests whose formats already match the upstream target (GPT Image, OpenAI Speech/Transcription, Qwen PNG, Gemini/Grok matching requested `output_format`, Aliyun/Xiaomi WAV/MP3 ASR, Aliyun MP3 Speech, Xiaomi MP3/WAV/PCM Speech) pass through without spawning FFmpeg. When transcoding is required (for example Gemini/Grok PNG or WebP/JPEG outputs, Aliyun/Xiaomi non-native speech/ASR formats), FFmpeg runs with fixed bounded arguments, pinned container demuxers, pipe-only I/O (or a bounded temporary file for seekable MP4/M4A containers), audio duration caps, and Linux address-space limits—never scaling image dimensions or receiving URLs or credentials. Missing `delivery.ffmpeg` rejects transcode-requiring requests at pre-dispatch with `503 Service Unavailable`.
+Set `delivery.ffmpeg` in `gateway.json` to the **absolute path** of a trusted FFmpeg binary (the Nix devShell provides `ffmpeg-headless`; musl release binaries do not bundle it). Requests already matching the upstream native format pass through without spawning FFmpeg; non-native conversions (e.g., Gemini/Grok PNG or WebP/JPEG outputs, non-native Aliyun/Xiaomi audio formats) invoke FFmpeg with fixed bounded arguments, pinned container demuxers, pipe I/O (or bounded temporary files for seekable MP4/M4A), audio duration caps, and Linux address-space limits—never scaling images or passing URLs/credentials. Transcode-requiring requests fail pre-dispatch with `503 Service Unavailable` when `delivery.ffmpeg` is unset.
 
 ### Delta coalescing
 
-Text-delta coalescing is configured at `gateway.json.delivery.delta_coalescing` and enabled by default. Omitting the field selects this policy; a complete object can override either bound:
+Text-delta coalescing defaults to `{"max_delay_ms": 50, "max_pending_bytes": 16384}` under `gateway.json.delivery.delta_coalescing`; omit to enable, override both required fields (`1–100` ms, `1024–1048576` bytes), or set `null` to disable (in Rust embedding, configure `Limits::delta_coalescing`). Non-streaming (`stream: false`) requests bypass the coalescing buffer.
 
-```json
-{
-  "delta_coalescing": {
-    "max_delay_ms": 50,
-    "max_pending_bytes": 16384
-  }
-}
-```
-
-Both object fields are required. `max_delay_ms` must be 1–100 milliseconds; `max_pending_bytes` must be 1024–1048576 bytes. Invalid bounds, incomplete objects or unknown fields fail startup. Set `"delta_coalescing": null` for immediate encoding. Rust `Limits::default()` enables the same policy; set `Limits::delta_coalescing` to `None` to disable it.
-
-Only compatible adjacent nonempty text deltas are merged. The first content batch is not intentionally delayed; a fixed deadline flushes pending text during upstream silence. The delay bounds intentional buffering, not client backpressure or end-to-end latency. The byte limit accounts for retained context and encoded text, not process RSS. `stream:false`, including a declared forced-SSE upstream, retains existing final-response materialization without a coalescing buffer.
-
-See the [coalescing contract](../architecture/runtime-and-routing.md#optional-delta-coalescing) for merge eligibility, flush barriers, accounting, cancellation and EOF requirements. This service-only policy changes neither routing nor upstream traffic or token usage. Optional diagnostics report peak accounted pending bytes without content. Synthetic measurements do not establish SDK, real-client or Provider acceptance.
+Only compatible adjacent nonempty text deltas merge; the first content batch is not intentionally delayed, and a fixed deadline flushes pending text during silence. The byte bound accounts for retained context and encoded text allowances rather than RSS. See the [coalescing contract](../architecture/runtime-and-routing.md#optional-delta-coalescing) for flush barriers and cancellation behavior.
 
 #### Choosing a window
 
-Use eligible text-delta arrival cadence, not token rate alone. A Provider may put several tokens in one event, deliver bursts, or interleave barriers that prevent merging. A window shorter than the typical inter-delta gap can add latency without reducing event count. A 50 ms window is the default compromise; try 100 ms when fewer updates matter more than interactivity, or 10–20 ms when prompt updates matter more.
-
-- First content is not intentionally delayed. Later eligible fragments wait at most the configured window **inside the coalescer**, unless a barrier or byte bound flushes earlier. Scheduling, backpressure, compression and the network add their own delay.
-- For regularly spaced eligible fragments, the batch size is roughly the window divided by the inter-delta gap, rounded up and at least one. Sparse fragments can each wait the full window; the common half-window average only approximates sufficiently dense arrivals. Do not size the window from RTT alone.
-- The byte bound includes retained context, text and encoding allowances, not just useful text. Increasing it does not force full buffers or improve ordinary small deltas; large contexts may bypass coalescing. Keep the 16 KiB default unless measured bypass or burst behavior justifies a change.
-- Compare the same synthetic source stream with coalescing disabled and at 10/50/100 ms, then repeat through the actual proxy and client. Measure encoded and compressed bytes, first-content time, update gaps, cancellation and completion. Fewer events or handoffs are not proportional packet savings; HTTP/TLS packetization is independent.
-
-Compression already removes repeated envelopes, so its benefit and coalescing's benefit are not additive. Larger windows can produce larger bursts and longer visible pauses. Coalescing reduces framing and delivery work; it does not reduce radio loss, repair disconnected requests, compress uploads or guarantee higher completion rates. See the [controlled timing check](../development.md#reverse-proxy-delivery-gate) and keep its synthetic scope explicit.
+Size the window from eligible text-delta arrival cadence rather than RTT or token rate alone: try `100` ms when fewer SSE frames matter more than interactivity, `10–20` ms for low-latency UI updates, or keep `50` ms / `16 KiB` unless measured burst or context bypass justifies tuning. Proxy compression already deduplicates repeated envelopes, so coalescing savings reduce framing/delivery work rather than compounding compression ratios linearly. Benchmark using the [controlled timing gate](../development.md#reverse-proxy-delivery-gate).
 
 ### Private failure context
 
-Set `diagnostics.private_bodies:true` only when the trusted receiver is approved to receive sensitive business payloads. Bodies attach only to eligible failure/warning records; successful exchanges are not archived.
+Set `diagnostics.private_bodies: true` only when the receiver is authorized for sensitive payloads. Capture records only eligible WARN/ERROR exchanges across four bounded views (`client_request`, `upstream_request`, `upstream_response`, `client_response`), each capped at one-quarter of `body_bytes` and at most four recent safe units (`snippet`, `observed_bytes`, `retained_bytes`, `truncated`, `incomplete`, `redacted`, `eof`, optional `omission`).
 
-Four keys describe context: `client_request`, `upstream_request`, `upstream_response`, `client_response`. Each has bounded `snippet`, `observed_bytes`, `retained_bytes`, `truncated`, `incomplete`, `redacted`, `eof` and optional `omission` facts. The shared retained-text allowance is divided across four boundaries, with at most four recent safe units each. Parser buffers are separately bounded by the configured allowance. Safe complete units may be clipped; oversized, malformed or incomplete JSON is omitted rather than exported raw.
-
-Headers/cookies are not captured. Known credential body fields and credential URL values are always redacted before retention/export; no redaction-disable switch exists. SSE snippets are normalized safe events, not original bytes; partial tool arguments are omitted, never reconstructed. Unsupported binary, multipart and plain-text content carries omission facts. Token/OAuth endpoint bodies are excluded.
-
-Observation uses only already-read data and polled client output. It does not prefetch, drain, retry, wait for EOF or delay terminal publication. A later `gateway.failure.response` with the same request ID can add final/interrupted client output. Upstream context starts fresh per attempt; old observers cannot append to a later send. Standalone tasks return at a failed head without reading the error body, so that boundary remains metadata-only.
-
-Snippets/EOF flags do not establish a complete exchange, remote delivery, execution counts or backend persistence. Never publish, commit, print or replay real private context, or use it as protocol fixtures. Use independent synthetic upstream hooks for protocol/count qualification and client-side measurements for visible timing.
-
-## Start the gateway
-
-```sh
-cargo run --locked --offline --bin morphiecore -- --config "$ROOT/gateway.json"
-```
-
-Override paths or proxy when needed:
-
-`--credentials-dir` overrides the service file's `credentials_dir`; when both are omitted, changing `--config` does not relocate the default credential store. The credential CLI's `--store` selects only its credential directory. Legacy configuration is not searched or migrated.
-
-```sh
-cargo run --locked --offline --bin morphiecore -- \
-  --credentials-dir /path/to/store \
-  --config /path/to/gateway.json \
-  --proxy http://127.0.0.1:7890
-```
-
-Proxy precedence is CLI → config → environment proxy settings. A failing explicit proxy does not fall back to a direct connection.
-
-All three executables (`morphiecore`, `morphiecore-auth`, `morphiecore-upstream`) use the HTTP client's system/environment proxy defaults when no explicit proxy is selected. On Linux this includes `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and their lowercase forms. Auth and upstream have no service configuration layer, so their precedence is CLI → system/environment. No proxy values or authentication are printed.
-
-Ctrl-C shuts down the listener and cancels in-flight upstream work.
-
-For Rust embedding, `Gateway::new` takes a compiled topology and one `TaskEntries` value with separate Generation, Images, Speech, Transcription and Embeddings lists. Empty lists activate nothing. Credentials and limits remain explicit; the embedded constructor does not opt into environment proxies. Each Generation entry names one client protocol (Chat, Responses or Messages); file-configured models expose all three. See [task entries](../../crates/morphiecore-gateway/src/startup/entries.rs) and [binding](../../crates/morphiecore-gateway/src/startup/bind.rs).
-
-### Binary-only SSH releases
-
-Build on a Linux workstation with the same CPU architecture as the server:
-
-```sh
-nix develop .#release --command cargo build --release --bins --locked --offline
-```
-
-The Linux-only `release` shell uses the pinned Rust toolchain and musl compiler. On x86_64, outputs are in `target/x86_64-unknown-linux-musl/release/`; on aarch64, use `target/aarch64-unknown-linux-musl/release/`. These static executables need no remote Nix store, Cargo, compiler or source checkout. Ordinary `target/release/` binaries built in the development shell retain Nix runtime dependencies and are not standalone deployment artifacts. Nix may fetch the pinned build environment before the offline Cargo build.
-
-Keep private configuration and credentials outside release directories. For an existing user service, inspect `systemctl --user show morphiecore.service -p ExecStart -p WorkingDirectory -p DropInPaths` before changing paths. Preserve its configuration path, credential overrides, proxy settings and lifecycle controls. For example, put a final override at `~/.config/systemd/user/morphiecore.service.d/30-binary-release.conf`:
-
-```ini
-[Service]
-WorkingDirectory=%h/.local/lib/morphiecore
-ExecStart=
-ExecStart=%h/.local/lib/morphiecore/current/morphiecore
-```
-
-Omitting `--config` selects `$HOME/.local/share/morphiecore/gateway.json`, whose `accounts_file` and `credentials_dir` resolve inside that same directory. The CLIs share those defaults, so `morphiecore-auth` needs no path flags there; pass `--config`, `--accounts` and `--store` only for non-default installations.
-
-After an authorized unit change, run `systemctl --user daemon-reload`. For noninteractive SSH, set `XDG_RUNTIME_DIR=/run/user/$(id -u)` when the login environment does not provide it.
-
-From the local repository root, use Bash to upload only the three executables into a fresh release directory and compare transfer checksums:
-
-```bash
-set -euo pipefail
-: "${HOST:?Set HOST to the target SSH host or alias}"
-OUT=target/x86_64-unknown-linux-musl/release
-RELEASE="$(git rev-parse --short=12 HEAD)-$(date -u +%Y%m%dT%H%M%SZ)"
-REMOTE_DIR=".local/lib/morphiecore/releases/$RELEASE"
-BINS=(morphiecore morphiecore-auth morphiecore-upstream)
-
-ssh "$HOST" "test ! -e '$REMOTE_DIR' && install -d -m 700 '$REMOTE_DIR'"
-scp "${BINS[@]/#/$OUT/}" "$HOST:$REMOTE_DIR/"
-diff <(cd "$OUT" && sha256sum "${BINS[@]}") \
-     <(ssh "$HOST" "cd '$REMOTE_DIR' && sha256sum ${BINS[*]}")
-```
-
-After deployment authorization, validate through the production loader, atomically switch the release symlink and restart immediately. This uses the configuration path above; adjust it with the unit for other installations.
-
-```bash
-ssh "$HOST" bash -s -- "$RELEASE" <<'REMOTE'
-set -euo pipefail
-export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-cd "$HOME/.local/lib/morphiecore"
-release="releases/$1"
-chmod 755 "$release"/morphiecore{,-auth,-upstream}
-"$release/morphiecore" --validate
-ln -s "$release" current.next
-mv -Tf current.next current
-mkdir -p "$HOME/.local/bin"
-for bin in morphiecore morphiecore-auth morphiecore-upstream; do
-    ln -sfn "../lib/morphiecore/current/$bin" "$HOME/.local/bin/$bin"
-done
-systemctl --user restart morphiecore.service
-systemctl --user is-active --quiet morphiecore.service
-REMOTE
-```
-
-Check the running process's executable, loopback listener and authenticated client behavior before removing an older release.
-
-Rollback selects a retained release with the same atomic symlink switch and restarts the service.
-
-Never copy over a running executable in place.
-
-Initial migration may remove the former source/build directory only after successful activation and confirmation that configuration, credentials and service paths are independent of it.
-
-Former Nix builds can also leave project source copies in the store; identify those copies and remove only those paths with `nix-store --delete` after releasing their project-owned GC roots.
-
-Do not synchronize the checkout, use a broad `rsync --delete` against application state or run global garbage collection for this cleanup.
-
-## Reverse-proxy deployment
-
-Keep MorphieCore on loopback. A separately managed Nginx may expose the standard APIs over TLS; this is deployment guidance, not permission to publish a listener. The [delivery contract](../architecture/runtime-and-routing.md#reverse-proxy-delivery) owns cancellation, publication and trust boundaries.
-
-Copy [`nginx.example.conf`](../../config/nginx.example.conf) to deployment storage and include it from Nginx's `http {}` context, not inside another `server {}`. Replace the `.invalid` domain and certificate paths. It targets the service template's `127.0.0.1:8080`; change both sides together when moving that listener.
-
-The template includes example limits of 16 concurrent requests per IP and 32 for the virtual host. Review these for shared NATs and capacity; they are pre-authentication resource guards, not Agent quotas. Create its body-temporary directory with private service ownership on space-bounded storage, and protect access/error logs. The access format omits identifying headers, URLs and bodies; inherited Nginx error logs can still contain request URLs and must not be published. Do not enable debug logging for production traffic.
-
-The active HTTP/2 directive requires a suitable module and Nginx 1.25.1 or newer. HTTP/3 is a commented opt-in after build/client/UDP verification, not an enabled default. Do not deploy the template unchanged or assume it provisions certificates, filesystem quotas or a firewall.
-
-- **Compression:** Nginx owns response compression; clearing the backend `Accept-Encoding` does not clear the client's negotiation with Nginx. Start with gzip, measure incremental output, and only add br/zstd modules after client/build verification. SSE has no fixed `Content-Length`, so `gzip_min_length` is not an event-size threshold. Do not add `no-transform` while selecting proxy compression.
-- **Buffering:** `proxy_buffering off` controls responses. MorphieCore also sends `X-Accel-Buffering: no`, which Nginx normally consumes rather than forwarding. Upload buffering remains on: the gateway's default 60-second body-collection deadline then applies to the local backend transfer, not the preceding wireless upload. Nginx may spool full histories to temporary files and receives them before gateway authentication; limit that pre-authentication resource exposure separately. If spooling is forbidden, review gateway ingress bounds before disabling request buffering.
-- **Identity:** preserve `Authorization` or `x-api-key`, Messages version/beta headers and session carriers. Do not insert a shared key or accept a forwarded Agent identity. `underscores_in_headers on` preserves `session_id`; check the effective/default virtual-server settings when sharing listeners.
-- **Deadlines:** the read/write timeouts above bound gaps between operations, not whole-request duration. Coordinate them with Agent idle timeouts and the gateway's finite exchange deadline. Longer proxy timeouts cannot override an earlier client cancellation; do not disable cancellation or invent heartbeat content.
-- **Protocol versions:** the frontend may negotiate HTTP/2 or HTTP/3 independently of the HTTP/1.1 backend. Current Agent libraries must actually use them; an `Alt-Svc` advertisement or browser test is not evidence. Do not use replayable TLS early data for generation POSTs without a separately selected replay-safety contract.
-- **Reporting:** record only bounded protocol/encoding, status, size and timing fields, not credentials, bodies, session IDs or raw URLs. `$gzip_ratio`, `$request_length` and `$body_bytes_sent` help compare configurations but do not count all TLS/TCP overhead or retransmissions. Backend handoff is not final Agent receipt.
-
-Nginx references: [proxy controls](https://nginx.org/en/docs/http/ngx_http_proxy_module.html), [gzip](https://nginx.org/en/docs/http/ngx_http_gzip_module.html), [request limits and headers](https://nginx.org/en/docs/http/ngx_http_core_module.html). Run `nginx -t` against the actual deployment configuration and use the separate [proxy delivery gate](../development.md#reverse-proxy-delivery-gate) before claiming client acceptance. That gate does not deploy Nginx or certify TLS, HTTP/2/3, radio loss or request compression.
-
+Headers, cookies, OAuth/token bodies, binary/multipart payloads, partial tool arguments, and unparsed JSON are excluded or omitted; known credential fields and URL tokens are always redacted before retention/export. Observation reads only already-polled buffers without prefetching or delaying failure delivery; standalone task errors record metadata only. Never print, commit, replay, or use private failure captures as fixtures.

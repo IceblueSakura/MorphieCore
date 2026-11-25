@@ -59,7 +59,7 @@ The runtime decides whether to issue a different request.
 | Downstream | OpenAI Chat Completions, OpenAI Responses, Anthropic Messages |
 | Upstream | OpenAI Responses/Chat and compatible dialects, Anthropic Messages, Google Interactions |
 
-Generation supports JSON and SSE delivery. Responses, native Messages and Google upstreams use streaming intake even for downstream JSON delivery. Chat retains the [qualified JSON exception](../refs/2026-10-27-client-ir-boundaries.md#chat-json-intake-evidence-2026-10-30) for metadata and URL annotations without chunk carriers. Interactions uses stateless, full-history requests.
+Generation supports JSON and SSE delivery. Responses, native Messages and Google upstreams use streaming intake even for downstream JSON delivery. Chat retains the [qualified JSON exception](../refs/2026-10-27-client-ir-boundaries.md) for metadata and URL annotations without chunk carriers. Interactions uses stateless, full-history requests.
 
 All three Generation client protocols dispatch through the public model's configured candidate route. A Messages client request does not require a native Anthropic upstream. Standalone tasks (Embeddings, Images, Speech, Transcription) operate on distinct contracts outside Generation.
 
@@ -149,7 +149,7 @@ Semantic IR represents the union of official protocol concepts (OpenAI, Anthropi
 
   Reject-only IR placeholders are removed; malformed known wire values reject at intake.
 
-  The [field review](../refs/2026-10-27-client-ir-boundaries.md#generation-null-contract-review-2026-11-02) records the scoped source evidence.
+  The [field review](../refs/2026-10-27-client-ir-boundaries.md) records the scoped source evidence.
 - **Reasoning separation:** Human-readable thought text, summaries, and opaque replay signatures are distinct typed owners.
 - **Honest accounting & terminals:** Missing usage counters are left unknown rather than zeroed. Truncation, failure, and cancellation are never mapped to success.
 - **Runtime isolation:** Credentials, retry counters, and target URLs remain strictly outside semantic IR.
@@ -224,7 +224,7 @@ Initial definitions, namespace leaves and ordered additions must receive consist
 
 Reuse existing semantic tools, request/delivery projection, fidelity and codecs; no gateway tool registry, executor or nine pair-specific adapters.
 
-[Unselected conversion designs](../proposals/index.md#three-protocol-tool-conversion-design) owns proposed mappings; [dated evidence](../refs/2026-10-27-client-ir-boundaries.md#nine-direction-tool-assessment-2026-11-04) owns findings; [Roadmap](../roadmap/unscheduled-issues.md#conditional-stage-3-follow-ups) owns execution gates.
+[Unselected conversion designs](../proposals/index.md#three-protocol-tool-conversion-design) owns proposed mappings; [dated evidence](../refs/2026-10-27-client-ir-boundaries.md) owns findings; [Roadmap](../roadmap/unscheduled-issues.md#conditional-stage-3-follow-ups) owns execution gates.
 
 Client-history annotations use the separate [L2 contract](adaptation.md#semantic-equivalence-compatibility).
 
@@ -234,7 +234,7 @@ Forced-choice cardinality is directional, not label-only. An OpenAI forced speci
 
 Named one-or-more choices become required subsets in candidate-local lowering (`openai.named-tool-subset.v1`, L2), before target admission. Writers only render the selected carrier. A dialect without that carrier rejects before dispatch; it cannot bypass admission by introducing `allowed_tools` during serialization.
 
-DeepSeek uses one `deepseek` Provider and credential namespace. Its default Chat and Responses paths are `/beta/chat/completions` and `/beta/responses`; ordinary and non-strict requests retain their original controls. Strictness stays explicit rather than being forced by the beta URL. Native reasoning/history restrictions and strict-schema checks remain enforced. [Service contracts and qualification](../refs/2026-11-13-model-catalog-expansion.md#one-deepseek-entry) record the accepted default and the schema-documentation discrepancy.
+DeepSeek uses one `deepseek` Provider and credential namespace. Its default Chat and Responses paths are `/beta/chat/completions` and `/beta/responses`; ordinary and non-strict requests retain their original controls. Strictness stays explicit rather than being forced by the beta URL. Native reasoning/history restrictions and strict-schema checks remain enforced. [Service contracts and qualification](../refs/2026-11-13-model-catalog-expansion.md) record the accepted default and the schema-documentation discrepancy.
 
 An account's complete API root receives only the operation-relative `/chat/completions` or `/responses` suffix. No beta-segment inference, duplicate removal or alternate-path retry applies.
 
@@ -266,7 +266,7 @@ Batches have no partial wire status, so an incomplete overall response cannot fi
 
 JSON, SSE and retained snapshots use this same owner and custom-tool capability checks apply to both opening and final definitions.
 
-[Source qualification](../refs/2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04) and [SDK procedure](../development.md#sdk-loopback-gate) describe the independent reference and connected check.
+[Source qualification](../refs/2026-10-27-client-ir-boundaries.md) and [SDK procedure](../development.md#sdk-loopback-gate) describe the independent reference and connected check.
 
 #### Citation point anchors
 

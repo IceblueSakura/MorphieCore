@@ -136,7 +136,7 @@ The later same-day selection uses declared request-local approximation for missi
 - OpenAI [Generate](https://developers.openai.com/api/reference/resources/images/methods/generate), [Edit](https://developers.openai.com/api/reference/resources/images/methods/edit) and [guide](https://developers.openai.com/api/docs/guides/image-generation.md)
 - OpenAI [Generate events](https://developers.openai.com/api/reference/resources/images/generation-streaming-events) and [Edit events](https://developers.openai.com/api/reference/resources/images/edit-streaming-events)
 - Pinned Python [Edit parameters](https://github.com/openai/openai-python/blob/547ecb1e4fc233f19030736c29fee4374dfbaca1/src/openai/types/image_edit_params.py) and [partial-image event](https://github.com/openai/openai-python/blob/547ecb1e4fc233f19030736c29fee4374dfbaca1/src/openai/types/image_gen_partial_image_event.py)
-- Grok [generation](https://docs.x.ai/developers/model-capabilities/images/generation.md), [editing](https://docs.x.ai/developers/model-capabilities/images/editing.md), and the earlier [Imagine source review](2026-10-22-grok-imagine.md)
+- Grok [generation](https://docs.x.ai/developers/model-capabilities/images/generation.md) and [editing](https://docs.x.ai/developers/model-capabilities/images/editing.md)
 
 ### OpenAI observations and disagreements
 
@@ -162,7 +162,7 @@ The pinned Edit parameters and current completed-event schema include safety-ide
 
 ### Grok and current code boundaries
 
-The [Grok note](2026-10-22-grok-imagine.md#images) owns the native guide and REST observations, including JSON Edit versus OpenAI multipart, temporary URLs, native aspect/tier controls and missing mask/preview equivalence. The dated comparison below retains the consequences for standard Generate.
+Grok uses JSON Edit (versus OpenAI multipart), temporary URLs, native aspect/tier controls, and lacks mask/preview equivalence. The dated comparison below retains the consequences for standard Generate.
 
 ### Static Generate source recheck (2026-10-23)
 

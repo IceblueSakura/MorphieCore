@@ -2,7 +2,7 @@
 
 This guide covers sending requests to the three primary generation protocols (OpenAI Responses, OpenAI Chat Completions, Anthropic Messages), cache markers, tool calling, media input, stored responses, and cache affinity.
 
-See [Gateway Configuration](gateway-configuration.md) for server setup and [API Reference](api-reference.md) for standalone endpoints and error handling.
+See [Gateway Configuration](gateway-configuration.md) for schemas/keys, [Deployment](deployment.md) for starting the daemon, and [API Reference](api-reference.md) for standalone endpoints and error handling.
 
 ## Contents
 
@@ -222,17 +222,9 @@ Adaptive `thinking.block_binding` accepts `null`/`{}` exactly and omits `prefix_
 
 ### Chat custom tools
 
-For custom-capable targets, Chat JSON uses `{"type":"custom","custom":{"name":"sql","format":{"type":"text"}}}` definitions and `{"type":"custom","custom":{"name":"sql"}}` choices. Calls retain raw `custom.input`; return their ID through an ordinary `role:"tool"` message. Preserve the preceding typed call in history so the result cannot be mistaken for a function result. Grammar definitions use the nested carrier described in [protocol sources](../refs/2026-10-16-chat-custom-tools.md).
+For custom-capable targets, Chat JSON uses `{"type":"custom","custom":{"name":"sql","format":{"type":"text"}}}` (or `"format":{"type":"grammar","grammar":{"syntax":"regex","definition":"SELECT [0-9]+"}}`) definitions and `{"type":"custom","custom":{"name":"sql"}}` choices. Calls retain raw `custom.input`; return their ID through an ordinary `role:"tool"` message immediately after its preceding typed call ID.
 
-Official Chat SSE sources disagree: Node defines custom-call deltas, while the inspected Python types and public streaming reference remain function-only.
-
-MorphieCore therefore keeps Chat upstream streaming that enables custom selection and downstream custom-call deltas rejected; use an admitted Responses streaming path instead.
-
-Custom history and declarations remain usable for a later stream when tool choice excludes custom output.
-
-The [source-qualified finding](../refs/2026-10-27-client-ir-boundaries.md#custom-tools-source-disagreement-versus-a-real-carrier-gap) is not a claim that a carrier is intrinsically impossible.
-
-Codec support does not activate models or execute tools.
+Official Chat SSE sources disagree on incremental custom-tool deltas (Node defines custom-call deltas while inspected Python types/reference remain function-only), so Chat streaming that permits custom tool output rejects before dispatch; use an admitted Responses stream instead, or constrain tool choice away from custom output.
 
 ### Unsupported controls and delivery
 
@@ -274,15 +266,9 @@ For an inline Responses image, replace `<base64-image>` with valid base64 for th
 
 For a tool image, append a `function_call_output` with the returned `call_id` and an `output` array containing `input_image`. Return the complete earlier history, including reported thinking and opaque replay values. Do not fabricate a tool call to substitute for model-issued history.
 
-Image sources stay inert: the gateway does not fetch URLs, decode pixels, resize or transcode. Public URL availability and actual image validity remain upstream concerns. Client Provider file references are rejected, including Google Files API URLs disguised as ordinary image URLs. File services remain deferred.
+Image sources stay inert: the gateway does not fetch URLs, decode pixels, resize or transcode conversational images, and rejects Provider file references (including Google Files API URLs).
 
-Formats, encoded sizes and counts are target constraints, not a promise that every IR image fits every upstream.
-
-The example's `detail:"auto"` selects the chosen model's default image processing. An exact carrier is preserved; native Google, Messages and other supported image targets without that field use their native default under `generation.image-auto-as-native-default.v1` (L2, no loss receipt). Image bytes/URLs, placement and order are preserved; this does not promise identical preprocessing or token costs across models.
-
-Explicit presence stays in source IR. Omitted detail remains omitted; only the candidate wire projection normalizes an uncarried auto field. Specific `low`/`high`/`original` controls remain separate: preserve their exact carriers or apply existing selected non-auto dispositions, including `generation.omit-image-detail.v1`. Auto does not authorize weakening those controls or image safety checks.
-
-Any approved projection changes only the candidate copy, not the source request.
+The example's `detail:"auto"` selects the chosen model's default image processing: exact carriers preserve it, while native Google, Messages and other supported image targets without a `detail` field normalize to native default under `generation.image-auto-as-native-default.v1` (L2, no loss receipt) while keeping bytes/URLs and placement intact. Explicitly omitted `detail` stays omitted in source IR; `low`/`high`/`original` retain their exact carriers or selected omission rules (`generation.omit-image-detail.v1`).
 
 See [Media](../architecture/adaptation.md#media), [IR resource budgets](../../crates/morphiecore-semantic/src/task/generation/resources/mod.rs) and [Messages media limits](../../crates/morphiecore-protocol/src/anthropic/messages/media.rs).
 

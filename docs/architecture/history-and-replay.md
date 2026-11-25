@@ -86,13 +86,11 @@ Cross-protocol or cross-Provider requests may discard historical reasoning, incl
 
 Reasoning portability is not an acceptance requirement for these transfers: a matching field or model label does not establish upstream compatibility.
 
-This selected loss avoids forwarding source-specific reasoning that the new target may reject; it does not require a private replay carrier or compatibility layer.
-
-[Current pi behavior](../refs/2026-11-08-chat-reasoning-carriers.md#cross-source-thinking-transfer-2026-11-12) supplies the reference policy.
+This selected loss avoids forwarding source-specific reasoning that the new target may reject; it does not require a private replay carrier or compatibility layer. This matches pi's `isSameModel` thinking-drop behavior for cross-source transfers without reproducing client session stores or synthetic tool-result repair.
 
 Apply omission to the candidate-local copy under the existing `*.transfer-visible-history.v1` rules. Preserve ordinary user/assistant text, instructions, tool names, arguments, call/result associations and results. Remove the reasoning owner rather than moving its text into an assistant answer or treating it as a tool result. Compatible same-origin native replay remains eligible for preservation.
 
-For Chat/Responses native OpenAI reasoning, changing only public or upstream model labels within the same service source preserves the available payload and owner dependencies. The gateway delegates model compatibility to upstream validation; it neither promises reuse nor maintains a model-family matrix, previous-model state or a remove-and-retry fallback. [Official cross-model evidence](../refs/2026-11-08-chat-reasoning-carriers.md#openai-cross-model-reasoning-2026-11-12) distinguishes this policy from pi's stricter model-equality filter.
+For Chat/Responses native OpenAI reasoning, changing only public or upstream model labels within the same service source preserves the available payload and owner dependencies. The gateway delegates model compatibility to upstream validation rather than copying pi's stricter model-equality filter, promising reuse across model families, or maintaining a previous-model fallback matrix (see OpenAI's [reasoning preservation guide](https://developers.openai.com/api/docs/guides/reasoning#preserve-reasoning-across-calls)).
 
 Standard stateless input does not generally identify the original Provider of unsigned reasoning. Projection removes foreign/untrusted replay and uncarriable reasoning shapes; it does not infer every readable owner's provenance or claim pi-style session metadata for all history. Readable reasoning may also be omitted on cross-source transfers without universal provenance tracking or unconditional deletion.
 

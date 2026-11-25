@@ -2,7 +2,7 @@
 
 This guide covers credential storage, account declaration, OAuth renewal workflows via `morphiecore-auth`, and upstream model diagnostics via `morphiecore-upstream`.
 
-See [Usage Index](index.md) for document map, [Gateway Configuration](gateway-configuration.md) for daemon setup, and [Client Requests](client-requests.md) for request execution.
+See [Usage Index](index.md) for document map, [Gateway Configuration](gateway-configuration.md) for schema and templates, [Deployment](deployment.md) for daemon setup and reverse proxy, and [Client Requests](client-requests.md) for request execution.
 
 ## Contents
 

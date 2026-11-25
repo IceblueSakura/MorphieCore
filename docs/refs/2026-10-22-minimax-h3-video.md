@@ -114,7 +114,7 @@ v1 and v2 therefore differ in request body, status vocabulary, error envelope, a
 
 ## Design inputs, not decisions
 
-- This is a second, differently shaped async-task protocol alongside [Grok's](2026-10-22-grok-imagine.md) `request_id` + poll design, so the selected video task owner must not be shaped to Grok's response format alone.
+- This is a second, differently shaped async-task protocol alongside Grok's `POST /v1/videos/generations` → `request_id` + poll design, so the selected video task owner must not be shaped to Grok's response format alone.
 - Artifact delivery is URL-only and time-limited; retention and re-fetch cannot rely on upstream task identity, which expires after 7 days.
 - `mm_file://` introduces a Provider-owned file reference as an *upstream* input carrier for standalone operations. That is a separate contract from the conversational media carriers recorded in [Multimodal carriers](2026-10-12-multimodal-carriers.md), and it implies upload, identity and expiry handling rather than inline bytes.
 - Silent degradation exists on the wire (`ratio` ignored for image-to-video; unknown-field strictness not stated for `extra`), which needs an explicit recorded rule rather than an assumption of lossless forwarding.

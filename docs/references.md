@@ -4,7 +4,6 @@ This document separates protocol authority, reproducible regression pins, implem
 
 ## Contents
 
-- [Source guides](#source-guides)
 - [Pinned sources](#pinned-sources)
   - [Regression release selection](#regression-release-selection)
   - [Telemetry dependency selection](#telemetry-dependency-selection)
@@ -22,21 +21,9 @@ This document separates protocol authority, reproducible regression pins, implem
   - [JSON Schema](#json-schema)
 - [OAuth and OIDC](#oauth-and-oidc)
 
-## Source guides
-
-Start here for source navigation rather than an old field-support matrix. Initial review **2026-10-27**; dated follow-ups are recorded in each guide, alongside releases, immutable revisions, licenses, useful paths and limits.
-
-| Reference | Long-term use | Evidence boundary |
-|---|---|---|
-| [OpenAI / Anthropic / Google official SDKs](refs/2026-10-27-official-sdk-sources.md) | Request/output unions, serializers, accumulators, version/retry defaults, literal fixtures, SDK disagreements and [local Google function-argument evidence](refs/2026-10-27-official-sdk-sources.md#google-function-argument-carriers-2026-11-09) | Official source evidence, not automatic wire conformance or pin promotion |
-| [pi](refs/2026-10-27-client-and-proxy-sources.md#pi-actual-consumer-and-history-behavior) | Actual history, replay, strict-tool fallback, thinking allocation, compaction and event consumers | Client behavior; acceptance uses current host-installed Agents |
-| [Magpie](refs/2026-10-27-client-and-proxy-sources.md#magpie-cache-affinity-and-failure-ownership) | Cache affinity, scoped failures, publication and refresh ownership | Mechanism reference; post-publication continuation and inferred usage are not gateway policies |
-| [LiteLLM](refs/2026-10-27-client-and-proxy-sources.md#litellm-directional-bridges-and-counterexamples) | Directional bridge state, tool indices, provider conversions and counterexamples | Not protocol authority; `enterprise/` is excluded from MIT |
-| [CLIProxyAPI](refs/2026-10-27-client-and-proxy-sources.md#cliproxyapi-bootstrap-retries-late-results-and-refresh) | Bootstrap isolation, stale results/cooldown, late usage and refresh epochs | Do not copy identity repair, successful EOF synthesis or round-robin policy |
-
-Prefer official service contracts for semantics, versioned SDKs for concrete shapes/consumer behavior, and implementation projects for mechanisms or counterexamples. When sources disagree, record the discrepancy rather than selecting the most permissive behavior. Source tests become regression coverage only through the existing asset process.
-
 ## Pinned sources
+
+Prefer official service contracts for semantics, versioned SDKs for concrete shapes and consumer behavior, and implementation comparators only for mechanism references or counterexamples. Source pins record fixed revisions; they are not fixture integration, design acceptance, or live compatibility claims.
 
 ### Regression release selection
 
@@ -53,9 +40,7 @@ Resolved on **2026-10-23**. [tests/upstream/sources.lock.json](../tests/upstream
 | WPT / Google protobufs | Immutable source snapshots; these sources have no selected package release |
 | Codex | 0.164.0 reference source only; no additional client activation |
 
-OpenCode's selected release corresponds to npm `opencode-ai`. `pi` source uses the `earendil-works/pi` fork.
-
-The [stable-release protocol recheck](refs/2026-10-23-stable-protocol-contracts.md) records the migration and fixture boundaries. The [SDK source guide](refs/2026-10-27-official-sdk-sources.md#source-selection-and-licenses) records newer inspected releases separately. Neither research refresh nor a source clone changes the regression selection.
+OpenCode's selected release corresponds to npm `opencode-ai`. `pi` source uses the `earendil-works/pi` fork. Newer inspected SDK releases remain non-binding for regression pins.
 
 ### Telemetry dependency selection
 
@@ -89,13 +74,13 @@ The source lock also fingerprints four Google protocol artifacts. Exact URLs, SH
 | `google-generate-content-v1` | `v1` / `20261023` |
 | `google-generate-content-v1beta` | `v1beta` / `20261023` |
 
-These fingerprints are distinct from vendored regression assets. `tests/upstream/assets.py` verifies the asset lock, not these remote artifacts. The [Interactions source-access qualification](refs/2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04) retains the historical 404 and unverified hash-equality boundary; indexing a lock is not a new availability or integrity check.
+These fingerprints are distinct from vendored regression assets. `tests/upstream/assets.py` verifies the asset lock, not these remote artifacts. See [Interactions source-access qualification](refs/2026-10-27-client-ir-boundaries.md) for the recorded 404 and hash-equality history.
 
 ## Test source repositories
 
 Selected on 2026-10-23 for [integrated text/SSE redesign acceptance and later operations](development.md#upstream-test-sources). Release revisions are fixed in the source lock; the links below identify fixture families, not imported coverage. [Development](development.md#upstream-test-sources) owns acquisition, license/provenance checks and later release updates.
 
-The imported subset is identified in [assets.lock.json](../tests/upstream/assets.lock.json), with [explicit fixture adaptations and exclusions](refs/2026-10-23-stable-protocol-contracts.md#imported-asset-boundaries). Selected Anthropic 2.x/1.x SDK sources use Apache-2.0; older MIT source evidence does not determine their licenses.
+The imported subset and framing boundaries are declared in [assets.lock.json](../tests/upstream/assets.lock.json). Selected Anthropic 2.x/1.x SDK sources use Apache-2.0; older MIT source evidence does not determine their licenses.
 
 | Source | Repositories | Relevant assets |
 |---|---|---|
@@ -116,33 +101,23 @@ Keep dated evidence that is not better owned by a current source guide, accepted
 
 | Note | Retained evidence |
 |---|---|
-| [Protocol reset, 2026-10-23](refs/2026-10-23-stable-protocol-contracts.md) | API migration, strictness/cache/effort distinctions and imported-fixture boundaries |
-| [Request boundaries, 2026-10-26](refs/2026-10-26-standard-request-boundaries.md) | Independent request/history union, nullability, grammar and replay counterexamples; resolved disposition, not an open defect list |
-| [Chat reasoning carriers, 2026-11-08](refs/2026-11-08-chat-reasoning-carriers.md) | Dated pi/OpenCode detail retention, the adjacent text-signature counterexample, tagged native replay, and the 2026-11-12 cross-source/OpenAI cross-model reasoning review |
 | [Client/IR boundaries, 2026-10-27 onward](refs/2026-10-27-client-ir-boundaries.md) | Protocol expressiveness, endpoint-qualified reasoning history, semantic equivalence/nullability, Chat JSON-only carriers, tool-source counterexamples and ordered-effort timing; includes the 2026-11-13 hosted MiniCPM recheck |
-| [Official SDK source guide, 2026-10-27 onward](refs/2026-10-27-official-sdk-sources.md) | Immutable SDK sources, 2026-11-04 tool-contract recheck and 2026-11-09 Google function-argument evidence |
-| [Google and cross-protocol distinctions, 2026-10-17 onward](refs/2026-10-17-generation-contracts.md) | Lifecycle/resource versus event meaning, unresolved streamed score scope, sparse accounting relationships and the 2026-11-01 official Chat terminal-label recheck |
-| [Instruction authority, 2026-10-25](refs/2026-10-25-instruction-authority.md) | Application versus vendor authority, legacy roles and Provider/Vercel comparisons |
 | [Model discovery, 2026-10-26](refs/2026-10-26-model-discovery.md) | Service-qualified capacity sources and remaining unknown limits, pi image carriers, native-effort/planning follow-up, and the 2026-11-13 context/input audit |
 | [Generation binding contracts, 2026-11-12/13](refs/2026-11-12-generation-binding-contracts.md) | SIWC tool carriers, GPT strict/image support, model-effective reasoning restrictions, replay ownership and the 2026-11-13 parameter-contract/session-carrier rechecks |
 | [Model catalog refresh, 2026-11-13](refs/2026-11-13-model-catalog-expansion.md) | Terra, Gemini 4, current Go/router models, Kimi and Qwen4 service controls, target-qualified capacities and the unified DeepSeek beta entry |
-| [Chat custom tools, 2026-10-16](refs/2026-10-16-chat-custom-tools.md) | Original complete-value carriers; later SSE disagreement linked separately |
-| [Bailian compatible requests, 2026-10-19](refs/2026-10-19-bailian-compatible-requests.md) | Model-specific ceilings, ignored controls, aliases and compatible-versus-RPC distinctions; 2026-11-08 output-format refresh and [2026-11-09 function-guarantee recheck](refs/2026-10-19-bailian-compatible-requests.md#function-guarantee-recheck-2026-11-09) |
+| [Bailian compatible requests, 2026-10-19](refs/2026-10-19-bailian-compatible-requests.md) | Model-specific ceilings, ignored controls, aliases, compatible-versus-RPC distinctions, 2026-11-08 output-format refresh and 2026-11-09 function-guarantee recheck |
 
 ### Independent operations and future design inputs
 
 | Note | Retained evidence |
 |---|---|
 | [Multimodal carriers, 2026-10-12 onward](refs/2026-10-12-multimodal-carriers.md) | User/tool-result placement, credential-bound files and generated-media carriers |
-| [Embedding and Images, 2026-10-22/23](refs/2026-10-22-embedding-image-contracts.md) | REST/SDK/protobuf discrepancies, numeric encoding, bounded Embedding characterization and unresolved Generate/Edit/SSE contracts; not blanket SDK/live acceptance |
+| [Embedding and Images, 2026-10-22/23](refs/2026-10-22-embedding-image-contracts.md) | REST/SDK/protobuf discrepancies, numeric encoding, bounded Embedding characterization and unresolved Edit/SSE contracts |
 | [NVIDIA Embedding expansion, 2026-11-19](refs/2026-11-19-nvidia-embedding-expansion.md) | Hosted versus NIM contracts, purpose and vector representation, account-scoped text evidence, cross-provider discriminators and a proposed first Stage-4 slice |
-| [Grok Imagine, 2026-10-22](refs/2026-10-22-grok-imagine.md) | Image-quality/schema differences, video polling and unverified entitlement |
-| [Native static image targets, 2026-11-23](refs/2026-11-23-native-static-image-targets.md) | Aliyun inline PNG and missing creation reports; current Google and Grok target qualification |
 | [MiniMax H3 video, 2026-10-22](refs/2026-10-22-minimax-h3-video.md) | v2 task/content/error/callback protocol versus incompatible v1 file-ID envelope |
 | [Decision APIs, 2026-10-23](refs/2026-10-23-decision-contracts.md) | OpenAI/TypeSafe and alternative API differences, confidence/grouping/media and discovery/compression gaps |
 | [Downstream OAuth, 2026-10-23](refs/2026-10-23-downstream-oauth.md) | Device Flow, Rust authorization-server comparisons, refresh/revocation and deployment boundaries |
-| [Gateway outcomes, 2026-11-02](refs/2026-10-27-client-and-proxy-sources.md#outcome-and-recovery-recheck-2026-11-02) | Bounded Magpie/LiteLLM/new-api source comparison of terminal evidence, health, affinity and retry exits; evidence for the separately finalized account design, not runtime acceptance |
-| [Account recovery sources, 2026-11-02](refs/2026-11-02-account-recovery-sources.md) | Current stable dependency selection, locked HTTP/TLS failure-chain evidence, verbatim SIWC registration/rotation/error boundaries and [headless callback input references, 2026-11-09](refs/2026-11-02-account-recovery-sources.md#headless-browser-callback-input) |
+| [Account recovery sources, 2026-11-02](refs/2026-11-02-account-recovery-sources.md) | Current stable dependency selection, locked HTTP/TLS failure-chain evidence, verbatim SIWC registration/rotation/error boundaries and headless callback input references |
 
 Research is not design approval or a new work queue. Recheck mutable sources before a new protocol claim; keep SDK shape, synthetic evidence, installed-client behavior and live Provider observations distinct.
 

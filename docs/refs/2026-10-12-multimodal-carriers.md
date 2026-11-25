@@ -66,7 +66,7 @@ Anthropic Messages has no audio or video carrier. OpenRouter's Messages endpoint
 | OpenAI Chat | None. `role: tool` content is text parts only |
 | OpenAI Responses | `function_call_output.output` array: `input_text`, `input_image`, `input_file`. Open Responses adds `input_video` here (not in user messages). OpenRouter's OpenAPI (`docs/openapi/openapi.yaml`, 2026-10-13) allows only text, image and file parts here, though its Chat `tool` messages accept all content parts |
 | Anthropic Messages | `tool_result.content`: `text`, `image`, `document`, `search_result` |
-| Gemini generateContent | The guide describes `functionResponse.parts[].inlineData` and `$ref`/`displayName` linkage, but the reviewed public blob schema lacks `displayName` and the SDK marks it unsupported in Gemini API. On 2026-10-24 the user selected tool-result-media rejection rather than fabricated linkage; see the [source recheck](2026-10-23-stable-protocol-contracts.md#remaining-mapping-recheck). Ordinary user media is unaffected |
+| Gemini generateContent | The guide describes `functionResponse.parts[].inlineData` and `$ref`/`displayName` linkage, but the reviewed public blob schema lacks `displayName` and the SDK marks it unsupported in Gemini API. On 2026-10-24 the user selected tool-result-media rejection rather than fabricated linkage. Ordinary user media is unaffected |
 | Interactions v1 | `function_result.result` array: `text` and `image` only |
 
 ## Provider file APIs
@@ -93,7 +93,7 @@ Responses has a standard Provider-tool image carrier, not a generic assistant-im
 
 ## Client behavior
 
-Historical source snapshot from this note's original review, not current installed-client acceptance. Use the [client source guide](2026-10-27-client-and-proxy-sources.md) and [model-discovery recheck](2026-10-26-model-discovery.md) for later pi evidence.
+Historical source snapshot from this note's original review, not current installed-client acceptance. Use the [model-discovery recheck](2026-10-26-model-discovery.md) for later pi evidence.
 
 | Client | Sends |
 |---|---|

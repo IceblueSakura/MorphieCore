@@ -69,7 +69,7 @@ The synthetic [repair-and-recall corpus](../testdata/repair-and-recall/) supplie
 
 [sources.lock.json](../tests/upstream/sources.lock.json) identifies immutable upstream sources; [assets.lock.json](../tests/upstream/assets.lock.json) identifies the reviewed, vendored subset. Ordinary regression uses local assets without network access. Missing files, digest drift, ambiguous extraction and source/asset disagreement fail visibly.
 
-Preserve imported bytes, licenses, source paths and declared framing adaptations. The [fixture adapter](../crates/morphiecore-test-harness/src/upstream_assets.rs) exposes the vendored inputs; the [asset boundary inventory](refs/2026-10-23-stable-protocol-contracts.md#imported-asset-boundaries) records exclusions. Do not regenerate expected output from a MorphieCore encoder or execute downloaded source during acquisition.
+Preserve imported bytes, licenses, source paths and declared framing adaptations. The [fixture adapter](../crates/morphiecore-test-harness/src/upstream_assets.rs) exposes the vendored inputs declared in [assets.lock.json](../tests/upstream/assets.lock.json). Do not regenerate expected output from a MorphieCore encoder or execute downloaded source during acquisition.
 
 Use raw fixtures through MorphieCore codecs and actual SDK consumers receiving gateway output and constructing continuation independently. Keep wire-to-IR and IR-to-wire expectations independent. Distinguish official protocol contracts, Provider dialects, SDK conveniences and gateway policy.
 

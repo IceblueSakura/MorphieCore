@@ -190,14 +190,14 @@ Current Messages intake requires a manual budget of at least `1024` and strictly
 
 Probability and token-identity proposals remain deferred pending explicit selection. Bounded terminal explanations and service-source review belong to the accepted [report contract](../architecture/adaptation.md#explanatory-terminal-reports); they did not select the owners below.
 
-The [source counterexamples](../refs/2026-10-17-generation-contracts.md#google-foreground-contracts-2026-10-20) still require design review before broader probability carriage:
+The source counterexamples (`avgLogprobs`/`logProbabilitySum`, opening resource omission, incomplete `interaction.completed`) still require design review before broader probability carriage:
 
 | Fact | Minimal proposed owner | Required decision |
 |---|---|---|
 | Reported average and sum log probabilities | One bounded output/candidate probability-report owner with independent optional numbers | Define chunk/checkpoint/final scope from evidence, replacement/conflict rules, edit dependencies and delivery. An aggregate may arrive without token reports; never recompute it as the reported value |
 | Internal vocabulary token ID | Typed source-bound fidelity tied to the unchanged text/probability owner and chosen/alternative position | Select retention bounds and invalidation/carriers; it is neither portable token bytes nor replay authority |
 
-A terminal-only aggregate-score profile remains unselected after the [streaming-scope research](../refs/2026-10-17-generation-contracts.md#streamed-score-scope-2026-10-20). Public sources define candidate averages/sums but do not establish ordinary SSE fragment-versus-cumulative coverage or repeated/missing-field reduction. A final finish reason alone does not establish whole-output score coverage. The SDK's cross-continuation-hop sum/latest-scalar merge is not a single-request stream oracle.
+A terminal-only aggregate-score profile remains unselected after streaming-scope review. Public sources define candidate averages/sums but do not establish ordinary SSE fragment-versus-cumulative coverage or repeated/missing-field reduction. A final finish reason alone does not establish whole-output score coverage. The SDK's cross-continuation-hop sum/latest-scalar merge is not a single-request stream oracle.
 
 Recommendation after research: retain aggregate rejection until a concrete model/endpoint/API-version profile establishes coverage and report replacement. Do not select a universal response-score owner, infer totals from usage/token arrays, treat last checkpoint as final, or introduce an event archive merely to avoid that decision. The selected terminal explanation is independent of these score-scope questions.
 
@@ -234,7 +234,7 @@ Upstream response parsing must remain strict on known fields and ignore unknown 
 
 **Ordinary nine-direction tool conversion and selected tool-set projections are delivered.** [Architecture](../architecture/index.md#ordered-tool-availability) owns their contract; [Development](../development.md#overall-acceptance-status) summarizes overall acceptance. This section retains unselected content projections only. [Roadmap](../roadmap/unscheduled-issues.md#conditional-stage-3-follow-ups) owns their conditional sequencing, not a second core implementation queue.
 
-Assess each future projection through **client request → selected upstream → original client response → tool result → subsequent history**. The delivered ordinary function loops do not qualify custom tools, namespaces, result media or every dialect. The dated [assessment](../refs/2026-10-27-client-ir-boundaries.md#nine-direction-tool-assessment-2026-11-04) and [qualification](../refs/2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04) retain source findings and qualification distinctions.
+Assess each future projection through **client request → selected upstream → original client response → tool result → subsequent history**. The delivered ordinary function loops do not qualify custom tools, namespaces, result media or every dialect; see [client/IR boundary findings](../refs/2026-10-27-client-ir-boundaries.md).
 
 #### Candidate approximation policies
 

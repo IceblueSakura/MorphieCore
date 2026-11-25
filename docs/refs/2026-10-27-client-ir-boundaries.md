@@ -33,7 +33,7 @@ Covered standard Chat Completions, Responses and Messages: public request/histor
 
 The source baseline remains [sources.lock.json](../../tests/upstream/sources.lock.json): OpenAI Python **3.37.0** (`e8a0fd28bbdc1699c97ff0f602b1af3dd378382d`), Node **7.43.0** (`d02d4de77ea7a6f82325c02e6f44deb34ee3992c`), Anthropic Python **2.1.0** (`9313f13a5a643ceed10fafba6785eab8e04b6e6e`) and TypeScript **1.1.0** (`5badc765f17d373405f300ee8e69e7f490b1f172`). Installed SDK source files were inspected alongside these pins. Mutable official reference pages were rechecked on the review date; discrepancies are listed separately rather than silently replacing the baseline.
 
-The [official SDK source guide](2026-10-27-official-sdk-sources.md) indexes primary request/output unions, serializers and accumulators; the sections below cite the specific contracts behind each distinction.
+Pinned OpenAI/Anthropic/Google SDK types and references motivate the protocol distinctions recorded below.
 
 ## Remaining source disagreements
 
@@ -324,7 +324,7 @@ The native and cross-protocol source review distinguished availability, model-vi
 
 ## Tool-contract qualification (2026-11-04)
 
-Rechecked the shared owners at **`a22cf0d`** and the [current stable SDK release sources](2026-10-27-official-sdk-sources.md#tool-contract-release-recheck-2026-11-04). This qualifies the first tool package; it does not select a new content loss, activate an endpoint or establish Provider acceptance. The subsequently accepted dispositions live in [Architecture](../architecture/index.md#ordered-tool-availability).
+Rechecked the shared owners at **`a22cf0d`** against current stable SDK release sources. This qualifies the first tool package; it does not select a new content loss, activate an endpoint or establish Provider acceptance. The subsequently accepted dispositions live in [Architecture](../architecture/index.md#ordered-tool-availability).
 
 ### Primary sources
 

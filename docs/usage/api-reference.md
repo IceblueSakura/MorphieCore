@@ -79,19 +79,9 @@ Compatible profiles preserve valid vectors even when ancillary reports are absen
 
 A missing model report uses the bound public label.
 
-Real usage takes precedence, followed by attested input-only derivation; remaining missing counters use the request-local [approximation rule](../architecture/index.md#google-embedding-compatibility).
+Real usage takes precedence, followed by attested input-only derivation; remaining missing counters use the request-local [approximation rule](../architecture/index.md#google-embedding-compatibility) without fabricating all-zero defaults or altering reported zeros. Approximate counts do not reflect exact billing or quotas.
 
-No default all-zero usage or custom usage fields are emitted.
-
-Reported zeros are preserved.
-
-Approximate counts can be inaccurate across languages and models; do not treat them as exact billing or hard quota measurements.
-
-Unsupported `user` hints are omitted on Google/DashScope and forwarded on the OpenAI bindings. The direct OpenAI bindings require the upstream model to match and both usage counters to be reported; they do not substitute or estimate missing reports.
-
-These adaptations do not claim upstream reporting or attribution.
-
-The pinned OpenAI Python SDK's strict response model still types `embedding` as a float list, so use explicit `encoding_format: "float"` with `_strict_response_validation=True`. Its ordinary mode handles Base64 and SDK-default decoding. This SDK type limitation is separate from complete usage and does not authorize changing a requested encoding; the wire schema supports both representations.
+Unsupported `user` hints omit on Google/DashScope and forward on OpenAI bindings (which require matching upstream model and both reported usage counters). Because the pinned OpenAI Python SDK's strict validator types `embedding` as a float list, pass explicit `encoding_format: "float"` when `_strict_response_validation=True`; ordinary mode handles Base64 and float responses alike.
 
 ### Generation Text model discovery
 
@@ -180,79 +170,15 @@ Discovery implements no token counting and never substitutes an input maximum fo
 
 The pi plugin uses advertised total context and output limits before global fallback settings, retaining explicit per-model caps. If total context is absent but an input maximum is known, that input capacity supplies pi's planning fallback; it is not a newly discovered total context and output is never added to it. A successful discovery refresh updates the current model at the next idle boundary and refreshes stale scoped selections. Native pi settings still own the chosen thinking level. Offline startup retains cached metadata; refresh online before expecting changed gateway declarations.
 
-The view is startup-immutable, sorted and complete without pagination or version/revision fields. Authentication, `no-store`, automatic HEAD and shutdown behavior match standard Models. At most 64 text models are published; both list and detail must fit `min(response_bytes, 1 MiB)` or startup fails. Unknown/non-text labels return `model_not_found`; GET does no upstream I/O. Pi consumes this view through its separately managed provider extension; the gateway writes no client configuration and performs no model activation or health polling.
+The view is startup-immutable, sorted, and complete without pagination or revision fields; auth, `no-store`, automatic `HEAD`, and shutdown behavior match standard Models. At most 64 text models publish, and both list and detail must fit `min(response_bytes, 1 MiB)` or startup fails; `GET` does no upstream I/O and returns `model_not_found` for unknown or non-text models.
 
 ### Capability discovery and adaptation notice
 
-The implemented surface combines a partial capability snapshot, a conservative possible-adaptation header and optional bounded `morphiecore` notices. The [actual-loss reporting contract](../architecture/adaptation.md#public-capability-and-adaptation-notice) separates these projections from the authoritative internal execution report. Notices are safe to ignore, not a stable public schema or a continuation carrier.
+`GET /v1/morphiecore/capabilities` uses the ordinary ingress token and returns a startup-immutable `version: 1`, `scope: "gateway_contract"`, `coverage: "partial"` snapshot covering activated Generation and Embedding models (other standalone media tasks are excluded). It fits `min(response_bytes, 4 MiB)`, performs no upstream I/O, supports `HEAD`, and evaluates limited finite witness domains per `feature` as `faithful`, `approved_adaptation` (with stable `rules` IDs), `rejected`, `non_uniform`, or `not_assessed`. Unlisted cases (such as safety policy or cache retention) remain `not_assessed`; full details of witness rules, fallbacks (`generation.complete-delivery-usage.v1`, `responses.infer-required-settings.v1`, `chat.coarsen-completion-cause.v1`, `responses.omit-completion-cause.v1`, `generation.omit-delivery-message-phase.v1`), and [actual-loss reporting](../architecture/adaptation.md#public-capability-and-adaptation-notice) belong to [Architecture](../architecture/adaptation.md).
 
-The accepted [safe-to-ignore diagnostic extension policy](../architecture/adaptation.md#public-capability-and-adaptation-notice) permits additional namespaced fields only where the selected protocol allows extensions, for example to explain actual data loss.
+Embedding descriptors declare `protocol: "embeddings"` (JSON only), input kinds, optional tokenizer/token limits, dimension/default/count limits, native/client encodings (`float` for omitted raw HTTP; Base64 default in Python SDK), [binary32 rounding](../architecture/index.md#embedding-encoding-compatibility), and `usage_may_be_estimated`.
 
-Ordinary SDK clients need not display, retain or return them.
-
-SDK tolerance alone does not establish a permitted extension position.
-
-Their layout and aggregation are provisional, and no new field spelling or consumer-retention guarantee is documented here.
-
-Standard errors, tool execution and required continuation never depend on these diagnostics; notices cannot authorize an unapproved loss or repair invalid standard output.
-
-`GET /v1/morphiecore/capabilities` uses the ordinary ingress token. It returns a startup-immutable `version: 1` snapshot with `scope: "gateway_contract"` and `coverage: "partial"`. Each entry names an activated public model and client protocol, with separate `request`, `delivery` and `history` case lists. Other standalone media tasks are not assessed. No upstream request or request-body collection occurs; HEAD omits the body. The complete snapshot must fit both `response_bytes` and 4 MiB or startup fails.
-
-Embedding entries use `protocol: "embeddings"` and JSON-only delivery.
-
-The descriptor declares input kinds, optional tokenizer/token limits, dimension/default/count budgets, native and client encodings, and `usage_may_be_estimated`.
-
-Limits intersect with runtime/body ceilings rather than promising every maximum-sized combination fits.
-
-Omitted dimensions use trusted defaults without adding a wire control.
-
-Raw HTTP encoding omission means float; the Python SDK normally sends Base64 on caller omission.
-
-The [numeric policy](../architecture/index.md#embedding-encoding-compatibility) preserves source precision and permits named binary32 rounding only on delivery copies.
-
-Request and delivery rule lists describe compatible projections without exposing credentials or source payloads.
-
-Each case names a `feature`, a limited `domain`, and `faithful`, `approved_adaptation`, `rejected`, `non_uniform` or `not_assessed` treatment. Approved adaptations include stable `rules` IDs. Unlisted cases are `not_assessed`, not implicitly supported or rejected. Statements concern that feature/domain only, assuming all other validation succeeds; neither model-effective settings nor full client loops are asserted.
-
-Generation delivery declares `response.delivery.usage` with `generation.complete-delivery-usage.v1`: reported counts take priority, followed by accounting derivation and a text-only byte-based estimate bounded by known totals/details.
-
-Usage can therefore be approximate and must not be treated as billing or quota truth, especially for media-bearing input.
-
-Responses additionally declares `responses.infer-required-settings.v1` for missing mandatory tool-setting echoes.
-
-See [the fallback rules and limitations](../architecture/adaptation.md#downstream-schema-completion); optional diagnostics never alter standard field meaning.
-
-The current request slice assesses tools, tool selection, output formats and output caps. Unlisted safety-policy, cached-context-reference and cache-retention cases remain `not_assessed` by this partial discovery view; request validation and candidate-local projection still apply.
-
-Delivery lists selected incidental-settings omissions, assessment-only safety-report omission, protected blocking-safety rejection and completion-cause carriers equally for JSON/SSE.
-
-Natural or sequence-matched completion differs from ambiguous stop, and these cases exclude pending tool continuation.
-
-Chat lists `chat.coarsen-completion-cause.v1` and Responses `responses.omit-completion-cause.v1` where a cause has no exact carrier.
-
-Responses capabilities mark experimental stored projections as rejected. Returned native phase/history carriage remains stateless and does not activate storage.
-
-Phase cases describe exact native Responses assistant labels. Chat and Messages preserve visible content/order but omit phase under `generation.omit-delivery-message-phase.v1`; returned phase is not supported there. These cases do not promise phase-aware UI, client retention, or successful conversion of other content/terminals. Request-side phase transfer and cache-retention policies remain unassessed by this partial route-wide view.
-
-These cases still require valid outcome/progress/call shape, representable usage and successful EOF; they do not admit configured stops, unknown failure reasons or unsupported reports.
-
-Google ordinary-text/call signatures have no standard Chat/Messages/stateless Responses carrier and reject instead of creating a reasoning/thinking manifest.
-
-Experimental managed continuation is disabled and supplies no alternative for those signatures; native Messages thinking/redacted-thinking signatures are unaffected.
-
-Generation JSON/SSE and successful Embedding responses carry `X-MorphieCore-Adaptation: possible` and `Link: </v1/morphiecore/capabilities>; rel="describedby"`.
-
-This is deliberately conservative, including when no adaptation occurs and when Responses returns a pre-frame failure stream.
-
-It is not an actual-loss receipt, a success assertion or proof of Provider-effective behavior.
-
-Pre-response auth/admission errors, discovery, history operations and other standalone tasks do not receive these headers; missing headers do not prove exactness.
-
-Generation may additionally attach optional body diagnostics to existing JSON/SSE envelopes, never new receipt-only events.
-
-Missing or truncated notices do not establish losslessness, and JSON/SSE parity or SDK retention of notices is not promised.
-
-Native replay/phase carriers retain their independent [contract](../architecture/history-and-replay.md#reasoning-replay).
+All Generation responses (JSON, SSE, and pre-frame failure streams) and successful Embedding responses return conservative headers `X-MorphieCore-Adaptation: possible` and `Link: </v1/morphiecore/capabilities>; rel="describedby"` (omitted on pre-response errors, discovery, history routes, and other standalone tasks). Generation envelopes may also carry optional safe-to-ignore `morphiecore` notices without changing error semantics, tool execution, or stateless continuation; Google ordinary-text/call signatures without a standard carrier still reject rather than synthesizing replay metadata. Native replay/phase carriers retain their [contract](../architecture/history-and-replay.md#reasoning-replay).
 
 ## Errors and limits
 

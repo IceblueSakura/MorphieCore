@@ -51,5 +51,5 @@ Embedding-space identity remains a trusted model contract. Equal widths, labels 
 
 ### Google Embedding profile
 
-The implemented target uses native synchronous `batchEmbedContents`, nested controls and explicit no-truncation; [dated source/protocol evidence](../refs/2026-10-22-embedding-image-contracts.md#google-wire-source-reconciliation) distinguishes current REST from lagging SDK converters. The Google OpenAI-compatible endpoint, native downstream APIs, `gemini-embedding-001`, multimodal ingestion and tensors remain unselected. A future extension must characterize its own configuration and reporting rather than inherit text-only acceptance.
+The implemented target uses native synchronous `batchEmbedContents`, nested controls and explicit no-truncation; [dated source/protocol evidence](../refs/2026-10-22-embedding-image-contracts.md) distinguishes current REST from lagging SDK converters. The Google OpenAI-compatible endpoint, native downstream APIs, `gemini-embedding-001`, multimodal ingestion and tensors remain unselected. A future extension must characterize its own configuration and reporting rather than inherit text-only acceptance.
 

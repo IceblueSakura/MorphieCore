@@ -164,7 +164,7 @@ Inferred prefix groups themselves remain ephemeral: restarting or expiring the p
 
 Explicit dialect sessions retain their existing validation and spelling; they are not a public extension to the standard downstream APIs. No arbitrary inbound header map is forwarded. New Providers must select a documented carrier, source semantics and distinct versioned domain before joining this projection.
 
-OpenRouter also accepts `x-session-id`, but its body carrier avoids redundant precedence. Explicit sessions establish upstream stickiness after the first successful request; key-only fallback waits for observed cache usage. All three policies remain advisory: they do not guarantee a cache hit or pin a backend worker. [Session carrier sources](../refs/2026-11-12-generation-binding-contracts.md#session-carriers--2026-11-13) separate official contracts from observed SIWC behavior.
+OpenRouter also accepts `x-session-id`, but its body carrier avoids redundant precedence. Explicit sessions establish upstream stickiness after the first successful request; key-only fallback waits for observed cache usage. All three policies remain advisory: they do not guarantee a cache hit or pin a backend worker. [Session carrier sources](../refs/2026-11-12-generation-binding-contracts.md) separate official contracts from observed SIWC behavior.
 
 Route/cache identity includes configuration namespace, credential provenance and the exact public-model/target/operation identity. Native OpenAI reasoning uses a separate model-independent service-source identity; compaction and other native signatures remain strict. [History and replay](history-and-replay.md#reasoning-replay) owns the scope rules. API-key replacement invalidates old private replay; normal OAuth material renewal preserves provenance.
 
@@ -238,7 +238,7 @@ Configured via [`DeltaCoalescing`](../../crates/morphiecore-runtime/src/executio
 
   No token import or second exchange is introduced.
 
-  See [operation](../usage/credentials-and-diagnostics.md#oauth) and [implementation references](../refs/2026-11-02-account-recovery-sources.md#headless-browser-callback-input).
+  See [operation](../usage/credentials-and-diagnostics.md#oauth) and [implementation references](../refs/2026-11-02-account-recovery-sources.md).
 - **Automatic OAuth renewal:** Startup owns the deduplicated maintenance registry, including configured disabled or route-unreferenced accounts. Listener-owned renewal consumes that registry and rotates credentials serially under account locks. [OAuth maintenance](#oauth-maintenance) owns cancellation and replacement-verification checkpoints.
 - **API-key access:** Startup binds a reference; borrowing enforces enabled state, quarantine, record/epoch/generation identity and material digest. No separate strict-binding policy is maintained.
 - **Ingress Auth:** Binds exactly one configured Agent key via Bearer token or `x-api-key`.
@@ -299,7 +299,7 @@ The gateway uses isolated `tracing` Logs/Traces bridges, bounded OpenTelemetry S
 
 Allowlist exit fields and Resources: closed reason, operation, trusted Agent/request identity, selected Provider/account/model, attempt and safe transport/delivery observations. Ordinary telemetry excludes credentials, provenance, raw URLs, headers, private paths, session IDs, business content and raw third-party errors. No ambient auth/Resource enrichment, automatic raw exception attributes, incoming baggage, upstream trace injection or required client echo. Private capture remains separate. Delayed client-response capture links to the request, not a stale attempt or ambient span; public adaptation notices and delivery fences are independent of export.
 
-The receiver owns retention and durability; no application database, success-wire archive or usage ledger. Use the [loopback file receiver](../usage/gateway-configuration.md#loopback-file-receiver) for bounded JSONL or the [development query](../usage/gateway-configuration.md#indexed-development-query) for indexed synthetic evidence. Business metrics, tail sampling and production deployment are separate.
+The receiver owns retention and durability; no application database, success-wire archive or usage ledger. Use the [loopback file receiver](../usage/deployment.md#loopback-file-receiver) for bounded JSONL or the [development query](../usage/deployment.md#indexed-development-query) for indexed synthetic evidence. Business metrics, tail sampling and production deployment are separate.
 
 ### Configurable exchange capture
 

@@ -57,5 +57,5 @@ Any future native preview streaming beyond GPT Image requires task-specific `Pre
 
 ## Video API and implementation
 
-Async video generation remains pending [operation selection](../roadmap/index.md#stage-4-pending-scope), using native async job lifecycles (such as Grok async video jobs) rather than synchronous waits or relabeling non-OpenAI jobs as OpenAI compatibility.
+Async video generation remains pending [operation selection](../roadmap/index.md#stage-4-pending-scope), using native async job lifecycles (such as Grok `POST /v1/videos/generations` → `request_id` + `GET /v1/videos/{request_id}` polling with USD ticks and no cancellation endpoint) rather than synchronous waits or relabeling non-OpenAI jobs as OpenAI compatibility.
 - Separate conversational video content from standalone video jobs; specify job submission identity, bounded polling, cancellation, artifact URL authorization (never unrestricted server-side fetching), and honest completion before implementation.
