@@ -192,6 +192,7 @@ pub struct TargetCapabilities<'a> {
     pub require_tool_description: bool,
     pub ordered_tools: OrderedCarrier,
     pub alias_tool_namespaces: bool,
+    pub wrap_plain_custom_tools: bool,
     pub filter_allowed_inventory: bool,
     pub filter_singleton_inventory: bool,
     pub image_details: &'a [ImageDetail],

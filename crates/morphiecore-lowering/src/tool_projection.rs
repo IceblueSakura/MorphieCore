@@ -480,6 +480,180 @@ pub fn alias_tool_namespaces<'a>(
     Ok((Cow::Owned(projected), delivery, true))
 }
 
+fn is_grammar_free_custom(tool: &CustomTool) -> bool {
+    matches!(tool.format, None | Some(CustomFormat::Text))
+}
+
+/// Wrap grammar-free plain/text `CustomTool` declarations into `{"input": string}`
+/// `FunctionTool` declarations on a candidate copy and mark them in `delivery`.
+/// `CustomFormat::Grammar` tools stay unwrapped so target checks reject them.
+pub fn wrap_plain_custom_tools<'a>(
+    semantic: Cow<'a, GenerationRequest>,
+    delivery: &mut ToolDeliveryMap,
+    require_description: bool,
+) -> Result<(Cow<'a, GenerationRequest>, bool), ConversionFailure> {
+    let mut wrapped_names = BTreeSet::new();
+    let mut function_names = BTreeSet::new();
+
+    for (_, decl) in semantic.tool_declarations() {
+        for leaf in decl.leaves() {
+            match leaf {
+                ToolDeclaration::Function(f) => {
+                    function_names.insert(f.name.as_str().to_owned());
+                }
+                ToolDeclaration::Custom(c) if is_grammar_free_custom(c) => {
+                    wrapped_names.insert(c.name.as_str().to_owned());
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if wrapped_names.is_empty() {
+        return Ok((semantic, false));
+    }
+
+    if wrapped_names
+        .iter()
+        .any(|name| function_names.contains(name))
+    {
+        return Err(RepresentationError::Admission(Feature::Tools).into());
+    }
+
+    let wrapper_schema = SchemaDocument::from(serde_json::json!({
+        "type": "object",
+        "properties": {
+            "input": { "type": "string" }
+        },
+        "required": ["input"],
+        "additionalProperties": false
+    }));
+
+    let wrap_list = |tools: &[ToolDefinition]| -> Vec<ToolDefinition> {
+        tools
+            .iter()
+            .map(|tool| match tool {
+                ToolDefinition::Custom(c) if wrapped_names.contains(c.name.as_str()) => {
+                    let description = if require_description {
+                        Some(c.description.clone().unwrap_or_default())
+                    } else {
+                        c.description.clone()
+                    };
+                    ToolDefinition::Function(FunctionTool {
+                        name: c.name.clone(),
+                        description,
+                        parameters: Some(wrapper_schema.clone()),
+                        input_examples: None,
+                        strict: FunctionStrictness::Omitted(StrictDefault::NonStrict),
+                        output_schema: None,
+                        dispatch: c.dispatch.clone(),
+                        cache: None,
+                        eager_input: None,
+                    })
+                }
+                other => other.clone(),
+            })
+            .collect()
+    };
+
+    for (_, decl) in semantic.tool_declarations() {
+        if let ToolDeclaration::Custom(c) = decl
+            && wrapped_names.contains(c.name.as_str())
+        {
+            match delivery.entries.get_mut(c.name.as_str()) {
+                Some(entry) => {
+                    entry.wrapped_custom = true;
+                }
+                None => {
+                    delivery.entries.insert(
+                        c.name.as_str().to_owned(),
+                        OriginalToolTarget {
+                            kind: ToolKind::Custom,
+                            namespace: None,
+                            name: c.name.clone(),
+                            wrapped_custom: true,
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    let mut settings = semantic.settings().clone();
+    if let Some(tools) = &settings.tools {
+        settings.tools = Some(wrap_list(tools));
+    }
+    settings.tool_choice = settings.tool_choice.as_ref().map(|choice| match choice {
+        ToolChoice::Custom(name) if wrapped_names.contains(name.as_str()) => {
+            ToolChoice::Specific(name.clone())
+        }
+        ToolChoice::Allowed { required, tools } => ToolChoice::Allowed {
+            required: *required,
+            tools: tools
+                .iter()
+                .map(|r| {
+                    if r.kind == ToolKind::Custom
+                        && r.namespace.is_none()
+                        && wrapped_names.contains(r.name.as_str())
+                    {
+                        ToolReference {
+                            kind: ToolKind::Function,
+                            name: r.name.clone(),
+                            namespace: None,
+                        }
+                    } else {
+                        r.clone()
+                    }
+                })
+                .collect(),
+        },
+        other => other.clone(),
+    });
+
+    let mut items = semantic.items().to_vec();
+    let mut wrapped_call_ids = BTreeSet::new();
+    for (_, item) in &mut items {
+        match item {
+            Item::ToolBatch(batch) => {
+                batch.tools = wrap_list(&batch.tools);
+            }
+            Item::CustomCall(call) if wrapped_names.contains(call.name.as_str()) => {
+                let encoded = serde_json::to_string(&serde_json::json!({ "input": call.input }))
+                    .map_err(|_| CodecError::invalid())?;
+                if encoded.len() > MAX_TEXT_BYTES {
+                    return Err(CodecError::Limit.into());
+                }
+                wrapped_call_ids.insert(call.call_id.as_str().to_owned());
+                *item = Item::ToolCall(ToolCall {
+                    call_id: call.call_id.clone(),
+                    name: call.name.clone(),
+                    arguments: ToolArguments::Raw(encoded),
+                    status: ItemLifecycle::Completed,
+                    context: call.context.clone(),
+                    cache: None,
+                    replay: None,
+                });
+            }
+            Item::CustomResult(result)
+                if result
+                    .call_id
+                    .as_ref()
+                    .is_some_and(|id| wrapped_call_ids.contains(id.as_str()))
+                    || result
+                        .name
+                        .as_ref()
+                        .is_some_and(|name| wrapped_names.contains(name.as_str())) =>
+            {
+                *item = Item::ToolResult(result.clone());
+            }
+            _ => {}
+        }
+    }
+
+    let projected = rebuild_candidate_request(semantic.as_ref(), items, settings)?;
+    Ok((Cow::Owned(projected), true))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -798,5 +972,159 @@ mod tests {
                 .tool_declarations()
                 .any(|(_, d)| matches!(d, ToolDeclaration::Namespace(_)))
         );
+    }
+
+    #[test]
+    fn wrap_plain_custom_tools_wraps_text_only_and_leaves_grammar_untouched() {
+        let mut req = base_request(
+            vec![
+                custom_tool("exec", Some("run js")),
+                ToolDefinition::Custom(CustomTool {
+                    name: text("notes"),
+                    description: None,
+                    format: Some(CustomFormat::Text),
+                    dispatch: Default::default(),
+                }),
+                ToolDefinition::Custom(CustomTool {
+                    name: text("sql"),
+                    description: Some("regex tool".into()),
+                    format: Some(CustomFormat::Grammar {
+                        syntax: GrammarSyntax::Regex,
+                        definition: text("SELECT 1"),
+                    }),
+                    dispatch: Default::default(),
+                }),
+            ],
+            vec![
+                (
+                    ItemId::new(1),
+                    Item::CustomCall(CustomCall {
+                        call_id: text("c_exec"),
+                        name: text("exec"),
+                        input: "const s = \"hi\\n世界\";".into(),
+                        context: CallContext::default(),
+                    }),
+                ),
+                (
+                    ItemId::new(2),
+                    Item::CustomResult(ToolResult {
+                        call_id: Some(text("c_exec")),
+                        name: None,
+                        output: ToolOutput::Text("ok".into()),
+                        is_error: Some(false),
+                        execution: None,
+                        status: None,
+                        context: CallContext::default(),
+                        cache: None,
+                    }),
+                ),
+            ],
+        );
+        let mut settings = req.settings().clone();
+        settings.tool_choice = Some(ToolChoice::Custom(text("exec")));
+        req = req.with_settings(settings).unwrap();
+        let before = req.clone();
+
+        let mut delivery = ToolDeliveryMap::default();
+        let (wrapped, changed) =
+            wrap_plain_custom_tools(Cow::Borrowed(&req), &mut delivery, true).unwrap();
+        assert!(changed);
+        assert_eq!(req, before);
+        assert_eq!(
+            wrapped.tool_choice(),
+            Some(&ToolChoice::Specific(text("exec")))
+        );
+        match &wrapped.tools()[0] {
+            ToolDefinition::Function(f) => {
+                assert_eq!(f.name.as_str(), "exec");
+                assert_eq!(f.description.as_deref(), Some("run js"));
+                assert_eq!(
+                    f.parameters.as_ref().unwrap().root(),
+                    &json!({
+                        "type": "object",
+                        "properties": {"input": {"type": "string"}},
+                        "required": ["input"],
+                        "additionalProperties": false
+                    })
+                );
+                assert_eq!(
+                    f.strict,
+                    FunctionStrictness::Omitted(StrictDefault::NonStrict)
+                );
+            }
+            other => panic!("expected function tool, got {other:?}"),
+        }
+        match &wrapped.tools()[1] {
+            ToolDefinition::Function(f) => {
+                assert_eq!(f.name.as_str(), "notes");
+                assert_eq!(f.description.as_deref(), Some(""));
+            }
+            other => panic!("expected wrapped notes tool, got {other:?}"),
+        }
+        assert!(matches!(
+            &wrapped.tools()[2],
+            ToolDefinition::Custom(c)
+                if c.name.as_str() == "sql"
+                    && matches!(c.format, Some(CustomFormat::Grammar { .. }))
+        ));
+        assert!(matches!(
+            &wrapped.items()[1].1,
+            Item::ToolCall(call)
+                if call.name.as_str() == "exec"
+                    && matches!(&call.arguments, ToolArguments::Raw(raw) if serde_json::from_str::<serde_json::Value>(raw).unwrap() == json!({"input": "const s = \"hi\\n世界\";"}))
+        ));
+        assert!(matches!(
+            &wrapped.items()[2].1,
+            Item::ToolResult(res) if res.call_id == Some(text("c_exec"))
+        ));
+        assert!(delivery.entries["exec"].wrapped_custom);
+        assert!(delivery.entries["notes"].wrapped_custom);
+        assert!(!delivery.entries.contains_key("sql"));
+    }
+
+    #[test]
+    fn wrap_plain_custom_tools_composes_with_namespaces_and_rejects_collisions() {
+        let req = base_request(
+            vec![ns_group("functions", "", vec![custom_tool("exec", None)])],
+            vec![(
+                ItemId::new(1),
+                Item::CustomCall(CustomCall {
+                    call_id: text("c_exec"),
+                    name: text("exec"),
+                    input: String::new(),
+                    context: CallContext::default(),
+                }),
+            )],
+        );
+        let (aliased, mut map, _) = alias_tool_namespaces(Cow::Borrowed(&req)).unwrap();
+        let (wrapped, changed) = wrap_plain_custom_tools(aliased, &mut map, false).unwrap();
+        assert!(changed);
+        let wire_name = map.entries.keys().next().unwrap().clone();
+        let entry = &map.entries[&wire_name];
+        assert!(entry.wrapped_custom);
+        assert_eq!(entry.kind, ToolKind::Custom);
+        assert_eq!(
+            entry.namespace.as_ref().map(Text::as_str),
+            Some("functions")
+        );
+        assert_eq!(entry.name.as_str(), "exec");
+        assert!(matches!(
+            &wrapped.items()[1].1,
+            Item::ToolCall(call)
+                if call.name.as_str() == wire_name
+                    && call.arguments == ToolArguments::Raw("{\"input\":\"\"}".into())
+        ));
+
+        let colliding = base_request(
+            vec![fn_tool("exec", None), custom_tool("exec", None)],
+            vec![],
+        );
+        let mut dummy = ToolDeliveryMap::default();
+        assert!(matches!(
+            wrap_plain_custom_tools(Cow::Borrowed(&colliding), &mut dummy, false)
+                .unwrap_err()
+                .cause,
+            ConversionCause::Representation(RepresentationError::Admission(Feature::Tools))
+        ));
     }
 }

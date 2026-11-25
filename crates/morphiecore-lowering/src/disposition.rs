@@ -540,6 +540,13 @@ pub const ALIAS_TOOL_NAMESPACES: Rule = Rule::new(
     Field::Tools,
     Change::Approximate,
 );
+/// Grammar-free plain custom-text tools wrap into `{"input": string}` function
+/// tools on function-only targets and unwrap back to custom tool calls on delivery.
+pub const WRAP_PLAIN_CUSTOM_TOOLS: Rule = Rule::new(
+    "generation.wrap-plain-custom-tools.v1",
+    Field::Tools,
+    Change::Approximate,
+);
 
 /// Auto selects the target model's own default, not a fixed processing level.
 pub const IMAGE_AUTO_DEFAULT: Rule = Rule::new(

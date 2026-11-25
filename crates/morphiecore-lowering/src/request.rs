@@ -711,6 +711,20 @@ pub fn project_tool_inventory<'a>(
             );
         }
     }
+    if target.wrap_plain_custom_tools {
+        let (wrapped, changed) = crate::tool_projection::wrap_plain_custom_tools(
+            semantic,
+            &mut tool_delivery,
+            target.require_tool_description,
+        )?;
+        semantic = wrapped;
+        if changed {
+            evidence.push(
+                super::disposition::WRAP_PLAIN_CUSTOM_TOOLS
+                    .effect(ConversionBoundary::RequestProject),
+            );
+        }
+    }
     let ordered = ordered_tool_declarations(semantic.items());
     let allowed_choice = matches!(semantic.tool_choice(), Some(ToolChoice::Allowed { .. }));
     // The required carrier can need a singleton request inventory, not only

@@ -53,6 +53,35 @@ impl ClientAdapter {
     }
 }
 
+fn stream_event_item(event: &StreamEvent) -> Option<ItemId> {
+    match event {
+        StreamEvent::ItemStarted { item, .. }
+        | StreamEvent::ToolResultOutput { item, .. }
+        | StreamEvent::ToolBatchSnapshot { item, .. }
+        | StreamEvent::PartStarted { item, .. }
+        | StreamEvent::Delta { item, .. }
+        | StreamEvent::AudioDelta { item, .. }
+        | StreamEvent::LogprobsSnapshot { item, .. }
+        | StreamEvent::AnnotationAdded { item, .. }
+        | StreamEvent::TextMetadata { item, .. }
+        | StreamEvent::ValueFinished { item, .. }
+        | StreamEvent::PartReplay { item, .. }
+        | StreamEvent::PartFinished { item, .. }
+        | StreamEvent::PartInterrupted { item, .. }
+        | StreamEvent::CompactionProgress { item }
+        | StreamEvent::ItemFinished { item, .. } => Some(*item),
+        _ => None,
+    }
+}
+
+struct WrappedCustomCall {
+    call_id: crate::semantic::value::Text,
+    name: crate::semantic::value::Text,
+    context: CallContext,
+    part: Option<PartId>,
+    buffer: String,
+}
+
 pub struct ClientProjection {
     client: ClientAdapter,
     dispositions: DeliveryDispositions,
@@ -74,6 +103,7 @@ pub struct ClientProjection {
     text_sources: BTreeSet<ItemId>,
     plain_text_source: bool,
     tool_delivery: crate::tool_projection::ToolDeliveryMap,
+    wrapped_custom_calls: BTreeMap<ItemId, WrappedCustomCall>,
 }
 impl ClientProjection {
     pub fn new(client: ClientAdapter, native: bool, streaming: bool) -> Self {
@@ -109,6 +139,7 @@ impl ClientProjection {
             text_sources: BTreeSet::new(),
             plain_text_source: true,
             tool_delivery: Default::default(),
+            wrapped_custom_calls: BTreeMap::new(),
             omitted: BTreeSet::new(),
             calls: BTreeMap::new(),
             losses: vec![],
@@ -355,6 +386,170 @@ impl ClientProjection {
                     continue;
                 }
                 let mut event = event.clone();
+                if let StreamEvent::ItemStarted {
+                    item,
+                    kind:
+                        ItemKind::ToolCall {
+                            call_id,
+                            name,
+                            context,
+                            ..
+                        },
+                    ..
+                } = &event
+                    && let Some(orig) = self.tool_delivery.entries.get(name.as_str())
+                    && orig.wrapped_custom
+                {
+                    if (self.client.protocol() == ClientProtocol::Chat && self.streaming)
+                        || self.client.protocol() == ClientProtocol::Messages
+                    {
+                        return Err(CodecError::Unsupported(CarrierReason::Tools));
+                    }
+                    if self.wrapped_custom_calls.len() >= MAX_ITEMS {
+                        return Err(CodecError::Limit);
+                    }
+                    let mut restored_context = context.clone();
+                    restored_context.namespace = orig.namespace.clone();
+                    self.wrapped_custom_calls.insert(
+                        *item,
+                        WrappedCustomCall {
+                            call_id: call_id.clone(),
+                            name: orig.name.clone(),
+                            context: restored_context,
+                            part: None,
+                            buffer: String::new(),
+                        },
+                    );
+                    continue;
+                }
+                match &event {
+                    StreamEvent::PartStarted { item, part, kind }
+                        if self.wrapped_custom_calls.contains_key(item) =>
+                    {
+                        let entry = self
+                            .wrapped_custom_calls
+                            .get_mut(item)
+                            .ok_or(CodecError::invalid())?;
+                        if !matches!(kind, PartKind::Arguments | PartKind::StructuredArguments)
+                            || entry.part.is_some()
+                        {
+                            return Err(CodecError::invalid());
+                        }
+                        entry.part = Some(*part);
+                        continue;
+                    }
+                    StreamEvent::Delta {
+                        item,
+                        part,
+                        fragment,
+                        ..
+                    } if self.wrapped_custom_calls.contains_key(item) => {
+                        let entry = self
+                            .wrapped_custom_calls
+                            .get_mut(item)
+                            .ok_or(CodecError::invalid())?;
+                        if entry.part != Some(*part) {
+                            return Err(CodecError::invalid());
+                        }
+                        if entry
+                            .buffer
+                            .len()
+                            .checked_add(fragment.len())
+                            .is_none_or(|n| n > MAX_TEXT_BYTES)
+                        {
+                            return Err(CodecError::Limit);
+                        }
+                        entry.buffer.push_str(fragment);
+                        continue;
+                    }
+                    StreamEvent::ValueFinished { item, part }
+                    | StreamEvent::PartFinished { item, part }
+                        if self.wrapped_custom_calls.contains_key(item) =>
+                    {
+                        let entry = self
+                            .wrapped_custom_calls
+                            .get(item)
+                            .ok_or(CodecError::invalid())?;
+                        if entry.part != Some(*part) {
+                            return Err(CodecError::invalid());
+                        }
+                        continue;
+                    }
+                    StreamEvent::PartInterrupted { item, .. }
+                        if self.wrapped_custom_calls.contains_key(item) =>
+                    {
+                        self.wrapped_custom_calls.remove(item);
+                        return Err(CodecError::invalid());
+                    }
+                    StreamEvent::ItemFinished { item, status, .. }
+                        if self.wrapped_custom_calls.contains_key(item) =>
+                    {
+                        let entry = self
+                            .wrapped_custom_calls
+                            .remove(item)
+                            .ok_or(CodecError::invalid())?;
+                        if *status != ItemLifecycle::Completed {
+                            return Err(CodecError::invalid());
+                        }
+                        let decoded = crate::json::decode(entry.buffer.as_bytes())?;
+                        let serde_json::Value::Object(mut map) = decoded else {
+                            return Err(CodecError::invalid());
+                        };
+                        if map.len() != 1 {
+                            return Err(CodecError::invalid());
+                        }
+                        let Some(serde_json::Value::String(input_str)) = map.remove("input") else {
+                            return Err(CodecError::invalid());
+                        };
+                        if input_str.len() > MAX_TEXT_BYTES {
+                            return Err(CodecError::Limit);
+                        }
+                        let part = entry.part.unwrap_or_else(|| {
+                            PartId::scoped(
+                                item.scope(),
+                                item.get().checked_mul(MAX_ITEMS as u64 + 1).unwrap_or(0),
+                            )
+                        });
+                        selected.push(StreamEvent::ItemStarted {
+                            item: *item,
+                            kind: ItemKind::CustomCall {
+                                call_id: entry.call_id,
+                                name: entry.name,
+                                context: entry.context,
+                            },
+                            replay: None,
+                        });
+                        selected.push(StreamEvent::PartStarted {
+                            item: *item,
+                            part,
+                            kind: PartKind::CustomInput,
+                        });
+                        selected.push(StreamEvent::Delta {
+                            item: *item,
+                            part,
+                            fragment: input_str,
+                            logprobs: vec![],
+                        });
+                        selected.push(StreamEvent::ValueFinished { item: *item, part });
+                        selected.push(StreamEvent::PartFinished { item: *item, part });
+                        selected.push(StreamEvent::ItemFinished {
+                            item: *item,
+                            status: ItemLifecycle::Completed,
+                            replay: None,
+                        });
+                        continue;
+                    }
+                    StreamEvent::Terminal { .. } if !self.wrapped_custom_calls.is_empty() => {
+                        return Err(CodecError::invalid());
+                    }
+                    other
+                        if stream_event_item(other)
+                            .is_some_and(|item| self.wrapped_custom_calls.contains_key(&item)) =>
+                    {
+                        return Err(CodecError::invalid());
+                    }
+                    _ => {}
+                }
                 if let StreamEvent::ItemStarted {
                     kind:
                         ItemKind::ToolCall { name, context, .. }
@@ -903,5 +1098,270 @@ impl ClientProjection {
             self.state = None;
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::adapter::downstream::ClientAdapter;
+    use crate::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract};
+    use crate::tool_projection::{OriginalToolTarget, ToolDeliveryMap};
+
+    fn text(s: &str) -> crate::semantic::value::Text {
+        crate::semantic::value::Text::new(s, "test text", 128).unwrap()
+    }
+
+    fn responses_projection(wrapped_custom: bool) -> ClientProjection {
+        let mut map = ToolDeliveryMap::default();
+        map.entries.insert(
+            "mcns_alias_exec".into(),
+            OriginalToolTarget {
+                kind: ToolKind::Custom,
+                namespace: Some(text("functions")),
+                name: text("exec"),
+                wrapped_custom,
+            },
+        );
+        ClientProjection::new(
+            ClientAdapter::openai(
+                GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
+                TargetContract::full(),
+            ),
+            false,
+            true,
+        )
+        .with_tool_delivery(map)
+    }
+
+    fn start_wrapped_call(proj: &mut ClientProjection, item: ItemId, part: PartId) {
+        let events = [
+            StreamEvent::Started,
+            StreamEvent::ItemStarted {
+                item,
+                kind: ItemKind::ToolCall {
+                    format: ArgumentFormat::Raw,
+                    call_id: text("call_1"),
+                    name: text("mcns_alias_exec"),
+                    context: CallContext::default(),
+                },
+                replay: None,
+            },
+            StreamEvent::PartStarted {
+                item,
+                part,
+                kind: PartKind::Arguments,
+            },
+        ];
+        assert!(proj.project(&events).unwrap().is_empty() || proj.project(&[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn wrapped_custom_call_unwraps_chunked_empty_and_escaped_unicode_inputs() {
+        for expected in ["", "const a = \"quote\\nline\\\\\"; // ☃ 世界"] {
+            let mut proj = responses_projection(true);
+            let item = ItemId::new(1);
+            let part = PartId::new(1);
+            let encoded = serde_json::to_string(&serde_json::json!({ "input": expected })).unwrap();
+            let mid = encoded.len() / 2;
+            let (left, right) = encoded.split_at(mid);
+
+            let opening = proj.project(&[StreamEvent::Started]).unwrap();
+            assert_eq!(opening, vec![StreamEvent::Started]);
+
+            assert!(
+                proj.project(&[
+                    StreamEvent::ItemStarted {
+                        item,
+                        kind: ItemKind::ToolCall {
+                            format: ArgumentFormat::Raw,
+                            call_id: text("call_1"),
+                            name: text("mcns_alias_exec"),
+                            context: CallContext::default(),
+                        },
+                        replay: None,
+                    },
+                    StreamEvent::PartStarted {
+                        item,
+                        part,
+                        kind: PartKind::Arguments,
+                    },
+                    StreamEvent::Delta {
+                        item,
+                        part,
+                        fragment: left.to_owned(),
+                        logprobs: vec![],
+                    },
+                    StreamEvent::Delta {
+                        item,
+                        part,
+                        fragment: right.to_owned(),
+                        logprobs: vec![],
+                    },
+                    StreamEvent::ValueFinished { item, part },
+                    StreamEvent::PartFinished { item, part },
+                ])
+                .unwrap()
+                .is_empty()
+            );
+
+            let out = proj
+                .project(&[
+                    StreamEvent::ItemFinished {
+                        item,
+                        status: ItemLifecycle::Completed,
+                        replay: None,
+                    },
+                    StreamEvent::Terminal {
+                        terminal: StreamTerminal::Completed,
+                        details: TerminalDetails::default(),
+                    },
+                ])
+                .unwrap();
+            assert!(matches!(
+                &out[0],
+                StreamEvent::ItemStarted {
+                    kind: ItemKind::CustomCall { call_id, name, context },
+                    ..
+                } if call_id.as_str() == "call_1"
+                    && name.as_str() == "exec"
+                    && context.namespace.as_ref().map(|t| t.as_str()) == Some("functions")
+            ));
+            let snap = proj.snapshot().unwrap();
+            assert!(matches!(
+                &snap.items()[0].1,
+                Item::CustomCall(call)
+                    if call.input == expected
+                        && call.name.as_str() == "exec"
+                        && call.context.namespace.as_ref().map(|t| t.as_str()) == Some("functions")
+            ));
+        }
+    }
+
+    #[test]
+    fn wrapped_custom_call_rejects_invalid_payloads_duplicates_truncations_and_oversize() {
+        let item = ItemId::new(1);
+        let part = PartId::new(1);
+
+        for bad_json in [
+            "{}",
+            r#"{"input":"ok","extra":1}"#,
+            r#"{"input":123}"#,
+            r#"{"input":"a","input":"b"}"#,
+            r#"{"input":"unterminated"#,
+        ] {
+            let mut proj = responses_projection(true);
+            start_wrapped_call(&mut proj, item, part);
+            assert!(
+                proj.project(&[StreamEvent::Delta {
+                    item,
+                    part,
+                    fragment: bad_json.to_owned(),
+                    logprobs: vec![],
+                }])
+                .unwrap()
+                .is_empty()
+            );
+            assert!(
+                proj.project(&[StreamEvent::ItemFinished {
+                    item,
+                    status: ItemLifecycle::Completed,
+                    replay: None,
+                }])
+                .is_err(),
+                "expected rejection for payload: {bad_json}"
+            );
+        }
+
+        // Incomplete lifecycle must fail closed without emitting CustomCall.
+        let mut proj = responses_projection(true);
+        start_wrapped_call(&mut proj, item, part);
+        assert!(
+            proj.project(&[StreamEvent::Delta {
+                item,
+                part,
+                fragment: r#"{"input":"ok"}"#.to_owned(),
+                logprobs: vec![],
+            }])
+            .unwrap()
+            .is_empty()
+        );
+        assert!(
+            proj.project(&[StreamEvent::ItemFinished {
+                item,
+                status: ItemLifecycle::Incomplete,
+                replay: None,
+            }])
+            .is_err()
+        );
+
+        // Interrupted part must fail closed.
+        let mut proj = responses_projection(true);
+        start_wrapped_call(&mut proj, item, part);
+        assert!(
+            proj.project(&[StreamEvent::PartInterrupted { item, part }])
+                .is_err()
+        );
+
+        // Terminal before ItemFinished must fail closed.
+        let mut proj = responses_projection(true);
+        start_wrapped_call(&mut proj, item, part);
+        assert!(
+            proj.project(&[StreamEvent::Terminal {
+                terminal: StreamTerminal::Completed,
+                details: TerminalDetails::default(),
+            }])
+            .is_err()
+        );
+
+        // Oversized input exceeding MAX_TEXT_BYTES rejects with Limit.
+        let mut proj = responses_projection(true);
+        start_wrapped_call(&mut proj, item, part);
+        assert!(matches!(
+            proj.project(&[StreamEvent::Delta {
+                item,
+                part,
+                fragment: "x".repeat(MAX_TEXT_BYTES + 1),
+                logprobs: vec![],
+            }]),
+            Err(CodecError::Limit)
+        ));
+
+        // Streaming Chat client cannot receive unwrapped CustomCall output.
+        let mut map = ToolDeliveryMap::default();
+        map.entries.insert(
+            "exec".into(),
+            OriginalToolTarget {
+                kind: ToolKind::Custom,
+                namespace: None,
+                name: text("exec"),
+                wrapped_custom: true,
+            },
+        );
+        let mut chat_stream = ClientProjection::new(
+            ClientAdapter::openai(
+                GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None),
+                TargetContract::full(),
+            ),
+            false,
+            true,
+        )
+        .with_tool_delivery(map);
+        assert!(matches!(
+            chat_stream.project(&[
+                StreamEvent::Started,
+                StreamEvent::ItemStarted {
+                    item,
+                    kind: ItemKind::ToolCall {
+                        format: ArgumentFormat::Raw,
+                        call_id: text("call_1"),
+                        name: text("exec"),
+                        context: CallContext::default(),
+                    },
+                    replay: None,
+                }
+            ]),
+            Err(CodecError::Unsupported(CarrierReason::Tools))
+        ));
     }
 }

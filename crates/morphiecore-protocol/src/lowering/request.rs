@@ -123,7 +123,7 @@ impl<'a> Target<'a> {
             Self::Interactions(c) => c.cache,
         }
     }
-    fn capabilities(self) -> TargetCapabilities<'a> {
+    fn capabilities(self, streaming: bool, custom_output: bool) -> TargetCapabilities<'a> {
         use super::{disposition::*, tool_set::OrderedCarrier};
         let messages = match self {
             Self::Messages(c) => Some(c),
@@ -190,6 +190,13 @@ impl<'a> Target<'a> {
                 | Self::Messages(_)
                 | Self::Interactions(_) => true,
                 Self::OpenAi(GenerationApi::Responses, _) => bailian,
+            },
+            wrap_plain_custom_tools: match self {
+                Self::Messages(_) | Self::Interactions(_) => true,
+                Self::OpenAi(GenerationApi::Responses, _) => bailian,
+                Self::OpenAi(GenerationApi::Chat, c) => {
+                    !c.dispositions.native(Feature::CustomTools) || (streaming && custom_output)
+                }
             },
             filter_allowed_inventory: messages.is_some(),
             filter_singleton_inventory: matches!(openai, Some((GenerationApi::Responses, _)))
@@ -482,7 +489,7 @@ impl<'a> Target<'a> {
                 Disposition::Approximate(super::disposition::TOOL_CHANGES),
             );
         }
-        self.capabilities()
+        self.capabilities(false, false)
             .presentation_rows(source.settings(), &mut table);
         table.set(
             Effort,
@@ -931,7 +938,7 @@ pub fn project_semantic<'a>(
     target: Target<'_>,
 ) -> Result<Conversion<Cow<'a, GenerationRequest>>, ConversionFailure> {
     let mut table = target.table(source);
-    let (projected, _) = project_semantic_with_table(source, source, target, &mut table)?;
+    let (projected, _) = project_semantic_with_table(source, source, target, false, &mut table)?;
     target.projected_rows(projected.value.as_ref(), false, &mut table);
     table
         .check(projected.value.as_ref())
@@ -943,6 +950,7 @@ fn project_semantic_with_table<'a>(
     source: &'a GenerationRequest,
     original: &GenerationRequest,
     target: Target<'_>,
+    streaming: bool,
     table: &mut Dispositions,
 ) -> Result<
     (
@@ -978,7 +986,14 @@ fn project_semantic_with_table<'a>(
         );
         evidence.extend(groups.evidence);
     }
-    let capabilities = target.capabilities();
+    let custom_output = match source.tool_choice() {
+        Some(ToolChoice::None | ToolChoice::Specific(_)) => false,
+        Some(ToolChoice::Allowed { tools, .. }) => {
+            tools.iter().any(|tool| tool.kind == ToolKind::Custom)
+        }
+        _ => true,
+    };
+    let capabilities = target.capabilities(streaming, custom_output);
     if !target.retains_configuration(source) || !original.configuration_timing_matches(source) {
         semantic =
             semantic_projection::collapse_configuration(source, original, semantic, &mut evidence)?;
@@ -1270,6 +1285,7 @@ pub fn project_with_delivery<'a>(
         &input.task.semantic,
         &source.task.semantic,
         target,
+        source.delivery.streaming(),
         &mut table,
     )?;
     target.context_rows(source, &mut table)?;

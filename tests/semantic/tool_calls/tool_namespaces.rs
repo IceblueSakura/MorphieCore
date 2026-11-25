@@ -401,3 +401,359 @@ fn namespace_rejects_duplicates_nested_groups_and_unqualified_selection() {
     missing["tool_choice"]["namespace"] = json!("ops");
     assert!(responses::decode_generation(&missing).is_err());
 }
+
+#[test]
+fn plain_and_namespaced_custom_tools_wrap_across_protocols_and_unwrap_on_delivery() {
+    use morphiecore::{
+        adapter::ClientAdapter,
+        execution::{Attempt, ResponseDelivery},
+        protocol::openai::{Dialect, GenerationCodec},
+        topology::{GenerationProtocol, catalog},
+    };
+
+    let wire = json!({
+        "model": "public",
+        "stream": true,
+        "prompt_cache_key": "codex-custom-session",
+        "input": [{"role": "user", "content": "run code mode"}],
+        "tools": [
+            {
+                "type": "namespace",
+                "name": "functions",
+                "description": "",
+                "tools": [{
+                    "type": "custom",
+                    "name": "exec",
+                    "description": "execute code",
+                    "format": {"type": "text"}
+                }]
+            },
+            {
+                "type": "custom",
+                "name": "scratch"
+            }
+        ],
+        "tool_choice": "auto"
+    });
+    let client = ClientAdapter::openai(
+        GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
+        Contract::full(),
+    );
+    let mut env_req = client
+        .decode_client_request(&serde_json::to_vec(&wire).unwrap())
+        .unwrap();
+    env_req.conversation = Some(
+        morphiecore::semantic::context::ConversationContext::conversation("codex-custom-conv-1")
+            .unwrap(),
+    );
+    let snapshot = env_req.clone();
+
+    let messages_ep = catalog::messages_bindings()[0].endpoint();
+    let interactions_ep = catalog::google_bindings()
+        .iter()
+        .find(|b| b.canonical_model().id.as_str().starts_with("gemini"))
+        .unwrap()
+        .endpoint();
+    let chat_ep = catalog::api_key_bindings()
+        .iter()
+        .find_map(|b| {
+            b.provider()
+                .generation_entry(GenerationProtocol::OpenAiChat.operation())
+                .is_some()
+                .then(|| b.endpoint(GenerationProtocol::OpenAiChat).ok())
+                .flatten()
+        })
+        .unwrap();
+    let bailian_ep = catalog::api_key_bindings()
+        .iter()
+        .find_map(|b| {
+            (b.dialect == Dialect::Bailian
+                && b.provider()
+                    .generation_entry(GenerationProtocol::OpenAiResponses.operation())
+                    .is_some())
+            .then(|| b.endpoint(GenerationProtocol::OpenAiResponses).ok())
+            .flatten()
+        })
+        .unwrap();
+
+    let mut exec_alias = String::new();
+    for (label, ep) in [
+        ("messages", &messages_ep),
+        ("interactions", &interactions_ep),
+        ("chat", &chat_ep),
+        ("bailian", &bailian_ep),
+    ] {
+        let (conv, map) = ep
+            .encode_request_with_delivery(&env_req)
+            .unwrap_or_else(|err| panic!("{label} wrap failed: {err:?}"));
+        assert_eq!(env_req, snapshot, "{label} mutated source request");
+        assert!(
+            conv.evidence.iter().any(|e| {
+                e.rule() == morphiecore::protocol::lowering::disposition::WRAP_PLAIN_CUSTOM_TOOLS.id
+            }),
+            "{label} missing WRAP_PLAIN_CUSTOM_TOOLS evidence"
+        );
+        let entry = map
+            .entries
+            .iter()
+            .find(|(_, orig)| {
+                orig.namespace
+                    .as_ref()
+                    .map(morphiecore::semantic::value::Text::as_str)
+                    == Some("functions")
+                    && orig.name.as_str() == "exec"
+                    && orig.wrapped_custom
+            })
+            .unwrap_or_else(|| panic!("{label} missing wrapped functions::exec mapping"));
+        if exec_alias.is_empty() {
+            exec_alias = entry.0.clone();
+        } else {
+            assert_eq!(entry.0, &exec_alias);
+        }
+        assert!(
+            map.entries
+                .get("scratch")
+                .is_some_and(|orig| orig.wrapped_custom && orig.namespace.is_none()),
+            "{label} missing plain scratch wrapper mapping"
+        );
+        let wire_text = serde_json::to_string(&conv.value).unwrap();
+        assert!(!wire_text.contains("\"type\":\"custom\""));
+        assert!(wire_text.contains(&exec_alias));
+        assert!(wire_text.contains("\"input\":{\"type\":\"string\"}"));
+    }
+
+    // Deliver wrapped tool call from Messages SSE with quotes, newlines, and Unicode ->
+    // verify both JSON snapshot and SSE emit restored custom_tool_call with namespace="functions".
+    let payload_code = "const msg = \"hi\\n世界\"; // \\\"quoted\\\"";
+    let payload_json = serde_json::to_string(&json!({ "input": payload_code })).unwrap();
+    let sse_wire = format!(
+        "event: message_start\ndata: {}\n\n\
+         event: content_block_start\ndata: {}\n\n\
+         event: content_block_delta\ndata: {}\n\n\
+         event: content_block_stop\ndata: {{\"type\":\"content_block_stop\",\"index\":0}}\n\n\
+         event: message_delta\ndata: {{\"type\":\"message_delta\",\"delta\":{{\"stop_reason\":\"tool_use\",\"stop_sequence\":null}},\"usage\":{{\"output_tokens\":8}}}}\n\n\
+         event: message_stop\ndata: {{\"type\":\"message_stop\"}}\n\n",
+        json!({
+            "type": "message_start",
+            "message": {
+                "id": "msg_custom_01",
+                "type": "message",
+                "role": "assistant",
+                "model": messages_ep.upstream_model,
+                "content": [],
+                "stop_reason": null,
+                "usage": {"input_tokens": 12, "output_tokens": 0}
+            }
+        }),
+        json!({
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {
+                "type": "tool_use",
+                "id": "toolu_exec_1",
+                "name": exec_alias,
+                "input": {}
+            }
+        }),
+        json!({
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {
+                "type": "input_json_delta",
+                "partial_json": payload_json
+            }
+        }),
+    );
+
+    fn push_all(
+        attempt: &mut Attempt,
+        mut bytes: &[u8],
+    ) -> Vec<morphiecore::semantic::task::generation::StreamEvent> {
+        let mut out = Vec::new();
+        while !bytes.is_empty() {
+            let (consumed, events) = attempt.push(bytes).unwrap();
+            assert!(consumed > 0);
+            bytes = &bytes[consumed..];
+            out.extend(events);
+        }
+        out
+    }
+
+    let (_, delivery_map) = messages_ep.encode_request_with_delivery(&env_req).unwrap();
+    let mut attempt_json =
+        Attempt::new(messages_ep.adapter().unwrap(), 1 << 20, Default::default());
+    attempt_json.begin(200, "text/event-stream").unwrap();
+    let json_events = push_all(&mut attempt_json, sse_wire.as_bytes());
+    attempt_json.finish().unwrap();
+
+    let mut delivery_json = ResponseDelivery::new(
+        client.clone(),
+        "public",
+        Default::default(),
+        Default::default(),
+        morphiecore::protocol::openai::obfuscation::Obfuscation::Disabled,
+        false,
+    )
+    .with_tool_delivery(delivery_map.clone());
+    delivery_json
+        .observe_events(&attempt_json, &json_events)
+        .unwrap();
+    let (decoded_json, _) = delivery_json.encode_json_snapshot(&attempt_json).unwrap();
+    let rendered_json = client.render_projected(decoded_json).unwrap().1;
+    assert_eq!(rendered_json["output"][0]["type"], "custom_tool_call");
+    assert_eq!(rendered_json["output"][0]["name"], "exec");
+    assert_eq!(rendered_json["output"][0]["namespace"], "functions");
+    assert_eq!(rendered_json["output"][0]["input"], payload_code);
+    assert!(
+        !serde_json::to_string(&rendered_json)
+            .unwrap()
+            .contains(&exec_alias)
+    );
+
+    let mut attempt_sse = Attempt::new(messages_ep.adapter().unwrap(), 1 << 20, Default::default());
+    attempt_sse.begin(200, "text/event-stream").unwrap();
+    let sse_events = push_all(&mut attempt_sse, sse_wire.as_bytes());
+    attempt_sse.finish().unwrap();
+
+    let mut delivery_sse = ResponseDelivery::new(
+        client.clone(),
+        "public",
+        Default::default(),
+        Default::default(),
+        morphiecore::protocol::openai::obfuscation::Obfuscation::Disabled,
+        true,
+    )
+    .with_tool_delivery(delivery_map);
+    let b1 = delivery_sse
+        .encode_events(&attempt_sse, &sse_events)
+        .unwrap();
+    let b2 = delivery_sse.finish_stream(&attempt_sse).unwrap();
+    let sse_text = String::from_utf8(
+        [b1, b2]
+            .into_iter()
+            .flat_map(|b| b.into_bytes())
+            .flat_map(|c| c.to_vec())
+            .collect(),
+    )
+    .unwrap();
+    assert!(sse_text.contains("\"type\":\"custom_tool_call\""));
+    assert!(sse_text.contains("\"name\":\"exec\""));
+    assert!(sse_text.contains("\"namespace\":\"functions\""));
+    assert!(!sse_text.contains(&exec_alias));
+
+    // Multi-turn replay: turn 2 sends back custom_tool_call + custom_tool_call_output.
+    let turn2_wire = json!({
+        "model": "public",
+        "stream": true,
+        "prompt_cache_key": "codex-custom-session",
+        "input": [
+            {"role": "user", "content": "run code mode"},
+            {
+                "type": "custom_tool_call",
+                "call_id": "toolu_exec_1",
+                "name": "exec",
+                "namespace": "functions",
+                "input": payload_code
+            },
+            {
+                "type": "custom_tool_call_output",
+                "call_id": "toolu_exec_1",
+                "output": "done"
+            }
+        ],
+        "tools": wire["tools"],
+        "tool_choice": "auto"
+    });
+    let mut turn2_req = client
+        .decode_client_request(&serde_json::to_vec(&turn2_wire).unwrap())
+        .unwrap();
+    turn2_req.conversation = env_req.conversation.clone();
+    for (label, ep) in [
+        ("messages-t2", &messages_ep),
+        ("interactions-t2", &interactions_ep),
+        ("chat-t2", &chat_ep),
+        ("bailian-t2", &bailian_ep),
+    ] {
+        let (conv, _) = ep
+            .encode_request_with_delivery(&turn2_req)
+            .unwrap_or_else(|err| panic!("{label} turn2 wrap failed: {err:?}"));
+        let serialized = serde_json::to_string(&conv.value).unwrap();
+        assert!(!serialized.contains("custom_tool_call"));
+        assert!(serialized.contains(&exec_alias));
+    }
+}
+
+#[test]
+fn grammar_custom_tools_remain_rejected_on_function_only_and_streaming_chat_targets() {
+    use morphiecore::{
+        adapter::ClientAdapter,
+        protocol::openai::{Dialect, GenerationCodec},
+        topology::{GenerationProtocol, catalog},
+    };
+
+    let wire = json!({
+        "model": "public",
+        "stream": true,
+        "prompt_cache_key": "codex-grammar-session",
+        "input": [{"role": "user", "content": "query"}],
+        "tools": [{
+            "type": "custom",
+            "name": "sql",
+            "format": {
+                "type": "grammar",
+                "syntax": "lark",
+                "definition": "start: \"SELECT 1\""
+            }
+        }],
+        "tool_choice": "auto"
+    });
+    let client = ClientAdapter::openai(
+        GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
+        Contract::full(),
+    );
+    let mut env_req = client
+        .decode_client_request(&serde_json::to_vec(&wire).unwrap())
+        .unwrap();
+    env_req.conversation = Some(
+        morphiecore::semantic::context::ConversationContext::conversation("codex-grammar-conv")
+            .unwrap(),
+    );
+    let messages_ep = catalog::messages_bindings()[0].endpoint();
+    let interactions_ep = catalog::google_bindings()
+        .iter()
+        .find(|b| b.canonical_model().id.as_str().starts_with("gemini"))
+        .unwrap()
+        .endpoint();
+    let chat_ep = catalog::api_key_bindings()
+        .iter()
+        .find_map(|b| {
+            b.provider()
+                .generation_entry(GenerationProtocol::OpenAiChat.operation())
+                .is_some()
+                .then(|| b.endpoint(GenerationProtocol::OpenAiChat).ok())
+                .flatten()
+        })
+        .unwrap();
+    let bailian_ep = catalog::api_key_bindings()
+        .iter()
+        .find_map(|b| {
+            (b.dialect == Dialect::Bailian
+                && b.provider()
+                    .generation_entry(GenerationProtocol::OpenAiResponses.operation())
+                    .is_some())
+            .then(|| b.endpoint(GenerationProtocol::OpenAiResponses).ok())
+            .flatten()
+        })
+        .unwrap();
+    for (label, ep) in [
+        ("messages", &messages_ep),
+        ("interactions", &interactions_ep),
+        ("chat-streaming", &chat_ep),
+        ("bailian", &bailian_ep),
+    ] {
+        assert!(
+            ep.encode_request_with_delivery(&env_req).is_err(),
+            "{label} must continue rejecting grammar custom tool"
+        );
+    }
+}
