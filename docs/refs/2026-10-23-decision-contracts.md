@@ -1,6 +1,6 @@
 # Decision model contracts
 
-Checked 2026-10-23. Official documentation, model schemas and SDK source describe dedicated typed decision APIs, not ordinary reasoning or JSON-mode Generation. This note records source evidence and conflicts, not design approval or runtime support. [Architecture](../architecture/index.md#decision-api-direction) owns the selected dual-SDK direction; [API expansion design](../proposals/decisions-api.md#decisions) owns proposals; [Roadmap](../roadmap/index.md#decision-api-closure) owns gates.
+Checked 2026-10-23. Official documentation, model schemas and SDK source describe dedicated typed decision APIs, not ordinary reasoning or JSON-mode Generation. This note records source evidence and conflicts, not design approval or runtime support. [Architecture](../architecture/index.md#decision-api-direction) owns the selected dual-SDK direction; [API expansion design](../proposals/decisions-api.md#decisions) owns proposals; [Roadmap](../roadmap/index.md#stage-4-pending-scope) owns gates.
 
 No inference calls, credentials, SDK executions or implementation changes were used for this research. SDK links below point to mutable branches/documentation, not pinned acceptance releases. Search snippets and extracted HTML sometimes lagged directly retrieved Markdown/schema content; conflicts are retained rather than treated as live behavior.
 

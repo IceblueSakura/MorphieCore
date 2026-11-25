@@ -1,6 +1,6 @@
 # Decision API Proposal
 
-The [dual-SDK direction and capability-union principle](../architecture/index.md#decision-api-direction) are selected. The concrete realization below remains proposed, not approval of semantic layout, dialect behavior, SDK coverage, or bindings. The [dated source note](../refs/2026-10-23-decision-contracts.md) owns protocol findings and discrepancies; the [roadmap](../roadmap/index.md#decision-api-closure) owns ordering and gates.
+The [dual-SDK direction and capability-union principle](../architecture/index.md#decision-api-direction) are selected. The concrete realization below remains proposed, not approval of semantic layout, dialect behavior, SDK coverage, or bindings. The [dated source note](../refs/2026-10-23-decision-contracts.md) owns protocol findings and discrepancies; the [roadmap](../roadmap/index.md#stage-4-pending-scope) owns ordering and gates.
 
 See [Proposals Framework](index.md) for shared boundaries and [Roadmap](../roadmap/index.md) for Stage 4 execution gates.
 
@@ -390,5 +390,5 @@ Review these choices before dependent implementation:
 | Initial executable slice | Text/JSON, three probability primitives, synchronous single-target execution | Concrete profiles, bounds and accepted feature domains for both SDKs |
 | Later capabilities | Preserve research coverage without premature implementation | Images/Box/multipart, audio/video, cache controls, streaming/Batch and fallback |
 
-Neither the dual-SDK direction nor the capability-union principle approves these concrete recommendations automatically. Use the [roadmap gates](../roadmap/index.md#decision-api-closure), not this section as a second implementation queue.
+Neither the dual-SDK direction nor the capability-union principle approves these concrete recommendations automatically. Use the [roadmap gates](../roadmap/index.md#stage-4-pending-scope), not this section as a second implementation queue.
 

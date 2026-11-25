@@ -25,7 +25,7 @@ Because some Agent harnesses only auto-load this root file, explicitly read the 
 ## Authorization
 
 - **Git workflow:** Work on `main`; preserve unrelated changes. Stage only files belonging to your slice (`git add <paths>`, never `git add -A` over unrelated work). Commit each completed implementation or documentation slice after the applicable verification passes. Pushes to `origin/main` may batch multiple commits.
-- **Phase boundaries:** Approved phases allow large deletions and breaking rewrites without compatibility shims. [Frozen scope](docs/roadmap/backlog-and-frozen.md#frozen-scope) and the [temporary routing freeze](docs/roadmap/index.md#temporary-routing-freeze) permit necessary maintenance only.
+- **Phase boundaries:** Approved phases allow large deletions and breaking rewrites without compatibility shims. Non-goals live in [Not planned](docs/roadmap/index.md#not-planned); keep routing within [accepted failover boundaries](docs/architecture/runtime-and-routing.md#failover).
 
 | Action | Policy |
 |---|---|
@@ -36,9 +36,9 @@ Because some Agent harnesses only auto-load this root file, explicitly read the 
 
 ## Working approach and global boundaries
 
-- **Roadmap alignment:** Check [Roadmap current status](docs/roadmap/index.md#current-status), [Planned order](docs/roadmap/index.md#planned-order), and [Frozen scope](docs/roadmap/backlog-and-frozen.md#frozen-scope) before starting feature or refactor work. Follow the [partial-delivery exit](docs/roadmap/index.md#partial-delivery-exit) and record uncertain cells in [Unscheduled issues](docs/roadmap/unscheduled-issues.md#unscheduled-issues).
+- **Roadmap alignment:** Check [Roadmap current status](docs/roadmap/index.md#current-status), [Planned order](docs/roadmap/index.md#planned-order), and [Not planned](docs/roadmap/index.md#not-planned) before starting feature or refactor work. Follow the [partial-delivery exit](docs/roadmap/index.md#partial-delivery-exit) and record uncertain cells in [Unscheduled issues](docs/roadmap/unscheduled-issues.md#unscheduled-issues).
 - **Stateful API freeze:** Upstream and downstream stateful APIs are experimental test features until the user explicitly enables them; exclude their acceptance from model adaptation and issue repairs. Reject downstream storage, reference-based continuation, and stored-resource operations while keeping omitted/null/false `store` stateless and preserving full-history replay. [Stateful boundary](docs/architecture/history-and-replay.md#stateful-history) owns the contract.
-- **Proactive design ownership & coherent slices:** Trace actual client workflows, primary protocol sources, and existing implementations; challenge weak premises and own choices within agreed scope (show a minimal counterexample and recommendation for unresolved semantic/structural decisions while continuing independent work; research never reopens frozen scope). Develop small, coherent slices and state consequential goals/exit conditions in the roadmap without turning every change into a test-first ritual.
+- **Proactive design ownership & coherent slices:** Trace actual client workflows, primary protocol sources, and existing implementations; challenge weak premises and own choices within agreed scope (show a minimal counterexample and recommendation for unresolved semantic/structural decisions while continuing independent work; research never reopens [Not planned](docs/roadmap/index.md#not-planned) scope). Develop small, coherent slices and state consequential goals/exit conditions in the roadmap without turning every change into a test-first ritual.
 - **Repository hygiene & language:** Write repository documentation, code comments, and commit messages in concise English. Never hand-edit build caches or commit private `config/*` files, `.venv`/`node_modules`, or `testdata/{generated,reports,dist,runtime}/`.
 
 ## Offline baseline commands

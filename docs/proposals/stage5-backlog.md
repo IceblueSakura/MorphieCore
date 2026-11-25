@@ -46,7 +46,7 @@ Unresolved integration choices are the authorization-server product, verified OA
 
 Rauthy remains an evaluation candidate, not a selected dependency; the [dated research](../refs/2026-10-23-downstream-oauth.md) owns versioned evidence and limitations.
 
-[Roadmap](../roadmap/index.md#agent-authorization-and-diagnostics-follow-up) owns the remaining dependency order and acceptance gates.
+[Roadmap](../roadmap/index.md#stage-5-backlog) owns dependency order and acceptance gates.
 
 This is not a stage-5 API assignment, OAuth implementation approval or change to current loopback ingress.
 

@@ -357,7 +357,7 @@ Omitted `thinking_conversion` retains it; an explicit numeric conversion replace
 
 Messages delivery uses [request-grounded end-turn derivation](../architecture/adaptation.md#messages-terminal-projection).
 
-These adaptations do not promise equivalent Claude effort behavior or complete Google protocol support; further [Google API expansion is paused](../roadmap/backlog-and-frozen.md#google-api-pause).
+These adaptations do not promise equivalent Claude effort behavior or complete Google protocol coverage beyond the reviewed catalog bindings in [Provider dialects](../architecture/provider-dialects.md#google-interactions).
 
 Those reviewed Google bindings omit temperature/top-p/top-k that the model ignores, with field-specific adaptation evidence. Generic codecs and other models do not inherit that policy; request labels cannot select it. Interactions v1 has no carrier for those controls. See the [target-effective sampling contract](../architecture/adaptation.md#selected-request-approximations); this does not change routing or activate structured-result admission.
 

@@ -34,7 +34,7 @@ The `oauth2` and `openidconnect` crates are useful for client/protocol integrati
 
 ## Integration boundaries and validation
 
-Follow the [Agent identity baseline](../architecture/runtime-and-routing.md#agent-identity-and-cluster-diagnostics) and [scheduled-slice gates](../roadmap/index.md#agent-authorization-and-diagnostics-follow-up). Protocol-specific checks below remain prerequisites for selecting an authorization server. For JWTs, verify signatures and allowed algorithms using a trusted issuer/key configuration; never merely decode claims or accept an ID token as API authorization. Opaque tokens require authenticated introspection. Refresh-token revocation alone does not invalidate offline-verified JWTs.
+Follow the [Agent identity baseline](../architecture/runtime-and-routing.md#agent-identity-and-cluster-diagnostics) and [roadmap gates](../roadmap/index.md#stage-5-backlog). Protocol-specific checks below remain prerequisites for selecting an authorization server. For JWTs, verify signatures and allowed algorithms using a trusted issuer/key configuration; never merely decode claims or accept an ID token as API authorization. Opaque tokens require authenticated introspection. Refresh-token revocation alone does not invalidate offline-verified JWTs.
 
 Before selection, verify:
 

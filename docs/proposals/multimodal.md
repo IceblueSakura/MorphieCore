@@ -1,229 +1,61 @@
 # Multimodal Media Proposals
 
-This document details proposed operation contracts and execution models for media-bearing modalities in Stage 4: Audio (Speech, Transcription & Translation), Image generation/editing, and asynchronous Video generation.
+This document covers only **unselected** future media extensions beyond the delivered [static Images](../architecture/adaptation.md#native-static-images), Speech, and Transcription operations.
 
-See [Proposals Framework](index.md) for shared boundaries and [Roadmap](../roadmap/index.md) for Stage 4 execution gates.
+See [Proposals Framework](index.md) for shared boundaries and [Roadmap](../roadmap/index.md#stage-4-pending-scope) for Stage 4 scheduling and exit gates.
 
 ## Contents
 
-- [Audio](#audio)
-  - [Speech synthesis](#speech-synthesis)
-  - [Audio to text](#audio-to-text)
-  - [Optional Chat-carried audio](#optional-chat-carried-audio)
-- [Image production and editing](#image-production-and-editing)
-  - [Image requests and target admission](#image-requests-and-target-admission)
-  - [Image results and delivery compatibility](#image-results-and-delivery-compatibility)
-  - [Static Generate review proposal](#static-generate-review-proposal)
+- [Unselected Audio extensions](#unselected-audio-extensions)
+  - [Audio translation](#audio-translation)
+  - [Streaming and diarized audio](#streaming-and-diarized-audio)
+  - [Optional Chat-carried native streaming](#optional-chat-carried-native-streaming)
+- [Unselected Image extensions](#unselected-image-extensions)
+  - [Masked editing, spooling, and native ratio controls](#masked-editing-spooling-and-native-ratio-controls)
   - [Image streaming lifecycle](#image-streaming-lifecycle)
   - [Image design review](#image-design-review)
 - [Video API and implementation](#video-api-and-implementation)
 
-## Audio
+## Unselected Audio extensions
 
-### Speech synthesis
+Basic synchronous and chunked-SSE Speech (`POST /v1/audio/speech`) and Transcription (`POST /v1/audio/transcriptions` with `delivery.ffmpeg` normalization) are implemented in [API Reference](../usage/api-reference.md). The following extensions remain unselected proposals:
 
-Preserve supplied text, synthesis instructions, voice selection, speed and encoding intent. Distinguish a built-in voice from an authorized custom voice reference instead of relying on an unconstrained string.
+### Audio translation
 
-Support the selected current binary and SSE delivery contracts. Progressive binary delivery must not require whole-output buffering; SSE needs task-specific audio events, reported usage and completion. Audio encoding and event transport are separate choices.
+If reopened beyond its deferred status, model `Translate` as a distinct operation variant rather than reusing `Transcribe` output encoding or chaining transcription + generation. Do not invent arbitrary target-language parameters over English-only translation contracts without pinned source support.
 
-Use reported token, character or duration accounting only where the source provides it. Input text is not a fabricated audio transcript. Custom voice creation and consent are resource operations, not fields that cause synthesis to create resources.
+### Streaming and diarized audio
 
-Exit evidence: correct binary/SSE delivery, supported controls preserved, unsupported voice/format/control combinations rejected, bounded buffering and cancellation, and no success after truncated input.
+- **Progressive non-SSE Speech:** Avoid buffering entire binary streams when streaming upstream delivery is selected; keep audio encoding separate from transport framing.
+- **Diarized / subtitle / timestamped ASR streams:** Require real upstream timing/speaker evidence rather than synthesizing timestamps from plain text; distinguish diarization/chunking controls from output formats.
+- **Custom voice creation and consent:** Model voice cloning/design (`VoiceDesign`/`VoiceClone`) as separate resource operations with explicit authorization rather than overloading `SpeechSynthesis` fields.
 
-### Audio to text
+### Optional Chat-carried native streaming
 
-Propose separate `Transcribe` and `Translate` request variants within one audio-to-text domain. The same recording may require an original-language transcript or an English translation; that difference is protected task intent, not a response encoding.
+Chat-carried audio (such as MiMo audio codecs) currently adapts statically. Adding native upstream audio/text delta streaming requires task-specific delta mapping with cancellation and EOF verification rather than presenting post-buffer chunking as progressive upstream streaming.
 
-Complete the selected current contract for audio containers, source-language hints, prompting and applicable controls. Results may include full text, segments, words, timestamps, speaker attribution, log probabilities and token- or duration-based usage. Preserve reported coverage: the existing last-sentence report is not a complete alignment.
+## Unselected Image extensions
 
-Keep plain text, JSON and subtitle encoders outside the core result. Formats that require timestamps or speaker information need real corresponding evidence; they cannot be manufactured from unannotated text. Diarization and chunking controls remain distinct from ordinary formatting.
+Static OpenAI Generate/Edit (`png`/`jpeg`/`webp` + `output_compression` via `delivery.ffmpeg`, `n = 1` on Gemini/Grok and `1..=6` on Qwen, completed-only static SSE, and GPT Image masks/`partial_images`) are implemented in [Native static images](../architecture/adaptation.md#native-static-images). The following extensions remain unselected:
 
-An uploaded audio file with streamed transcription results is not a live microphone-input protocol. File transcription does not require creating a reusable File API object. Do not extend the existing multipart collector into an unbounded file-service buffer.
+### Masked editing, spooling, and native ratio controls
 
-The currently documented OpenAI translation endpoint is English-targeted and Whisper-only. Recheck this restriction when pinning the implementation source; do not invent an arbitrary target-language parameter or replace it with an implicit transcription-plus-Generation chain.
-
-Exit evidence: native multipart preparation, complete static and supported streamed results, faithful timing/speaker/usage reports, operation-specific restrictions, bounds and cancellation.
-
-### Optional Chat-carried audio
-
-Separate downstream API, task meaning and upstream carrier:
-
-```text
-/audio/speech
-  -> SpeechSynthesis
-  -> task-specific MiMo Chat codec
-  -> /chat/completions
-  -> SpeechResult
-  -> standard audio delivery
-
-/audio/transcriptions
-  -> AudioToText.Transcribe
-  -> task-specific MiMo Chat codec
-  -> /chat/completions
-  -> TranscriptionResult
-  -> standard transcription delivery
-```
-
-Neither path needs `GenerationRequest`, `GenerationResponse` or the Generation reducer. A documented TTS carrier placing supplied text in an `assistant` field is wire encoding, not a fabricated conversation turn in IR.
-
-The existing [MiMo audio codec](../../crates/morphiecore-protocol/src/xiaomi_audio.rs), [speech adapter](../../crates/morphiecore-protocol/src/adapter/speech.rs) and [transcription adapter](../../crates/morphiecore-protocol/src/adapter/transcription.rs) already demonstrate this separation. Preserve and evolve that path; catalog registration does not establish activation or live acceptance.
-
-Retain exact task intent and explicit target capabilities. Map supported media/control carriers, reject unsupported voice, speed, format, timing or speaker requirements, and preserve available accounting under the selected reporting policy. Do not reinterpret ASR as translation or substitute a nearby voice silently.
-
-Current static adaptation is not proof of native streaming support. When scheduled, implement a task-specific mapping from upstream audio/text deltas to the selected downstream event contract, including cancellation and honest terminals. Do not present post-buffer chunking as verified progressive upstream delivery.
-
-Treat this as a separate optional audio slice: migrate existing static mappings after the task contracts stabilize, then add native streaming and richer reports where justified. It must not narrow the OpenAI contract or block its completion.
-
-## Image production and editing
-
-The current task and execution path implement [bounded static Generate](../architecture/adaptation.md#native-static-images), not Edit or streaming. [Dated OpenAI evidence](../refs/2026-10-22-embedding-image-contracts.md#images) and [Grok observations](../refs/2026-10-22-grok-imagine.md#images) distinguish the official schema, model-effective controls and unresolved source discrepancies.
-
-### Image requests and target admission
-
-Propose explicit operation variants, reusing existing controls and artifacts:
-
-```text
-ImageRequest =
-  Generate { prompt, output_controls }
-  Edit {
-    prompt, ordered_sources,
-    optional mask { source_index, content },
-    optional input_fidelity,
-    output_controls
-  }
-```
-
-An edit of photograph A is not generation with a longer prompt; source identity/order, mask association and preservation intent are protected task meaning. Keep model, client identity, transport and runtime state in their existing envelopes. The family need not force a repository-wide rename or generic media-task framework.
-
-Direct sources distinguish bounded image content from inert URL/data-URL references. Reuse only suitable neutral values, not Generation resource tables or replay owners. Multipart filenames are untrusted transport metadata, never local paths or target selectors. Preserve part order and MIME declarations without treating them as verified pixel/format facts.
-
-Recommend immutable owned/shared bytes for the first direct-input slice, with deliberately small fixed aggregate memory limits; defer spooling.
-
-Pure multipart encoding consumes those bounded bytes and produces a bounded body; budget the intake, encoded body and output copies, not only source payload size.
-
-Content ownership lasts through preparation/upload and releases on completion, error or cancellation.
-
-This fits the current byte-owned execution request without promising full upstream file-size coverage.
-
-If larger inputs later justify spooling, first select request-local content identities, an external content owner and a pure multipart part plan; handles, I/O and cleanup never enter IR.
-
-Merely adding a spool limit would not establish that ownership seam.
-
-For OpenAI, encode ordered multipart `image`/`image[]` or the selected JSON `images` reference form without changing meaning. JSON entries choose exactly one source form. File-ID forms remain rejected until authorized Files resolution exists. Remote URLs may be passed only to targets with an admitted native reference carrier; do not add gateway URL downloading, redirects or credential forwarding to make multipart-only targets work.
-
-OpenAI applies a mask to the first image.
-
-Decode that into explicit source-zero association and reject other associations on encoding; never reorder images to conceal a mismatch.
-
-The mask is editing guidance, not a promise of pixel-exact preservation.
-
-Recommend retaining the accepted [inert-media boundary](../architecture/adaptation.md#media): validate source shape, declared type and encoded/decoded byte bounds locally; leave actual format, alpha and matching pixel dimensions to the native upstream validator for both inline and URL forms.
-
-A target without the required validation contract rejects.
-
-MIME declarations are not validation evidence.
-
-A future bounded metadata inspector would require an explicit standalone-Edit policy exception, resource limits and a declared-versus-observed fact owner; this proposal does not introduce image decoding or change Generation media handling.
-
-The mask sources conflict: the pinned SDK specifies PNG below 4 MB and matching dimensions; the current guide describes matching format/size below 50 MB with alpha. Recommend an initial conservative masked profile with PNG-declared source and mask, mask below 4,000,000 bytes, and native validation of PNG/alpha/matching dimensions, clearly documented as a local subset rather than local pixel verification. Choose finite per-image, aggregate and materialized-body limits separately before implementation. “Up to 16 images below 50 MB each” is not permission to buffer 800 MB per request.
-
-| Control | Proposed meaning and admission |
-|---|---|
-| Count | Exact final-artifact count, initially existing 1–10 bound; target restrictions can be narrower |
-| Output encoding | PNG/JPEG/WebP intent, separate from Base64/URL carriage. OpenAI omission means PNG, not unconstrained target choice |
-| Size | Keep Auto and exact pixels. Model profiles enforce multiples, aspect, pixel/edge limits where applicable; a schema string is not universal model support |
-| Native ratio/resolution | Proposed separate typed aspect-ratio and resolution-tier intent for Grok, not an approximation of exact pixels. Public exposure and conflicting-control rules need selection |
-| Quality/background | Preserve Auto versus explicit choices. Auto is delegated choice, not a measured result; xhigh/max or transparency admission is model-specific |
-| Compression/moderation | Preserve supported explicit controls; JPEG/WebP compression is not PNG compression, and moderation choice is not a safety assessment |
-| Input fidelity | Edit-only preservation effort, not byte identity. Unsupported explicit values reject; documented automatic-high behavior needs a named exact rule before omitting an explicit high |
-| Streaming/previews | Delivery-specific stream selection and optional preview ceiling, not part of requested final count |
-
-Resolve protocol defaults on typed target copies before encoding. Do not invent reported settings from those defaults. Preserve absent/null/explicit states only where their source contract permits them; null is not a universal reset. Both OpenAI identity inputs and reported effective safety identifiers need their own bounded envelope/report carriers, never output controls or inferred values.
-
-Operation admission must distinguish Generate, Edit, static and streaming support on one model identity. Do not invent duplicate model names to bypass an operation boundary. Grok has no inspected equivalent mask or input-fidelity carrier and no established OpenAI preview stream: those combinations reject.
-
-### Image results and delivery compatibility
-
-Share ordered final artifacts and optional **reported** creation time, serving model and accounting while retaining operation identity at the task boundary. Each artifact owns data and its actual reports; a top-level static report is valid only when it describes every artifact. Retain current bounded Base64 delivery for the first static slice; URL-only artifacts do not authorize automatic downloading or caller-directed upload destinations.
-
-Maintain three distinct facts: requested controls, stream-reported settings (which can remain Auto), and concrete artifact reports. Never put `quality:auto` into an effective `ImageQuality`, infer dimensions from a requested size, or treat event `created_at` as static image creation time. Absent, null and zero accounting are distinct. Monetary ticks remain money, cached tokens remain subsets, and native sparse usage cannot fill required OpenAI counters.
-
-**Public compatibility is a design gate, not wiring:**
-
-| Minimal counterexample | Consequence and recommendation |
-|---|---|
-| Grok returns only `data:[{b64_json:...}]` | Valid native output lacks OpenAI's required `created`. Keep strict OpenAI delivery; never insert the gateway clock or request start time |
-| OpenAI request omits `output_format`; Grok returns JPEG | OpenAI's PNG default was not preserved. Reject the binding/profile before dispatch unless an explicitly different client contract or verified exact transformation is selected |
-| Source reports serving model/native billing without standard carriers | Preserve the source; select explicit dialect carriage or a named allowed report omission. The existing accounting projection does not authorize model/time loss |
-| Artifact reports disagree across outputs | Do not collapse them into a misleading top-level report; reject incompatible standard delivery or use a selected richer carrier |
-
-The [selected static delivery contract](../architecture/adaptation.md#native-static-images) separates default PNG compatibility from explicit native delivery. Standard GPT Image remains strict. Other transcodes and image transformations remain separate.
-
-### Static Generate review proposal
-
-The selected static slice does not expose native ratio/resolution tiers, per-artifact settings that cannot be shared across a collection, or native billing reports. A later slice may add typed controls or reports only with explicit SDK and response-schema choices; do not map an exact pixel size to a resolution tier or restore the gateway clock as a creation report.
+- **Bounded spooling / file references:** Extending beyond the 8 MiB in-memory multipart intake requires explicit content identity, external spool ownership, and cleanup guarantees outside IR (and [Files/Uploads](files-and-uploads.md) for `file_id` resolution).
+- **Masked Edit & native controls on static targets:** Keep `mask` bound strictly to source index zero; do not map exact pixel `size` to native aspect-ratio/resolution tiers (expose separate typed controls if selected).
 
 ### Image streaming lifecycle
 
-Propose a small task-specific event vocabulary, not the Generation reducer:
-
-```text
-Preview { output_slot, preview_index, artifact, event_time, reported_settings }
-Completed { final_artifacts, event_time, reported_settings, reported_usage }
-```
-
-An internal output slot is association within one operation, not an invented upstream/public ID. The inspected OpenAI stream has `partial_image_index` but no final-output index. Recommend **one final output for the initial streaming profile**; then every preview belongs to slot zero. Multi-output static delivery remains independent. Do not guess multi-output associations or reuse preview indexes as final-image identity.
-
-The requested 0–3 partial images are a ceiling, not guaranteed work or percentage progress. The inspected references do not establish omission's default. Recommend forwarding omission unchanged to the same native contract while enforcing a separate local maximum of three previews; do not silently turn omission into zero. Explicit null needs a source-backed profile rule (preserve, normalize to omission or reject), not a universal reset. Select that rule for Generate and Edit before admission.
-
-Accept zero/fewer previews and a final image arriving early. Preserve reported preview indexes and arrival order; initially require nonnegative, unique increasing indexes within the effective local/explicit bound without inventing missing previews. Pin any stronger contiguity rule before implementation. Reject previews with an explicit zero ceiling, incompatible event types, duplicate completion, post-terminal data and malformed known settings.
-
-Stream incrementally without retaining every preview; charge cumulative encoded/decoded bytes, per-event bytes, event count, final-artifact bytes, idle/total time and concurrency independently. The current 8-MiB aggregate final-image budget is not a new 8-MiB allowance for each preview. Select finite stream/upload limits before implementing those paths.
-
-Success requires an operation-correct completed event, the requested final count and validated EOF.
-
-Preview publication forbids replay; on later failure abort/fail the existing delivery rather than replay or emit a successful terminal.
-
-Hold successful completion behind EOF, release upstreams on disconnect/deadline, and retain reported final usage once rather than summing preview observations.
-
-SSE `created_at` cannot automatically produce a static `created`; reject unsupported static↔stream conversions until a source-backed mapping is selected.
-
-Buffered static images split into chunks do not establish upstream progressive delivery.
+Any future native preview streaming beyond GPT Image requires task-specific `Preview { output_slot, preview_index, artifact, event_time, reported_settings }` and `Completed` events without inventing missing previews, mutating preview counts, forwarding URLs via server-side downloads, or treating `created_at` as static image creation time. Preview publication forbids replay.
 
 ### Image design review
 
-| Decision | Recommendation and alternative | Blocks |
+| Decision | Unselected extension choices | Blocks |
 |---|---|---|
-| Operation/source ownership | Generate/Edit family, ordered neutral sources and explicit source-zero mask. Start with immutable byte-owned inputs and a total materialization budget; a later spool-backed part plan is a separate choice | Edit IR and multipart execution, not existing Generate maintenance |
-| Additional native static controls and reports | [Separate selection](#static-generate-review-proposal) for ratio/tier exposure and richer result reports | Does not block static Generate, Edit or streaming |
-| Mask profile and validation | Conservative PNG-declared source/mask and byte subset, retaining native pixel/alpha validation. Local metadata inspection instead needs an explicit inert-media policy exception | Masked Edit admission, not unmasked direct-input design |
-| Stream association and reports | Initially one final output; task-local preview/final lifecycle and separate settings/event-time owners. Select omission/null behavior without inventing a preview default | Streaming, not static Generate/Edit |
-
-Independent directional oracles must cover Generate and Edit, multipart and JSON, source/mask ordering, defaults and target-specific restrictions, optional/native result reports and intended negative cases.
-
-Streaming needs independent preview/final fixtures, omitted/null/zero preview controls, fewer previews, Auto reports, errors/truncation/post-terminal data, cumulative bounds and cancellation without replay.
-
-SDK multipart/static and native SSE consumption are separate integration gates; a genuine incremental transport check is required in addition to an SDK accumulator.
-
-Real calls wait for a selected target and bounded acceptance plan.
-
-Files, hosted image tools, deferred jobs, video, cross-Provider failover and automatic media sweeps remain excluded.
+| Additional native static controls & reports | Separate typed aspect-ratio/resolution-tier fields and per-artifact reports on non-GPT targets | Does not block static Generate/Edit |
+| Spooling / file-ID Edit inputs | External content spooling ownership and target-scoped `file_id` resolution | Large-input / reference Edit |
+| Non-GPT preview streaming | Task-local preview bounds (`0..=3`), slot association, and EOF-gated final usage | Non-GPT preview SSE |
 
 ## Video API and implementation
 
-Video has equal stage-4 priority but still needs [operation selection](../roadmap/index.md#grok-imagine-adaptation) before implementation.
-
-For its design, use Grok's native asynchronous API as the primary design reference; the earlier synchronous-wait choice is superseded.
-
-Public wire schemas, typed owners, job authorization and persistence remain unselected.
-
-Do not label a Grok job or synchronous wrapper as OpenAI Videos compatibility.
-
-For each operation, pin current official contracts before selecting input/output, generation or editing behavior.
-
-Separate conversational video content from standalone production operations; the wire endpoint name does not determine the task owner.
-
-For each selected operation, specify supported input references, required media controls, output artifacts and reported accounting. If the native API is asynchronous, select submission identity, status, cancellation, artifact access and uncertain-submission handling explicitly. Do not reuse a completed text response as evidence of video completion or turn a returned artifact URL into unrestricted server-side fetching.
-
-Exit evidence: independently specified request/result and applicable event/job contracts, bounded media I/O, correct artifact identity, cancellation and honest completion. Specific APIs, new task types, storage and job persistence remain design decisions, not permissions implied by this scope entry.
-
+Async video generation remains pending [operation selection](../roadmap/index.md#stage-4-pending-scope), using native async job lifecycles (such as Grok async video jobs) rather than synchronous waits or relabeling non-OpenAI jobs as OpenAI compatibility.
+- Separate conversational video content from standalone video jobs; specify job submission identity, bounded polling, cancellation, artifact URL authorization (never unrestricted server-side fetching), and honest completion before implementation.

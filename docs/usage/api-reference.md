@@ -95,7 +95,7 @@ The pinned OpenAI Python SDK's strict response model still types `embedding` as 
 
 ### Generation Text model discovery
 
-Use the ordinary gateway Agent key with `GET /v1/morphiecore/models`, or append a public model ID for one descriptor. The enhanced view includes only activated Generation Text interfaces (`chat_completions`, `responses`, `messages`), with assessed image-input domains where applicable. Standard `/v1/models` remains unchanged; Generation capabilities share the same compiled contract. Other-task discovery is [deferred](../roadmap/backlog-and-frozen.md#models-discovery-interfaces).
+Use the ordinary gateway Agent key with `GET /v1/morphiecore/models`, or append a public model ID for one descriptor. The enhanced view includes only activated Generation Text interfaces (`chat_completions`, `responses`, `messages`), with assessed image-input domains where applicable. Standard `/v1/models` remains unchanged; Generation capabilities share the same compiled contract. Other-task discovery is [deferred](../roadmap/index.md#deferred-generation-semantics).
 
 List responses use `object: "morphiecore.model_list"` with an array in `data`; retrieval uses `object: "morphiecore.model"` with the same descriptor in `data`.
 

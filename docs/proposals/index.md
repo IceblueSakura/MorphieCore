@@ -8,7 +8,7 @@ The expansion proposals are modularized by operational domain:
 | Domain | Proposal document | Scope & Target Stage | Status |
 |---|---|---|---|
 | **Decision API** | [Decision API Proposal](decisions-api.md) | Stage 4: OpenAI Decisions + TypeSafe System One dual-SDK support | Ready for review |
-| **Multimodal Operations** | [Multimodal Media Proposals](multimodal.md) | Stage 4: Audio (Speech/Transcription/Translation), Images (Generate/Edit), Video (Grok Imagine; concrete contracts pending) | Pending review |
+| **Multimodal Operations** | [Multimodal Media Proposals](multimodal.md) | Stage 4: Unselected Speech/ASR extensions, non-static Image controls/streaming, and async Video | Pending review |
 | **Tasks & Counting** | [Standalone Tasks and Token Counting](tasks-and-counting.md) | Deferred: Messages counting. Unscheduled: Responses input-token counting and Embedding extensions | Pending review |
 | **Files & Uploads** | [Files and Uploads Resource Proposals](files-and-uploads.md) | Stage 4: Files management, multipart uploads | Pending review |
 | **Stage 5 Backlog** | [Stage 5 Unscheduled Proposals Backlog](stage5-backlog.md) | Stage 5: Native batch, Realtime, Context compaction, Citations; other deferred directions retain separate scheduling | Unscheduled |
@@ -40,7 +40,7 @@ The expansion proposals are modularized by operational domain:
 
 This page owns proposed operation, resource and advanced-Generation designs. The requested scope is confirmed; structural recommendations remain proposals unless already established in [Architecture](../architecture/index.md). No new interface, binding, resource service or execution policy is activated by this document.
 
-[Roadmap](../roadmap/index.md#planned-order) owns remaining execution order and the current routing freeze.
+[Roadmap](../roadmap/index.md#planned-order) owns remaining execution order; [Runtime and routing](../architecture/runtime-and-routing.md#failover) owns routing boundaries.
 
 Stage 3 closed its selected projection/loop scope with `count_tokens` deferred.
 
@@ -56,7 +56,7 @@ Detailed operation designs remain proposals; stage-4/5 work is not an exit condi
 
 Code and tests describe current behavior, not authority over official contracts. The accepted [standards reset and Generation redesign](../architecture/decisions.md#scope-and-activation-decisions) governs further modality implementation and supersedes conflicting legacy mapping assumptions here. This document records unselected operation/resource designs, not a catalog or conformance claim. Provider and binding availability belongs to [the catalog](../../crates/morphiecore-catalog/src/topology/catalog.rs) and [startup](../../crates/morphiecore-gateway/src/startup/bootstrap.rs).
 
-Under the [stage-4 scheduling decision](../roadmap/index.md#stage-4-scope), Decision, Embedding, Audio, Images, Files/Uploads and Video have equal priority; only their own contract selection and actual dependencies constrain a slice. The proposals below do not approve new IR layouts, delivery dialects, comprehensive coverage or bindings.
+Under the [stage-4 pending scope](../roadmap/index.md#stage-4-pending-scope), Decision, Files/Uploads, Video, and unselected Audio/Image extensions advance as scheduled; only their own contract selection and actual dependencies constrain a slice. The proposals below do not approve new IR layouts, delivery dialects, comprehensive coverage or bindings.
 
 The subsequent Embedding selections are recorded in Architecture: [four-way encoding](../architecture/index.md#embedding-encoding-compatibility), sample-centered inputs and [report/identity projection](../architecture/index.md#google-embedding-compatibility) are implemented. Complete downstream usage with explicit request-based approximation supersedes missing-usage delivery; it does not reopen the deferred counting endpoint. This document retains only unselected Embedding extensions.
 
@@ -71,18 +71,17 @@ The user selected OpenAI-first downstream contracts, broad coverage of current a
 | OpenAI Decisions and TypeSafe System One, including SDK companion operations | Stable standard-SDK access through one Decision IR; adapt initially researched OpenAI, TypeSafe, Perplexity and Cloudflare upstreams. Concrete namespaces and compatibility profiles remain under review |
 | `POST /v1/messages/count_tokens` | Stage 3, deferred: count a structured model input under the selected target/projection contract, without generation |
 | `POST /v1/responses/compact` | Stage 5, unscheduled: execute native context compaction and return reusable context |
-| `POST /v1/embeddings` | Complete the existing independent embedding contract |
-| `POST /v1/audio/speech` | Complete standalone speech synthesis, including supported streaming |
-| `POST /v1/audio/transcriptions` | Complete file-based transcription and its reported evidence |
-| `POST /v1/audio/translations` | Add the current native audio-translation contract |
-| `POST /v1/images/generations` | Complete the existing image-generation contract within the selected stage-4 image scope |
-| `POST /v1/images/edits` | Add editing and complete the shared modern image-production contract |
+| `POST /v1/embeddings` | Implemented ([Architecture](../architecture/index.md#independent-embedding-path)); only unselected extensions remain |
+| `POST /v1/audio/speech` | Implemented statically/chunked-SSE; only progressive binary / custom voices remain unselected |
+| `POST /v1/audio/transcriptions` | Implemented across 9 formats; only subtitle/diarized streaming remains unselected |
+| `POST /v1/audio/translations` | Deferred audio-translation contract |
+| `POST /v1/images/generations` & `/v1/images/edits` | Implemented statically; only ratio/resolution tiers, spooling, and non-GPT preview SSE remain unselected |
 | Video APIs, concrete operations/endpoints pending | Adapt selected video input/output or generation operations, including their execution lifecycle and artifact delivery |
 | Batch APIs | Stage 5, unscheduled: submit and manage asynchronous batches of supported typed tasks |
 | Files/multipart Uploads | Stage 4: manage reusable files and bounded multipart upload resources |
 | Realtime APIs, concrete contracts pending | Stage 5, unscheduled: select client/session, transport, interruption and recovery contracts |
 
-The companion surface `POST /v1/responses/input_tokens` is recommended for the OpenAI-first counting path, but remains unselected. Image generations and edits are both included by the [stage-4 scope](../roadmap/index.md#stage-4-scope); their concrete contracts and implementation slices still need selection.
+The companion surface `POST /v1/responses/input_tokens` is recommended for the OpenAI-first counting path, but remains unselected. Unselected Image generation and edit extensions belong to [stage-4 pending scope](../roadmap/index.md#stage-4-pending-scope); static generation and edit are already implemented.
 
 Optional scope: map task-specific upstream Chat Completions media payloads, such as MiMo TTS/ASR, to standard `/audio/*` endpoints. This must not block the OpenAI main path.
 
@@ -189,7 +188,7 @@ Current Messages intake requires a manual budget of at least `1024` and strictly
 
 #### Google output report owners (unselected)
 
-Probability and token-identity proposals remain paused under the [Google API pause](../roadmap/backlog-and-frozen.md#google-api-pause). Bounded terminal explanations and service-source review belong to the accepted [report contract](../architecture/adaptation.md#explanatory-terminal-reports); they did not select the owners below.
+Probability and token-identity proposals remain deferred pending explicit selection. Bounded terminal explanations and service-source review belong to the accepted [report contract](../architecture/adaptation.md#explanatory-terminal-reports); they did not select the owners below.
 
 The [source counterexamples](../refs/2026-10-17-generation-contracts.md#google-foreground-contracts-2026-10-20) still require design review before broader probability carriage:
 
@@ -221,7 +220,7 @@ Do not remove opaque replay provenance to simplify types. Any reorganization mus
 
 The conversation [GeneratedAudio](../../crates/morphiecore-semantic/src/task/generation/content/audio.rs) shape requires transcript/reference information that a standalone speech result need not have. Keep conversational replay requirements local; use suitable [shared audio artifacts](../../crates/morphiecore-semantic/src/value/audio.rs) rather than fabricating those facts.
 
-Existing cache options do not establish a complete cache-only operation. Preserve current handling and the separate [deferred prewarming decision](../roadmap/backlog-and-frozen.md#deferred-cache-prewarming); counting and compaction must not reopen it implicitly.
+Existing cache options do not establish a complete cache-only operation. Preserve current handling and the separate [deferred prewarming decision](../roadmap/index.md#deferred-generation-semantics); counting and compaction must not reopen it implicitly.
 
 #### Integration constraints to revisit
 
@@ -312,7 +311,7 @@ These recommendations have not been adopted merely by requesting this document.
 
 ## Execution handoff
 
-The [roadmap work packages](../roadmap/index.md#execution-sequence-and-work-package-rules) own sequence, dependencies and acceptance gates. This page does not maintain a second implementation queue. Before starting a package, select its request/result/event and lifecycle boundaries, record accepted choices in Architecture, and retain only unresolved alternatives here.
+The [roadmap Stage 4 scope](../roadmap/index.md#stage-4-pending-scope) owns sequence, dependencies and acceptance gates. This page does not maintain a second implementation queue. Before starting a package, select its request/result/event and lifecycle boundaries, record accepted choices in Architecture, and retain only unresolved alternatives here.
 
 Extract shared values only when the selected operation needs them. Direct-input media do not depend on the complete file service; authorized file-reference paths do. Stage-4 native media jobs keep their own lifecycle without implying the general Batch API. Do not perform a repository-wide ownership rewrite or prebuild stage-5 infrastructure as a prerequisite for the first operation.
 
@@ -320,7 +319,7 @@ Extract shared values only when the selected operation needs them. Direct-input 
 
 Pin current official schemas and streaming grammars before implementation; documented carriers do not prove model-effective support. Use the existing [test design](../development.md#test-layout), [accepted design](../architecture/decisions.md#scope-and-activation-decisions) and [verification conventions](../development.md#verification-gates), including separately scoped [real Provider checks](../development.md#real-provider-checks).
 
-Stage-4 implementation preserves the [text/SSE integration baseline](../development.md#overall-acceptance-status) and includes [operation-level upstream-test acceptance](../roadmap/index.md#stage-4-reuse-and-acceptance). Reuse the shared source/adaptation procedures rather than a separate modality harness; this does not select unresolved operation contracts.
+Stage-4 implementation preserves the [text/SSE integration baseline](../development.md#overall-acceptance-status) and includes operation-level upstream-test acceptance. Reuse the shared source/adaptation procedures rather than a separate modality harness; this does not select unresolved operation contracts.
 
 Keep independent wire-to-IR and IR-to-wire expectations, covering success and intended rejection at the responsible owner. Extend existing tests rather than building per-model/Provider matrices. Resource/job checks must address authorization, recovery, cancellation and uncertain submission.
 

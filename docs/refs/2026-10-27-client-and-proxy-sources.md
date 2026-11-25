@@ -183,4 +183,4 @@ The finalized [outcome contract](../architecture/runtime-and-routing.md#health-a
 
 ## Applying these references
 
-Consult mechanisms to formulate independent counterexamples, not to copy a second point-to-point translation architecture. Keep `wire → typed IR → target projection → wire`, owner-local identity, bounded pending state and validated EOF. Select fixtures only after checking their expected repairs against official sources and licenses. Acceptance procedures remain in [Development](../development.md#verification-gates); routing scope remains frozen in [Roadmap](../roadmap/index.md#temporary-routing-freeze).
+Consult mechanisms to formulate independent counterexamples, not to copy a second point-to-point translation architecture. Keep `wire → typed IR → target projection → wire`, owner-local identity, bounded pending state and validated EOF. Select fixtures only after checking their expected repairs against official sources and licenses. Acceptance procedures remain in [Development](../development.md#verification-gates); routing boundaries live in [Runtime and routing](../architecture/runtime-and-routing.md#failover).

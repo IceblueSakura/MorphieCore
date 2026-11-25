@@ -1,6 +1,6 @@
 # NVIDIA Embedding expansion research
 
-Sources and account-scoped observations checked on 2026-11-19. **Research only.** No NVIDIA Embedding route, API extension, dependency, deployment or implementation order is approved by this note. [Architecture](../architecture/index.md#independent-embedding-path) owns the accepted path; [the Embedding proposal](../proposals/tasks-and-counting.md#embeddings) owns unselected extension boundaries; [Stage 4](../roadmap/index.md#stage-4-scope) owns scheduling and gates.
+Sources and account-scoped observations checked on 2026-11-19. **Research only.** No NVIDIA Embedding route, API extension, dependency, deployment or implementation order is approved by this note. [Architecture](../architecture/index.md#independent-embedding-path) owns the accepted path; [the Embedding proposal](../proposals/tasks-and-counting.md#embeddings) owns unselected extension boundaries; [Stage 4](../roadmap/index.md#stage-4-pending-scope) owns scheduling and gates.
 
 ## Hosted contract and evidence
 

@@ -15,7 +15,7 @@ See [Proposals Framework](index.md) for shared boundaries and [Architecture](../
 
 ## Token counting
 
-Selected for stage 3 with cross-protocol conversion and deferred ([roadmap](../roadmap/backlog-and-frozen.md#deferred-token-counting)); the contract below is unstarted design reference. The Messages `count_tokens` surface is confirmed; the Responses counting companion still requires selection.
+Selected for stage 3 with cross-protocol conversion and deferred ([roadmap](../roadmap/index.md#deferred-generation-semantics)); the contract below is unstarted design reference. The Messages `count_tokens` surface is confirmed; the Responses counting companion still requires selection.
 
 Model a count request from count-relevant conversation content: instructions, ordered history, tools, media and applicable settings. It is not generation with a zero output cap. A count result is not inference usage and must not contain fabricated generated output.
 

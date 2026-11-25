@@ -1,174 +1,111 @@
 # Development Roadmap
 
-This page owns current scope, planned execution sequence, stage priorities, and release/integration gates. Known limitations and qualification gaps belong to [Unscheduled issues](unscheduled-issues.md); paused and deferred work belongs to [Backlog and frozen scope](backlog-and-frozen.md).
+This page owns active scope, planned execution order, pending decisions, deferred work, explicit non-goals (`Not planned`), and release/integration gates. Known qualification gaps and limitations live in [Unscheduled issues](unscheduled-issues.md).
 
-[Architecture](../architecture/index.md) owns accepted design, [API expansion design](../proposals/index.md) owns unselected proposals, and [Development](../development.md) owns shared development conventions and overall acceptance status. Code and tests define behavior. Completed slices are removed; Git preserves history.
+[Architecture](../architecture/index.md) owns accepted design, [API expansion design](../proposals/index.md) owns unselected proposals, and [Development](../development.md) owns shared testing conventions and overall acceptance status. Completed slices are removed; Git preserves history.
 
 ## Contents
 
 - [Current status](#current-status)
 - [Planned order](#planned-order)
-  - [Execution sequence and work-package rules](#execution-sequence-and-work-package-rules)
-  - [Stage 4 scope](#stage-4-scope)
-    - [Decision API closure](#decision-api-closure)
-    - [Stage-4 operation readiness](#stage-4-operation-readiness)
-    - [Grok Imagine adaptation](#grok-imagine-adaptation)
+  - [Stage 4 pending scope](#stage-4-pending-scope)
   - [Stage 5 backlog](#stage-5-backlog)
-- [Test supplementation](#test-supplementation)
-  - [Stage-4 reuse and acceptance](#stage-4-reuse-and-acceptance)
-- [Phase rules](#phase-rules)
-  - [Agent authorization and diagnostics follow-up](#agent-authorization-and-diagnostics-follow-up)
-  - [Temporary routing freeze](#temporary-routing-freeze)
-  - [IR and codec migration](#ir-and-codec-migration)
-  - [Verification and integration boundary](#verification-and-integration-boundary)
+- [Pending decisions](#pending-decisions)
+- [Deferred work](#deferred-work)
+  - [Deferred Generation semantics](#deferred-generation-semantics)
+  - [Deferred acceptance](#deferred-acceptance)
+  - [Only if needed](#only-if-needed)
+- [Not planned](#not-planned)
 - [Integration handoff](#integration-handoff)
   - [Partial-delivery exit](#partial-delivery-exit)
   - [Public route activation review](#public-route-activation-review)
 
 ## Current status
 
-Stateful upstream/downstream APIs remain [experimental and disabled](../architecture/history-and-replay.md#stateful-history). Their acceptance is excluded from current model adaptation and repairs until explicit user activation; no other work package enables them implicitly.
-
-Existing static carriers do not activate new public APIs.
-
-Other limitations and prerequisites share the [issue register](unscheduled-issues.md#unscheduled-issues); R09 real-account failover, remaining model-service qualification and Agent session storage retain separate scheduling decisions and are not implicit Stage-4 prerequisites.
-
-[Development](../development.md#overall-acceptance-status) owns overall acceptance.
-
-The selected text Embedding slice is complete. [Further Embedding extensions](../proposals/tasks-and-counting.md#embeddings) are unscheduled and do not gate Stage 4.
-
-No deployment or new API activation is implied.
-
-| Priority | Remaining work | Exit |
-|---|---|---|
-| Conditional tool follow-ups | [Conditional Stage-3 follow-ups](unscheduled-issues.md#conditional-stage-3-follow-ups) | Separate policy selection and affected-loop acceptance; not default Stage-4 prerequisites |
-| API expansion | Select and implement Stage-4 operation contracts | Per-operation lifecycle, protocol and SDK acceptance |
-| Downstream integration | Opt-in [per-Agent JSONL session storage](../architecture/history-and-replay.md#agent-session-files); unscheduled and not a Stage-4 prerequisite | Select isolation and lifetime bounds before implementation |
+- **Stateful API freeze:** Upstream and downstream stateful APIs (`store: true`, reference-based continuation, stored-resource operations) remain [experimental and disabled](../architecture/history-and-replay.md#stateful-history). Exclude their acceptance from model adaptation and issue repairs until explicitly enabled by the user.
+- **Delivered Stage 4 slices:** Independent Embeddings (`POST /v1/embeddings`), Static Images Generate & Edit (`POST /v1/images/generations`, `POST /v1/images/edits` with `png`/`jpeg`/`webp` normalization and `completed`-only SSE on static targets), Audio Speech (`POST /v1/audio/speech`), and Audio Transcription (`POST /v1/audio/transcriptions`) are implemented; remaining work in those families covers only unselected extensions below.
+- **Pending Stage 4 & Stage 3 items:** Decision API, Files & Uploads, Video, conditional Stage-3 tool follow-ups, [unscheduled issues](unscheduled-issues.md#unscheduled-issues), R09 real-account failover, and opt-in Agent session files advance independently as scheduled.
 
 ## Planned order
 
-Stage-4 operation families retain equal priority and advance as their contracts are selected.
-Other [unscheduled issues](unscheduled-issues.md#unscheduled-issues), including R09,
-do not become implicit prerequisites. Conditional tool packages keep their own
-policy gates; Stage 5 remains unscheduled.
-
 | Stage | Goal | Exit evidence |
 |---|---|---|
-| **3 — Conditional compatibility follow-ups** | [Conditional packages](unscheduled-issues.md#conditional-stage-3-follow-ups) | Separate policy selection and affected-loop verification; not default Stage-4 or optional Agent blockers |
-| **4 — Modalities, Decision & file resources** | Decision, Audio (Speech/Transcription), Images, Files/Uploads, and Video at equal priority | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
-| **5 — Unscheduled follow-ups** | Citations, tool discovery, hosted tools, server-side compaction, Batch, and Realtime | Requires explicit per-slice design selection and scheduling prior to implementation |
+| **3 — Conditional compatibility follow-ups** | [Conditional packages](unscheduled-issues.md#conditional-stage-3-follow-ups) | Separate policy selection and affected-loop verification; not default Stage-4 blockers |
+| **4 — Pending modalities, Decision & Files** | Decision API, Files/Uploads, Video, and unselected Speech/Transcription/Image extensions | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
+| **5 — Unscheduled follow-ups** | Citations, tool discovery, hosted tools, server-side compaction, Batch, and Realtime | Explicit per-slice design selection and scheduling prior to implementation |
 
-### Execution sequence and work-package rules
+### Stage 4 pending scope
 
-Prefer small, independently decidable repairs before complex integration; diagnostic global → protocol → Provider/model layers are not a mandatory work queue or cross-product sweep. Reuse existing schema, lowering, execution, typed history and isolated current-client drivers. Every selected work package follows this lifecycle:
-1. **Entry:** Pin source revisions, dialect rules, target profiles, and unresolved decisions. Document protocol findings in `docs/refs/`.
-2. **Delivery:** Implement one coherent request/result/stream/history slice. Resolve unselected structures with a minimal counterexample and options before proceeding.
-3. **Invariants:** Maintain immutable source IR and fresh per-attempt decoder state. Native/equivalent history projections preserve earlier turns; selected lossy projections record rendered-prefix/cache changes under the [candidate-local contract](../architecture/adaptation.md#candidate-local-projection).
-4. **Evidence:** Provide independent directional tests and focused failure assertions at the responsible layer. Classify each field's ladder level and give rejections their L5 reason.
-5. **Exit:** Run the offline baseline and relevant SDK gates before commit and push. Remove completed roadmap packages and record decisions in [Architecture](../architecture/index.md).
-
-### Stage 4 scope
-
-Each Stage-4 family requires an explicit contract selection before implementation:
+Every pending slice follows: pin official contracts → implement one coherent slice over immutable source IR → supply independent directional wire↔IR tests & L5 failure checks → run offline baseline & SDK gates → remove completed slices from this page.
 
 | Package | Scope | Exit criteria |
 |---|---|---|
-| **S4-0 Per-operation design** | Pin official contracts, select targets, define resource lifecycles, and apply the conversion ladder to each family's fields | Explicit contract decisions classifying fields by ladder level, without speculative shared abstractions |
-| **S4-6 Decision closure** | Complete dual-SDK design, typed answers, and synchronous execution | Verified independent oracles, both SDK loops (TypeSafe and OpenAI), and bounded Provider evidence |
-| **S4-2a Speech** | Text-to-speech with static binary and optional streaming delivery | Bounded buffering, cancellation safety, and verified audio format carriage |
-| **S4-2b Transcription** | Audio-to-text recognition with multipart upstream preparation | Accurate text/usage carriage, format rejection, and bounded resource handling |
-| **S4-3 Images** | Generate, Edit, and preview/final streaming (internal sequence: Generate first) | Selected defaults, format encoding, mask boundaries, and artifact identity |
-| **S4-4a Files** | File storage, public ID authorization, and content access | Isolated namespaces, bounded spooling, deletion lifecycle, and durable mappings |
-| **S4-4b Multipart Uploads** | Chunked upload sessions, part ordering, and cleanup | Ordered part assembly, cancellation cleanup, and bounded memory use |
-| **S4-4c File-reference integration** | Connect resolved file resources to dependent task inputs | Target-scoped references, stale reference rejection, and direct-input fallback |
-| **S4-5 Video** | Async video generation, job status tracking, and artifact access | Bounded polling, status reconciliation, cancellation, and artifact delivery |
-
-#### Decision API closure
-
-Selected direction: Dual-SDK support (TypeSafe and OpenAI) backed by a unified Decision IR.
-1. Pin SDK schemas and resolve differences in discovery, error envelopes, and URL handling.
-2. Complete capability union review: evidence representation, rubrics, confidence metrics, and refusal behavior.
-3. Define bounded synchronous execution profile and input validation.
-4. Validate both official SDK clients against gateway endpoints.
-
-#### Stage-4 operation readiness
-
-| Family | Readiness | Next step |
-|---|---|---|
-| Decision | Dual-SDK direction selected; IR drafts under review | Finalize contract selection and implement codecs |
-| Images Generate & Edit | Unified OpenAI Generate/Edit across GPT Image 2.6, Qwen Image, Gemini Nano Banana and Grok Imagine (`png`/`jpeg`/`webp` + `output_compression` via bounded `delivery.ffmpeg` without resizing; OpenAI preview SSE and completed-only SSE fallback on static targets for `n = 1`) | Native ratio/resolution tiers and other output controls remain separately selectable; preview SSE on non-native targets is intentionally deferred |
-| Audio (Speech/ASR) | Unified OpenAI Speech (all 6 formats + native/chunked SSE on OpenAI, Aliyun, Xiaomi) and Transcription (all 9 input formats via FFmpeg-to-MP3 normalization on Aliyun/Xiaomi + native/static JSON SSE fallback); Translation is [unscheduled](../roadmap/backlog-and-frozen.md#deferred-generation-semantics) | Subtitle/diarized Transcription streams and progressive non-SSE binary Speech remain unselected |
-| Files & Uploads | Safety requirements defined; storage authority unselected | Select storage authority and ID authorization |
-| Video | Upstream API research available; job lifecycles unselected | Select job status and retrieval contract |
-
-#### Grok Imagine adaptation
-
-Native ratio/resolution controls remain independently selectable beyond [static Generate](../architecture/adaptation.md#native-static-images). Video integration requires a native asynchronous job contract rather than a synchronous facade.
+| **Decision API** | Dual-SDK (`TypeSafe` + `OpenAI`) backed by unified Decision IR | Resolved schema/discovery envelopes, capability union, bounded execution, and both SDK client loops |
+| **Files & Uploads** | File storage/ID authorization, bounded chunked uploads, cleanup, and file-reference resolution | Isolated account/project namespaces, bounded spooling, cancellation cleanup, and target-scoped ID checks |
+| **Video** | Async video generation (`grok-imagine-video` / native jobs), polling, and artifact delivery | Selected async job contract, bounded polling, cancellation, and honest completion |
+| **Image & Audio extensions** | Optional OpenAI `mask` on Edit, `partial_images` preview SSE on static targets, native ratio/resolution tiers; Audio Translation, progressive non-SSE binary Speech, and subtitle/diarized ASR | Explicit contract selection and conformance per extension; existing static behavior stays protected |
 
 ### Stage 5 backlog
 
-All Stage-5 work remains unscheduled. [Detailed proposals](../proposals/stage5-backlog.md) own citations, tool discovery/web search, hosted execution, compaction, Batch and Realtime designs; inclusion is not implementation or activation approval.
+All Stage-5 work remains unscheduled. [Stage 5 proposals](../proposals/stage5-backlog.md) own citations, tool discovery/web search, hosted execution, compaction, Batch, and Realtime designs; inclusion is not activation approval.
 
-## Test supplementation
+## Pending decisions
 
-The test strategy uses pinned upstream assets and standard SDK consumers rather than hand-maintained mock matrices.
-
-### Stage-4 reuse and acceptance
-
-1. Identify applicable official SDK fixtures for each selected operation.
-2. Verify MorphieCore request preparation and response decoding against upstream test cases.
-3. Preserve the full offline baseline while adding operation-specific lifecycle and safety checks.
-
-## Phase rules
-
-### Agent authorization and diagnostics follow-up
-
-- **Session design:** Opt-in [per-Agent JSONL session storage](../architecture/history-and-replay.md#agent-session-files) is unscheduled; select boundary isolation and lifetime bounds before implementation.
-- **Deferred scope:** Dynamic OAuth authorization servers, cross-agent token exchange, and cluster IAM remain unscheduled.
-
-### Temporary routing freeze
-
-The [accepted account contract](../architecture/runtime-and-routing.md#failover) and [routing decisions](../architecture/decisions.md#routing-and-security-decisions) constrain future work. Provider access and normal OAuth renewal follow [project authorization](../../AGENTS.md#authorization); further implementation grants no additional credential or deployment permissions.
-
-The [stable routing baseline](../architecture/runtime-and-routing.md#failover) remains frozen unless its own change is explicitly selected. Unrelated codec and protocol work must not alter:
-- Account membership, health probes, or target ordering.
-- Conversation cache affinity or cooldown thresholds.
-- Route selection based on projected loss or codec capability.
-
-### IR and codec migration
-
-- Preserve immutable source IR across retries and failover attempts.
-- Enforce strict JSON parsing and bounded resource limits on all decoders.
-- Require independent directional expectations for all new codec mappings.
-- Maintain honest terminal reporting: errors and cancellations must never fabricate success.
-
-### Verification and integration boundary
-
-| Milestone | Requirements | Permitted actions |
+| Issue | Status | Next step |
 |---|---|---|
-| Development slice | Focused owner/codec tests pass; regressions isolated | Continue authorized implementation within its scope; unrelated work stays under the routing freeze |
-| Commit and push | Full [offline baseline](../development.md#offline-baseline) passes for implementation; [documentation checks](../development.md#documentation-checks) for docs only | Commit completed slices; publication follows project authorization |
-| Integration acceptance | Connected SDK scenarios and client loops pass | Declare client/protocol compatibility |
+| Conditional tool adaptations | [Stage-3 follow-ups](unscheduled-issues.md#conditional-stage-3-follow-ups) | Select policy and affected-loop acceptance per package |
+| Ordered control null/reset | Optional-null reset/default meanings unqualified | Qualify field-specific semantics before broadening admission |
+| Counting estimate precision | Coarse byte fallback vs. open proposal profile | Reconcile scope, input coverage, and provenance before activating counting |
+| Execution controls & probability reports | Unselected | Keep pre-dispatch validation, existing text-report contracts, and per-API error classification |
+
+## Deferred work
+
+### Deferred Generation semantics
+
+- Audio translation (`POST /v1/audio/translations`; OpenAI deprecated `whisper-1` and `/v1/audio/translations` on 2026-08-26 for shutdown on 2027-02-26 in favor of Realtime translation).
+- Turn-scoped system messages (`clear_at`), tokenizer-unbound `logit_bias`, multi-candidate (`n > 1`) execution, and generated audio/video inside Chat beyond basic static audio.
+- Experimental stateful persistence (`store: true`, reference continuation, stored-resource operations) until explicitly enabled.
+- Native no-output cache prewarming.
+- `POST /v1/messages/count_tokens` (returns `404`; reopening requires upstream reliability criteria and coarse estimation provenance).
+- Non-Generation discovery (`GET /v1/morphiecore/models` covers Generation Text and assessed image inputs; standard `/v1/models` and `/v1/morphiecore/capabilities` cover activated standalone tasks and Embeddings).
+- Unified citation delivery ([1C proposal](../proposals/stage5-backlog.md#1c-design-messages-citations)) and hosted tool discovery/web search ([Stage 5](../proposals/stage5-backlog.md#deferred-tool-discovery-and-web-search)).
+
+### Deferred acceptance
+
+| Target | Condition for acceptance |
+|---|---|
+| Non-image multimodal real checks | Real-service qualification per Audio/Video slice |
+| Current-client image replay | Selected image client profile verification |
+| Real multi-provider failover | [R09](unscheduled-issues.md#routing-qualification) prerequisites: independent compatible account pairs and fault injection |
+| Claude Code acceptance | Beta headers, counting, and citation contracts |
+| `pi` and `opencode` maintenance | Primary verified clients; parser/stream/replay behavior remains the client-integration oracle |
+
+### Only if needed
+
+- SSE keep-alive comments during prolonged delays.
+- Conversation prefix-derived affinity without conversation IDs.
+- Caller-configured first-content timeout thresholds.
+
+## Not planned
+
+- Direct inference-engine integration (llama.cpp, SGLang, vLLM).
+- Raw wire passthrough, post-encoding JSON monkey-patching, or weakened schemas.
+- Synthetic tool result generation, orphan role remapping, or automatic capability inference from upstream errors.
+- Conversation hashing, LLM-based prompt routing, ingress load balancing, concurrency leasing, or token-rate reservation.
+- Refusal retries across alternative models, sub-turn switching, or dynamic effort modulation.
+- Gateway-hosted plugin execution or Provider-managed persistent background generation outside selected async job contracts.
+- Unregistered Provider bindings, subscription-token guesswork, or historical protocol compatibility shims.
 
 ## Integration handoff
 
-Carrier availability in codecs does not imply public route admission. Route admission is controlled by explicit target binding policy in [topology compilation](../../crates/morphiecore-catalog/src/topology/compile.rs).
+Carrier availability in codecs does not imply public route admission; route admission is governed explicitly in [topology compilation](../../crates/morphiecore-catalog/src/topology/compile.rs) and the [failover baseline](../architecture/runtime-and-routing.md#failover).
 
 ### Partial-delivery exit
 
-Under the partial-delivery exit: principal workflows are usable, selected low-loss conversions record their losses, affected paths are verified, and remaining difficulties have explicit scope for next-stage analysis.
-
-1. Preserve representative standard tool/history paths across Haiku Messages, DeepSeek Chat and Grok Responses, plus the existing Qwen Responses coding path. DeepSeek Chat follows the [runtime-selected thinking-off or pre-dispatch rejection contract](../architecture/history-and-replay.md#binding-reasoning-history-contract), not a private readable profile. Use installed pi/OpenCode for affected client boundaries; reuse still-applicable evidence rather than requiring every client × model × protocol combination.
-2. Verify each selected repair before claiming it complete. A new ambiguity may defer its dependent subcase without delaying unrelated slices.
-3. Apply required offline and applicable SDK gates before publishing implementation. Recheck changed real workflows, including honest incomplete/cancelled delivery and continuation where affected. No broad re-sweep is required merely to preserve test counts.
-4. Classify each remaining observation as resolved, a scoped limitation, next-stage analysis, or an unavailable prerequisite. A recorded deferral is sufficient disposition; closing every R identifier is not an exit condition.
-5. Unscheduled issues may be selected alongside relevant Stage-4 work; it does not make Stage 5 features or production activation implicit.
+1. Preserve verified primary client workflows (Haiku Messages, DeepSeek Chat, Grok Responses, Qwen Responses, Google Interactions) using isolated current `pi`/`opencode` drivers.
+2. Verify each selected slice before claiming completion; deferring an unresolved subcase does not block independent slices.
+3. Run the offline baseline and applicable SDK gates before committing; classify remaining observations in [Unscheduled issues](unscheduled-issues.md#unscheduled-issues) (`R*` tracking labels are traceability only, not a release checklist).
 
 ### Public route activation review
 
-Prerequisites for activating newly implemented codec carriers on public routes:
-1. Classify each field on the conversion ladder: exact, equivalent, approximate, omitted or rejected.
-2. Verify preflight/preparation agreement on candidate bindings.
-3. Validate routing stability under failure and reconnection.
-4. Complete offline baseline and connected SDK acceptance before client validation.
-
+Before activating new public route carriers: classify every field on the [conversion ladder](../architecture/adaptation.md#conversion-ladder), verify preflight/preparation agreement, confirm routing/cancellation invariants, and pass offline baseline + SDK acceptance.

@@ -2,7 +2,7 @@
 
 Research notes on how each protocol carries image, audio, video and document input, tool-result media, Provider file references and generated media. Collected on 2026-10-12. Vendor pages are unversioned; recheck a row before relying on it. Code defines what MorphieCore actually accepts.
 
-Current media decisions belong to [Architecture](../architecture/adaptation.md#media), expansion scope to [Roadmap](../roadmap/index.md#stage-4-scope), and unselected operation/resource designs to [API expansion design](../proposals/index.md). The [research index](../references.md#research-notes) links related dated evidence.
+Current media decisions belong to [Architecture](../architecture/adaptation.md#media), expansion scope to [Roadmap](../roadmap/index.md#stage-4-pending-scope), and unselected operation/resource designs to [API expansion design](../proposals/index.md). The [research index](../references.md#research-notes) links related dated evidence.
 
 ## Contents
 
@@ -114,4 +114,4 @@ A URL-only video carrier does not become a File merely because both reference by
 
 Provider file IDs/URIs are credential-bound resources, not portable public URLs. Forwarding an arbitrary client ID could access the gateway credential's workspace. Generated assistant media cannot be relabeled as a Provider tool call to fit a target union.
 
-[Architecture's media policy](../architecture/adaptation.md#media) owns current admission/default/projection rules; [Roadmap](../roadmap/index.md#stage-4-scope) owns activation. The source tables do not authorize a downloader, file service or new media operation.
+[Architecture's media policy](../architecture/adaptation.md#media) owns current admission/default/projection rules; [Roadmap](../roadmap/index.md#stage-4-pending-scope) owns activation. The source tables do not authorize a downloader, file service or new media operation.

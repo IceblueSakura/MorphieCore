@@ -93,7 +93,7 @@ These fingerprints are distinct from vendored regression assets. `tests/upstream
 
 ## Test source repositories
 
-Selected on 2026-10-23 for [integrated text/SSE redesign acceptance and later operations](roadmap/index.md#test-supplementation). Release revisions are fixed in the source lock; the links below identify fixture families, not imported coverage. [Development](development.md#upstream-test-sources) owns acquisition, license/provenance checks and later release updates.
+Selected on 2026-10-23 for [integrated text/SSE redesign acceptance and later operations](development.md#upstream-test-sources). Release revisions are fixed in the source lock; the links below identify fixture families, not imported coverage. [Development](development.md#upstream-test-sources) owns acquisition, license/provenance checks and later release updates.
 
 The imported subset is identified in [assets.lock.json](../tests/upstream/assets.lock.json), with [explicit fixture adaptations and exclusions](refs/2026-10-23-stable-protocol-contracts.md#imported-asset-boundaries). Selected Anthropic 2.x/1.x SDK sources use Apache-2.0; older MIT source evidence does not determine their licenses.
 
