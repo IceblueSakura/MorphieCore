@@ -107,7 +107,9 @@ Inspection of `crates/morphiecore-semantic` establishes three concrete constrain
 
 ## Updated implementation evidence still needed
 
-Native text-predicate diagnostics returned a matching answer from OpenAI `gpt-6-luna`, TypeSafe `jev-1.13.0`, and Google `gemini-decision-1`. OpenAI Python `3.37.0` and TypeSafe Python `0.7.6` each consumed two typed predicate answers through the embedded gateway and their native Provider. A separate synthetic receiver established the proposed root joins, model listing envelopes, validation exceptions, and TypeSafe's default zstd with its supported compressor. This does not qualify gateway discovery, compressed intake, or other primitives.
+Native text-predicate diagnostics returned a matching answer from OpenAI `gpt-6-luna`, TypeSafe `jev-1.13.0`, and Google `gemini-decision-1`. OpenAI Python `3.37.0` and TypeSafe Python `0.7.6` each consumed two typed predicate answers through the embedded gateway and their native Provider. TypeSafe also completed a separate native loop with its default zstd compression enabled. A synthetic receiver established the SDK model listing envelopes and validation exceptions. This does not qualify gateway discovery or other primitives.
+
+Live TypeSafe discovery listed `jev-latest` and `jev-preview`, not the fixed Jev versions, and returned offset timestamps for `release_date` despite documenting `YYYY-MM-DD`. The fixed version `jev-1.13.0` evaluated successfully when named directly. Discovery coverage, serving admission, and exact-version release metadata are therefore separate facts; do not copy a moving alias's release date onto a versioned public binding.
 
 1. Complete the three-primitive native text/JSON profiles and gateway companion operations using the Python releases in the [source lock](../../tests/upstream/sources.lock.json); pin JavaScript SDK consumers separately before claiming support.
 2. Retrieve primary DashScope OpenAPI / run a bounded probe for `qwen/decision-model-preview` to resolve the response-key and image-support conflicts.

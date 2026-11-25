@@ -45,6 +45,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 tracing-opentelemetry.workspace = true
 url.workspace = true
+zstd.workspace = true
 
 morphiecore-test-support = { workspace = true, optional = true }
 tempfile.workspace = true

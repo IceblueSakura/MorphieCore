@@ -20,6 +20,8 @@ use axum::{
 };
 use std::{collections::BTreeMap, sync::Arc};
 
+mod compression;
+
 const JSON_BYTES: usize = 4 << 20;
 pub(crate) type BoundDecision = super::BoundTask<DecisionRoute>;
 
@@ -74,16 +76,24 @@ pub(crate) async fn system_one(State(runtime): State<Arc<Runtime>>, request: Req
 
 async fn ingress(
     runtime: Arc<Runtime>,
-    request: Request,
+    mut request: Request,
     native: Native,
 ) -> Result<Response, ApiError> {
-    let (admitted, _, bytes) = Admission::upload(
-        &runtime,
-        request,
-        runtime.limits.request_bytes.min(JSON_BYTES),
-        admission::headers,
-    )
-    .await?;
+    let zstd = native == Native::SystemOne && compression::consume_encoding(request.headers_mut())?;
+    let limit = runtime.limits.request_bytes.min(JSON_BYTES);
+    let (admitted, _, bytes) =
+        Admission::upload(&runtime, request, limit, admission::headers).await?;
+    let bytes = if zstd {
+        compression::decode(
+            bytes,
+            limit,
+            &runtime.shutdown,
+            admitted.deadline(&runtime.limits, u64::MAX),
+        )
+        .await?
+    } else {
+        bytes
+    };
     let parsed = native
         .decode_request(&bytes)
         .map_err(|_| ApiError::invalid())?;

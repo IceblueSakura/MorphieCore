@@ -34,6 +34,7 @@ async fn explicit_decision_routes_send_only_their_bound_native_operation() {
         }))
         .route("/v1/systemone", post(|headers: HeaderMap, Json(body): Json<Value>| async move {
             assert_eq!(headers["authorization"], format!("Bearer {UPSTREAM_KEY}"));
+            assert!(!headers.contains_key("content-encoding"));
             assert_eq!(body, json!({"model":"jev-wire","state":"blue","questions":{
                 "color":{"type":"noul","instructions":"Is it blue?"}
             }}));
@@ -122,11 +123,16 @@ async fn explicit_decision_routes_send_only_their_bound_native_operation() {
             0.98,
         ),
     ] {
-        let response = router
-            .clone()
-            .oneshot(request(path, body, true))
-            .await
-            .unwrap();
+        let compressed = (path == "/typesafe/v1/systemone")
+            .then(|| zstd::stream::encode_all(body.to_string().as_bytes(), 0).unwrap());
+        let mut request = request(path, body, true);
+        if let Some(compressed) = compressed {
+            request
+                .headers_mut()
+                .insert("content-encoding", "zstd".parse().unwrap());
+            *request.body_mut() = Body::from(compressed);
+        }
+        let response = router.clone().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
         let result: Value = serde_json::from_slice(&bytes).unwrap();
