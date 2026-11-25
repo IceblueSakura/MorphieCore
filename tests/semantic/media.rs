@@ -897,11 +897,14 @@ mod image_edit {
             json!({
                 "model": "gemini-nano-banana-2.1",
                 "store": false,
-                "input": [
-                    {"type": "image", "mime_type": "image/png", "data": "cG5nMA=="},
-                    {"type": "image", "mime_type": "image/webp", "data": "d2VicDE="},
-                    {"type": "text", "text": "edit two"}
-                ],
+                "input": [{
+                    "type": "user_input",
+                    "content": [
+                        {"type": "image", "mime_type": "image/png", "data": "cG5nMA=="},
+                        {"type": "image", "mime_type": "image/webp", "data": "d2VicDE="},
+                        {"type": "text", "text": "edit two"}
+                    ]
+                }],
                 "response_format": {"type": "image"}
             })
         );

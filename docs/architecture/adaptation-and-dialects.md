@@ -746,7 +746,7 @@ Media resources (images, audio, video, files) are handled as inert payloads (bas
 | Target | Native wire and terminal |
 |---|---|
 | Qwen Image 3.0 Pro | Both Aliyun targets use synchronous native multimodal generation/editing (`content` ordered data-URL images + text) with inline PNG data URLs and `input_image_count` verification. |
-| Gemini Nano Banana 2.1 | Google Interactions (`/v1/interactions`) with ordered `image` input parts, `text`, `store: false`, and `response_format: {"type":"image"}`. Publish one inline image from `model_output` steps only after `"status": "completed"`, empty `errors`, and EOF. Text-only output, `thought` steps and incomplete interactions cannot satisfy completion. |
+| Gemini Nano Banana 2.1 | Google Interactions (`/v1/interactions`) with one `user_input` step wrapping ordered `image` content parts and `text`, `store: false`, and `response_format: {"type":"image"}`. Publish one inline image from `model_output` steps only after `"status": "completed"`, empty `errors`, and EOF. Text-only output, `thought` steps and incomplete interactions cannot satisfy completion. |
 | Grok Imagine Image 2.0 | xAI `/v1/images/generations` or JSON `/v1/images/edits` (`image`/`images` data-URL objects) with `b64_json` and the named managed Grok OAuth account. Require one inline result with a supported MIME; do not recognize URL, deferred or stored results as inline success. |
 
 | Field or behavior | Disposition |

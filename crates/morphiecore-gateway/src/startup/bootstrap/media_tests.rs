@@ -113,7 +113,7 @@ async fn gemini_image_uses_trusted_interactions_path_and_preserves_jpeg() {
         model,
         "/v1/interactions",
         ("x-goog-api-key", "synthetic-google-key"),
-        json!({"model":model,"store":false,"input":[{"type":"text","text":"pattern"}],"response_format":{"type":"image"}}),
+        json!({"model":model,"store":false,"input":[{"type":"user_input","content":[{"type":"text","text":"pattern"}]}],"response_format":{"type":"image"}}),
         json!({"status":"completed","steps":[{"type":"model_output","content":[
             {"type":"image","mime_type":"image/jpeg","data":"AQID"}
         ]}]}),

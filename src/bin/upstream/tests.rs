@@ -235,7 +235,7 @@ fn probe_success_requires_text_and_an_honest_terminal() {
         ),
         (
             Protocol::Google,
-            json!({"status":"completed","steps":[{"type":"thought","summary":[{"type":"text","text":"private thought"}]},{"type":"model_output","parts":[{"type":"text","text":"OK"}]}]}),
+            json!({"status":"completed","steps":[{"type":"thought","summary":[{"type":"text","text":"private thought"}]},{"type":"model_output","content":[{"type":"text","text":"OK"}]}]}),
         ),
     ] {
         assert_eq!(

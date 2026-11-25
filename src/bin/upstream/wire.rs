@@ -112,7 +112,7 @@ pub(super) fn probe(bytes: &[u8], protocol: Protocol) -> Result<Value, Error> {
                 match step["type"].as_str() {
                     Some("thought") => continue,
                     Some("model_output") => {
-                        bytes += text_parts(array(&step["parts"])?, "text")?;
+                        bytes += text_parts(array(&step["content"])?, "text")?;
                     }
                     _ => {}
                 }

@@ -41,21 +41,21 @@ pub(crate) fn gemini_request(request: &Request, model: &str) -> Result<Value, Co
     if !crate::openai::speech::valid_model(model) {
         return Err(CodecError::invalid());
     }
-    let mut input = Vec::new();
+    let mut content = Vec::new();
     if let Some(edit) = request.task.edit() {
         for source in &edit.sources {
-            input.push(json!({
+            content.push(json!({
                 "type": "image",
                 "mime_type": source.mime(),
                 "data": STANDARD.encode(source.data()),
             }));
         }
     }
-    input.push(json!({"type": "text", "text": request.task.prompt()}));
+    content.push(json!({"type": "text", "text": request.task.prompt()}));
     Ok(json!({
         "model": model,
         "store": false,
-        "input": input,
+        "input": [{"type": "user_input", "content": content}],
         "response_format": {"type": "image"}
     }))
 }
