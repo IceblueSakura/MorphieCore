@@ -541,4 +541,131 @@ mod tests {
                 .is_err()
         );
     }
+
+    #[test]
+    fn siwc_admits_default_functions_namespace_unqualified_calls_and_rejects_other_namespaces() {
+        let client = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+        let target = GenerationCodec::new(GenerationApi::Responses, Dialect::Siwc, None);
+        let contract = TargetContract::full();
+
+        // Inline `additional_tools` with default `functions` namespace + unqualified custom/function calls.
+        let inline_functions = serde_json::json!({"model":"synthetic","input":[
+            {"type":"additional_tools","role":"developer","tools":[
+                {"type":"namespace","name":"functions","description":"","tools":[
+                    {"type":"custom","name":"exec","description":"run js","format":{"type":"grammar","syntax":"lark","definition":"start: /[\\s\\S]+/"}},
+                    {"type":"function","name":"wait","parameters":{"type":"object","properties":{}},"strict":false}
+                ]},
+                {"type":"namespace","name":"clock","description":"clock","tools":[
+                    {"type":"function","name":"sleep","parameters":{"type":"object","properties":{}},"strict":false}
+                ]}
+            ]},
+            {"type":"message","role":"user","content":"run"},
+            {"type":"custom_tool_call","call_id":"c_exec","name":"exec","input":"1+1"},
+            {"type":"custom_tool_call_output","call_id":"c_exec","output":"2"},
+            {"type":"function_call","call_id":"c_wait","name":"wait","arguments":"{}"},
+            {"type":"function_call_output","call_id":"c_wait","output":"done"}
+        ]});
+        let request = client
+            .decode_request(inline_functions.to_string().as_bytes())
+            .unwrap();
+        let before = request.clone();
+        let wire = target
+            .encode_request(&request, "selected-slug", &contract)
+            .unwrap();
+        assert_eq!(request, before);
+        assert_eq!(wire["input"][2]["type"], "custom_tool_call");
+        assert!(wire["input"][2].get("namespace").is_none());
+        assert_eq!(wire["input"][4]["type"], "function_call");
+        assert!(wire["input"][4].get("namespace").is_none());
+
+        // Root `tools` with default `functions` namespace + unqualified call also passes.
+        let root_functions = serde_json::json!({"model":"synthetic",
+            "tools":[{"type":"namespace","name":"functions","description":"","tools":[
+                {"type":"custom","name":"exec","description":"run js"}
+            ]}],
+            "input":[
+                {"type":"message","role":"user","content":"run"},
+                {"type":"custom_tool_call","call_id":"c_exec","name":"exec","input":"1+1"},
+                {"type":"custom_tool_call_output","call_id":"c_exec","output":"2"}
+            ]
+        });
+        let root_req = client
+            .decode_request(root_functions.to_string().as_bytes())
+            .unwrap();
+        let root_wire = target
+            .encode_request(&root_req, "selected-slug", &contract)
+            .unwrap();
+        assert_eq!(root_wire["tools"][0]["name"], "functions");
+        assert!(root_wire["input"][1].get("namespace").is_none());
+
+        // Unqualified call to a non-default namespace (`clock`) still rejects.
+        let mut wrong_ns = inline_functions.clone();
+        wrong_ns["input"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "type":"function_call","call_id":"c_sleep","name":"sleep","arguments":"{}"
+            }));
+        wrong_ns["input"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "type":"function_call_output","call_id":"c_sleep","output":"ok"
+            }));
+        let wrong_req = client
+            .decode_request(wrong_ns.to_string().as_bytes())
+            .unwrap();
+        assert!(matches!(
+            target.encode_request(&wrong_req, "selected-slug", &contract),
+            Err(crate::ConversionFailure {
+                cause: crate::ConversionCause::Representation(
+                    crate::conversion::generation::RepresentationError::Admission(
+                        crate::semantic::task::generation::Feature::Tools
+                    )
+                ),
+                ..
+            })
+        ));
+
+        // Active dispatch (`defer_loading: true`), `async: true`, `caller`, and `program` remain rejected.
+        let mut deferred = root_functions.clone();
+        deferred["tools"][0]["tools"][0]["defer_loading"] = serde_json::json!(true);
+        let deferred_req = client
+            .decode_request(deferred.to_string().as_bytes())
+            .unwrap();
+        assert!(
+            target
+                .encode_request(&deferred_req, "selected-slug", &contract)
+                .is_err()
+        );
+
+        for bad in [
+            {
+                let mut v = inline_functions.clone();
+                v["input"][2]["async"] = serde_json::json!(true);
+                v
+            },
+            {
+                let mut v = inline_functions;
+                v["input"].as_array_mut().unwrap().insert(
+                    2,
+                    serde_json::json!({"type":"program","id":"pg_1","call_id":"p1","code":"x","fingerprint":"fp"}),
+                );
+                v["input"].as_array_mut().unwrap().insert(
+                    3,
+                    serde_json::json!({"type":"program_output","id":"pgo_1","call_id":"p1","result":"ok","status":"completed"}),
+                );
+                v["input"][4]["caller"] = serde_json::json!({"type":"program","caller_id":"p1"});
+                v["input"][5]["caller"] = serde_json::json!({"type":"program","caller_id":"p1"});
+                v
+            },
+        ] {
+            let bad_req = client.decode_request(bad.to_string().as_bytes()).unwrap();
+            assert!(
+                target
+                    .encode_request(&bad_req, "selected-slug", &contract)
+                    .is_err()
+            );
+        }
+    }
 }

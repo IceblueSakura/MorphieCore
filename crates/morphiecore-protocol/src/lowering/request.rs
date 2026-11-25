@@ -636,16 +636,39 @@ impl<'a> Target<'a> {
                 owner.is_none() && !matches!(tool, ToolDeclaration::Namespace(_))
                     || !tool.dispatch_inactive()
             }) || {
-                // Inline `additional_tools` declarations enable later direct
-                // calls by leaf name; root declarations stay namespace-qualified.
+                // Inline `additional_tools` declarations and default `functions`
+                // namespace leaves enable later direct calls by leaf name; other
+                // namespaces stay namespace-qualified.
                 // https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations
-                let mut inline: Vec<(ToolKind, &str)> = Vec::new();
+                fn collect_unqualified<'a>(
+                    out: &mut Vec<(ToolKind, &'a str)>,
+                    tool: &'a ToolDefinition,
+                ) {
+                    match tool {
+                        ToolDefinition::Namespace(group) if group.name.as_str() == "functions" => {
+                            for leaf in &group.tools {
+                                if let Some(kind) = leaf.kind() {
+                                    out.push((kind, leaf.name().as_str()));
+                                }
+                            }
+                        }
+                        _ => {
+                            if let Some(kind) = tool.kind() {
+                                out.push((kind, tool.name().as_str()));
+                            }
+                        }
+                    }
+                }
+                let mut unqualified: Vec<(ToolKind, &str)> = Vec::new();
+                for tool in source.tools() {
+                    if matches!(tool, ToolDefinition::Namespace(_)) {
+                        collect_unqualified(&mut unqualified, tool);
+                    }
+                }
                 source.items().iter().any(|(_, item)| match item {
                     Item::ToolBatch(batch) => {
                         for tool in &batch.tools {
-                            if let Some(kind) = tool.kind() {
-                                inline.push((kind, tool.name().as_str()));
-                            }
+                            collect_unqualified(&mut unqualified, tool);
                         }
                         false
                     }
@@ -653,20 +676,20 @@ impl<'a> Target<'a> {
                         action: ToolChangeAction::AddDefinition(tool),
                         ..
                     }) => {
-                        inline.push((ToolKind::Function, tool.name.as_str()));
+                        unqualified.push((ToolKind::Function, tool.name.as_str()));
                         false
                     }
                     Item::ToolCall(call) => {
                         call.context.async_call
                             || call.context.caller.is_some()
                             || call.context.namespace.is_none()
-                                && !inline.contains(&(ToolKind::Function, call.name.as_str()))
+                                && !unqualified.contains(&(ToolKind::Function, call.name.as_str()))
                     }
                     Item::CustomCall(call) => {
                         call.context.async_call
                             || call.context.caller.is_some()
                             || call.context.namespace.is_none()
-                                && !inline.contains(&(ToolKind::Custom, call.name.as_str()))
+                                && !unqualified.contains(&(ToolKind::Custom, call.name.as_str()))
                     }
                     Item::Program(_) | Item::ProgramOutput(_) => true,
                     _ => false,
