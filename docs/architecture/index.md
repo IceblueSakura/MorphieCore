@@ -214,7 +214,11 @@ Strictness, selection, call count, seriality and dispatch remain independent gua
 
 Bailian function strictness has its separately selected [service policy](provider-dialects.md#shared-aliyun-billing-dialect).
 
-Namespace aliases, custom-text wrappers, examples, result-media relocation, prompt annotations and non-developer returned-addition replay are not selected by this combination.
+For targets without native namespace carriers, candidate-local lowering applies reversible namespace aliases (`generation.alias-tool-namespaces.v1`, L3), prefixing colliding or namespaced leaves deterministically, moving namespace context into the leaf description, rewriting selection/history references on the candidate copy, and restoring `(namespace, name)` before client publication.
+
+For function-only targets (Messages, Interactions, Bailian Responses, and streaming OpenAI Chat when plain custom text lacks a native carrier), candidate-local lowering wraps grammar-free `CustomFormat::Text` tools (`generation.wrap-plain-custom-tools.v1`, L3) into single-string object functions (`{"input": <string>}`) and buffers wrapped calls strictly until completion to emit atomic custom-tool events and restore original call identity, failing closed on incomplete, truncated, or malformed JSON payloads. Explicit Lark/regex grammars (`CustomFormat::Grammar`) remain unwrapped and reject cleanly (L5) rather than degrading into prose.
+
+Tool examples, result-media relocation, prompt annotations and non-developer returned-addition replay are not selected by this combination.
 
 Existing Interactions targets use the effective active-set projection when ordered declarations have no native carrier. Historical call/result content and identities survive; old declaration visibility, insertion timing and prefix/cache stability take the existing `generation.collapse-tool-set.v1` loss. This adds no Google API, hosted execution, strict guarantee or serial carrier.
 

@@ -40,6 +40,27 @@ When an admitted request includes `metadata`, Responses delivery can echo it if 
 
 Responses requires complete returned standard history and no nonnull `previous_response_id`. Omitted/null/false `store` is stateless; explicit `store:false` is recommended. Google ordinary text/call signatures without a standard carrier reject; see the [field-level reasons](../architecture/history-and-replay.md#stateless-api-boundaries). No replay profile or client-specific extension is offered.
 
+#### Codex CLI
+
+Configure Codex CLI (`0.172.0`+) against MorphieCore's HTTP Responses ingress in `config.toml`:
+
+```toml
+model = "configured-public-model"
+model_provider = "morphiecore"
+web_search = "disabled"
+
+[model_providers.morphiecore]
+name = "MorphieCore"
+base_url = "http://127.0.0.1:8080/v1"
+env_key = "MORPHIECORE_AGENT_KEY"
+wire_api = "responses"
+supports_websockets = false
+```
+
+- `gpt-6.2-sol` (OpenAI Responses / SIWC) supports Code Mode (`exec` inside `namespace: "functions"`), including unqualified historical `custom_tool_call` / `function_call` replay for default `functions` tools.
+- Non-OpenAI routes (such as Anthropic Messages and OpenRouter Chat) run default namespaced functions (e.g., `multi_agent_v1`) via reversible namespace aliases (`generation.alias-tool-namespaces.v1`) and grammar-free plain custom-text tools via single-string object wrappers (`generation.wrap-plain-custom-tools.v1`).
+- Hosted `web_search`, WebSockets (`supports_websockets = true`), grammar-constrained custom tools (`code_mode` / `apply_patch_freeform` Lark/regex) on non-grammar targets, and multi-part developer messages toward string-only Chat dialects (e.g., Bailian/Zhipu `chat_string_instructions`) reject explicitly rather than weakening schemas or instructions.
+
 ### Chat Completions
 
 ```json

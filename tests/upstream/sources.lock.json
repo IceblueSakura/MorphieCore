@@ -117,13 +117,13 @@
     "codex": {
       "repository": "https://github.com/openai/codex",
       "selection": "stable-release",
-      "revision": "6aaac694803004a63c6f393d153c96d22521a6b9",
-      "release": "rust-v0.164.0",
+      "revision": "3d86e43b075adeba2193ec5c22ac92f55afd82e6",
+      "release": "rust-v0.172.0",
       "license": "Apache-2.0",
       "paths": [
         "codex-rs"
       ],
-      "purpose": "Reference only; no client activation"
+      "purpose": "Owned-client compatibility, not protocol authority"
     },
     "wpt": {
       "repository": "https://github.com/web-platform-tests/wpt",

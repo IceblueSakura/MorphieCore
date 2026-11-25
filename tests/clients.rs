@@ -14,6 +14,8 @@ async fn installed_case(script: &str, case: &str, variable: &str, arguments: &[&
     let native = case.contains("messages");
     let domain = if script == "protocol_defaults" && case.contains("chat") {
         "deepseek"
+    } else if case == "codex-chat" {
+        "openrouter"
     } else if case.contains("responses") {
         "openai"
     } else if native {
@@ -317,4 +319,22 @@ async fn opencode_chat_incremental_lifecycle() {
         &[],
     )
     .await;
+}
+
+#[tokio::test]
+#[ignore = "requires MORPHIECORE_CODEX_BIN; Codex gpt-6.2-sol Code Mode default functions namespace replay"]
+async fn codex_responses_code_mode_loop() {
+    installed_case("codex", "codex-responses", "MORPHIECORE_CODEX_BIN", &[]).await;
+}
+
+#[tokio::test]
+#[ignore = "requires MORPHIECORE_CODEX_BIN; Codex namespace alias loop via Messages"]
+async fn codex_cross_protocol_messages_loop() {
+    installed_case("codex", "codex-messages", "MORPHIECORE_CODEX_BIN", &[]).await;
+}
+
+#[tokio::test]
+#[ignore = "requires MORPHIECORE_CODEX_BIN; Codex namespace alias loop via streaming Chat"]
+async fn codex_cross_protocol_chat_loop() {
+    installed_case("codex", "codex-chat", "MORPHIECORE_CODEX_BIN", &[]).await;
 }

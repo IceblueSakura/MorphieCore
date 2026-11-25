@@ -38,7 +38,7 @@ Resolved on **2026-10-23**. [tests/upstream/sources.lock.json](../tests/upstream
 | pi / OpenCode | earendil-works/pi 1.4.0 / OpenCode 1.19.4 reference sources; actual Agent acceptance uses current host-installed versions independently |
 | EventSource Parser | 4.1.2 |
 | WPT / Google protobufs | Immutable source snapshots; these sources have no selected package release |
-| Codex | 0.164.0 reference source only; no additional client activation |
+| Codex | 0.172.0 reference source; actual Agent acceptance uses current host-installed versions independently |
 
 OpenCode's selected release corresponds to npm `opencode-ai`. `pi` source uses the `earendil-works/pi` fork. Newer inspected SDK releases remain non-binding for regression pins.
 

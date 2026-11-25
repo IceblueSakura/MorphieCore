@@ -28,7 +28,12 @@ def check(condition, code):
 def check_client_version(case, version):
     # The caller supplies the current host's unwrapped binary. Validate its
     # version record, not equality with an independent protocol source lock.
-    prefix = "(?:opencode v)?" if case.startswith("opencode-") else ""
+    if case.startswith("opencode-"):
+        prefix = "(?:opencode v)?"
+    elif case.startswith("codex-"):
+        prefix = "(?:codex-cli )?"
+    else:
+        prefix = ""
     check(re.fullmatch(prefix + r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?", version)
           is not None, "invalid_client_version")
 

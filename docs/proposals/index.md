@@ -232,7 +232,7 @@ Upstream response parsing must remain strict on known fields and ignore unknown 
 
 ### Three-protocol tool conversion design
 
-**Ordinary nine-direction tool conversion and selected tool-set projections are delivered.** [Architecture](../architecture/index.md#ordered-tool-availability) owns their contract; [Development](../development.md#overall-acceptance-status) summarizes overall acceptance. This section retains unselected content projections only. [Roadmap](../roadmap/unscheduled-issues.md#conditional-stage-3-follow-ups) owns their conditional sequencing, not a second core implementation queue.
+**Ordinary nine-direction tool conversion, selected tool-set projections, reversible namespace aliases (`generation.alias-tool-namespaces.v1`), and grammar-free plain custom-text wrappers (`generation.wrap-plain-custom-tools.v1`) are delivered.** [Architecture](../architecture/index.md#ordered-tool-availability) owns their contract; [Development](../development.md#overall-acceptance-status) summarizes overall acceptance. This section retains unselected content projections only (`S3-T7` tool examples, historical change annotations, result-media relocation, and grammar-to-prose fallbacks remain unselected). [Roadmap](../roadmap/unscheduled-issues.md#conditional-stage-3-follow-ups) owns any future sequencing, not a second core implementation queue.
 
 Assess each future projection through **client request → selected upstream → original client response → tool result → subsequent history**. The delivered ordinary function loops do not qualify custom tools, namespaces, result media or every dialect; see [client/IR boundary findings](../refs/2026-10-27-client-ir-boundaries.md).
 

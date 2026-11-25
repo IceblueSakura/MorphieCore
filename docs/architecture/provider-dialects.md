@@ -84,7 +84,7 @@ Public Chat, Responses, and Messages adhere strictly to pinned official specific
 ### Subscription Responses
 
 SIWC (`chatgpt`) and `grok` run stateless Responses streams (`store: false`), deriving `prompt_cache_key` from cache affinity and reconstructing terminal items strictly from events:
-- **SIWC flat root tools:** `siwc.inline-root-tools.v1` (L2) moves flat function/custom definitions into a leading developer `additional_tools` batch while preserving names, schemas, strictness, and history order.
+- **SIWC flat root tools and default namespace replay:** `siwc.inline-root-tools.v1` (L2) moves flat function/custom definitions into a leading developer `additional_tools` batch while preserving names, schemas, strictness, and history order. When SIWC omits `namespace` on historical `function_call` / `custom_tool_call` items declared inside the default `functions` namespace (root or inline `additional_tools`), admission accepts the unqualified replay while continuing to reject unqualified calls for non-default namespaces; cross-protocol targets apply reversible namespace aliasing (`generation.alias-tool-namespaces.v1`) and grammar-free plain custom-text wrapping (`generation.wrap-plain-custom-tools.v1`).
 - **SIWC error mapping:** `responses.coarsen-provider-error-code.v1` maps quota codes to `rate_limit_exceeded`, unsupported capability codes to `invalid_prompt`, and auth/service/permission errors to `server_error` while retaining source evidence.
 - **Grok:** Preserves request order and explicit tool policies unchanged; no strictness relaxation, prompt rewriting, or implicit retry alters upstream omissions.
 

@@ -220,6 +220,196 @@ async fn siwc_quota_event_keeps_its_failure_class_before_response_created() {
     }
 }
 
+#[tokio::test]
+async fn chatgpt_siwc_admits_default_functions_unqualified_custom_call_replay() {
+    let calls = Arc::new(Mutex::new(0usize));
+    let observed_call_names = Arc::new(Mutex::new(Vec::<(String, Option<String>)>::new()));
+    let calls_ref = calls.clone();
+    let observed_ref = observed_call_names.clone();
+    let router = Router::new().route(
+        "/v1/responses",
+        post(move |axum::Json(body): axum::Json<Value>| {
+            let calls = calls_ref.clone();
+            let observed = observed_ref.clone();
+            async move {
+                *calls.lock().unwrap() += 1;
+                let mut pairs = Vec::new();
+                if let Some(items) = body.get("input").and_then(Value::as_array) {
+                    for item in items {
+                        if matches!(
+                            item.get("type").and_then(Value::as_str),
+                            Some("custom_tool_call" | "function_call")
+                        ) && let Some(name) = item.get("name").and_then(Value::as_str)
+                        {
+                            pairs.push((
+                                name.to_owned(),
+                                item.get("namespace")
+                                    .and_then(Value::as_str)
+                                    .map(str::to_owned),
+                            ));
+                        }
+                    }
+                }
+                *observed.lock().unwrap() = pairs;
+                let response = json!({
+                    "id": "resp_siwc_conformance",
+                    "object": "response",
+                    "created_at": 1,
+                    "model": "gpt-6.2-sol",
+                    "status": "in_progress",
+                    "output": []
+                });
+                let msg = json!({
+                    "id": "msg_siwc_conformance",
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": [{"type": "output_text", "text": "ok", "annotations": [], "logprobs": []}]
+                });
+                let events = [
+                    json!({"type": "response.created", "sequence_number": 0, "response": response}),
+                    json!({
+                        "type": "response.output_item.added",
+                        "sequence_number": 1,
+                        "output_index": 0,
+                        "item": {"id": "msg_siwc_conformance", "type": "message", "role": "assistant", "status": "in_progress", "content": []}
+                    }),
+                    json!({
+                        "type": "response.content_part.added",
+                        "sequence_number": 2,
+                        "output_index": 0,
+                        "item_id": "msg_siwc_conformance",
+                        "content_index": 0,
+                        "part": {"type": "output_text", "text": "", "annotations": [], "logprobs": []}
+                    }),
+                    json!({
+                        "type": "response.output_text.delta",
+                        "sequence_number": 3,
+                        "output_index": 0,
+                        "item_id": "msg_siwc_conformance",
+                        "content_index": 0,
+                        "delta": "ok",
+                        "logprobs": []
+                    }),
+                    json!({
+                        "type": "response.output_text.done",
+                        "sequence_number": 4,
+                        "output_index": 0,
+                        "item_id": "msg_siwc_conformance",
+                        "content_index": 0,
+                        "text": "ok",
+                        "logprobs": []
+                    }),
+                    json!({
+                        "type": "response.content_part.done",
+                        "sequence_number": 5,
+                        "output_index": 0,
+                        "item_id": "msg_siwc_conformance",
+                        "content_index": 0,
+                        "part": {"type": "output_text", "text": "ok", "annotations": [], "logprobs": []}
+                    }),
+                    json!({
+                        "type": "response.output_item.done",
+                        "sequence_number": 6,
+                        "output_index": 0,
+                        "item": msg
+                    }),
+                    json!({
+                        "type": "response.completed",
+                        "sequence_number": 7,
+                        "response": {
+                            "id": "resp_siwc_conformance",
+                            "object": "response",
+                            "created_at": 1,
+                            "model": "gpt-6.2-sol",
+                            "status": "completed",
+                            "output": [msg],
+                            "usage": {"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}
+                        }
+                    }),
+                ];
+                let sse: String = events
+                    .iter()
+                    .map(|ev| format!("event: {}\ndata: {ev}\n\n", ev["type"].as_str().unwrap()))
+                    .collect();
+                ([("content-type", "text/event-stream")], sse)
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let _server = Server(tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    }));
+    let mut boot = Fixture::with_oauth(
+        service(),
+        json!({"models":{"gpt-6.2-sol":{"candidates":[{"binding":"chatgpt-responses"}]}}}),
+        "chatgpt",
+        "synthetic",
+    )
+    .unwrap();
+    boot.loopback_authority(&origin);
+    let exporter = boot.record_failures();
+    let base_tools = json!({
+        "type": "additional_tools",
+        "role": "developer",
+        "tools": [
+            {
+                "type": "namespace",
+                "name": "functions",
+                "description": "",
+                "tools": [{"type": "custom", "name": "exec", "description": "Execute JS", "format": {"type": "text"}}]
+            },
+            {
+                "type": "namespace",
+                "name": "clock",
+                "description": "",
+                "tools": [{"type": "function", "name": "sleep", "description": "Sleep", "parameters": {"type": "object"}}]
+            }
+        ]
+    });
+    let valid = json!({
+        "model": "gpt-6.2-sol",
+        "stream": true,
+        "store": false,
+        "input": [
+            base_tools,
+            {"role": "user", "content": "run"},
+            {"type": "custom_tool_call", "call_id": "call_1", "name": "exec", "input": "exit({ok:true});"},
+            {"type": "custom_tool_call_output", "call_id": "call_1", "output": "ok"}
+        ]
+    });
+    let (status, bytes, failed) = send(&boot, Api::Responses, valid, &[]).await;
+    assert_eq!(status, 200, "{}", disposition(&exporter, status, failed));
+    assert!(!failed);
+    assert!(String::from_utf8_lossy(&bytes).contains("event: response.completed"));
+    assert_eq!(*calls.lock().unwrap(), 1);
+    assert_eq!(
+        observed_call_names.lock().unwrap().as_slice(),
+        &[("exec".to_owned(), None)]
+    );
+
+    let invalid = json!({
+        "model": "gpt-6.2-sol",
+        "stream": true,
+        "store": false,
+        "input": [
+            base_tools,
+            {"role": "user", "content": "sleep"},
+            {"type": "function_call", "call_id": "call_2", "name": "sleep", "arguments": "{}"},
+            {"type": "function_call_output", "call_id": "call_2", "output": "ok"}
+        ]
+    });
+    let (bad_status, _, bad_failed) = send(&boot, Api::Responses, invalid, &[]).await;
+    assert_eq!(bad_status, 400);
+    assert!(!bad_failed);
+    assert_eq!(*calls.lock().unwrap(), 1);
+    assert_eq!(
+        disposition(&exporter, bad_status, bad_failed),
+        "planning:[\"admission.tools\"]"
+    );
+}
+
 const BINDINGS: &[Binding<'static>] = &[
     (
         "glm-5.3",

@@ -53,7 +53,7 @@ All Stage-5 work remains unscheduled. [Stage 5 proposals](../proposals/stage5-ba
 
 | Issue | Status | Next step |
 |---|---|---|
-| Conditional tool adaptations | [Stage-3 follow-ups](unscheduled-issues.md#conditional-stage-3-follow-ups) | Select policy and affected-loop acceptance per package |
+| Conditional tool adaptations | `generation.alias-tool-namespaces.v1` and `generation.wrap-plain-custom-tools.v1` delivered; remaining [Stage-3 follow-ups](unscheduled-issues.md#conditional-stage-3-follow-ups) unscheduled | Select policy and affected-loop acceptance if `S3-T7` (tool examples) is requested |
 | Ordered control null/reset | Optional-null reset/default meanings unqualified | Qualify field-specific semantics before broadening admission |
 | Counting estimate precision | Coarse byte fallback vs. open proposal profile | Reconcile scope, input coverage, and provenance before activating counting |
 | Execution controls & probability reports | Unselected | Keep pre-dispatch validation, existing text-report contracts, and per-API error classification |
@@ -78,7 +78,7 @@ All Stage-5 work remains unscheduled. [Stage 5 proposals](../proposals/stage5-ba
 | Current-client image replay | Selected image client profile verification |
 | Real multi-provider failover | [R09](unscheduled-issues.md#routing-qualification) prerequisites: independent compatible account pairs and fault injection |
 | Claude Code acceptance | Beta headers, counting, and citation contracts |
-| `pi` and `opencode` maintenance | Primary verified clients; parser/stream/replay behavior remains the client-integration oracle |
+| `pi`, `opencode`, and `codex` maintenance | Primary verified clients; parser/stream/replay behavior remains the client-integration oracle |
 
 ### Only if needed
 
@@ -102,7 +102,7 @@ Carrier availability in codecs does not imply public route admission; route admi
 
 ### Partial-delivery exit
 
-1. Preserve verified primary client workflows (Haiku Messages, DeepSeek Chat, Grok Responses, Qwen Responses, Google Interactions) using isolated current `pi`/`opencode` drivers.
+1. Preserve verified primary client workflows (Haiku Messages, DeepSeek Chat, Grok Responses, Qwen Responses, Google Interactions, and Codex CLI Responses/Messages/Chat tool loops) using isolated current `pi`/`opencode`/`codex` drivers.
 2. Verify each selected slice before claiming completion; deferring an unresolved subcase does not block independent slices.
 3. Run the offline baseline and applicable SDK gates before committing; classify remaining observations in [Unscheduled issues](unscheduled-issues.md#unscheduled-issues) (`R*` tracking labels are traceability only, not a release checklist).
 
