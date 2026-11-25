@@ -98,7 +98,7 @@ The selected implementation therefore inspects only root `$defs` and single-toke
 
 Existing `SchemaDocument` bounds plus `serde_json::Value::pointer` suffice; no URI fetcher, schema converter or general resolver dependency is introduced.
 
-[Architecture](../architecture/adaptation-and-dialects.md#google-strict-function-arguments) owns the exact scope, [Development](../development.md#overall-acceptance-status) the overall acceptance status, and [Roadmap](../roadmap/unscheduled-issues.md#unscheduled-issues) the remaining limitations.
+[Architecture](../architecture/provider-dialects.md#google-strict-function-arguments) owns the exact scope, [Development](../development.md#overall-acceptance-status) the overall acceptance status, and [Roadmap](../roadmap/unscheduled-issues.md#unscheduled-issues) the remaining limitations.
 
 ## How to read an SDK
 

@@ -1,6 +1,6 @@
 # Generation binding contracts
 
-Primary sources reviewed on **2026-11-12**. These are model/service contracts, separate from live account eligibility and complete Agent-loop qualification. Accepted projections belong in [Protocol adaptation](../architecture/adaptation-and-dialects.md); unresolved qualification belongs in the [issue register](../roadmap/unscheduled-issues.md).
+Primary sources reviewed on **2026-11-12**. These are model/service contracts, separate from live account eligibility and complete Agent-loop qualification. Accepted projections belong in [Protocol adaptation](../architecture/adaptation.md); unresolved qualification belongs in the [issue register](../roadmap/unscheduled-issues.md).
 
 ## Contents
 
@@ -39,7 +39,7 @@ Grok 4.7 returns Responses encrypted reasoning by default and documents unchange
 
 Current Go model controls and endpoint paths are sourced in the
 [catalog refresh](2026-11-13-model-catalog-expansion.md#opencode-go).
-The accepted [Go control policy](../architecture/adaptation-and-dialects.md#opencode-go-controls)
+The accepted [Go control policy](../architecture/provider-dialects.md#opencode-go-controls)
 owns activation and nearest-level projection; service qualification remains
 model-specific.
 

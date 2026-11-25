@@ -282,7 +282,7 @@ Context/input capacities are discovery planning metadata only, not local token c
 
 Replacing the binding's origin, endpoint path or upstream model clears inherited context/input evidence; explicit declarations can supply the new deployment's facts.
 
-See [model-effective values](../architecture/adaptation-and-dialects.md#model-effective-values) and [discovery ownership](../architecture/adaptation-and-dialects.md#generation-text-model-discovery).
+See [model-effective values](../architecture/adaptation.md#model-effective-values) and [discovery ownership](../architecture/adaptation.md#generation-text-model-discovery).
 
 The Go/Haiku Messages binding declares a `32000` default; generic Messages targets do not.
 
@@ -298,7 +298,7 @@ An uncapped Messages candidate with no effective default rejects locally.
 
 Defaults are neither a promise to generate that amount nor a model-limit guarantee.
 
-See [missing output ceilings](../architecture/adaptation-and-dialects.md#missing-output-ceilings).
+See [missing output ceilings](../architecture/provider-dialects.md#missing-output-ceilings).
 
 Account selection happens before dispatch. Generation may retry one explicitly eligible unpublished network/server failure on that exact target, with the same credential material and wire request. Rate/quota/auth/permission/request failures, malformed output, trust/local faults and ambiguous post-dispatch timeouts do not authorize the additional send. A returned failure never causes another account or Provider to be dispatched in that request.
 
@@ -320,7 +320,7 @@ Trusted deployment overrides retain the selected binding's contract and do not e
 
 [Bounded acceptance](../development.md#overall-acceptance-status) does not prove elapsed cache retention or invoices.
 
-On an admitted Messages route, request-wide automatic caching uses root `"cache_control":{"type":"ephemeral","ttl":"1h"}` or `"ttl":"5m"`; omitting `ttl` means 5m. Missing root policy retains the binding's marker-free default, not a client disable instruction. Explicit owner markers, four-marker limits and TTL conflicts retain their [existing rules](../architecture/adaptation-and-dialects.md#caller-selected-automatic-cache-admission).
+On an admitted Messages route, request-wide automatic caching uses root `"cache_control":{"type":"ephemeral","ttl":"1h"}` or `"ttl":"5m"`; omitting `ttl` means 5m. Missing root policy retains the binding's marker-free default, not a client disable instruction. Explicit owner markers, four-marker limits and TTL conflicts retain their [existing rules](../architecture/provider-dialects.md#caller-selected-automatic-cache-admission).
 
 Account-level API roots apply consistently to Generation, model-list diagnostics and standalone task operations; no caller-controlled path or API-version guessing is introduced. See [target composition](credentials-and-diagnostics.md#configure-accounts).
 
@@ -339,7 +339,7 @@ For `thinking_tokens`, provide all six positive values, for example:
 }
 ```
 
-Place this object on the public model, alongside `candidates`. At least one candidate must select a conversion when a custom table is supplied. A conversion without a custom table uses the [shared preset](../architecture/adaptation-and-dialects.md#thinking-budget-quantization). Duplicate token values are allowed; nearest-budget matching and highest-level ties retain the existing algorithm.
+Place this object on the public model, alongside `candidates`. At least one candidate must select a conversion when a custom table is supplied. A conversion without a custom table uses the [shared preset](../architecture/adaptation.md#thinking-budget-quantization). Duplicate token values are allowed; nearest-budget matching and highest-level ties retain the existing algorithm.
 
 The table is consulted only when exact carriage is unavailable. For example, an exact reasoning-level `medium` request stays qualitative on Google even when `budget_to_effort` and a custom `medium:7000` preset are configured, whereas an actual numeric conversion must still fit the caller ceiling and target limits; the gateway never raises the ceiling to make it fit.
 
@@ -351,15 +351,15 @@ Candidate projection preserves explicit effort over a conflicting numeric budget
 
 Nearest-level projection and model-maximum clamping remain bounded; malformed source controls and explicit guarantees retain validation.
 
-The existing Gemini 4 bindings inherit the selected [response-effort scope approximation](../architecture/adaptation-and-dialects.md#google-response-effort-projection) without a new configuration field.
+The existing Gemini 4 bindings inherit the selected [response-effort scope approximation](../architecture/provider-dialects.md#google-response-effort-projection) without a new configuration field.
 
 Omitted `thinking_conversion` retains it; an explicit numeric conversion replaces it, never chains the two.
 
-Messages delivery uses [request-grounded end-turn derivation](../architecture/adaptation-and-dialects.md#messages-terminal-projection).
+Messages delivery uses [request-grounded end-turn derivation](../architecture/adaptation.md#messages-terminal-projection).
 
 These adaptations do not promise equivalent Claude effort behavior or complete Google protocol support; further [Google API expansion is paused](../roadmap/backlog-and-frozen.md#google-api-pause).
 
-Those reviewed Google bindings omit temperature/top-p/top-k that the model ignores, with field-specific adaptation evidence. Generic codecs and other models do not inherit that policy; request labels cannot select it. Interactions v1 has no carrier for those controls. See the [target-effective sampling contract](../architecture/adaptation-and-dialects.md#selected-request-approximations); this does not change routing or activate structured-result admission.
+Those reviewed Google bindings omit temperature/top-p/top-k that the model ignores, with field-specific adaptation evidence. Generic codecs and other models do not inherit that policy; request labels cannot select it. Interactions v1 has no carrier for those controls. See the [target-effective sampling contract](../architecture/adaptation.md#selected-request-approximations); this does not change routing or activate structured-result admission.
 
 History reasoning is never converted into assistant text. Readable reasoning without this target's native carrier, including reasoning demonstrably belonging to another target, is omitted under the named visible-history transfer policy, never promoted to an assistant answer. Visible messages and real call/results remain; partial reasoning, damaged compatible replay and required compacted/cached context cannot be repaired by omission. Valid native carriers remain available.
 

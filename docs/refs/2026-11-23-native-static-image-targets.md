@@ -1,6 +1,6 @@
 # Native static image targets — 2026-11-23
 
-These source observations inform the [native static profile](../architecture/adaptation-and-dialects.md#native-static-images). Model activation remains deployment configuration.
+These source observations inform the [native static profile](../architecture/adaptation.md#native-static-images). Model activation remains deployment configuration.
 
 | Target | Official contract and observed boundary |
 |---|---|

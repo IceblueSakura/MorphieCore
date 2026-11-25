@@ -2,7 +2,7 @@
 
 This document defines failover state transitions, conversation/cache affinity, streaming normalization, reverse-proxy delivery, loopback credentials, cluster diagnostics, and private exchange capture.
 
-See [Architecture Overview](index.md) for system boundaries and core IR semantics; [Protocol adaptation](adaptation-and-dialects.md) for wire mappings; and [Settled decisions](decisions.md) for accepted trade-offs.
+See [Architecture Overview](index.md) for system boundaries and core IR semantics; [Protocol adaptation](adaptation.md) and [Provider dialects](provider-dialects.md) for wire mappings; and [Settled decisions](decisions.md) for accepted trade-offs.
 
 ## Contents
 

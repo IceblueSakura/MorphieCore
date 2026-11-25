@@ -2,7 +2,7 @@
 
 Research notes on how each protocol carries image, audio, video and document input, tool-result media, Provider file references and generated media. Collected on 2026-10-12. Vendor pages are unversioned; recheck a row before relying on it. Code defines what MorphieCore actually accepts.
 
-Current media decisions belong to [Architecture](../architecture/adaptation-and-dialects.md#media), expansion scope to [Roadmap](../roadmap/index.md#stage-4-scope), and unselected operation/resource designs to [API expansion design](../proposals/index.md). The [research index](../references.md#research-notes) links related dated evidence.
+Current media decisions belong to [Architecture](../architecture/adaptation.md#media), expansion scope to [Roadmap](../roadmap/index.md#stage-4-scope), and unselected operation/resource designs to [API expansion design](../proposals/index.md). The [research index](../references.md#research-notes) links related dated evidence.
 
 ## Contents
 
@@ -106,7 +106,7 @@ The rechecked [OpenAI vision guide](https://developers.openai.com/api/docs/guide
 
 [Gemini image understanding](https://ai.google.dev/gemini-api/docs/image-understanding#media-resolution) describes native resolution controls and token allocation. [Claude vision](https://platform.claude.com/docs/en/build-with-claude/vision#resolution-and-token-cost) describes automatic model-specific image processing.
 
-The selected mapping delegates auto to the chosen target's native default, not an emulation of another model's preprocessing. The [media contract](../architecture/adaptation-and-dialects.md#media) owns the named L2 rule; specific detail values, image contents and safety constraints remain separate.
+The selected mapping delegates auto to the chosen target's native default, not an emulation of another model's preprocessing. The [media contract](../architecture/adaptation.md#media) owns the named L2 rule; specific detail values, image contents and safety constraints remain separate.
 
 ## Representation and authorization boundaries
 
@@ -114,4 +114,4 @@ A URL-only video carrier does not become a File merely because both reference by
 
 Provider file IDs/URIs are credential-bound resources, not portable public URLs. Forwarding an arbitrary client ID could access the gateway credential's workspace. Generated assistant media cannot be relabeled as a Provider tool call to fit a target union.
 
-[Architecture's media policy](../architecture/adaptation-and-dialects.md#media) owns current admission/default/projection rules; [Roadmap](../roadmap/index.md#stage-4-scope) owns activation. The source tables do not authorize a downloader, file service or new media operation.
+[Architecture's media policy](../architecture/adaptation.md#media) owns current admission/default/projection rules; [Roadmap](../roadmap/index.md#stage-4-scope) owns activation. The source tables do not authorize a downloader, file service or new media operation.

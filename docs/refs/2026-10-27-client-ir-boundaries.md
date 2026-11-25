@@ -78,7 +78,7 @@ Minimal relevant fields:
 
 Chat's [finish reason](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create) describes why generation stopped, not an independent status for every component. `content:"A."` plus `finish_reason:"length"` preserves the text and token-cap cause above; it cannot preserve the explicit completed-item observation. Changing only that source item to incomplete yields the same Chat view. Messages has no arbitrary per-block status either: `content_block_stop` closes a block, while `stop_reason` describes the message, including truncation.
 
-**Intrinsic difference:** the explicit per-item lifecycle vector has no standard Chat/Messages carrier. Equality of source item and overall status is not a Chat wire requirement. The selected [delivery disposition](../architecture/adaptation-and-dialects.md#conversion-ladder) owns which per-item observations can be omitted.
+**Intrinsic difference:** the explicit per-item lifecycle vector has no standard Chat/Messages carrier. Equality of source item and overall status is not a Chat wire requirement. The selected [delivery disposition](../architecture/adaptation.md#conversion-ladder) owns which per-item observations can be omitted.
 
 The subsequently selected narrow omission preserves source IR and overall token-cap meaning while dropping eligible plain-text per-item observations. It remains lossy and must not establish executable tool completion. Do not rewrite source items to satisfy lowering or map `failed` to `length`. Failure after partial output needs an honest error path, not successful finalization; Chat/Messages lack the same normal result envelope for output plus an overall failed object.
 
@@ -113,7 +113,7 @@ Establish field meaning, precedence and original-versus-prepared request authori
 
 At the review baseline, [completion](../../crates/morphiecore-runtime/src/execution/delivery/completion.rs) selected only tools/tool-choice/parallelism, and [envelope writing](../../crates/morphiecore-protocol/src/openai/responses/envelope.rs) preserved reports before filling those missing echoes.
 
-The selected [schema-completion contract](../architecture/adaptation-and-dialects.md#downstream-schema-completion) adds metadata alone; broader settings echo requires its own field authority.
+The selected [schema-completion contract](../architecture/adaptation.md#downstream-schema-completion) adds metadata alone; broader settings echo requires its own field authority.
 
 ### Reasoning and argument representations
 
@@ -146,7 +146,7 @@ This established a source-validation/fixture correction, distinct from incompati
 - OpenAI's [backwards-compatibility policy](https://developers.openai.com/api/reference/overview#backwards-compatibility) expressly permits additional JSON response/event-data properties and streaming event types.
 - Anthropic's [versioning policy](https://platform.claude.com/docs/en/api/versioning) permits additional output values and enum-like variants; its [streaming guide](https://platform.claude.com/docs/en/build-with-claude/streaming#other-events) requires graceful handling of unknown events. Its wording is broader, not identical to OpenAI's.
 
-These policies inform the bounded [adaptation notice](../architecture/adaptation-and-dialects.md#public-capability-and-adaptation-notice). Extra fields do not excuse invalid standard members, reordered content or fabricated replay authority, and continuation never requires diagnostic echo.
+These policies inform the bounded [adaptation notice](../architecture/adaptation.md#public-capability-and-adaptation-notice). Extra fields do not excuse invalid standard members, reordered content or fabricated replay authority, and continuation never requires diagnostic echo.
 
 ## Follow-up source and feasibility review (2026-10-28)
 
@@ -228,7 +228,7 @@ remain outside it.
 
 The dated native observations established grouped call-ID association on direct DashScope Qwen Flash/Max, TokenPlan Qwen Flash, native MiMo and OpenRouter GPT Luna for the tested inputs. Independent nonce-result comparisons observed both supplied values consumed. This qualifies those layouts only, not arbitrary interleaving, reverse result order or every billing endpoint.
 
-The [Bailian Responses reference](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-responses) nevertheless says each result must immediately follow its call. It also permits string or array output, while the gateway's narrower string implementation is a separate restriction. [Tool-result association](../architecture/adaptation-and-dialects.md#tool-result-association) owns the selected grouped association; a literal documentation example is not proof of an enforced adjacency rule.
+The [Bailian Responses reference](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-responses) nevertheless says each result must immediately follow its call. It also permits string or array output, while the gateway's narrower string implementation is a separate restriction. [Tool-result association](../architecture/adaptation.md#tool-result-association) owns the selected grouped association; a literal documentation example is not proof of an enforced adjacency rule.
 
 Phase is absent from the documented input union, whose unlisted-parameter rule says ignored, not rejected. The approximate 80%-of-window allowance and automatic truncation also require a distinct long-context qualification; planning metadata does not enforce an input-token cap.
 
@@ -404,4 +404,4 @@ The [mid-conversation system guide](https://platform.claude.com/docs/en/build-wi
 
 The [preserved-thinking guide](https://platform.claude.com/docs/en/build-with-claude/preserved-thinking) separates root settings from the checked system/tools/messages prefix. Changing root effort can invalidate cache without invalidating thinking; rewriting earlier messages can invalidate later thinking. Appending history preserves earlier protected prefixes.
 
-**Selected 2026-11-06:** explicit `FollowingResponse` / `NewInputTurn` activation boundaries and reuse of the existing message-envelope owner, rather than treating effort scope as timing or postponing the IR extension. [Architecture](../architecture/adaptation-and-dialects.md#ordered-effort-projection) owns the implemented resolver and projection contract; nullable/reset semantics remain field-specific.
+**Selected 2026-11-06:** explicit `FollowingResponse` / `NewInputTurn` activation boundaries and reuse of the existing message-envelope owner, rather than treating effort scope as timing or postponing the IR extension. [Architecture](../architecture/adaptation.md#ordered-effort-projection) owns the implemented resolver and projection contract; nullable/reset semantics remain field-specific.

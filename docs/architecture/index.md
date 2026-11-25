@@ -3,7 +3,8 @@
 MorphieCore translates client and Provider protocols through a typed semantic IR. It functions as a gateway, not an agent runtime: planning, agent memory, and tool execution belong to the caller.
 
 This page defines accepted principles, domain contracts, system boundaries, and semantic IR ownership. The architecture is modularized across specialized domain documents:
-- [Protocol adaptation and Provider dialects](adaptation-and-dialects.md)
+- [Protocol adaptation](adaptation.md)
+- [Provider dialects](provider-dialects.md)
 - [Runtime, routing, and trust](runtime-and-routing.md)
 - [History and state replay](history-and-replay.md)
 - [Settled architectural decisions](decisions.md)
@@ -49,9 +50,7 @@ Do not automatically disable thinking, replace a requested tool/output strategy,
 
 The runtime decides whether to issue a different request.
 
-Existing field approximations and selected carrier omissions remain; configured candidate selection may still choose a target that can serve the submitted intent.
-
-Bounded transport retries retain their separate contract and cannot rewrite that intent.
+**Global non-implication principle:** Localized field/carrier adaptations, catalog registrations, and documentation clarifications never implicitly alter routing affinity or failover policy, activate new public operations or endpoints, weaken trust/resource-bound/strict-JSON/terminal checks, or grant credential/deployment approval.
 
 ### Protocols
 
@@ -213,7 +212,7 @@ Never expose never-activated/withdrawn tools, infer structural withdrawal from p
 
 Strictness, selection, call count, seriality and dispatch remain independent guarantees; this tool-set combination selects no downgrade.
 
-Bailian function strictness has its separately selected [service policy](adaptation-and-dialects.md#shared-aliyun-billing-dialect).
+Bailian function strictness has its separately selected [service policy](provider-dialects.md#shared-aliyun-billing-dialect).
 
 Namespace aliases, custom-text wrappers, examples, result-media relocation, prompt annotations and non-developer returned-addition replay are not selected by this combination.
 
@@ -227,7 +226,7 @@ Reuse existing semantic tools, request/delivery projection, fidelity and codecs;
 
 [Unselected conversion designs](../proposals/index.md#three-protocol-tool-conversion-design) owns proposed mappings; [dated evidence](../refs/2026-10-27-client-ir-boundaries.md#nine-direction-tool-assessment-2026-11-04) owns findings; [Roadmap](../roadmap/unscheduled-issues.md#conditional-stage-3-follow-ups) owns execution gates.
 
-Client-history annotations use the separate [L2 contract](adaptation-and-dialects.md#semantic-equivalence-compatibility); discovery and hosted execution remain outside this work.
+Client-history annotations use the separate [L2 contract](adaptation.md#semantic-equivalence-compatibility).
 
 Current shared validation separates intrinsic choice shape/count/uniqueness in settings from request-level membership in ordered availability. Deferred definitions stay withheld until surfaced; removal retains the identity for later re-addition. Current available identities have their own finite bound, independent of retained historical versions. Historical calls keep their original identity/arguments and are not validated against today's schema. Messages serial intent is emitted even for inline-only definitions, and candidate collapse updates history and settings atomically before validation.
 

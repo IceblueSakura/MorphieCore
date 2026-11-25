@@ -48,7 +48,7 @@ The [OpenAPI summary](../openapi.json) describes envelopes and selected constrai
 
 Enable `gpt-image-2.6-flare` or `gpt-image-2.6-sunburst` in `models.json` with a named `openai` Platform API-key account, or enable `qwen-image-3.0-pro`, `gemini-nano-banana-2.1` or `grok-imagine-image-2.0`, to serve standard OpenAI `POST /v1/images/generations` (JSON) and `POST /v1/images/edits` (`multipart/form-data`, using `image` or repeated `image[]`) without custom profile headers. All models return bounded inline Base64 artifacts defaulting to PNG, and support `output_format` (`png`, `jpeg`, `webp`) plus `output_compression` (`0..=100` for `jpeg`/`webp`). When an upstream native encoding differs or recompression is requested, the gateway normalizes via the operator-configured [FFmpeg executable](gateway-configuration.md#media-format-transcoding) without altering image dimensions (matching encodings with no recompression pass through without FFmpeg; if the upstream omits `created`, the gateway records preparation time, and native accounting is omitted). Direct-input edits accept up to 16 declared `image/png`, `image/jpeg` or `image/webp` sources within an 8 MiB aggregate raw input budget. On OpenAI GPT Image targets, preview SSE streaming (`stream: true`, `n: 1`, `partial_images: 0..=3`), PNG `mask` (< 4,000,000 bytes bound to source 0), `input_fidelity`, `quality`, `background` (`transparent`/`opaque`/`auto`), `moderation` (Generate-only) and `safety_identifier` work natively. On Qwen/Gemini/Grok, `stream: true` (`n: 1`) completes statically and returns a single `completed` SSE frame (without preview images or synthesized `usage`); `mask`, `background: "transparent"`, exceeding `n` limits (1 on Gemini/Grok, 6 on Qwen) and exact `size` on Gemini/Grok reject, while advisory `quality`, `background: "opaque"`, `moderation`, `input_fidelity`, `partial_images`, `safety_identifier` and Gemini/Qwen `user` hints are omitted. Neither `file_id`/JSON edit references, SVG, nor GIF is admitted.
 
-See [Qwen model configuration](gateway-configuration.md#qwen-image-candidates) for activation and [native static images](../architecture/adaptation-and-dialects.md#native-static-images) for exact field rules.
+See [Qwen model configuration](gateway-configuration.md#qwen-image-candidates) for activation and [native static images](../architecture/adaptation.md#native-static-images) for exact field rules.
 
 ### Speech synthesis
 
@@ -103,7 +103,7 @@ Each descriptor has `id`, `name`, `owned_by`, `preferred_interface` and `interfa
 
 Each interface identifies its public protocol and delivery modes, plus `input`, `output`, planning `token_limits`, text `features` and reasoning history/activation/effort declarations under `generation`.
 
-The [OpenAPI schemas](../openapi.json) define the complete shape and [Architecture](../architecture/adaptation-and-dialects.md#generation-text-model-discovery) defines the assessed domains.
+The [OpenAPI schemas](../openapi.json) define the complete shape and [Architecture](../architecture/adaptation.md#generation-text-model-discovery) defines the assessed domains.
 
 `preferred_interface` is advisory: it recommends only the primary candidate's native corresponding interface after its assessed Agent-default requests qualify. An inactive, unqualified or unmapped native interface yields `state: "not_assessed"` and null `protocol`/`uniform`. An assessed preference includes its `basis`; `uniform` states whether all candidates qualify the same native interface. This is not a conversion-loss ranking or a routing instruction.
 
@@ -184,9 +184,9 @@ The view is startup-immutable, sorted and complete without pagination or version
 
 ### Capability discovery and adaptation notice
 
-The implemented surface combines a partial capability snapshot, a conservative possible-adaptation header and optional bounded `morphiecore` notices. The [actual-loss reporting contract](../architecture/adaptation-and-dialects.md#public-capability-and-adaptation-notice) separates these projections from the authoritative internal execution report. Notices are safe to ignore, not a stable public schema or a continuation carrier.
+The implemented surface combines a partial capability snapshot, a conservative possible-adaptation header and optional bounded `morphiecore` notices. The [actual-loss reporting contract](../architecture/adaptation.md#public-capability-and-adaptation-notice) separates these projections from the authoritative internal execution report. Notices are safe to ignore, not a stable public schema or a continuation carrier.
 
-The accepted [safe-to-ignore diagnostic extension policy](../architecture/adaptation-and-dialects.md#public-capability-and-adaptation-notice) permits additional namespaced fields only where the selected protocol allows extensions, for example to explain actual data loss.
+The accepted [safe-to-ignore diagnostic extension policy](../architecture/adaptation.md#public-capability-and-adaptation-notice) permits additional namespaced fields only where the selected protocol allows extensions, for example to explain actual data loss.
 
 Ordinary SDK clients need not display, retain or return them.
 
@@ -220,7 +220,7 @@ Usage can therefore be approximate and must not be treated as billing or quota t
 
 Responses additionally declares `responses.infer-required-settings.v1` for missing mandatory tool-setting echoes.
 
-See [the fallback rules and limitations](../architecture/adaptation-and-dialects.md#downstream-schema-completion); optional diagnostics never alter standard field meaning.
+See [the fallback rules and limitations](../architecture/adaptation.md#downstream-schema-completion); optional diagnostics never alter standard field meaning.
 
 The current request slice assesses tools, tool selection, output formats and output caps. Unlisted safety-policy, cached-context-reference and cache-retention cases remain `not_assessed` by this partial discovery view; request validation and candidate-local projection still apply.
 
@@ -275,6 +275,6 @@ Messages maps exhausted quota to 402, upstream overload to 529, gateway timeouts
 
 A Responses stream with gateway-classified context overflow or exhausted quota may return HTTP 200 with a standard standalone `error` event, not a fabricated `response.failed` object. Native upstream failed Responses remain a separate carrier. HTTP 200 alone does not mean success. After body publication, errors can only report failure or abort delivery; no candidate replay or fabricated success terminal is allowed.
 
-Failure diagnostics carry the bounded `generation` execution report: checked conversion boundaries, typed failures, attempt observations and final request outcome. Public error classification is distinct from the actual upstream response head; failed attempts do not become successful-request errors. Private payloads and arbitrary error strings are excluded. See [typed failures](../architecture/adaptation-and-dialects.md#typed-conversion-failures); recording never changes routing or completion behavior.
+Failure diagnostics carry the bounded `generation` execution report: checked conversion boundaries, typed failures, attempt observations and final request outcome. Public error classification is distinct from the actual upstream response head; failed attempts do not become successful-request errors. Private payloads and arbitrary error strings are excluded. See [typed failures](../architecture/adaptation.md#typed-conversion-failures); recording never changes routing or completion behavior.
 
 Resource defaults and bounds are in [Limits](../../crates/morphiecore-gateway/src/startup/limits.rs). Configuration fields above do not expose every embedded-library limit.

@@ -20,7 +20,7 @@ The [stage-5 backlog](../roadmap/index.md#stage-5-backlog) has no implementation
 
 ## Models discovery interfaces
 
-The [model capability directory](../architecture/adaptation-and-dialects.md#generation-text-model-discovery) defines fact ownership, task-specific contracts, independent capacities, modalities and interface projection; [Usage](../usage/api-reference.md#generation-text-model-discovery) owns implemented endpoints and [OpenAPI](../openapi.json) owns machine schemas.
+The [model capability directory](../architecture/adaptation.md#generation-text-model-discovery) defines fact ownership, task-specific contracts, independent capacities, modalities and interface projection; [Usage](../usage/api-reference.md#generation-text-model-discovery) owns implemented endpoints and [OpenAPI](../openapi.json) owns machine schemas.
 
 Enhanced `/v1/morphiecore/models` descriptors and Pi integration remain Generation Text-only.
 

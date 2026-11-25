@@ -61,7 +61,7 @@ pub struct RequestRules {
     /// Explicit serial intent rejects; explicit permission is omitted on a copy.
     pub parallel_tools_always_enabled: bool,
     /// User video as `{"type":"video_url","video_url":{"url":…}}`, URL or data URL.
-    /// Media policy: docs/architecture/adaptation-and-dialects.md#media.
+    /// Media policy: docs/architecture/adaptation.md#media.
     pub chat_video_url: bool,
     /// User video as `{"type":"input_video","video_url":…}`, URL or data URL; no
     /// tool-result carrier. Source: OpenRouter OpenAPI `InputVideo` (2026-10-13).

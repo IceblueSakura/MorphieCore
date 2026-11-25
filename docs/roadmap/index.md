@@ -63,7 +63,7 @@ policy gates; Stage 5 remains unscheduled.
 Prefer small, independently decidable repairs before complex integration; diagnostic global → protocol → Provider/model layers are not a mandatory work queue or cross-product sweep. Reuse existing schema, lowering, execution, typed history and isolated current-client drivers. Every selected work package follows this lifecycle:
 1. **Entry:** Pin source revisions, dialect rules, target profiles, and unresolved decisions. Document protocol findings in `docs/refs/`.
 2. **Delivery:** Implement one coherent request/result/stream/history slice. Resolve unselected structures with a minimal counterexample and options before proceeding.
-3. **Invariants:** Maintain immutable source IR and fresh per-attempt decoder state. Native/equivalent history projections preserve earlier turns; selected lossy projections record rendered-prefix/cache changes under the [candidate-local contract](../architecture/adaptation-and-dialects.md#candidate-local-projection).
+3. **Invariants:** Maintain immutable source IR and fresh per-attempt decoder state. Native/equivalent history projections preserve earlier turns; selected lossy projections record rendered-prefix/cache changes under the [candidate-local contract](../architecture/adaptation.md#candidate-local-projection).
 4. **Evidence:** Provide independent directional tests and focused failure assertions at the responsible layer. Classify each field's ladder level and give rejections their L5 reason.
 5. **Exit:** Run the offline baseline and relevant SDK gates before commit and push. Remove completed roadmap packages and record decisions in [Architecture](../architecture/index.md).
 
@@ -103,7 +103,7 @@ Selected direction: Dual-SDK support (TypeSafe and OpenAI) backed by a unified D
 
 #### Grok Imagine adaptation
 
-Native ratio/resolution controls remain independently selectable beyond [static Generate](../architecture/adaptation-and-dialects.md#native-static-images). Video integration requires a native asynchronous job contract rather than a synchronous facade.
+Native ratio/resolution controls remain independently selectable beyond [static Generate](../architecture/adaptation.md#native-static-images). Video integration requires a native asynchronous job contract rather than a synchronous facade.
 
 ### Stage 5 backlog
 

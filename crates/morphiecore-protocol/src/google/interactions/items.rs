@@ -180,7 +180,7 @@ pub(super) fn steps(
 }
 
 /// One inert resource as v1 content. `function_result` carries only text and images.
-/// Media policy: docs/architecture/adaptation-and-dialects.md#media.
+/// Media policy: docs/architecture/adaptation.md#media.
 fn media(
     resource: ResourceView<'_>,
     tool: bool,

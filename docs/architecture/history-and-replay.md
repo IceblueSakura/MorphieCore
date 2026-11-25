@@ -2,7 +2,7 @@
 
 This document defines multi-turn conversation contracts: standard-protocol reasoning replay, stateless carrier limits, compacted history, and agent session storage.
 
-See [Architecture Overview](index.md) for system boundaries and core IR semantics; [Protocol adaptation](adaptation-and-dialects.md) for wire mappings; and [Settled decisions](decisions.md) for accepted trade-offs.
+See [Architecture Overview](index.md) for system boundaries and core IR semantics; [Protocol adaptation](adaptation.md) and [Provider dialects](provider-dialects.md) for wire mappings; and [Settled decisions](decisions.md) for accepted trade-offs.
 
 ## Contents
 

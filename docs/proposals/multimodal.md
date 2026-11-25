@@ -76,7 +76,7 @@ Treat this as a separate optional audio slice: migrate existing static mappings 
 
 ## Image production and editing
 
-The current task and execution path implement [bounded static Generate](../architecture/adaptation-and-dialects.md#native-static-images), not Edit or streaming. [Dated OpenAI evidence](../refs/2026-10-22-embedding-image-contracts.md#images) and [Grok observations](../refs/2026-10-22-grok-imagine.md#images) distinguish the official schema, model-effective controls and unresolved source discrepancies.
+The current task and execution path implement [bounded static Generate](../architecture/adaptation.md#native-static-images), not Edit or streaming. [Dated OpenAI evidence](../refs/2026-10-22-embedding-image-contracts.md#images) and [Grok observations](../refs/2026-10-22-grok-imagine.md#images) distinguish the official schema, model-effective controls and unresolved source discrepancies.
 
 ### Image requests and target admission
 
@@ -117,7 +117,7 @@ Decode that into explicit source-zero association and reject other associations 
 
 The mask is editing guidance, not a promise of pixel-exact preservation.
 
-Recommend retaining the accepted [inert-media boundary](../architecture/adaptation-and-dialects.md#media): validate source shape, declared type and encoded/decoded byte bounds locally; leave actual format, alpha and matching pixel dimensions to the native upstream validator for both inline and URL forms.
+Recommend retaining the accepted [inert-media boundary](../architecture/adaptation.md#media): validate source shape, declared type and encoded/decoded byte bounds locally; leave actual format, alpha and matching pixel dimensions to the native upstream validator for both inline and URL forms.
 
 A target without the required validation contract rejects.
 
@@ -157,7 +157,7 @@ Maintain three distinct facts: requested controls, stream-reported settings (whi
 | Source reports serving model/native billing without standard carriers | Preserve the source; select explicit dialect carriage or a named allowed report omission. The existing accounting projection does not authorize model/time loss |
 | Artifact reports disagree across outputs | Do not collapse them into a misleading top-level report; reject incompatible standard delivery or use a selected richer carrier |
 
-The [selected static delivery contract](../architecture/adaptation-and-dialects.md#native-static-images) separates default PNG compatibility from explicit native delivery. Standard GPT Image remains strict. Other transcodes and image transformations remain separate.
+The [selected static delivery contract](../architecture/adaptation.md#native-static-images) separates default PNG compatibility from explicit native delivery. Standard GPT Image remains strict. Other transcodes and image transformations remain separate.
 
 ### Static Generate review proposal
 

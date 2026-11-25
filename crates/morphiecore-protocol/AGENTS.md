@@ -9,8 +9,8 @@ Applies to `crates/morphiecore-protocol/` and `crates/morphiecore-lowering/` (in
 
 ## Field handling and conversion ladder
 
-- **Field handling:** Keep known fields strict and discard unknown client extension fields without IR retention or Provider passthrough ([field handling](../../docs/architecture/adaptation-and-dialects.md#field-handling)).
-- **Conversion ladder ([conversion ladder](../../docs/architecture/adaptation-and-dialects.md#conversion-ladder)):**
+- **Field handling:** Keep known fields strict and discard unknown client extension fields without IR retention or Provider passthrough ([field handling](../../docs/architecture/adaptation.md#field-handling)).
+- **Conversion ladder ([conversion ladder](../../docs/architecture/adaptation.md#conversion-ladder)):**
   - Admit by default without requiring prior equivalence evidence.
   - Delegate unknown upstream behavior to upstream validation instead of pre-rejecting.
   - Reject only when omitting an inexpressible field would let the client mistake the response for satisfying its request.

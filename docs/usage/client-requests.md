@@ -36,7 +36,7 @@ Both forms work at ingress. Repeated headers or both forms together are rejected
 {"model":"configured-public-model","input":"Reply with exactly pong.","max_output_tokens":64}
 ```
 
-When an admitted request includes `metadata`, Responses delivery can echo it if the upstream response omits that field. An upstream explicit null or object wins; maps are not merged. This is a request association, not proof of Provider storage or effective configuration. Send it again when needed on a later turn; stored history does not inherit it. See [delivery provenance and precedence](../architecture/adaptation-and-dialects.md#downstream-schema-completion).
+When an admitted request includes `metadata`, Responses delivery can echo it if the upstream response omits that field. An upstream explicit null or object wins; maps are not merged. This is a request association, not proof of Provider storage or effective configuration. Send it again when needed on a later turn; stored history does not inherit it. See [delivery provenance and precedence](../architecture/adaptation.md#downstream-schema-completion).
 
 Responses requires complete returned standard history and no nonnull `previous_response_id`. Omitted/null/false `store` is stateless; explicit `store:false` is recommended. Google ordinary text/call signatures without a standard carrier reject; see the [field-level reasons](../architecture/history-and-replay.md#stateless-api-boundaries). No replay profile or client-specific extension is offered.
 
@@ -82,7 +82,7 @@ Equivalent decimal/exponent spellings such as `top_k:1.0` and `top_k:1e0` are ac
 
 Null sampling defaults normalize without a loss receipt; malformed values still reject.
 
-Completed thinking history must retain its nonempty native signature, and redacted thinking must retain its opaque data. Bare or damaged continuation cannot be authorized by deleting it; the gateway requires its existing issuer-bound envelope. A completed empty signature rejects. The historical cross-protocol unsigned [delivery projection](../architecture/adaptation-and-dialects.md#response-rules) is not a supported standard Messages continuation path; do not submit it as signed history, invent a signature or replace it with answer text.
+Completed thinking history must retain its nonempty native signature, and redacted thinking must retain its opaque data. Bare or damaged continuation cannot be authorized by deleting it; the gateway requires its existing issuer-bound envelope. A completed empty signature rejects. The historical cross-protocol unsigned [delivery projection](../architecture/provider-dialects.md#response-rules) is not a supported standard Messages continuation path; do not submit it as signed history, invent a signature or replace it with answer text.
 
 Current installed pi and OpenCode Messages defaults need no version/beta header overrides. The isolated Go/Haiku gates preserve built-in model metadata and default thinking, changing only the test endpoint/key and operational output cap. They exercise actual read execution and signed-history continuation; see [verification](../development.md#installed-client-acceptance). `allowEmptySignature:true` does not establish a valid loop; return genuinely signed native history.
 
@@ -104,7 +104,7 @@ Uncarried reasoning owners are omitted from JSON, SSE and retained history under
 
 Standard `reasoning_effort` controls computation, not reasoning-text visibility; usage reasoning counters do not imply readable output.
 
-Unregistered Client fields are discarded without IR retention under the [semantic boundary](../architecture/adaptation-and-dialects.md#field-handling).
+Unregistered Client fields are discarded without IR retention under the [semantic boundary](../architecture/adaptation.md#field-handling).
 
 Public Chat does not activate private `enable_thinking`/`thinking_budget`/`top_k`; malformed known fields still reject.
 
@@ -122,9 +122,9 @@ See the [cross-source history contract](../architecture/history-and-replay.md#cr
 
 Assessed Bailian Responses candidates keep summary-only history and apply `responses.transfer-visible-history.v1` to reasoning owners without a target carrier. This candidate-side projection preserves visible history and tool links without turning reasoning into assistant text. Explicit historical read intent cannot be fulfilled by omission; unassessed bindings retain their prior behavior.
 
-Bailian Responses request controls use the selected [presentation/continuity policy](../architecture/adaptation-and-dialects.md#clientir-projection-principles): summary `auto` resolves to the native default; explicit `concise`/`detailed` and encrypted include take named omissions where no carrier exists. An admitted explicit thinking-off request needs no encrypted-include loss receipt.
+Bailian Responses request controls use the selected [presentation/continuity policy](../architecture/adaptation.md#clientir-projection-principles): summary `auto` resolves to the native default; explicit `concise`/`detailed` and encrypted include take named omissions where no carrier exists. An admitted explicit thinking-off request needs no encrypted-include loss receipt.
 
-DashScope and TokenPlan share the [verified-only function-strictness policy](../architecture/adaptation-and-dialects.md#shared-aliyun-billing-dialect) on Chat and Responses.
+DashScope and TokenPlan share the [verified-only function-strictness policy](../architecture/provider-dialects.md#shared-aliyun-billing-dialect) on Chat and Responses.
 
 Unverified model/API pairs accept `strict:true` as best-effort under `bailian.relax-function-strictness.v1`, retaining the supplied schema unchanged.
 
@@ -148,7 +148,7 @@ Unassessed history contracts delegate available standard history to upstream val
 
 See the [binding-history contract](../architecture/history-and-replay.md#binding-reasoning-history-contract).
 
-Responses Client-history `output_text` may omit an empty `annotations` collection under the selected [L2 compatibility rule](../architecture/adaptation-and-dialects.md#semantic-equivalence-compatibility); explicit arrays are preserved and malformed values, including null, reject.
+Responses Client-history `output_text` may omit an empty `annotations` collection under the selected [L2 compatibility rule](../architecture/adaptation.md#semantic-equivalence-compatibility); explicit arrays are preserved and malformed values, including null, reject.
 
 Complete output-message history still needs its `type`, `id`, `role`, `content` and `status`; those fields are not inferred.
 
@@ -186,7 +186,7 @@ Cross-protocol targets with one attribution carrier prefer an explicit safety id
 
 Documented null defaults normalize to absence; an explicit empty string remains explicit and prevents fallback. Native field bounds remain strict; for example, a 129-character native Messages ID cannot project to OpenAI's 128-character safety carrier. No projection truncates, lowercases or hashes attribution.
 
-`prompt_cache_key` remains independent. A projection can lose identity under `generation.omit-identity-hints.v1` and separately lose OpenAI legacy `user` cache bucketing under `cache.omit-legacy-user-bucketing.v1`; neither receipt includes identifier values. No identity is derived from credentials, prompts or conversation IDs. See the [attribution contract](../architecture/adaptation-and-dialects.md#end-user-attribution).
+`prompt_cache_key` remains independent. A projection can lose identity under `generation.omit-identity-hints.v1` and separately lose OpenAI legacy `user` cache bucketing under `cache.omit-legacy-user-bucketing.v1`; neither receipt includes identifier values. No identity is derived from credentials, prompts or conversation IDs. See the [attribution contract](../architecture/adaptation.md#end-user-attribution).
 
 ### Messages profile and cache markers
 
@@ -202,7 +202,7 @@ Native projection does not move markers, shorten TTLs or add an automatic policy
 
 Marker-free Go/Haiku requests retain the existing automatic five-minute default.
 
-Other candidates omit cache controls without carriers under named rules at their original owners; see [owner-local omission](../architecture/adaptation-and-dialects.md#owner-local-cache-admission) and [automatic policy](../architecture/adaptation-and-dialects.md#caller-selected-automatic-cache-admission).
+Other candidates omit cache controls without carriers under named rules at their original owners; see [owner-local omission](../architecture/provider-dialects.md#owner-local-cache-admission) and [automatic policy](../architecture/provider-dialects.md#caller-selected-automatic-cache-admission).
 
 Cache hits and deployed proxy TTL behavior are not certified by admission.
 
@@ -214,7 +214,7 @@ Keep root effort unchanged and replay historical markers in their original posit
 
 A marker after new user input selects that reply; a marker after tool-result-only feedback waits for the next new-input turn.
 
-Native candidates preserve system boundaries; other candidates use the [ordered effort projection contract](../architecture/adaptation-and-dialects.md#ordered-effort-projection).
+Native candidates preserve system boundaries; other candidates use the [ordered effort projection contract](../architecture/adaptation.md#ordered-effort-projection).
 
 Local controls on user/assistant messages, null local configuration/effort, local format/task budgets and `clear_at` remain unsupported.
 
@@ -236,13 +236,13 @@ Codec support does not activate models or execute tools.
 
 ### Unsupported controls and delivery
 
-Following the [Client semantic boundary](../architecture/adaptation-and-dialects.md#field-handling):
+Following the [Client semantic boundary](../architecture/adaptation.md#field-handling):
 - **Unknown extension fields** in client requests are silently ignored without entering semantic IR or forwarding to Providers.
-- **Known controls** follow candidate-local [conversion rules](../architecture/adaptation-and-dialects.md#conversion-ladder); unscheduled capabilities still reject at intake with HTTP 400. Key examples:
+- **Known controls** follow candidate-local [conversion rules](../architecture/adaptation.md#conversion-ladder); unscheduled capabilities still reject at intake with HTTP 400. Key examples:
   - Chat: `store: true`, `moderation`, `function_call`, `web_search_options`.
   - Messages: non-null `clear_at`, `container`, non-empty `mcp_servers` (`[]` is admitted as absent), `context_management`, `compaction`, `inference_geo`, `speed`, `fallbacks`, `fallback_credit_token`, `diagnostics`, and present `output_config.task_budget`.
 - **Malformed fields** (e.g. invalid types or null values where non-null is required) reject immediately.
-- **Tool results:** Results associate with their calls by call ID; grouped calls followed by their results are accepted without reordering ([association contract](../architecture/adaptation-and-dialects.md#tool-result-association)). Messages keeps its official rule that results appear in the user message immediately after the calls. In manual thinking mode, forced tool choice is rejected.
+- **Tool results:** Results associate with their calls by call ID; grouped calls followed by their results are accepted without reordering ([association contract](../architecture/adaptation.md#tool-result-association)). Messages keeps its official rule that results appear in the user message immediately after the calls. In manual thinking mode, forced tool choice is rejected.
 
 ### Image input
 
@@ -284,7 +284,7 @@ Explicit presence stays in source IR. Omitted detail remains omitted; only the c
 
 Any approved projection changes only the candidate copy, not the source request.
 
-See [Media](../architecture/adaptation-and-dialects.md#media), [IR resource budgets](../../crates/morphiecore-semantic/src/task/generation/resources/mod.rs) and [Messages media limits](../../crates/morphiecore-protocol/src/anthropic/messages/media.rs).
+See [Media](../architecture/adaptation.md#media), [IR resource budgets](../../crates/morphiecore-semantic/src/task/generation/resources/mod.rs) and [Messages media limits](../../crates/morphiecore-protocol/src/anthropic/messages/media.rs).
 
 ## Stored Responses
 

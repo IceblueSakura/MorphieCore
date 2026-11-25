@@ -38,7 +38,7 @@ Standard video discriminators, hosted features and new diagnostics APIs were not
 
 ## Repair disposition
 
-All five slices were selected and completed on **2026-10-26**. [Architecture](../architecture/adaptation-and-dialects.md#standard-request-boundary) owns the resulting rules: preserve explicit intent and source owners; enforce known types/unions/native grammar; reject unauthorized replay without deletion; keep SDK convenience fields out of standard semantics. The former missing-annotations insertion and empty-signature thinking intake were removed.
+All five slices were selected and completed on **2026-10-26**. [Architecture](../architecture/adaptation.md#standard-request-boundary) owns the resulting rules: preserve explicit intent and source owners; enforce known types/unions/native grammar; reject unauthorized replay without deletion; keep SDK convenience fields out of standard semantics. The former missing-annotations insertion and empty-signature thinking intake were removed.
 
 Independent [request regressions](../../tests/semantic/standard_contracts/request_boundaries.rs), [replay cases](../../tests/semantic/reasoning_replay/replay_carrier.rs) and [SDK parameter-union checks](../../tests/sdk/standard_requests.py) protect the corrected directions. They are not exhaustive protocol conformance.
 

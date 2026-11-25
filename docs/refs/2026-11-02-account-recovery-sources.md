@@ -76,7 +76,7 @@ OpenRouter preserves canonical `error_type` in Chat error metadata, the Response
 
 Bounded readers retain only recognized finite tokens and reject malformed consumed canonical values.
 
-Standard Responses delivery coarsens confirmed SIWC codes under [the named disposition](../architecture/adaptation-and-dialects.md#conversion-ladder) without changing source failure evidence or the failed task outcome.
+Standard Responses delivery coarsens confirmed SIWC codes under [the named disposition](../architecture/adaptation.md#conversion-ladder) without changing source failure evidence or the failed task outcome.
 
 **Recovery review recheck, 2026-11-03:** [RFC 9110 §10.2.3](https://www.rfc-editor.org/rfc/rfc9110.html#name-retry-after) permits non-negative decimal delay-seconds and HTTP dates without a one-day limit.
 

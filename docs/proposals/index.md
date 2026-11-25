@@ -141,7 +141,7 @@ Extract a shared conversation-input aggregate only where counting and compaction
 
 ### Generation boundary review
 
-Accepted production decisions live in Architecture: [tool examples/document context](../architecture/index.md#tool-examples-and-document-context), [citation point anchors](../architecture/index.md#citation-point-anchors), [automatic TTL admission](../architecture/adaptation-and-dialects.md#caller-selected-automatic-cache-admission) and [explanatory reports](../architecture/adaptation-and-dialects.md#explanatory-terminal-reports). They are selected local contracts, not unresolved alternatives below or claims of implementation. The remaining proposals do not inherit that approval.
+Accepted production decisions live in Architecture: [tool examples/document context](../architecture/index.md#tool-examples-and-document-context), [citation point anchors](../architecture/index.md#citation-point-anchors), [automatic TTL admission](../architecture/provider-dialects.md#caller-selected-automatic-cache-admission) and [explanatory reports](../architecture/adaptation.md#explanatory-terminal-reports). They are selected local contracts, not unresolved alternatives below or claims of implementation. The remaining proposals do not inherit that approval.
 
 #### Retain legitimate conversation semantics
 
@@ -172,9 +172,9 @@ A future Responses hosted image-tool observation may contain image artifacts wit
 
 #### Independent output ceilings (unselected)
 
-The Bailian review selected [existing-IR-only adaptation](../architecture/adaptation-and-dialects.md#shared-aliyun-billing-dialect), not a budget-scope extension. Qwen Chat's reply-only `max_tokens:128` plus `thinking_budget:64` is a minimal counterexample: replacing them with total `192` permits an oversized reply when fewer thoughts are used; total `128` can truncate an otherwise valid 128-reply/64-thought result. Neither summation nor clipping is an exact mapping.
+The Bailian review selected [existing-IR-only adaptation](../architecture/provider-dialects.md#shared-aliyun-billing-dialect), not a budget-scope extension. Qwen Chat's reply-only `max_tokens:128` plus `thinking_budget:64` is a minimal counterexample: replacing them with total `192` permits an oversized reply when fewer thoughts are used; total `128` can truncate an otherwise valid 128-reply/64-thought result. Neither summation nor clipping is an exact mapping.
 
-A future independent-ceiling representation would need answer/thought/total ownership, precedence, contradiction rules and directional mappings. No such representation or summation rule is selected. The [budget direction](../architecture/adaptation-and-dialects.md#bounded-token-budget-adaptation) permits bounded adaptation review without requiring that redesign.
+A future independent-ceiling representation would need answer/thought/total ownership, precedence, contradiction rules and directional mappings. No such representation or summation rule is selected. The [budget direction](../architecture/adaptation.md#bounded-token-budget-adaptation) permits bounded adaptation review without requiring that redesign.
 
 The source/code recheck identifies two smaller candidates:
 
@@ -189,7 +189,7 @@ Current Messages intake requires a manual budget of at least `1024` and strictly
 
 #### Google output report owners (unselected)
 
-Probability and token-identity proposals remain paused under the [Google API pause](../roadmap/backlog-and-frozen.md#google-api-pause). Bounded terminal explanations and service-source review belong to the accepted [report contract](../architecture/adaptation-and-dialects.md#explanatory-terminal-reports); they did not select the owners below.
+Probability and token-identity proposals remain paused under the [Google API pause](../roadmap/backlog-and-frozen.md#google-api-pause). Bounded terminal explanations and service-source review belong to the accepted [report contract](../architecture/adaptation.md#explanatory-terminal-reports); they did not select the owners below.
 
 The [source counterexamples](../refs/2026-10-17-generation-contracts.md#google-foreground-contracts-2026-10-20) still require design review before broader probability carriage:
 
@@ -268,7 +268,7 @@ Preserve a native shape and delegate upstream validation when possible; reject a
 
 Never promote tool/assistant declarations to developer authority.
 
-[Client-history empty annotations](../architecture/adaptation-and-dialects.md#semantic-equivalence-compatibility) is unrelated to proposed textual tool-history annotations.
+[Client-history empty annotations](../architecture/adaptation.md#semantic-equivalence-compatibility) is unrelated to proposed textual tool-history annotations.
 
 ### Resource and execution safety
 
