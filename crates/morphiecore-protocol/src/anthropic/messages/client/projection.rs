@@ -9,7 +9,6 @@ use serde_json::Value;
 /// stop sequences. This is client delivery policy, never native source decoding.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GoogleTerminalPolicy {
-    GenerateContentWithoutStops,
     InteractionsWithoutStops,
 }
 impl GoogleTerminalPolicy {
@@ -32,26 +31,6 @@ impl GoogleTerminalPolicy {
             calls,
             source.details().completion.as_ref(),
         ) {
-            (
-                Self::GenerateContentWithoutStops,
-                InteractionProgress::AwaitingToolResults,
-                true,
-                Some(CompletionCause::NaturalOrStopSequence),
-            ) => (
-                None,
-                "messages.google-tool-stop.v1",
-                crate::conversion::generation::Change::Omit,
-            ),
-            (
-                Self::GenerateContentWithoutStops,
-                InteractionProgress::TurnFinished,
-                false,
-                Some(CompletionCause::NaturalOrStopSequence),
-            ) => (
-                Some(CompletionCause::Natural),
-                "messages.google-stop-without-sequences.v1",
-                crate::conversion::generation::Change::InferFromRequest,
-            ),
             (Self::InteractionsWithoutStops, InteractionProgress::TurnFinished, false, None) => (
                 Some(CompletionCause::Natural),
                 "messages.interactions-completed-as-end-turn.v1",

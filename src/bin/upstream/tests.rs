@@ -115,9 +115,9 @@ fn native_probe_paths_and_headers_follow_the_shared_entries() {
         (
             "google",
             "google",
-            "/v1beta/models/new:generateContent",
+            "/v1/interactions",
             AuthScheme::ApiKeyHeader("x-goog-api-key"),
-            json!({"contents":[{"role":"user","parts":[{"text":"Reply with the single word OK."}]}]}),
+            json!({"model":"new","input":"Reply with the single word OK.","store":false,"stream":false}),
         ),
     ] {
         let plan = command(&["probe", provider, "--protocol", protocol, "--model", "new"])
@@ -127,7 +127,7 @@ fn native_probe_paths_and_headers_follow_the_shared_entries() {
         assert_eq!(plan.auth, auth);
         assert_eq!(plan.body, Some(body));
     }
-    for model in ["../other", "x?key=y", "x/other", "models/"] {
+    for model in ["", "x y", "x\ny"] {
         assert!(
             command(&["probe", "google", "--protocol", "google", "--model", model])
                 .plan()
@@ -235,7 +235,7 @@ fn probe_success_requires_text_and_an_honest_terminal() {
         ),
         (
             Protocol::Google,
-            json!({"candidates":[{"content":{"parts":[{"text":"private thought","thought":true},{"text":"OK"}]},"finishReason":"STOP"}]}),
+            json!({"status":"completed","steps":[{"type":"thought","summary":[{"type":"text","text":"private thought"}]},{"type":"model_output","parts":[{"type":"text","text":"OK"}]}]}),
         ),
     ] {
         assert_eq!(

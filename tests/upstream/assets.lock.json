@@ -81,20 +81,6 @@
     {
       "source": "vercel-google",
       "revision": "594495a5af70547d9d7a13d6df334ae30db49622",
-      "path": "packages/google/src/__fixtures__/google-text.chunks.txt",
-      "local": "vercel/google-text.jsonl",
-      "sha256": "9269d63d64c886e9eb99e7e63eb67ba917023821b41751c7b4b5410777710b36"
-    },
-    {
-      "source": "vercel-google",
-      "revision": "594495a5af70547d9d7a13d6df334ae30db49622",
-      "path": "packages/google/src/__fixtures__/google-text.json",
-      "local": "vercel/google-text.json",
-      "sha256": "5eb4115eea1aa9e212ee423526f9ea71ca7a70ce88d3108fb506f9ac09648a9c"
-    },
-    {
-      "source": "vercel-google",
-      "revision": "594495a5af70547d9d7a13d6df334ae30db49622",
       "path": "packages/google/src/interactions/__fixtures__/basic.chunks.txt",
       "local": "vercel/interactions-basic.jsonl",
       "sha256": "e4271a25abf286e052926695fc24fc93f9116d30c73f4751d46faf2b0aec9e91"

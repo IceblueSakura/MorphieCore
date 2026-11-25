@@ -214,18 +214,6 @@
       "sha256": "b8f553e43b2afb1bf13d0c7bed659e00c8c92fe945a163918b4bcaf0a27b0833",
       "version": "v1beta",
       "last_modified": "Thu, 22 Oct 2026 21:57:22 GMT"
-    },
-    "google-generate-content-v1": {
-      "url": "https://generativelanguage.googleapis.com/$discovery/rest?version=v1",
-      "sha256": "7188cad1cd0c2875820c9abefa4eb63c9134177a02d6667cb2bdf40010ad34a0",
-      "version": "v1",
-      "revision": "20261023"
-    },
-    "google-generate-content-v1beta": {
-      "url": "https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta",
-      "sha256": "1d42aac8490ac05da9cef90f2b98bf92e29bc3889dfe15484a9d49136bec35a8",
-      "version": "v1beta",
-      "revision": "20261023"
     }
   }
 }

@@ -89,8 +89,6 @@ pub fn format_tag(format: ReplayFormat) -> &'static str {
         ReplayFormat::ResponsesCompaction => "openai-compaction",
         ReplayFormat::AnthropicMessagesThinking => "anthropic-thinking",
         ReplayFormat::AnthropicMessagesRedactedThinking => "anthropic-redacted-thinking",
-        ReplayFormat::GoogleGenerateContentPart => "gemini-part",
-        ReplayFormat::GoogleGenerateContentSignature => "gemini-signature",
         ReplayFormat::GoogleInteractionsV1Thought => "interactions-thought",
         ReplayFormat::GoogleInteractionsV1FunctionCall => "interactions-function-call",
     }
@@ -103,8 +101,6 @@ pub fn parse_format(tag: &str) -> Option<ReplayFormat> {
         "openai-compaction" => ReplayFormat::ResponsesCompaction,
         "anthropic-thinking" => ReplayFormat::AnthropicMessagesThinking,
         "anthropic-redacted-thinking" => ReplayFormat::AnthropicMessagesRedactedThinking,
-        "gemini-part" => ReplayFormat::GoogleGenerateContentPart,
-        "gemini-signature" => ReplayFormat::GoogleGenerateContentSignature,
         "interactions-thought" => ReplayFormat::GoogleInteractionsV1Thought,
         "interactions-function-call" => ReplayFormat::GoogleInteractionsV1FunctionCall,
         _ => return None,

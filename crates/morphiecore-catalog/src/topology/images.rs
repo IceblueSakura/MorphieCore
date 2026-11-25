@@ -32,13 +32,6 @@ impl ImageEndpoint {
         } else {
             &self.target.path
         };
-        if self.profile == crate::adapter::images::UpstreamAdapter::GeminiImage {
-            return crate::provider::GenerationOperation::GoogleGenerateContent.resolve_path(
-                base,
-                &self.upstream_model,
-                false,
-            );
-        }
         Ok(base.clone())
     }
 }

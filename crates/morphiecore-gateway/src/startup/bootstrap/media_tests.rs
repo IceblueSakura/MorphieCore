@@ -100,7 +100,7 @@ async fn assert_native_jpeg(
 }
 
 #[tokio::test]
-async fn gemini_image_uses_trusted_generate_content_path_and_preserves_jpeg() {
+async fn gemini_image_uses_trusted_interactions_path_and_preserves_jpeg() {
     let model = "gemini-nano-banana-2.1";
     let fixture = Fixture::new(
         service(),
@@ -111,13 +111,12 @@ async fn gemini_image_uses_trusted_generate_content_path_and_preserves_jpeg() {
     assert_native_jpeg(
         fixture,
         model,
-        "/v1beta/models/gemini-nano-banana-2.1:generateContent",
+        "/v1/interactions",
         ("x-goog-api-key", "synthetic-google-key"),
-        json!({"contents":[{"role":"user","parts":[{"text":"pattern"}]}],
-            "generationConfig":{"responseModalities":["TEXT","IMAGE"]}}),
-        json!({"candidates":[{"finishReason":"STOP","content":{"role":"model","parts":[
-            {"inlineData":{"mimeType":"image/jpeg","data":"AQID"}}
-        ]}}]}),
+        json!({"model":model,"store":false,"input":[{"type":"text","text":"pattern"}],"response_format":{"type":"image"}}),
+        json!({"status":"completed","steps":[{"type":"model_output","content":[
+            {"type":"image","mime_type":"image/jpeg","data":"AQID"}
+        ]}]}),
     )
     .await;
 }

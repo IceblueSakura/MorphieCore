@@ -101,7 +101,7 @@ fn google_response_effort_is_a_selected_direction_not_native_support() {
     use morphiecore::{execution::admit, topology::*};
     let binding = &google_bindings()[0];
     let rule = "google.gemini-3.8-flash.response-effort-to-thinking.v1";
-    for mut endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
+    for mut endpoint in [binding.endpoint()] {
         assert!(
             !endpoint
                 .representation
@@ -164,13 +164,7 @@ fn google_response_effort_is_a_selected_direction_not_native_support() {
                 serde_json::from_slice::<Value>(&prepared.body).unwrap(),
                 wire
             );
-            if endpoint.protocol == GenerationProtocol::GoogleGenerateContent {
-                assert_eq!(
-                    wire["generationConfig"],
-                    json!({"maxOutputTokens":2048,
-                    "thinkingConfig":{"thinkingLevel":level.to_uppercase()}})
-                );
-            } else {
+            if endpoint.protocol == GenerationProtocol::GoogleInteractions {
                 assert_eq!(
                     wire["generation_config"],
                     json!({"max_output_tokens":2048,"thinking_level":level})
@@ -203,21 +197,17 @@ fn google_response_effort_is_a_selected_direction_not_native_support() {
                 "already native or absent controls stay unchanged"
             );
             if request.task.semantic.settings().effort.is_none() {
-                assert!(wire.pointer("/generationConfig/thinkingConfig").is_none());
                 assert!(wire.pointer("/generation_config/thinking_level").is_none());
             }
         }
         for fabricated_native_support in [false, true] {
             let mut invalid = endpoint.clone();
-            let (semantics, policy) = match &mut invalid.representation {
-                morphiecore::lowering::target::TargetContract::GoogleGenerateContent(c) => {
-                    (&mut c.dispositions, &mut c.reasoning_policy)
-                }
-                morphiecore::lowering::target::TargetContract::GoogleInteractions(c) => {
-                    (&mut c.dispositions, &mut c.reasoning_policy)
-                }
-                _ => unreachable!(),
+            let morphiecore::lowering::target::TargetContract::GoogleInteractions(c) =
+                &mut invalid.representation
+            else {
+                unreachable!()
             };
+            let (semantics, policy) = (&mut c.dispositions, &mut c.reasoning_policy);
             if fabricated_native_support {
                 semantics.set_native(
                     morphiecore::semantic::task::generation::Feature::ResponseEffort,
@@ -235,29 +225,18 @@ fn google_response_effort_is_a_selected_direction_not_native_support() {
                 Err(TopologyError::ContractUnsatisfiable)
             );
         }
-        match &mut endpoint.representation {
-            morphiecore::lowering::target::TargetContract::GoogleGenerateContent(c) => {
-                c.reasoning_policy = None
-            }
-            morphiecore::lowering::target::TargetContract::GoogleInteractions(c) => {
-                c.reasoning_policy = None
-            }
-            _ => unreachable!(),
-        }
+        let morphiecore::lowering::target::TargetContract::GoogleInteractions(c) =
+            &mut endpoint.representation
+        else {
+            unreachable!()
+        };
+        c.reasoning_policy = None;
         let (wire, rules) = projected(&endpoint, &request);
         assert_eq!(rules, ["generation.project-effort.v1"]);
-        if endpoint.protocol == GenerationProtocol::GoogleGenerateContent {
-            assert_eq!(
-                wire["generationConfig"],
-                json!({"maxOutputTokens":2048,
-                "thinkingConfig":{"thinkingLevel":"LOW"}})
-            );
-        } else {
-            assert_eq!(
-                wire["generation_config"],
-                json!({"max_output_tokens":2048,"thinking_level":"low"})
-            );
-        }
+        assert_eq!(
+            wire["generation_config"],
+            json!({"max_output_tokens":2048,"thinking_level":"low"})
+        );
         assert!(compile_one(endpoint).is_ok());
     }
 }
@@ -265,7 +244,8 @@ fn google_response_effort_is_a_selected_direction_not_native_support() {
 #[test]
 fn google_scope_mapping_approximates_levels_without_weakening_activation_or_history() {
     let binding = &google_bindings()[0];
-    for endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
+    let endpoint = binding.endpoint();
+    {
         let base = json!({"model":binding.model,"max_tokens":2048,
             "output_config":{"effort":"low"},"messages":[{"role":"user","content":"go"}]});
         for level in ["xhigh", "max"] {
@@ -278,19 +258,10 @@ fn google_scope_mapping_approximates_levels_without_weakening_activation_or_hist
                 rules,
                 ["google.gemini-3.8-flash.response-effort-to-thinking.v1"]
             );
-            if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent
-            {
-                assert_eq!(
-                    wire["generationConfig"],
-                    json!({"maxOutputTokens":2048,
-                    "thinkingConfig":{"thinkingLevel":"HIGH"}})
-                );
-            } else {
-                assert_eq!(
-                    wire["generation_config"],
-                    json!({"max_output_tokens":2048,"thinking_level":"high"})
-                );
-            }
+            assert_eq!(
+                wire["generation_config"],
+                json!({"max_output_tokens":2048,"thinking_level":"high"})
+            );
         }
         for thinking in [
             json!({"type":"disabled"}),
@@ -312,20 +283,10 @@ fn google_scope_mapping_approximates_levels_without_weakening_activation_or_hist
                         "google.gemini-3.8-flash.response-effort-to-thinking.v1"
                     ]
                 );
-                if endpoint.protocol
-                    == morphiecore::topology::GenerationProtocol::GoogleGenerateContent
-                {
-                    assert_eq!(
-                        wire["generationConfig"],
-                        json!({"maxOutputTokens":2048,
-                        "thinkingConfig":{"thinkingLevel":"LOW"}})
-                    );
-                } else {
-                    assert_eq!(
-                        wire["generation_config"],
-                        json!({"max_output_tokens":2048,"thinking_level":"low"})
-                    );
-                }
+                assert_eq!(
+                    wire["generation_config"],
+                    json!({"max_output_tokens":2048,"thinking_level":"low"})
+                );
                 continue;
             }
             assert_eq!(
@@ -373,14 +334,7 @@ fn google_scope_mapping_approximates_levels_without_weakening_activation_or_hist
         let (wire, rules) = projected(&endpoint, &request);
         assert!(rules.contains(&"generation.collapse-configuration.v1"));
         assert!(rules.contains(&"generation.configuration-prefix-change.v1"));
-        if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent {
-            assert_eq!(
-                wire["generationConfig"]["thinkingConfig"]["thinkingLevel"],
-                "LOW"
-            );
-        } else {
-            assert_eq!(wire["generation_config"]["thinking_level"], "low");
-        }
+        assert_eq!(wire["generation_config"]["thinking_level"], "low");
     }
 }
 
@@ -406,31 +360,18 @@ fn google_ordered_effort_uses_source_activation_not_the_last_marker() {
             ]);
         }
         let request = messages(body);
-        for endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
-            let (wire, rules) = projected(&endpoint, &request);
-            assert!(rules.contains(&"generation.collapse-configuration.v1"));
-            assert!(rules.contains(&"generation.configuration-prefix-change.v1"));
-            if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent
-            {
-                assert_eq!(
-                    wire["generationConfig"]["thinkingConfig"]["thinkingLevel"],
-                    if next_input { "HIGH" } else { "MEDIUM" }
-                );
-                assert_eq!(
-                    wire["contents"].as_array().unwrap().len(),
-                    if next_input { 5 } else { 3 }
-                );
-            } else {
-                assert_eq!(
-                    wire["generation_config"]["thinking_level"],
-                    if next_input { "high" } else { "medium" }
-                );
-                assert_eq!(
-                    wire["input"].as_array().unwrap().len(),
-                    if next_input { 5 } else { 3 }
-                );
-            }
-        }
+        let endpoint = binding.endpoint();
+        let (wire, rules) = projected(&endpoint, &request);
+        assert!(rules.contains(&"generation.collapse-configuration.v1"));
+        assert!(rules.contains(&"generation.configuration-prefix-change.v1"));
+        assert_eq!(
+            wire["generation_config"]["thinking_level"],
+            if next_input { "high" } else { "medium" }
+        );
+        assert_eq!(
+            wire["input"].as_array().unwrap().len(),
+            if next_input { 5 } else { 3 }
+        );
     }
 }
 
@@ -452,41 +393,20 @@ fn google_effective_tools_preserve_old_calls_and_explicit_guarantees() {
         {"role":"system","content":[{"type":"tool_addition","tool":{"type":"tool_definition",
             "definition":{"name":"f","input_schema":current}}}]}
     ]});
-    for endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
+    let endpoint = binding.endpoint();
+    {
         let (wire, rules) = projected(&endpoint, &messages(body.clone()));
         assert!(rules.contains(&"generation.collapse-tool-set.v1"));
-        if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent {
-            assert_eq!(
-                wire["tools"],
-                json!([{"functionDeclarations":[{"name":"f","parametersJsonSchema":current}]}])
-            );
-            assert_eq!(
-                wire["contents"][1]["parts"][0]["functionCall"]["args"],
-                json!({"old":1})
-            );
-            assert_eq!(
-                wire["contents"][2]["parts"][0]["functionResponse"]["name"],
-                "f"
-            );
-        } else {
-            assert_eq!(
-                wire["tools"],
-                json!([{"type":"function","name":"f","parameters":current}])
-            );
-            assert_eq!(wire["input"][1]["arguments"], json!({"old":1}));
-            assert_eq!(wire["input"][2]["call_id"], "call");
-        }
+        assert_eq!(
+            wire["tools"],
+            json!([{"type":"function","name":"f","parameters":current}])
+        );
+        assert_eq!(wire["input"][1]["arguments"], json!({"old":1}));
+        assert_eq!(wire["input"][2]["call_id"], "call");
         let mut strict = body.clone();
         strict["messages"][5]["content"][0]["tool"]["definition"]["strict"] = json!(true);
         let (strict_wire, _) = projected(&endpoint, &messages(strict.clone()));
-        if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent {
-            assert_eq!(
-                strict_wire["toolConfig"]["functionCallingConfig"]["mode"],
-                "VALIDATED"
-            );
-        } else {
-            assert_eq!(strict_wire["generation_config"]["tool_choice"], "validated");
-        }
+        assert_eq!(strict_wire["generation_config"]["tool_choice"], "validated");
         strict["messages"][5]["content"][0]["tool"]["definition"]["input_schema"]["properties"]["new"]
             ["minLength"] = json!(5);
         assert!(representable(&endpoint, &messages(strict)).is_err());
@@ -503,28 +423,15 @@ fn google_effective_tools_preserve_old_calls_and_explicit_guarantees() {
             {"role":"system","content":[
                 {"type":"tool_removal","tool":{"type":"tool_reference","name":"read"}},
                 {"type":"tool_addition","tool":{"type":"tool_reference","name":"ls"}}]}]}));
-    for endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
-        let (wire, _) = projected(&endpoint, &deferred);
-        if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent {
-            assert_eq!(
-                wire["tools"],
-                json!([{"functionDeclarations":[{"name":"ls","parametersJsonSchema":{"type":"object"}}]}])
-            );
-            assert_eq!(
-                wire["toolConfig"]["functionCallingConfig"],
-                json!({"mode":"ANY","allowedFunctionNames":["ls"]})
-            );
-        } else {
-            assert_eq!(
-                wire["tools"],
-                json!([{"type":"function","name":"ls","parameters":{"type":"object"}}])
-            );
-            assert_eq!(
-                wire["generation_config"]["tool_choice"],
-                json!({"allowed_tools":{"mode":"any","tools":["ls"]}})
-            );
-        }
-    }
+    let (wire, _) = projected(&endpoint, &deferred);
+    assert_eq!(
+        wire["tools"],
+        json!([{"type":"function","name":"ls","parameters":{"type":"object"}}])
+    );
+    assert_eq!(
+        wire["generation_config"]["tool_choice"],
+        json!({"allowed_tools":{"mode":"any","tools":["ls"]}})
+    );
 }
 
 fn projected(endpoint: &Endpoint, request: &Request) -> (Value, Vec<&'static str>) {
@@ -645,7 +552,7 @@ fn go_root_composition_rejects_before_dispatch_without_rewriting_nested_schemas(
 
 #[test]
 fn interactions_scalar_parameters_require_no_call_in_preflight_and_preparation() {
-    let endpoint = google_bindings()[0].interactions_endpoint();
+    let endpoint = google_bindings()[0].endpoint();
     for strict in [Some(false), Some(true), None] {
         let mut body = json!({"model":google_bindings()[0].model,"input":"go",
             "tool_choice":"none","parallel_tool_calls":false,
@@ -702,10 +609,8 @@ fn interactions_scalar_parameters_require_no_call_in_preflight_and_preparation()
 fn google_no_call_admission_agrees_with_preparation_without_relaxing_other_choices() {
     let parameters = json!({"type":"object","properties":{
         "label":{"type":"string","minLength":5}},"required":["label"],"additionalProperties":false});
-    for endpoint in [
-        google_bindings()[0].endpoint(),
-        google_bindings()[0].interactions_endpoint(),
-    ] {
+    let endpoint = google_bindings()[0].endpoint();
+    {
         for strict in [Some(true), None] {
             let mut body = json!({"model":google_bindings()[0].model,"input":"go",
                 "tool_choice":"none","parallel_tool_calls":false,
@@ -718,20 +623,8 @@ fn google_no_call_admission_agrees_with_preparation_without_relaxing_other_choic
             assert_eq!(representable(&endpoint, &request), Ok(()));
             let (wire, rules) = projected(&endpoint, &request);
             assert!(rules.is_empty());
-            if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent
-            {
-                assert_eq!(
-                    wire["tools"][0]["functionDeclarations"][0]["parametersJsonSchema"],
-                    parameters
-                );
-                assert_eq!(
-                    wire["toolConfig"]["functionCallingConfig"],
-                    json!({"mode":"NONE"})
-                );
-            } else {
-                assert_eq!(wire["tools"][0]["parameters"], parameters);
-                assert_eq!(wire["generation_config"]["tool_choice"], "none");
-            }
+            assert_eq!(wire["tools"][0]["parameters"], parameters);
+            assert_eq!(wire["generation_config"]["tool_choice"], "none");
             assert_eq!(request, before);
             for choice in ["auto", "required"] {
                 body["tool_choice"] = json!(choice);
@@ -754,10 +647,8 @@ fn google_conditional_strictness_accounts_for_the_entire_validated_inventory() {
     let closed = json!({"type":"object","properties":{"minLength":{"type":"integer","enum":[7]}},
         "required":["minLength"],"additionalProperties":false});
     let closed = json!({"$ref":"#/$defs/Args","$defs":{"Args":closed}});
-    for endpoint in [
-        google_bindings()[0].endpoint(),
-        google_bindings()[0].interactions_endpoint(),
-    ] {
+    let endpoint = google_bindings()[0].endpoint();
+    {
         let body = json!({"model":google_bindings()[0].model,"input":"go",
             "tools":[{"type":"function","name":"lookup","parameters":closed},
                 {"type":"function","name":"other","strict":false,"parameters":{"type":"object"}}]});
@@ -774,26 +665,16 @@ fn google_conditional_strictness_accounts_for_the_entire_validated_inventory() {
         conditional["tools"][1]["parameters"] = closed.clone();
         let (_, rules) = projected(&endpoint, &source(conditional));
         assert!(!rules.contains(&"openai.omit-conditional-tool-strictness.v1"));
-        if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent {
-            assert_eq!(
-                wire["tools"][0]["functionDeclarations"][0]["parametersJsonSchema"],
-                closed
-            );
-            assert_eq!(
-                wire["toolConfig"]["functionCallingConfig"]["mode"],
-                "VALIDATED"
-            );
-        } else {
-            assert_eq!(wire["tools"][0]["parameters"], closed);
-            assert_eq!(wire["generation_config"]["tool_choice"], "validated");
-        }
+        assert_eq!(wire["tools"][0]["parameters"], closed);
+        assert_eq!(wire["generation_config"]["tool_choice"], "validated");
     }
 }
 
 #[test]
 fn gemini_model_values_are_checked_by_both_preflight_and_preparation() {
     let binding = &google_bindings()[0];
-    for mut endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
+    let mut endpoint = binding.endpoint();
+    {
         let request = source(json!({"model":binding.model,"input":"go",
             "reasoning":{"effort":"high"},"max_output_tokens":65536}));
         let before = request.clone();
@@ -806,65 +687,32 @@ fn gemini_model_values_are_checked_by_both_preflight_and_preparation() {
         )
         .unwrap();
         let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
-        if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent {
-            assert_eq!(
-                wire["generationConfig"],
-                json!({"maxOutputTokens":65536,"thinkingConfig":{"thinkingLevel":"HIGH"}})
-            );
-        } else {
-            assert_eq!(
-                wire["generation_config"],
-                json!({"max_output_tokens":65536,"thinking_level":"high"})
-            );
-        }
+        assert_eq!(
+            wire["generation_config"],
+            json!({"max_output_tokens":65536,"thinking_level":"high"})
+        );
         assert_eq!(request, before);
         let minimal = source(json!({"model":binding.model,"input":"go",
             "reasoning":{"effort":"minimal"},"max_output_tokens":4096}));
         let (wire, rules) = projected(&endpoint, &minimal);
         assert_eq!(rules, ["generation.project-effort.v1"]);
-        if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent {
-            assert_eq!(
-                wire["generationConfig"],
-                json!({"maxOutputTokens":4096,
-                "thinkingConfig":{"thinkingLevel":"LOW"}})
-            );
-        } else {
-            assert_eq!(
-                wire["generation_config"],
-                json!({"max_output_tokens":4096,"thinking_level":"low"})
-            );
-        }
+        assert_eq!(
+            wire["generation_config"],
+            json!({"max_output_tokens":4096,"thinking_level":"low"})
+        );
         let excessive =
             source(json!({"model":binding.model,"input":"go","max_output_tokens":65537}));
         let (wire, rules) = projected(&endpoint, &excessive);
         assert_eq!(rules, ["generation.clamp-output-to-model-maximum.v1"]);
         assert_eq!(
-            wire[if endpoint.protocol
-                == morphiecore::topology::GenerationProtocol::GoogleGenerateContent
-            {
-                "generationConfig"
-            } else {
-                "generation_config"
-            }],
-            if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent
-            {
-                json!({"maxOutputTokens":65536})
-            } else {
-                json!({"max_output_tokens":65536})
-            }
+            wire["generation_config"],
+            json!({"max_output_tokens":65536})
         );
 
         // Restrictions belong to this binding, not the generic Google carriers.
         *endpoint.representation.model_limits_mut() = ModelLimits::default();
         let wire = endpoint.encode_request(&minimal).unwrap();
-        if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent {
-            assert_eq!(
-                wire["generationConfig"]["thinkingConfig"]["thinkingLevel"],
-                "MINIMAL"
-            );
-        } else {
-            assert_eq!(wire["generation_config"]["thinking_level"], "minimal");
-        }
+        assert_eq!(wire["generation_config"]["thinking_level"], "minimal");
         assert!(endpoint.encode_request(&excessive).is_ok());
     }
 }
@@ -879,7 +727,8 @@ fn gemini_preserves_native_budgets_and_checks_fallback_levels_without_requantizi
     let mut request = plain.clone();
     request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
     let before = request.clone();
-    for mut endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
+    let mut endpoint = binding.endpoint();
+    {
         let policy = Some(ReasoningRequestPolicy {
             canonical_model: binding.model.into(),
             rule: "synthetic.budget-to-effort.v1",
@@ -888,15 +737,12 @@ fn gemini_preserves_native_budgets_and_checks_fallback_levels_without_requantizi
                 table: SHARED_BUDGETS.clone(),
             },
         });
-        match &mut endpoint.representation {
-            morphiecore::lowering::target::TargetContract::GoogleGenerateContent(c) => {
-                c.reasoning_policy = policy
-            }
-            morphiecore::lowering::target::TargetContract::GoogleInteractions(c) => {
-                c.reasoning_policy = policy
-            }
-            _ => unreachable!(),
-        }
+        let morphiecore::lowering::target::TargetContract::GoogleInteractions(c) =
+            &mut endpoint.representation
+        else {
+            unreachable!()
+        };
+        c.reasoning_policy = policy;
         let (wire, rules) = projected(&endpoint, &request);
         assert_eq!(
             rules,
@@ -905,38 +751,10 @@ fn gemini_preserves_native_budgets_and_checks_fallback_levels_without_requantizi
                 "synthetic.budget-to-effort.v1"
             ]
         );
-        if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent {
-            assert_eq!(
-                wire["generationConfig"],
-                json!({"maxOutputTokens":4096,
-                "thinkingConfig":{"thinkingLevel":"LOW"}})
-            );
-        } else {
-            assert_eq!(
-                wire["generation_config"],
-                json!({"max_output_tokens":4096,"thinking_level":"low"})
-            );
-        }
-        // A wire field alone is not a declaration of native model support.
-        if let morphiecore::lowering::target::TargetContract::GoogleGenerateContent(c) =
-            &mut endpoint.representation
-        {
-            c.dispositions.set_native(
-                morphiecore::semantic::task::generation::Feature::ReasoningBudget,
-                true,
-            );
-        }
-        let native_budget =
-            endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent;
-        if native_budget {
-            let (wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
-            assert_eq!(
-                wire["generationConfig"]["thinkingConfig"]["thinkingBudget"],
-                1024
-            );
-            assert!(!rules.contains(&"synthetic.budget-to-effort.v1"));
-            assert_eq!(representable(&endpoint, &request), Ok(()));
-        }
+        assert_eq!(
+            wire["generation_config"],
+            json!({"max_output_tokens":4096,"thinking_level":"low"})
+        );
         let mut settings = request.task.semantic.settings().clone();
         settings.reasoning.budget_tokens = Some(2048);
         let mut low = request.clone();
@@ -947,16 +765,9 @@ fn gemini_preserves_native_budgets_and_checks_fallback_levels_without_requantizi
                 .iter()
                 .filter(|r| **r == "synthetic.budget-to-effort.v1")
                 .count(),
-            usize::from(!native_budget)
+            1
         );
-        if native_budget {
-            assert_eq!(
-                wire["generationConfig"]["thinkingConfig"]["thinkingBudget"],
-                2048
-            );
-        } else {
-            assert_eq!(wire["generation_config"]["thinking_level"], "low");
-        }
+        assert_eq!(wire["generation_config"]["thinking_level"], "low");
         assert!(endpoint.encode_request(&plain).is_ok());
     }
     assert_eq!(request, before);
@@ -1063,11 +874,8 @@ fn google_sampling_omission_is_binding_selected_and_preparation_matches_prefligh
         "temperature":0.25,"top_p":0.8,"store":false}),
     );
     let original = request.clone();
-    for mut endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
-        let interactions = matches!(
-            endpoint.representation,
-            morphiecore::lowering::target::TargetContract::GoogleInteractions(_)
-        );
+    let mut endpoint = binding.endpoint();
+    {
         let omission_rules = ["generation.omit-temperature.v1", "generation.omit-top-p.v1"];
         assert!(
             !endpoint
@@ -1084,11 +892,7 @@ fn google_sampling_omission_is_binding_selected_and_preparation_matches_prefligh
         representable(&endpoint, &request).unwrap();
         let (wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
         assert_eq!(rules, omission_rules);
-        let config = &wire[if interactions {
-            "generation_config"
-        } else {
-            "generationConfig"
-        }];
+        let config = &wire["generation_config"];
         for field in ["temperature", "top_p", "topP", "top_k", "topK"] {
             assert!(config.get(field).is_none());
         }
@@ -1114,36 +918,24 @@ fn google_sampling_omission_is_binding_selected_and_preparation_matches_prefligh
             .unwrap();
         let (_, rules) = endpoint.encode_request_with_rules(&absent).unwrap();
         assert!(rules.is_empty());
-        if interactions {
-            let morphiecore::lowering::target::TargetContract::GoogleInteractions(caps) =
-                &mut endpoint.representation
-            else {
-                unreachable!()
-            };
-            caps.sampling = SamplingPolicy::Reject;
-            let (projected_wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
-            assert_eq!(projected_wire, wire);
-            assert_eq!(rules, omission_rules);
-            assert!(
-                google::interactions::encode_generation_request(
-                    &request.task.semantic,
-                    &request.task.fidelity,
-                    &ReplayTarget::new("synthetic", "model").unwrap()
-                )
-                .is_err()
-            );
-        }
+        let morphiecore::lowering::target::TargetContract::GoogleInteractions(caps) =
+            &mut endpoint.representation
+        else {
+            unreachable!()
+        };
+        caps.sampling = SamplingPolicy::Reject;
+        let (projected_wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
+        assert_eq!(projected_wire, wire);
+        assert_eq!(rules, omission_rules);
+        assert!(
+            google::interactions::encode_generation_request(
+                &request.task.semantic,
+                &request.task.fidelity,
+                &ReplayTarget::new("synthetic", "model").unwrap()
+            )
+            .is_err()
+        );
     }
-    let (native, rules) = google::generate_content::encode_generation_request(
-        &request.task.semantic,
-        &request.task.fidelity,
-        &ReplayTarget::new("synthetic", "model").unwrap(),
-        None,
-    )
-    .unwrap();
-    assert_eq!(native["generationConfig"]["temperature"], 0.25);
-    assert_eq!(native["generationConfig"]["topP"], 0.8);
-    assert!(!rules.contains(&google::generate_content::RequestRule::OmitSampling));
     for patch in [json!({"temperature":-1}), json!({"top_p":2})] {
         let mut value = json!({"model":binding.model,"input":"go"});
         value
@@ -1167,17 +959,7 @@ fn hydrogen_xhigh_uses_both_native_carriers_without_reactivating_disabled_thinki
     let request = source(json!({"model":binding.model,"input":"go",
         "reasoning":{"effort":"xhigh"},"temperature":0.4,"top_p":0.8}));
     let before = request.clone();
-    let generated = binding.endpoint().encode_request(&request).unwrap();
-    assert_eq!(
-        generated["generationConfig"]["thinkingConfig"]["thinkingLevel"],
-        "XHIGH"
-    );
-    assert!(generated["generationConfig"].get("temperature").is_none());
-    assert!(generated["generationConfig"].get("topP").is_none());
-    let interaction = binding
-        .interactions_endpoint()
-        .encode_request(&request)
-        .unwrap();
+    let interaction = binding.endpoint().encode_request(&request).unwrap();
     assert_eq!(interaction["generation_config"]["thinking_level"], "xhigh");
     assert!(
         interaction["generation_config"]
@@ -1188,7 +970,6 @@ fn hydrogen_xhigh_uses_both_native_carriers_without_reactivating_disabled_thinki
     assert_eq!(request, before);
     let off = source(json!({"model":binding.model,"input":"go","reasoning":{"effort":"none"}}));
     assert!(representable(&binding.endpoint(), &off).is_err());
-    assert!(representable(&binding.interactions_endpoint(), &off).is_err());
 }
 
 #[test]

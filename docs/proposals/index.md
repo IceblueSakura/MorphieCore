@@ -185,7 +185,7 @@ The source/code recheck identifies two smaller candidates:
 
 Prefer an existing exact control or a reachable target-local rule over a universal multi-budget schema. Apply any selected adjustment before construction/validation of the projected settings; late wire rewriting cannot repair an already rejected IR. Preflight, encoding and discovery must use the same selected rule, with checked arithmetic and immutable source intent.
 
-Current Messages intake requires a manual budget of at least `1024` and strictly less than `max_tokens`; that is source grammar, not a removable default. Startup currently exposes configured effort-to-budget conversion only for generateContent, whose general expansion remains paused. A synthetic generic conversion failure therefore establishes a policy edge, not a live Haiku defect or permission to activate Google targets. Current validation remains in force pending a concrete rule.
+Current Messages intake requires a manual budget of at least `1024` and strictly less than `max_tokens`; that is source grammar, not a removable default. Startup exposes `budget_to_effort` conversion only; Google `generateContent` has been removed in favor of Interactions. A synthetic generic conversion failure therefore establishes a policy edge, not a live Haiku defect or permission to expand Google targets. Current validation remains in force pending a concrete rule.
 
 #### Google output report owners (unselected)
 

@@ -258,11 +258,8 @@ fn responses_tool_output_carries_files_and_needs_file_admission() {
 #[test]
 fn request_lifetime_boundaries_have_independent_ir_and_reject_unrelated_ttls() {
     use morphiecore::protocol::{
-        CodecError,
-        anthropic::messages::Profile as Messages,
-        google::{generate_content, interactions},
-        native::ReplayTarget,
-        openai::lowering::lower_request,
+        CodecError, anthropic::messages::Profile as Messages, google::interactions,
+        native::ReplayTarget, openai::lowering::lower_request,
     };
     let mut controls = GenerationControls::default();
     controls.max_output_tokens = Some(32);
@@ -342,11 +339,6 @@ fn request_lifetime_boundaries_have_independent_ir_and_reject_unrelated_ttls() {
         .encode_generation_request(&request, &Default::default(), &native)
         .unwrap();
     assert!(messages.value["system"][0].get("cache_control").is_none());
-    assert_eq!(
-        generate_content::encode_generation_request(&request, &Default::default(), &native, None)
-            .unwrap_err(),
-        CodecError::Unsupported(morphiecore::protocol::failure::CarrierReason::Unavailable)
-    );
     assert_eq!(
         interactions::encode_generation_request(&request, &Default::default(), &native)
             .unwrap_err(),

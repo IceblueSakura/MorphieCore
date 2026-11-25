@@ -22,9 +22,6 @@ pub enum UpstreamAdapter {
         dialect: anthropic::messages::Dialect,
         target: crate::native::ReplayTarget,
     },
-    GoogleGenerateContent {
-        target: crate::native::ReplayTarget,
-    },
     GoogleInteractions {
         target: crate::native::ReplayTarget,
     },
@@ -38,9 +35,9 @@ impl UpstreamAdapter {
     pub fn openai(&self) -> Result<&GenerationCodec, CodecError> {
         match self {
             Self::OpenAi(adapter) => Ok(adapter),
-            Self::AnthropicMessages { .. }
-            | Self::GoogleGenerateContent { .. }
-            | Self::GoogleInteractions { .. } => Err(CodecError::ProfileMismatch),
+            Self::AnthropicMessages { .. } | Self::GoogleInteractions { .. } => {
+                Err(CodecError::ProfileMismatch)
+            }
         }
     }
     pub fn decode_response(
@@ -109,15 +106,6 @@ impl UpstreamAdapter {
                 profile: *profile,
                 target: target.clone(),
             },
-            Self::GoogleGenerateContent { target } => GenerationDecoder::Google(
-                crate::google::generate_content::GenerationSseDecoder::new(
-                    status,
-                    content_type,
-                    native_limits,
-                    NATIVE_SCOPE,
-                    target.clone(),
-                )?,
-            ),
             Self::GoogleInteractions { target } => GenerationDecoder::Interactions(
                 crate::google::interactions::GenerationSseDecoder::new(
                     status,
@@ -140,7 +128,6 @@ pub enum GenerationDecoder {
         profile: anthropic::messages::Profile,
         target: crate::native::ReplayTarget,
     },
-    Google(crate::google::generate_content::GenerationSseDecoder),
     Interactions(crate::google::interactions::GenerationSseDecoder),
 }
 impl GenerationDecoder {
@@ -161,7 +148,7 @@ impl GenerationDecoder {
             Self::Responses(d) => d.take_intake_evidence(),
             Self::Chat(d) => d.take_intake_evidence(),
             Self::Messages { decoder, .. } => decoder.take_intake_evidence(),
-            Self::Google(_) | Self::Interactions(_) => Default::default(),
+            Self::Interactions(_) => Default::default(),
         }
     }
 
@@ -170,7 +157,6 @@ impl GenerationDecoder {
             Self::Responses(d) => d.consume(bytes),
             Self::Chat(d) => d.consume(bytes),
             Self::Messages { decoder, .. } => decoder.consume(bytes),
-            Self::Google(d) => d.consume(bytes),
             Self::Interactions(d) => d.consume(bytes),
         }
     }
@@ -185,7 +171,6 @@ impl GenerationDecoder {
             Self::Responses(d) => d.metadata(),
             Self::Chat(d) => d.metadata(),
             Self::Messages { decoder, .. } => decoder.metadata(),
-            Self::Google(d) => d.metadata(),
             Self::Interactions(d) => d.metadata(),
         }
     }
@@ -194,7 +179,6 @@ impl GenerationDecoder {
             Self::Responses(d) => d.fidelity(),
             Self::Chat(d) => d.fidelity(),
             Self::Messages { decoder, .. } => decoder.fidelity(),
-            Self::Google(d) => d.fidelity(),
             Self::Interactions(d) => d.fidelity(),
         }
     }
@@ -221,7 +205,6 @@ impl GenerationDecoder {
                 response.evidence = decoder.take_intake_evidence();
                 Ok(response)
             }
-            Self::Google(d) => d.finish(),
             Self::Interactions(d) => d.finish(),
         }
     }

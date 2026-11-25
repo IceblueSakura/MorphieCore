@@ -84,20 +84,11 @@ fn omitted_assistant_reasoning_keeps_source_effort_timing_across_targets_and_app
         assert!(rules.contains(&"generation.collapse-configuration.v1"));
         assert!(rules.contains(&"generation.configuration-prefix-change.v1"));
         let binding = &morphiecore::topology::catalog::google_bindings()[0];
-        for endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
-            let (wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
-            assert!(rules.contains(&"generation.collapse-configuration.v1"));
-            assert!(rules.contains(&"generation.configuration-prefix-change.v1"));
-            if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent
-            {
-                assert_eq!(
-                    wire["generationConfig"]["thinkingConfig"]["thinkingLevel"],
-                    if continued { "HIGH" } else { "LOW" }
-                );
-            } else {
-                assert_eq!(wire["generation_config"]["thinking_level"], expected);
-            }
-        }
+        let endpoint = binding.endpoint();
+        let (wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
+        assert!(rules.contains(&"generation.collapse-configuration.v1"));
+        assert!(rules.contains(&"generation.configuration-prefix-change.v1"));
+        assert_eq!(wire["generation_config"]["thinking_level"], expected);
         assert_eq!(request, before);
     }
 }
@@ -136,7 +127,7 @@ fn native_history_transfer_checks_timing_before_rendering_and_protects_later_rep
             panic!("reasoning")
         };
         reasoning.replay = Some(ReplayValue::final_value(
-            ReplayFormat::GoogleGenerateContentPart,
+            ReplayFormat::GoogleInteractionsV1Thought,
             Text::new("foreign-format", "fixture", 64).unwrap(),
         ));
         let origin = source.task.fidelity.replay_origin(*owner).cloned();

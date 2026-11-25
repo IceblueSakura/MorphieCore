@@ -39,7 +39,7 @@ impl UpstreamAdapter {
         let value = match self {
             Self::GptImage => crate::openai::images::encode_request(request, model)?,
             Self::QwenImage => crate::aliyun_images::encode_request(request, model)?,
-            Self::GeminiImage => crate::image::native::gemini_request(request)?,
+            Self::GeminiImage => crate::image::native::gemini_request(request, model)?,
             Self::GrokImage => crate::image::native::grok_request(request, model)?,
         };
         crate::semantic::value::json_size(&value, limit).map_err(|_| CodecError::Limit)?;

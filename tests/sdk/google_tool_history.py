@@ -15,7 +15,7 @@ def check(condition):
 
 
 def run(base, profile, api):
-    check(api in ("generate_content", "interactions"))
+    check(api == "interactions")
     if profile.startswith("messages-"):
         return run_messages_rejection(base, api, profile == "messages-sse")
     if profile.startswith("chat-"):

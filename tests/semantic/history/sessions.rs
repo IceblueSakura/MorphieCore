@@ -11,7 +11,7 @@ use morphiecore::{
     protocol::{
         ConversionFailure, DecodedRequest, DecodedResponse, GenerationRequestEnvelope as Request,
         anthropic::messages,
-        google::{generate_content, interactions},
+        google::interactions,
         native::ReplayTarget,
         openai::{
             Dialect, GenerationApi, GenerationCodec, TargetContract, obfuscation::Obfuscation,
@@ -32,19 +32,17 @@ enum Api {
     Chat,
     Responses,
     Messages,
-    GenerateContent,
     Interactions,
 }
 impl Api {
     fn managed(self) -> bool {
-        matches!(self, Self::GenerateContent | Self::Interactions)
+        matches!(self, Self::Interactions)
     }
     fn name(self) -> &'static str {
         match self {
             Self::Chat => "chat",
             Self::Responses => "responses",
             Self::Messages => "messages",
-            Self::GenerateContent => "generate-content",
             Self::Interactions => "interactions",
         }
     }
@@ -71,9 +69,6 @@ impl Api {
             Self::Messages => UpstreamAdapter::AnthropicMessages {
                 profile: messages::Profile::AdaptiveTextTools,
                 dialect: morphiecore::protocol::anthropic::messages::Dialect::Standard,
-                target: self.target(),
-            },
-            Self::GenerateContent => UpstreamAdapter::GoogleGenerateContent {
                 target: self.target(),
             },
             Self::Interactions => UpstreamAdapter::GoogleInteractions {
@@ -108,7 +103,6 @@ impl Api {
     fn native_history(self) -> &'static str {
         match self {
             Self::Chat | Self::Messages => "messages",
-            Self::GenerateContent => "contents",
             _ => "input",
         }
     }
@@ -136,15 +130,6 @@ impl Api {
                         .map(|r| r.rule().to_owned())
                         .collect(),
                 )
-            }
-            Self::GenerateContent => {
-                let (v, r) = generate_content::encode_generation_request(
-                    &request.task.semantic,
-                    &request.task.fidelity,
-                    &self.target(),
-                    None,
-                )?;
-                (v, r.iter().map(|r| r.name().to_owned()).collect())
             }
             Self::Interactions => {
                 let (v, r) = interactions::encode_generation_request(
@@ -520,10 +505,6 @@ fn messages_repair_and_recall() {
     exercise(Api::Messages)
 }
 #[test]
-fn generate_content_repair_and_recall() {
-    exercise(Api::GenerateContent)
-}
-#[test]
 fn interactions_repair_and_recall() {
     exercise(Api::Interactions)
 }
@@ -534,13 +515,7 @@ fn interrupted_final_never_becomes_completed_or_replayable_before_eof() {
         execution::AttemptError,
         protocol::{CodecError, stream::SseError},
     };
-    for api in [
-        Api::Chat,
-        Api::Responses,
-        Api::Messages,
-        Api::GenerateContent,
-        Api::Interactions,
-    ] {
+    for api in [Api::Chat, Api::Responses, Api::Messages, Api::Interactions] {
         let corpus = load(api);
         for stream in [true, false]
             .into_iter()
@@ -616,12 +591,7 @@ fn sparse_interactions_accounting_remains_unknown() {
 #[test]
 fn edited_returned_reasoning_cannot_reuse_the_original_replay_authority() {
     use morphiecore::{protocol::CodecError, semantic::value::Text};
-    for api in [
-        Api::Responses,
-        Api::Messages,
-        Api::GenerateContent,
-        Api::Interactions,
-    ] {
+    for api in [Api::Responses, Api::Messages, Api::Interactions] {
         let corpus = load(api);
         let turn = &corpus.turns[0];
         let attempt = intake(api, &turn.source, true, 11);

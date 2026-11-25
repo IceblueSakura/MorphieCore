@@ -10,7 +10,7 @@ use crate::{
     protocol::{
         ClientProtocol,
         failure::CarrierReason,
-        google::generate_content::GenerationSseDecoder,
+        google::interactions::GenerationSseDecoder,
         native::ReplayTarget,
         openai::{
             Dialect, GenerationApi, GenerationCodec, TargetContract, obfuscation::Obfuscation,
@@ -35,18 +35,33 @@ fn source_wire(number: u64) -> String {
 }
 
 fn source_wire_case(number: u64, empty: bool) -> String {
-    let mut body = json!({"responseId":"reply","modelVersion":"fixture-model","candidates":[{
-        "content":{"role":"model","parts":[
-            {"thought":true,"text":"plan","thoughtSignature":"UjE="},
-            {"text":"OK","thoughtSignature":"UzE="},
-            {"text":"OK","thoughtSignature":"UzI="},
-            {"functionCall":{"id":"c","name":"lookup","args":{"n":number}},"thoughtSignature":"UzM="}
-        ]},"finishReason":"MAX_TOKENS"}],"usageMetadata":{"promptTokenCount":10,"cachedContentTokenCount":0,
-            "candidatesTokenCount":5,"thoughtsTokenCount":1,"totalTokenCount":16}});
-    if empty {
-        body["candidates"][0]["content"]["parts"] = json!([{"text":"","thoughtSignature":"UzE="}]);
+    let mut frames = vec![
+        json!({"event_type":"interaction.created","interaction":{"id":"reply","model":"fixture-model"}}),
+        json!({"event_type":"step.start","index":0,"step":{"type":"thought","signature":"UjE=","summary":[{"type":"text","text":"plan"}]}}),
+        json!({"event_type":"step.stop","index":0}),
+        json!({"event_type":"step.start","index":1,"step":{"type":"model_output"}}),
+        json!({"event_type":"step.delta","index":1,"delta":{"type":"text","text":if empty {""} else {"OK"}}}),
+        json!({"event_type":"step.stop","index":1}),
+    ];
+    if !empty {
+        frames.extend([
+            json!({"event_type":"step.start","index":2,"step":{"type":"function_call","id":"c","name":"lookup","arguments":{"n":number},"signature":"UzM="}}),
+            json!({"event_type":"step.stop","index":2}),
+        ]);
     }
-    format!("data: {body}\n\n")
+    frames.push(json!({"event_type":"interaction.completed","interaction":{
+        "status":if empty {"completed"} else {"requires_action"},
+        "usage":{"total_input_tokens":10,"total_cached_tokens":0,"total_output_tokens":5,"total_thought_tokens":1,"total_tokens":16}}}));
+    frames
+        .into_iter()
+        .map(|f| {
+            format!(
+                "event: {}\ndata: {f}\n\n",
+                f["event_type"].as_str().unwrap()
+            )
+        })
+        .collect::<String>()
+        + "event: done\ndata: [DONE]\n\n"
 }
 
 fn source_number(number: u64) -> (DecodedResponse, Vec<StreamEvent>) {
@@ -63,8 +78,14 @@ fn decode_source_wire(wire: &str) -> (DecodedResponse, Vec<StreamEvent>) {
         target(),
     )
     .unwrap();
-    let (n, events) = decoder.consume(wire.as_bytes()).unwrap();
-    assert_eq!(n, wire.len());
+    let mut events = vec![];
+    let mut rest = wire.as_bytes();
+    while !rest.is_empty() {
+        let (n, batch) = decoder.consume(rest).unwrap();
+        assert!(n > 0);
+        events.extend(batch);
+        rest = &rest[n..];
+    }
     let mut source = decoder.finish().unwrap();
     source.metadata.created = Some(1.into());
     source.metadata.model = "public".into();
@@ -94,19 +115,19 @@ fn client(protocol: ClientProtocol) -> ClientAdapter {
 #[test]
 fn attachment_dependencies_detect_removed_values_owners_and_lifecycle_edits() {
     let (source, _) = source();
-    for index in [1, 3] {
+    {
         let mut changed = source.clone();
         let mut items = changed.semantic.items().to_vec();
-        match &mut items[index].1 {
-            Item::Message(m) => m.parts[0].replay = None,
-            Item::ToolCall(c) => c.replay = None,
-            _ => panic!(),
-        }
+        let Item::ToolCall(c) = &mut items[2].1 else {
+            panic!()
+        };
+        c.replay = None;
         changed.semantic = changed.semantic.with_items(items).unwrap();
         assert!(seal_for_client(&mut changed, &CLIENT_ORIGIN).is_err());
+
         let mut changed = source.clone();
         let mut items = changed.semantic.items().to_vec();
-        items.remove(index);
+        items.remove(2);
         changed.semantic = changed
             .semantic
             .with_progress(InteractionProgress::Unreported)
@@ -117,22 +138,16 @@ fn attachment_dependencies_detect_removed_values_owners_and_lifecycle_edits() {
     }
     let mut changed = source.clone();
     let mut items = changed.semantic.items().to_vec();
-    let (owner, Item::Message(message)) = &mut items[1] else {
+    let (owner, Item::ToolCall(call)) = &mut items[2] else {
         panic!()
     };
-    message.status = ItemLifecycle::Incomplete;
+    let mut modified = call.clone();
+    modified.name = Text::new("other", "fixture", 64).unwrap();
+    changed.fidelity.remove_replay(*owner);
     changed
         .fidelity
-        .record_part_replay(
-            *owner,
-            message.status,
-            0,
-            &message.parts[0],
-            Some(target().origin()),
-        )
+        .record_call_replay(*owner, &modified, Some(target().origin()))
         .unwrap();
-    message.status = ItemLifecycle::Completed;
-    changed.semantic = changed.semantic.with_items(items).unwrap();
     assert!(matches!(
         seal_for_client(&mut changed, &CLIENT_ORIGIN),
         Err(CodecError::Invalid(
@@ -146,36 +161,52 @@ fn partial_attachment_events_need_finalization_and_keep_owner_kind() {
     let (source, events) = source();
     let index = events
         .iter()
-        .position(|event| matches!(event, StreamEvent::PartReplay { .. }))
+        .position(|event| {
+            matches!(
+                event,
+                StreamEvent::ItemFinished {
+                    replay: Some(_),
+                    ..
+                }
+            )
+        })
         .unwrap();
-    let mut state = StreamState::new();
-    for event in &events[..index] {
-        state = reduce(state, event.clone()).unwrap();
-    }
-    let mut partial = events[index].clone();
-    let StreamEvent::PartReplay { replay, .. } = &mut partial else {
-        unreachable!()
+    let mut state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
+    let partial_replay = {
+        let StreamEvent::ItemFinished {
+            replay: Some(replay),
+            ..
+        } = &events[index]
+        else {
+            unreachable!()
+        };
+        ItemReplay {
+            value: ReplayValue::partial(
+                replay.value.format(),
+                Text::new(replay.value.as_str(), "fixture", 1024).unwrap(),
+            ),
+            origin: replay.origin.clone(),
+        }
     };
-    replay.value = ReplayValue::partial(
-        replay.value.format(),
-        Text::new(replay.value.as_str(), "fixture", 1024).unwrap(),
-    );
-    let state = reduce(state, partial).unwrap();
-    let mut unfinished = state.clone();
-    unfinished = reduce(unfinished, events[index + 1].clone()).unwrap();
-    assert!(matches!(
-        reduce(unfinished, events[index + 2].clone()),
-        Err(EventError::Lifecycle)
-    ));
-    let complete = reduce(state.clone(), events[index].clone()).unwrap();
-    assert!(matches!(
-        reduce(complete, events[index].clone()),
-        Err(EventError::Lifecycle)
-    ));
+    state = reduce(
+        state,
+        StreamEvent::ItemStarted {
+            item: ItemId::new(1),
+            kind: ItemKind::Reasoning,
+            replay: Some(partial_replay),
+        },
+    )
+    .unwrap();
     let mut rebound = events[index].clone();
-    let StreamEvent::PartReplay { replay, .. } = &mut rebound else {
+    let StreamEvent::ItemFinished {
+        item,
+        replay: Some(replay),
+        ..
+    } = &mut rebound
+    else {
         unreachable!()
     };
+    *item = ItemId::new(1);
     replay.origin = Some(ReplayTarget::new("other", "other").unwrap().origin());
     assert!(matches!(reduce(state, rebound), Err(EventError::Identity)));
     let mut items = source.semantic.items().to_vec();
@@ -183,7 +214,7 @@ fn partial_attachment_events_need_finalization_and_keep_owner_kind() {
         panic!()
     };
     message.parts[0].replay = Some(ReplayValue::final_value(
-        ReplayFormat::GoogleGenerateContentPart,
+        ReplayFormat::GoogleInteractionsV1Thought,
         Text::new(
             r#"{"anchor":"thought","signature":"UzE="}"#,
             "fixture",
@@ -202,12 +233,10 @@ fn foreign_signed_text_drops_only_replay_and_affected_call_aliases() {
     let (mut source, _) = source();
     let mut items = source.semantic.items().to_vec();
     items.retain(|(_, item)| !matches!(item, Item::Reasoning(_)));
-    let (call_id, Item::ToolCall(call)) = items.last_mut().unwrap() else {
+    let (call_id, Item::ToolCall(_)) = items.last().unwrap() else {
         panic!()
     };
     let call_id = *call_id;
-    call.replay = None;
-    source.fidelity.remove_replay(call_id);
     source.fidelity.retain_owners(&items);
     source
         .fidelity
@@ -230,7 +259,7 @@ fn foreign_signed_text_drops_only_replay_and_affected_call_aliases() {
         )
         .unwrap()
         .unwrap();
-    assert_eq!(copied.task.semantic.items().len(), 3);
+    assert_eq!(copied.task.semantic.items().len(), 2);
     assert!(
         copied
             .task
@@ -267,7 +296,7 @@ fn native_history_edits_only_foreign_carriers_and_prunes_stale_aliases() {
     fidelity.record_response_item_id(stale, "stale").unwrap();
     let before = fidelity.clone();
     use ReplayFormat::{
-        GoogleGenerateContentPart as Thought, GoogleGenerateContentSignature as Signed,
+        GoogleInteractionsV1FunctionCall as Signed, GoogleInteractionsV1Thought as Thought,
     };
     for (formats, reasoning, attachments) in [
         (vec![Thought, Signed], true, true),
@@ -282,7 +311,7 @@ fn native_history_edits_only_foreign_carriers_and_prunes_stale_aliases() {
             &formats,
         )
         .unwrap();
-        assert_eq!(projected.items().len(), if reasoning { 4 } else { 3 });
+        assert_eq!(projected.items().len(), if reasoning { 3 } else { 2 });
         assert_eq!(
             projected
                 .items()
@@ -291,21 +320,9 @@ fn native_history_edits_only_foreign_carriers_and_prunes_stale_aliases() {
             reasoning
         );
         for (owner, item) in projected.items() {
-            match item {
-                Item::Message(message) => {
-                    for part in &message.parts {
-                        assert_eq!(part.replay.is_some(), attachments);
-                        assert_eq!(
-                            pruned.part_replay_origin(*owner, part.id).is_some(),
-                            attachments
-                        );
-                    }
-                }
-                Item::ToolCall(call) => {
-                    assert_eq!(call.replay.is_some(), attachments);
-                    assert_eq!(pruned.replay_origin(*owner).is_some(), attachments);
-                }
-                _ => {}
+            if let Item::ToolCall(call) = item {
+                assert_eq!(call.replay.is_some(), attachments);
+                assert_eq!(pruned.replay_origin(*owner).is_some(), attachments);
             }
         }
         assert_eq!(transferred, !reasoning || !attachments);
@@ -333,19 +350,18 @@ fn native_history_validates_deleted_anchors_before_partial_attachments() {
     let mut fidelity = source.fidelity;
     let mut items = source.semantic.items().to_vec();
     let anchor = items[0].0;
-    let (owner, Item::Message(message)) = &mut items[1] else {
-        panic!("signed message")
+    let (owner, Item::ToolCall(call)) = &mut items[2] else {
+        panic!("signed call")
     };
-    message.status = ItemLifecycle::Incomplete;
-    let part = &mut message.parts[0];
-    let replay = part.replay.take().unwrap();
-    part.replay = Some(ReplayValue::partial(
+    call.status = ItemLifecycle::Incomplete;
+    let replay = call.replay.take().unwrap();
+    call.replay = Some(ReplayValue::partial(
         replay.format(),
         Text::new(replay.as_str(), "fixture", MAX_TEXT_BYTES).unwrap(),
     ));
-    fidelity.remove_part_replay(*owner, part.id);
+    fidelity.remove_replay(*owner);
     fidelity
-        .record_part_replay(*owner, message.status, 0, part, Some(target().origin()))
+        .record_call_replay(*owner, call, Some(target().origin()))
         .unwrap();
     let request = GenerationRequest::new(items, GenerationControls::default()).unwrap();
     assert!(matches!(
@@ -409,34 +425,34 @@ fn unsealed_reasoning_is_omitted_but_malformed_recognized_envelopes_reject() {
 }
 
 #[test]
-fn opening_revalidates_the_inner_attachment_format_for_the_actual_part_owner() {
+fn opening_revalidates_the_inner_attachment_format_for_the_actual_call_owner() {
     for (inner, accepted) in [
-        (ReplayFormat::GoogleGenerateContentSignature, true),
-        (ReplayFormat::GoogleInteractionsV1FunctionCall, false),
+        (ReplayFormat::GoogleInteractionsV1FunctionCall, true),
+        (ReplayFormat::GoogleInteractionsV1Thought, false),
     ] {
         let mut request = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
             .decode_request(
                 json!({"model":"public","messages":[
                     {"role":"user","content":"go"},
-                    {"role":"assistant","content":"OK"}
+                    {"role":"assistant","tool_calls":[{"id":"c","type":"function","function":{"name":"lookup","arguments":"{}"}}]}
                 ]})
                 .to_string()
                 .as_bytes(),
             )
             .unwrap();
         let mut items = request.task.semantic.items().to_vec();
-        let (_, Item::Message(message)) = items
+        let (_, Item::ToolCall(call)) = items
             .iter_mut()
-            .find(|(_, item)| matches!(item, Item::Message(m) if m.role == MessageRole::Assistant))
+            .find(|(_, item)| matches!(item, Item::ToolCall(_)))
             .unwrap()
         else {
-            panic!("message")
+            panic!("call")
         };
-        message.parts[0].replay = Some(ReplayValue::final_value(
-            ReplayFormat::GoogleGenerateContentSignature,
+        call.replay = Some(ReplayValue::final_value(
+            ReplayFormat::GoogleInteractionsV1FunctionCall,
             replay_envelope::seal(&CLIENT_ORIGIN, inner, "synthetic-signature").unwrap(),
         ));
-        // The outer part format is valid before opening; only the inner purpose differs.
+        // The outer call format is valid before opening; only the inner purpose differs.
         request.task.semantic = request.task.semantic.clone().with_items(items).unwrap();
         let result = open_from_client(&mut request);
         assert_eq!(result.is_ok(), accepted);

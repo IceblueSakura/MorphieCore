@@ -1,10 +1,7 @@
-//! Google AI Studio bindings. Explicit public models and their native Google endpoint candidates.
+//! Google AI Studio bindings. Explicit public models and their native Google Interactions endpoint.
 use crate::lowering::disposition::Dispositions;
 use crate::{
-    protocol::{
-        google::{generate_content, interactions},
-        reasoning::ReasoningRequestPolicy,
-    },
+    protocol::{google::interactions, reasoning::ReasoningRequestPolicy},
     provider::{CredentialBindingId, CredentialKind, ProviderDefinition},
     topology::*,
 };
@@ -24,12 +21,9 @@ pub struct GoogleBinding {
 }
 
 impl GoogleBinding {
-    pub(super) fn endpoint_ids(&self) -> Result<(EndpointId, EndpointId), TopologyError> {
-        let endpoint = |suffix| {
-            EndpointId::new(&format!("google-{}-{suffix}", self.model))
-                .map_err(|_| TopologyError::InvalidModelBinding)
-        };
-        Ok((endpoint("generate-content")?, endpoint("interactions")?))
+    pub(super) fn endpoint_id(&self) -> Result<EndpointId, TopologyError> {
+        EndpointId::new(&format!("google-{}-interactions", self.model))
+            .map_err(|_| TopologyError::InvalidModelBinding)
     }
     pub(super) fn route_id(&self) -> Result<RouteId, TopologyError> {
         RouteId::new(&format!("google-{}", self.model))
@@ -45,12 +39,7 @@ impl GoogleBinding {
             .map(|effort| effort.policy(self.model))
     }
     fn accepted_contract(&'static self) -> Dispositions {
-        let mut contract = generate_content::semantic_contract();
-        // The existing Interactions candidate retains its official image-result carrier.
-        contract.set_native(
-            crate::semantic::task::generation::Feature::ToolResultMedia,
-            true,
-        );
+        let mut contract = interactions::semantic_contract();
         contract.set_native(
             crate::semantic::task::generation::Feature::ResponseEffort,
             self.reasoning_policy().is_some(),
@@ -66,31 +55,23 @@ impl GoogleBinding {
     }
     pub fn endpoint(&'static self) -> Endpoint {
         let provider = self.provider();
-        let collection = provider
-            .generation_entry(crate::provider::GenerationOperation::GoogleGenerateContent)
+        let path = provider
+            .generation_entry(crate::provider::GenerationOperation::GoogleInteractions)
             .expect("declared path")
-            .path;
-        let path = crate::provider::GenerationOperation::GoogleGenerateContent
-            .resolve_path(collection, self.upstream, true)
-            .expect("static path");
+            .path
+            .clone();
         Endpoint {
             bound_replay_scope: None,
-            id: self.endpoint_ids().expect("validated Google endpoints").0,
+            id: self.endpoint_id().expect("validated Google endpoint"),
             provider: provider.id,
             target: EndpointTarget {
                 origin: provider.origin,
                 path,
             },
-            protocol: GenerationProtocol::GoogleGenerateContent,
+            protocol: GenerationProtocol::GoogleInteractions,
             upstream_model: self.upstream.into(),
             canonical_model: ModelId::new(self.model).expect("static model"),
-            representation: generate_content::TargetContract {
-                dispositions: (generate_content::semantic_contract())
-                    .with_native(
-                        crate::semantic::task::generation::Feature::Temperature,
-                        false,
-                    )
-                    .with_native(crate::semantic::task::generation::Feature::TopP, false),
+            representation: interactions::TargetContract {
                 sampling: crate::protocol::google::SamplingPolicy::Ignored,
                 model_limits: self.limits.clone(),
                 reasoning_policy: self.reasoning_policy(),
@@ -109,36 +90,11 @@ impl GoogleBinding {
         }
     }
     pub fn route(&'static self) -> Route {
-        let (generate_content, interactions) =
-            self.endpoint_ids().expect("validated Google endpoints");
         Route {
             id: self.route_id().expect("validated Google route"),
-            endpoints: vec![generate_content, interactions],
-            policy: RoutePolicy {
-                candidates: CandidatePolicy::SkipUnrepresentable,
-                ..RoutePolicy::default()
-            },
+            endpoints: vec![self.endpoint_id().expect("validated Google endpoint")],
+            policy: RoutePolicy::default(),
         }
-    }
-    pub fn interactions_endpoint(&'static self) -> Endpoint {
-        let mut endpoint = self.endpoint();
-        endpoint.id = self.endpoint_ids().expect("validated Google endpoints").1;
-        endpoint.protocol = GenerationProtocol::GoogleInteractions;
-        endpoint.target.path = self
-            .provider()
-            .generation_entry(crate::provider::GenerationOperation::GoogleInteractions)
-            .expect("declared path")
-            .path
-            .clone();
-        endpoint.representation = interactions::TargetContract {
-            sampling: crate::protocol::google::SamplingPolicy::Ignored,
-            model_limits: self.limits.clone(),
-            reasoning_policy: self.reasoning_policy(),
-            messages_terminal_projection: self.messages_terminal_projection,
-            ..Default::default()
-        }
-        .into();
-        endpoint
     }
     pub fn public_model(&'static self) -> PublicModel {
         let model = ModelId::new(self.model).expect("static model");

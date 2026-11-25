@@ -751,16 +751,16 @@ mod native_catalog {
             rule: "synthetic.off.v1",
             conversion: ReasoningConversion::PreserveDisabled,
         };
-        static ALLOCATE: ReasoningRequestPolicy = ReasoningRequestPolicy {
+        static PRESERVE_BUDGET: ReasoningRequestPolicy = ReasoningRequestPolicy {
             canonical_model: std::borrow::Cow::Borrowed("synthetic-model"),
-            rule: "synthetic.allocation.v1",
-            conversion: ReasoningConversion::EffortToBudget {
+            rule: "synthetic.budget.v1",
+            conversion: ReasoningConversion::BudgetToEffort {
                 scope: EffortScope::Reasoning,
                 table: SHARED_BUDGETS,
             },
         };
         let mut google = endpoint;
-        google.protocol = morphiecore::topology::GenerationProtocol::GoogleGenerateContent;
+        google.protocol = morphiecore::topology::GenerationProtocol::GoogleInteractions;
         google.canonical_model = morphiecore::topology::ModelId::new("synthetic-model").unwrap();
         let mut request = morphiecore::protocol::openai::GenerationCodec::new(
             morphiecore::protocol::openai::GenerationApi::Responses,
@@ -780,27 +780,29 @@ mod native_catalog {
             .clone()
             .with_settings(settings)
             .unwrap();
-        let mut caps = morphiecore::protocol::google::generate_content::TargetContract::default();
+        let mut caps = morphiecore::protocol::google::interactions::TargetContract::default();
         google.representation = caps.clone().into();
         let (wire, rules) = google.encode_request_with_rules(&request).unwrap();
         assert_eq!(
-            wire["generationConfig"]["thinkingConfig"],
-            serde_json::json!({"thinkingLevel":"MINIMAL"})
+            wire["generation_config"]["thinking_level"],
+            serde_json::json!("minimal")
         );
         assert_eq!(rules, ["generation.budget-to-effort.v1"]);
         caps.reasoning_policy = Some(OFF.clone());
         google.representation = caps.clone().into();
         let (wire, rules) = google.encode_request_with_rules(&request).unwrap();
         assert_eq!(
-            wire["generationConfig"]["thinkingConfig"],
-            serde_json::json!({"thinkingLevel":"MINIMAL"})
+            wire["generation_config"]["thinking_level"],
+            serde_json::json!("minimal")
         );
         assert_eq!(rules, ["generation.budget-to-effort.v1"]);
-        caps.reasoning_policy = Some(ALLOCATE.clone());
+        caps.reasoning_policy = Some(PRESERVE_BUDGET.clone());
         google.representation = caps.into();
+        let (wire, rules) = google.encode_request_with_rules(&request).unwrap();
         assert_eq!(
-            google.encode_request(&request).unwrap()["generationConfig"]["thinkingConfig"]["thinkingBudget"],
-            1024
+            wire["generation_config"]["thinking_level"],
+            serde_json::json!("minimal")
         );
+        assert_eq!(rules, ["synthetic.budget.v1"]);
     }
 }

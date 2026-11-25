@@ -375,30 +375,73 @@ fn replay_replacement_refunds_only_its_previous_charge_at_the_stream_limit() {
     }
     let part = PartId::new(1);
     state = reduce(state, StreamEvent::ValueFinished { item, part }).unwrap();
-    let replay = |size, final_value| {
-        let text = Text::new("s".repeat(size), "fixture", MAX_TEXT_BYTES).unwrap();
-        StreamEvent::PartReplay {
-            item,
-            part,
-            replay: ItemReplay {
-                value: if final_value {
-                    ReplayValue::final_value(ReplayFormat::GoogleGenerateContentSignature, text)
-                } else {
-                    ReplayValue::partial(ReplayFormat::GoogleGenerateContentSignature, text)
-                },
-                origin: Some(ReplayOrigin::new("fixture").unwrap()),
-            },
-        }
+    for format in [
+        ReplayFormat::GoogleInteractionsV1Thought,
+        ReplayFormat::GoogleInteractionsV1FunctionCall,
+    ] {
+        let text = Text::new("s", "fixture", MAX_TEXT_BYTES).unwrap();
+        assert!(matches!(
+            reduce(
+                state.clone(),
+                StreamEvent::PartReplay {
+                    item,
+                    part,
+                    replay: ItemReplay {
+                        value: ReplayValue::final_value(format, text),
+                        origin: Some(ReplayOrigin::new("fixture").unwrap()),
+                    },
+                }
+            ),
+            Err(EventError::Semantic(GenerationError::InvalidReplay))
+        ));
+    }
+    let reasoning = ItemId::new(2);
+    let reasoning_replay = |size, final_value| ItemReplay {
+        value: if final_value {
+            ReplayValue::final_value(
+                ReplayFormat::GoogleInteractionsV1Thought,
+                Text::new("s".repeat(size), "fixture", MAX_TEXT_BYTES).unwrap(),
+            )
+        } else {
+            ReplayValue::partial(
+                ReplayFormat::GoogleInteractionsV1Thought,
+                Text::new("s".repeat(size), "fixture", MAX_TEXT_BYTES).unwrap(),
+            )
+        },
+        origin: Some(ReplayOrigin::new("fixture").unwrap()),
     };
-    state = reduce(state, replay(4, false)).unwrap();
+    state = reduce(
+        state,
+        StreamEvent::ItemStarted {
+            item: reasoning,
+            kind: ItemKind::Reasoning,
+            replay: Some(reasoning_replay(4, false)),
+        },
+    )
+    .unwrap();
     assert!(matches!(
-        reduce(state.clone(), replay(5, true)),
+        reduce(
+            state.clone(),
+            StreamEvent::ItemFinished {
+                item: reasoning,
+                status: ItemLifecycle::Completed,
+                replay: Some(reasoning_replay(5, true)),
+            }
+        ),
         Err(EventError::Limit)
     ));
-    let state = reduce(state, replay(4, true)).unwrap();
+    let state = reduce(
+        state,
+        StreamEvent::ItemFinished {
+            item: reasoning,
+            status: ItemLifecycle::Completed,
+            replay: Some(reasoning_replay(4, true)),
+        },
+    )
+    .unwrap();
     assert_eq!(
         state
-            .part(item, part)
+            .item(reasoning)
             .unwrap()
             .replay
             .as_ref()
@@ -422,13 +465,13 @@ fn replay_replacement_refunds_only_its_previous_charge_at_the_stream_limit() {
 }
 
 #[test]
-fn owned_replay_belongs_to_assistant_text_and_calls_with_final_values() {
+fn owned_replay_belongs_to_calls_with_final_values() {
     let text = |value: &str| Text::new(value, "fixture", 64).unwrap();
     let signature = |final_value| {
         if final_value {
-            ReplayValue::final_value(ReplayFormat::GoogleGenerateContentSignature, text("s"))
+            ReplayValue::final_value(ReplayFormat::GoogleInteractionsV1FunctionCall, text("s"))
         } else {
-            ReplayValue::partial(ReplayFormat::GoogleGenerateContentSignature, text("s"))
+            ReplayValue::partial(ReplayFormat::GoogleInteractionsV1FunctionCall, text("s"))
         }
     };
     let message = |role, status, content, replay| {
@@ -482,14 +525,12 @@ fn owned_replay_belongs_to_assistant_text_and_calls_with_final_values() {
             replay,
         )
     };
-    assert!(request(assistant(ItemLifecycle::Completed, signature(true))).is_ok());
-    assert!(request(assistant(ItemLifecycle::Incomplete, signature(false))).is_ok());
     assert!(request(call(ItemLifecycle::Completed, signature(true))).is_ok());
     assert!(request(call(ItemLifecycle::Incomplete, signature(false))).is_ok());
     let mut instruction = Part::new(PartId::new(2), text("rules"));
     instruction.replay = Some(signature(true));
     let reasoning_format =
-        ReplayValue::final_value(ReplayFormat::GoogleGenerateContentPart, text("s"));
+        ReplayValue::final_value(ReplayFormat::GoogleInteractionsV1Thought, text("s"));
     for invalid in [
         Item::Instruction(Instruction {
             participant: None,
@@ -508,7 +549,8 @@ fn owned_replay_belongs_to_assistant_text_and_calls_with_final_values() {
             ContentPart::Refusal(text("no").into()),
             signature(true),
         ),
-        assistant(ItemLifecycle::Completed, signature(false)),
+        assistant(ItemLifecycle::Completed, signature(true)),
+        assistant(ItemLifecycle::Incomplete, signature(false)),
         assistant(ItemLifecycle::Completed, reasoning_format.clone()),
         call(ItemLifecycle::Completed, signature(false)),
         call(ItemLifecycle::Completed, reasoning_format.clone()),
@@ -521,88 +563,33 @@ fn owned_replay_belongs_to_assistant_text_and_calls_with_final_values() {
 
     // The stream reducer applies the same owner rules before materialization.
     let item = ItemId::new(1);
-    let replay = |part, final_value| StreamEvent::PartReplay {
-        item,
-        part,
-        replay: ItemReplay {
-            value: signature(final_value),
-            origin: Some(ReplayOrigin::new("fixture").unwrap()),
-        },
-    };
-    let open = |kind, part_kind| {
-        let mut state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
-        for event in [
-            StreamEvent::ItemStarted {
-                item,
-                kind,
-                replay: None,
-            },
-            StreamEvent::PartStarted {
-                item,
-                part: PartId::new(1),
-                kind: part_kind,
-            },
-        ] {
-            state = reduce(state, event).unwrap();
-        }
-        state
-    };
-    let text_part = open(ItemKind::Message { phase: None }, PartKind::Text);
-    assert!(matches!(
-        reduce(text_part.clone(), replay(PartId::new(1), true)),
-        Err(EventError::Lifecycle)
-    ));
-    let finished = |state| {
-        reduce(
-            state,
-            StreamEvent::ValueFinished {
-                item,
-                part: PartId::new(1),
-            },
-        )
-        .unwrap()
-    };
-    for (kind, part_kind) in [
-        (ItemKind::Message { phase: None }, PartKind::Refusal),
-        (ItemKind::Reasoning, PartKind::ReasoningText),
-    ] {
-        assert!(matches!(
-            reduce(
-                finished(open(kind, part_kind)),
-                replay(PartId::new(1), true)
-            ),
-            Err(EventError::Lifecycle)
-        ));
-    }
-    let mut partial = reduce(finished(text_part), replay(PartId::new(1), false)).unwrap();
-    partial = reduce(
-        partial,
-        StreamEvent::PartFinished {
+    let mut state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
+    state = reduce(
+        state,
+        StreamEvent::ItemStarted {
             item,
-            part: PartId::new(1),
+            kind: ItemKind::ToolCall {
+                format: ArgumentFormat::Raw,
+                call_id: text("C"),
+                name: text("lookup"),
+                context: CallContext::default(),
+            },
+            replay: None,
         },
     )
     .unwrap();
     assert!(matches!(
         reduce(
-            partial.clone(),
+            state,
             StreamEvent::ItemFinished {
                 item,
                 status: ItemLifecycle::Completed,
-                replay: None,
+                replay: Some(ItemReplay {
+                    value: reasoning_format,
+                    origin: Some(ReplayOrigin::new("fixture").unwrap()),
+                }),
             }
         ),
         Err(EventError::Lifecycle)
     ));
-    assert!(
-        reduce(
-            partial,
-            StreamEvent::ItemFinished {
-                item,
-                status: ItemLifecycle::Incomplete,
-                replay: None,
-            }
-        )
-        .is_ok()
-    );
 }

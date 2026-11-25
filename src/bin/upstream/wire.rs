@@ -19,7 +19,7 @@ pub(super) fn request(protocol: Protocol, model: &str, siwc: bool) -> Value {
             json!({"model":model,"messages":[{"role":"user","content":PROMPT}],"max_tokens":1024,"stream":false})
         }
         Protocol::Google => {
-            json!({"contents":[{"role":"user","parts":[{"text":PROMPT}]}]})
+            json!({"model":model,"input":PROMPT,"store":false,"stream":false})
         }
     }
 }
@@ -98,19 +98,23 @@ pub(super) fn probe(bytes: &[u8], protocol: Protocol) -> Result<Value, Error> {
             text_parts(array(&value["content"])?, "text")?
         }
         Protocol::Google => {
-            let candidates = array(&value["candidates"])?;
-            if candidates.len() != 1 || candidates[0]["finishReason"] != "STOP" {
+            if value["errors"]
+                .as_array()
+                .is_some_and(|errors| !errors.is_empty())
+            {
+                return Err(Error::Response);
+            }
+            if value["status"] != "completed" {
                 return Err(Error::Incomplete);
             }
             let mut bytes = 0;
-            for part in array(&candidates[0]["content"]["parts"])? {
-                if let Some(thought) = part.get("thought")
-                    && thought.as_bool().ok_or(Error::Response)?
-                {
-                    continue;
-                }
-                if let Some(text) = part.get("text") {
-                    bytes += text.as_str().ok_or(Error::Response)?.len();
+            for step in array(&value["steps"])? {
+                match step["type"].as_str() {
+                    Some("thought") => continue,
+                    Some("model_output") => {
+                        bytes += text_parts(array(&step["parts"])?, "text")?;
+                    }
+                    _ => {}
                 }
             }
             bytes

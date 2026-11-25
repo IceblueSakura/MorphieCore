@@ -101,7 +101,7 @@ The imported subset is identified in [assets.lock.json](../tests/upstream/assets
 |---|---|---|
 | OpenAI official SDKs | [Python](https://github.com/openai/openai-python), [Node](https://github.com/openai/openai-node) | Chat/Responses request, response, streaming, parser and returned-history tests; applicable interruption, backpressure and cleanup cases. Operation/resource tests are candidates for selected stage-4 slices |
 | Anthropic official SDKs | [Python](https://github.com/anthropics/anthropic-sdk-python), [TypeScript](https://github.com/anthropics/anthropic-sdk-typescript) | Messages blocks, tool-input fragments, thinking/signatures, partial output and history fixtures; not automatic tool runners |
-| Google Gen AI official SDKs | [Python](https://github.com/googleapis/python-genai), [JavaScript](https://github.com/googleapis/js-genai) | generateContent/Interactions wire and stream cases within selected upstream directions; operation-specific Image/Embedding candidates. Not automatic function calling or new native client admission |
+| Google Gen AI official SDKs | [Python](https://github.com/googleapis/python-genai), [JavaScript](https://github.com/googleapis/js-genai) | Interactions wire and stream cases within selected upstream directions; operation-specific Image/Embedding candidates. Not automatic function calling or new native client admission |
 | Vercel AI SDK | [Repository](https://github.com/vercel/ai) | Selected package entries cover `ai`, OpenAI, Anthropic and Google. Alibaba, DeepSeek, xAI and OpenAI-compatible are repository inspection candidates, not separately selected package pins or imported coverage. Raw JSON/chunk and image-model fixtures may inform selected slices; its IR and implicit repair policies are not protocol authority |
 | Web Platform Tests | [EventSource](https://github.com/web-platform-tests/wpt/tree/master/eventsource) | SSE format/parser cases; browser-only API, reconnection and security-context behavior are separate |
 | EventSource Parser | [Repository and tests](https://github.com/rexxars/eventsource-parser) | Incremental parsing, multiline/multibyte, buffering and stream regressions; reference behavior is not authority for gateway resource budgets |
@@ -180,11 +180,6 @@ Research is not design approval or a new work queue. Recheck mutable sources bef
 
 Documentation: CC-BY-4.0. Samples: Apache-2.0.
 
-- [generateContent](https://ai.google.dev/api/generate-content)
-- [CachedContent resources](https://ai.google.dev/api/caching)
-- [Context caching](https://ai.google.dev/gemini-api/docs/caching)
-- [Thought signatures](https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures)
-- [Function calling](https://ai.google.dev/gemini-api/docs/generate-content/function-calling)
 - [Interactions overview](https://ai.google.dev/gemini-api/docs/interactions-overview)
 - [Interactions API v1](https://ai.google.dev/api/interactions-api-v1)
 - [Interactions streaming](https://ai.google.dev/gemini-api/docs/interactions/streaming)

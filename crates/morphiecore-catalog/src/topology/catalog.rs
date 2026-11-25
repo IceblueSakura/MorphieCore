@@ -111,7 +111,6 @@ fn compile_catalog() -> Result<CompiledTopology, TopologyError> {
     }
     for binding in google_bindings() {
         endpoints.push(binding.endpoint());
-        endpoints.push(binding.interactions_endpoint());
         routes.push(binding.route());
         public_models.push(binding.public_model());
         canonical_models.push(binding.canonical_model());

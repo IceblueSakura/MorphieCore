@@ -1,17 +1,13 @@
 //! Protocol-owned endpoint capabilities, not a client protocol or execution policy.
 use crate::{
-    anthropic,
-    cache::CacheTargetPolicy,
-    google::{generate_content as google_generate_content, interactions as google_interactions},
-    lowering::disposition::Dispositions,
-    openai::TargetContract as OpenAiCaps,
+    anthropic, cache::CacheTargetPolicy, google::interactions as google_interactions,
+    lowering::disposition::Dispositions, openai::TargetContract as OpenAiCaps,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TargetContract {
     OpenAi(Box<OpenAiCaps>),
     AnthropicMessages(Box<anthropic::messages::TargetContract>),
-    GoogleGenerateContent(Box<google_generate_content::TargetContract>),
     GoogleInteractions(Box<google_interactions::TargetContract>),
 }
 impl From<OpenAiCaps> for TargetContract {
@@ -22,11 +18,6 @@ impl From<OpenAiCaps> for TargetContract {
 impl From<anthropic::messages::TargetContract> for TargetContract {
     fn from(value: anthropic::messages::TargetContract) -> Self {
         Self::AnthropicMessages(Box::new(value))
-    }
-}
-impl From<google_generate_content::TargetContract> for TargetContract {
-    fn from(value: google_generate_content::TargetContract) -> Self {
-        Self::GoogleGenerateContent(Box::new(value))
     }
 }
 impl From<google_interactions::TargetContract> for TargetContract {
@@ -40,7 +31,6 @@ impl TargetContract {
         match self {
             Self::OpenAi(c) => c.reasoning_history,
             Self::AnthropicMessages(c) => c.reasoning_history,
-            Self::GoogleGenerateContent(c) => c.reasoning_history,
             Self::GoogleInteractions(c) => c.reasoning_history,
         }
     }
@@ -49,7 +39,6 @@ impl TargetContract {
         match self {
             Self::OpenAi(c) => &c.model_limits,
             Self::AnthropicMessages(c) => &c.model_limits,
-            Self::GoogleGenerateContent(c) => &c.model_limits,
             Self::GoogleInteractions(c) => &c.model_limits,
         }
     }
@@ -57,7 +46,6 @@ impl TargetContract {
         match self {
             Self::OpenAi(c) => &mut c.model_limits,
             Self::AnthropicMessages(c) => &mut c.model_limits,
-            Self::GoogleGenerateContent(c) => &mut c.model_limits,
             Self::GoogleInteractions(c) => &mut c.model_limits,
         }
     }
@@ -89,7 +77,6 @@ impl TargetContract {
         match self {
             Self::OpenAi(c) => &c.dispositions,
             Self::AnthropicMessages(c) => &c.dispositions,
-            Self::GoogleGenerateContent(c) => &c.dispositions,
             Self::GoogleInteractions(c) => &c.dispositions,
         }
     }
@@ -97,8 +84,8 @@ impl TargetContract {
         &self,
         request: &crate::GenerationRequestEnvelope,
     ) -> Option<anthropic::messages::client::GoogleTerminalPolicy> {
-        // Both Google encoders forward nonempty stop controls unchanged and never
-        // insert defaults. Absence here is therefore an effective-request fact.
+        // Interactions forwards nonempty stop controls unchanged and never
+        // inserts defaults. Absence here is therefore an effective-request fact.
         if !request.task.semantic.controls().stop_sequences.is_empty() {
             return None;
         }
@@ -109,9 +96,6 @@ impl TargetContract {
     ) -> Option<anthropic::messages::client::GoogleTerminalPolicy> {
         use anthropic::messages::client::GoogleTerminalPolicy as Policy;
         match self {
-            Self::GoogleGenerateContent(c) if c.messages_terminal_projection => {
-                Some(Policy::GenerateContentWithoutStops)
-            }
             Self::GoogleInteractions(c) if c.messages_terminal_projection => {
                 Some(Policy::InteractionsWithoutStops)
             }
@@ -122,7 +106,6 @@ impl TargetContract {
         match self {
             Self::OpenAi(c) => c.cache,
             Self::AnthropicMessages(c) => c.cache,
-            Self::GoogleGenerateContent(c) => c.cache,
             Self::GoogleInteractions(c) => c.cache,
         }
     }

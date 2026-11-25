@@ -135,9 +135,7 @@ impl ApiKeyBinding {
                     .path
                     .clone(),
             ),
-            GenerationProtocol::AnthropicMessages
-            | GenerationProtocol::GoogleGenerateContent
-            | GenerationProtocol::GoogleInteractions => {
+            GenerationProtocol::AnthropicMessages | GenerationProtocol::GoogleInteractions => {
                 return Err(TopologyError::ContractUnsatisfiable);
             }
         };
@@ -241,7 +239,6 @@ impl ApiKeyBinding {
             GenerationProtocol::OpenAiChat => "chat",
             GenerationProtocol::OpenAiResponses => "responses",
             GenerationProtocol::AnthropicMessages => "messages",
-            GenerationProtocol::GoogleGenerateContent => "generate-content",
             GenerationProtocol::GoogleInteractions => "interactions",
         };
         EndpointId::new(&format!("{}-{suffix}", self.endpoint_prefix)).expect("static id")

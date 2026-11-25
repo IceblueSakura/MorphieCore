@@ -124,10 +124,8 @@ The following ordinary attachments lack a lawful standard stateless carrier:
 
 | Upstream field | Owner and required meaning | Missing downstream carrier / disposition |
 |---|---|---|
-| generateContent `candidates[].content.parts[].thoughtSignature` beside ordinary `text` (`thought` absent/false) | Exact text part, including its boundary, carries native continuation state | Chat message content, Responses `output_text`, and Messages `text` have no corresponding signature field; reject stateless delivery |
-| The same `thoughtSignature` beside `functionCall` | Exact function call carries native continuation state | Chat `tool_calls[]`, Responses `function_call`, and Messages `tool_use` have no opaque call-replay field; reject stateless delivery |
-| Interactions `step.start.step.signature` or terminal `interaction.steps[].signature` on `type:"function_call"` | The existing scoped decoder represents call-owned continuation | The same call-carrier gap requires rejection if observed. Official ordinary-call field authority and real issuance remain qualified separately; do not infer them from thought signatures |
-| Google thought/reasoning signatures | A genuine reasoning owner, distinct from the ordinary attachments above | Use the existing standard reasoning projection where representable; do not reject the whole Provider family or manufacture a reasoning owner for ordinary attachments |
+| Interactions `step.start.step.signature` or terminal `interaction.steps[].signature` on `type:"function_call"` | The existing scoped decoder represents call-owned continuation | Chat `tool_calls[]`, Responses `function_call`, and Messages `tool_use` have no opaque call-replay field; reject stateless delivery if observed |
+| Google thought/reasoning signatures | A genuine reasoning owner, distinct from the ordinary attachment above | Use the existing standard reasoning projection where representable; do not reject the whole Provider family or manufacture a reasoning owner for ordinary attachments |
 
 Removing an ordinary signature would lose continuation state; moving it into reasoning, content, call IDs or diagnostics changes its meaning. Neither a private replay extension nor storage supplies a substitute.
 

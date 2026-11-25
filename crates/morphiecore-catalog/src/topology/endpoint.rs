@@ -71,7 +71,6 @@ impl Endpoint {
         let reasoning_policy = match &self.representation {
             TargetContract::OpenAi(caps) => caps.adaptation.reasoning_policy.as_ref(),
             TargetContract::AnthropicMessages(caps) => caps.reasoning_policy.as_ref(),
-            TargetContract::GoogleGenerateContent(caps) => caps.reasoning_policy.as_ref(),
             TargetContract::GoogleInteractions(caps) => caps.reasoning_policy.as_ref(),
         };
         if let Some(policy) = reasoning_policy {
@@ -92,16 +91,6 @@ impl Endpoint {
                     .with_origin(self.replay_origin()),
                 }
             }
-            (
-                GenerationProtocol::GoogleGenerateContent,
-                TargetContract::GoogleGenerateContent(_),
-            ) => UpstreamAdapter::GoogleGenerateContent {
-                target: crate::protocol::native::ReplayTarget::new(
-                    self.provider.as_str(),
-                    &self.upstream_model,
-                )?
-                .with_origin(self.replay_origin()),
-            },
             (GenerationProtocol::GoogleInteractions, TargetContract::GoogleInteractions(_)) => {
                 UpstreamAdapter::GoogleInteractions {
                     target: crate::protocol::native::ReplayTarget::new(
@@ -175,10 +164,6 @@ impl Endpoint {
                     TargetContract::AnthropicMessages(caps),
                 ) => caps.encode_request(request, &target),
                 (
-                    UpstreamAdapter::GoogleGenerateContent { target },
-                    TargetContract::GoogleGenerateContent(caps),
-                ) => caps.encode_request(request, &target),
-                (
                     UpstreamAdapter::GoogleInteractions { target },
                     TargetContract::GoogleInteractions(caps),
                 ) => caps.encode_request(request, &target),
@@ -202,12 +187,10 @@ impl Endpoint {
                 body["prompt_cache_key"].as_str(),
             ),
             TargetContract::AnthropicMessages(caps) => caps.request_headers(request, body),
-            TargetContract::GoogleGenerateContent(caps) => Ok(caps.request_headers()),
             TargetContract::GoogleInteractions(caps) => Ok(caps.request_headers()),
         }
     }
-    /// The target path the Provider's declared operation entry implies for this binding:
-    /// the entry itself, or for generateContent the model inside its collection.
+    /// The target path the Provider's declared operation entry implies for this binding.
     pub fn declared_path(
         &self,
         entry: &EndpointPath,
@@ -216,15 +199,9 @@ impl Endpoint {
             .operation()
             .resolve_path(entry, &self.upstream_model, true)
     }
-    /// Relative request target. generateContent names the model in its path and
-    /// selects SSE framing with a fixed query, never business input.
+    /// Relative request target.
     pub fn request_path(&self) -> String {
-        match self.protocol {
-            GenerationProtocol::GoogleGenerateContent => {
-                format!("{}?alt=sse", self.target.path.as_str())
-            }
-            _ => self.target.path.as_str().into(),
-        }
+        self.target.path.as_str().into()
     }
     pub fn validate(&self) -> Result<(), crate::topology::TopologyError> {
         use crate::topology::TopologyError;
@@ -236,9 +213,6 @@ impl Endpoint {
             .map_err(|_| TopologyError::ContractUnsatisfiable)?;
         let native = match &self.representation {
             TargetContract::AnthropicMessages(caps) => Some(caps.profile.representation_contract()),
-            TargetContract::GoogleGenerateContent(_) => {
-                Some(crate::protocol::google::generate_content::semantic_contract())
-            }
             TargetContract::GoogleInteractions(_) => {
                 Some(crate::protocol::google::interactions::semantic_contract())
             }

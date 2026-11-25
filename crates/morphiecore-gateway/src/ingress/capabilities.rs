@@ -233,14 +233,11 @@ impl<'a> Entry<'a> {
             delivery.push(required);
         }
         use crate::protocol::anthropic::messages::client::GoogleTerminalPolicy as GoogleTerminal;
-        let selected_google = |profile| {
-            protocol == ClientProtocol::Messages
-                && entry.candidates.iter().any(|c| {
-                    c.endpoint.representation.google_messages_terminal_profile() == Some(profile)
-                })
-        };
-        let generate_content = selected_google(GoogleTerminal::GenerateContentWithoutStops);
-        let interactions = selected_google(GoogleTerminal::InteractionsWithoutStops);
+        let interactions = protocol == ClientProtocol::Messages
+            && entry.candidates.iter().any(|c| {
+                c.endpoint.representation.google_messages_terminal_profile()
+                    == Some(GoogleTerminal::InteractionsWithoutStops)
+            });
         // General ambiguity remains rejected. Selected Google delivery additionally
         // needs request context, so expose that smaller domain rather than broad support.
         for (domain, exact) in [
@@ -249,7 +246,7 @@ impl<'a> Entry<'a> {
                 protocol == ClientProtocol::Messages,
             ),
             (
-                if generate_content || interactions {
+                if interactions {
                     "ambiguous_stop_outside_selected_google_no_stop_profile"
                 } else {
                     "ambiguous_stop_without_tool_continuation"
@@ -278,30 +275,15 @@ impl<'a> Entry<'a> {
             }
             delivery.push(case);
         }
-        for (selected, domain, rules) in [
-            (
-                generate_content,
-                "generate_content_stop_without_configured_sequences",
-                &[
-                    "messages.google-tool-stop.v1",
-                    "messages.google-stop-without-sequences.v1",
-                ][..],
-            ),
-            (
-                interactions,
+        if interactions {
+            let mut case = Case::new(
+                "generation.completion_cause",
                 "interactions_completed_without_configured_sequences",
-                &["messages.interactions-completed-as-end-turn.v1"][..],
-            ),
-        ] {
-            if selected {
-                let mut case = Case::new(
-                    "generation.completion_cause",
-                    domain,
-                    Treatment::ApprovedAdaptation,
-                );
-                case.rules.extend_from_slice(rules);
-                delivery.push(case);
-            }
+                Treatment::ApprovedAdaptation,
+            );
+            case.rules
+                .push("messages.interactions-completed-as-end-turn.v1");
+            delivery.push(case);
         }
         let mut history = if protocol == ClientProtocol::Responses {
             vec![Case::new(

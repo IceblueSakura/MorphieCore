@@ -222,7 +222,7 @@ mod candidates {
         );
     }
     #[test]
-    fn a_narrower_native_candidate_is_skipped_not_admitted() {
+    fn google_interactions_admits_user_video_directly() {
         let topology = catalog::default_topology().unwrap();
         let model = catalog::google_bindings()[0].model;
         let video = GenerationCodec::new(GenerationApi::Chat, Dialect::ModelBest, None)
@@ -240,12 +240,9 @@ mod candidates {
         };
         assert_eq!(
             ids(&plan.candidates),
-            [format!("google-{model}-generate-content")]
+            [format!("google-{model}-interactions")]
         );
-        assert_eq!(
-            plan.rejections[0].endpoint_id.as_str(),
-            format!("google-{model}-interactions")
-        );
+        assert!(plan.rejections.is_empty());
     }
     #[test]
     fn responses_tool_images_need_an_image_model_and_a_responses_carrier() {

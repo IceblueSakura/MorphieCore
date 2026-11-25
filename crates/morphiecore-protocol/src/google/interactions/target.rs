@@ -24,6 +24,7 @@ pub fn semantic_contract() -> Dispositions {
         Reasoning,
         ImageInput,
         AudioInput,
+        VideoInput,
         FileInput,
         ParallelTools,
     ] {

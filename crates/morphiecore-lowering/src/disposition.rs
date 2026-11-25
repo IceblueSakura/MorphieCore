@@ -418,28 +418,16 @@ pub const MESSAGES_SUMMARY: Rule = Rule::new(
     Field::ReasoningSummary,
     Change::Approximate,
 );
-pub const GENERATE_CONTENT_SUMMARY: Rule = Rule::new(
-    "gemini.summarize-reasoning.v1",
-    Field::ReasoningSummary,
-    Change::Approximate,
-);
 pub const INTERACTIONS_SUMMARY: Rule = Rule::new(
     "interactions.summarize-reasoning.v1",
     Field::ReasoningSummary,
     Change::Approximate,
-);
-pub const TRANSFER_GENERATE_CONTENT_HISTORY: Rule = Rule::new(
-    "gemini.transfer-visible-history.v1",
-    Field::Replay,
-    Change::Omit,
 );
 pub const TRANSFER_INTERACTIONS_HISTORY: Rule = Rule::new(
     "interactions.transfer-visible-history.v1",
     Field::Replay,
     Change::Omit,
 );
-pub const OMIT_GENERATE_CONTENT_SESSION: Rule =
-    Rule::new("gemini.omit-cache-key.v1", Field::Cache, Change::Omit);
 pub const OMIT_INTERACTIONS_SESSION: Rule =
     Rule::new("interactions.omit-cache-key.v1", Field::Cache, Change::Omit);
 pub const OMIT_REPLAY_MISMATCH: Rule = Rule::new(
@@ -490,11 +478,6 @@ pub const OMIT_SERVICE: Rule = Rule::new(
 
 pub const MESSAGES_SCHEMA_NAME: Rule = Rule::new(
     "messages.omit-schema-name.v1",
-    Field::SchemaName,
-    Change::Omit,
-);
-pub const GENERATE_CONTENT_SCHEMA_NAME: Rule = Rule::new(
-    "gemini.omit-schema-name.v1",
     Field::SchemaName,
     Change::Omit,
 );

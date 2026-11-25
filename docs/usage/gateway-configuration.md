@@ -263,7 +263,7 @@ Use `morphiecore --catalog` to select a registered public label and its catalog 
 | Model | `thinking_tokens` | Optional six-level numeric table shared by this model's candidates |
 | Candidate | `binding` | Required catalog endpoint ID; fixes protocol, dialect, canonical model and authentication kind |
 | Candidate | `upstream_model` | Wire spelling only; does not change canonical identity or model capabilities |
-| Candidate | `thinking_conversion` | `budget_to_effort` or `effort_to_budget` fallback; exact model-supported controls take precedence. Omission performs no numeric conversion |
+| Candidate | `thinking_conversion` | `budget_to_effort` fallback; exact model-supported controls take precedence. Omission performs no numeric conversion |
 | Candidate | `allowed_effort` | Optional nonempty array of distinct `minimal`, `low`, `medium`, `high`, `xhigh`, `max` levels; narrows the catalog declaration when present |
 | Candidate | `context_window_tokens` | Optional positive `u64` total-context planning capacity; narrows a known declaration or explicitly supplies an unknown one |
 | Candidate | `maximum_input_tokens` | Optional positive `u64` independent input planning maximum; never inferred from context/output and cannot widen a known declaration |
@@ -322,7 +322,7 @@ Trusted deployment overrides retain the selected binding's contract and do not e
 
 On an admitted Messages route, request-wide automatic caching uses root `"cache_control":{"type":"ephemeral","ttl":"1h"}` or `"ttl":"5m"`; omitting `ttl` means 5m. Missing root policy retains the binding's marker-free default, not a client disable instruction. Explicit owner markers, four-marker limits and TTL conflicts retain their [existing rules](../architecture/adaptation-and-dialects.md#caller-selected-automatic-cache-admission).
 
-Account-level API roots apply consistently to Generation, model-list diagnostics and standalone task operations. Google generateContent resolves its model/action suffix from the selected operation; no caller-controlled path or API-version guessing is introduced. See [target composition](credentials-and-diagnostics.md#configure-accounts).
+Account-level API roots apply consistently to Generation, model-list diagnostics and standalone task operations; no caller-controlled path or API-version guessing is introduced. See [target composition](credentials-and-diagnostics.md#configure-accounts).
 
 Replay fingerprints include the normalized deployment origin/path. Changing either makes existing opaque replay foreign; the URL itself never reaches clients. This also replaces the former Provider/model-only fingerprints. Required compacted history cannot migrate across that boundary.
 
@@ -341,11 +341,9 @@ For `thinking_tokens`, provide all six positive values, for example:
 
 Place this object on the public model, alongside `candidates`. At least one candidate must select a conversion when a custom table is supplied. A conversion without a custom table uses the [shared preset](../architecture/adaptation-and-dialects.md#thinking-budget-quantization). Duplicate token values are allowed; nearest-budget matching and highest-level ties retain the existing algorithm.
 
-The table is consulted only when exact carriage is unavailable. For example, a supported reasoning-level `medium` request stays qualitative on Google even when `effort_to_budget` and a custom `medium:7000` preset are configured. That unused preset does not invalidate a caller's `6000` output ceiling. Conversely, an actual numeric conversion must still fit the caller ceiling and target limits; the gateway never raises the ceiling to make it fit.
+The table is consulted only when exact carriage is unavailable. For example, an exact reasoning-level `medium` request stays qualitative on Google even when `budget_to_effort` and a custom `medium:7000` preset are configured, whereas an actual numeric conversion must still fit the caller ceiling and target limits; the gateway never raises the ceiling to make it fit.
 
 `budget_to_effort` uses the target's declared effort scope: response-wide for Messages, reasoning-only for the other current protocols.
-
-`effort_to_budget` accepts reasoning-scoped effort and currently requires a generateContent binding.
 
 An existing OpenAI qualitative level calibration cannot be combined with a numeric conversion.
 

@@ -77,7 +77,6 @@ impl Candidate {
 #[serde(rename_all = "snake_case")]
 enum ThinkingConversion {
     BudgetToEffort,
-    EffortToBudget,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -461,13 +460,6 @@ fn reasoning(
                     table: table.clone(),
                 },
             ),
-            ThinkingConversion::EffortToBudget => (
-                "configured.effort-to-budget.v1",
-                ReasoningConversion::EffortToBudget {
-                    scope: EffortScope::Reasoning,
-                    table: table.clone(),
-                },
-            ),
         };
         ReasoningRequestPolicy {
             canonical_model: endpoint.canonical_model.as_str().to_owned().into(),
@@ -475,11 +467,6 @@ fn reasoning(
             conversion,
         }
     });
-    if matches!(conversion, Some(ThinkingConversion::EffortToBudget))
-        && endpoint.protocol != GenerationProtocol::GoogleGenerateContent
-    {
-        return Err(invalid());
-    }
     match &mut endpoint.representation {
         TargetContract::OpenAi(caps) => {
             if policy.is_some() && caps.adaptation.effort_mapping.is_some() {
@@ -489,11 +476,6 @@ fn reasoning(
         }
         TargetContract::AnthropicMessages(caps) => {
             caps.reasoning_policy = policy;
-        }
-        TargetContract::GoogleGenerateContent(caps) => {
-            if policy.is_some() {
-                caps.reasoning_policy = policy;
-            }
         }
         TargetContract::GoogleInteractions(caps) => {
             if policy.is_some() {

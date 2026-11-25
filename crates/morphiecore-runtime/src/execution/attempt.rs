@@ -445,9 +445,6 @@ impl Attempt {
     ) -> Option<crate::protocol::anthropic::messages::client::GoogleTerminalPolicy> {
         use crate::protocol::anthropic::messages::client::GoogleTerminalPolicy as Policy;
         match self.adapter {
-            UpstreamAdapter::GoogleGenerateContent { .. } => {
-                Some(Policy::GenerateContentWithoutStops)
-            }
             UpstreamAdapter::GoogleInteractions { .. } => Some(Policy::InteractionsWithoutStops),
             _ => None,
         }
@@ -725,21 +722,37 @@ mod identity_tests {
     #[test]
     fn absent_upstream_id_is_filled_only_on_the_stable_delivery_copy() {
         let mut attempt = Attempt::new(
-            UpstreamAdapter::GoogleGenerateContent {
+            UpstreamAdapter::GoogleInteractions {
                 target: ReplayTarget::new("synthetic", "model").unwrap(),
             },
             4096,
             SseLimits::default(),
         );
         attempt.begin(200, "text/event-stream").unwrap();
-        let wire = format!(
-            "data: {}\n\n",
-            json!({
-                "modelVersion":"model",
-                "candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"MAX_TOKENS"}]
-            })
-        );
-        let (_, events) = attempt.push(wire.as_bytes()).unwrap();
+        let wire = [
+            json!({"event_type":"interaction.created","interaction":{"model":"model"}}),
+            json!({"event_type":"step.start","index":0,"step":{"type":"model_output"}}),
+            json!({"event_type":"step.delta","index":0,"delta":{"type":"text","text":"ok"}}),
+            json!({"event_type":"step.stop","index":0}),
+            json!({"event_type":"interaction.completed","interaction":{"status":"completed"}}),
+        ]
+        .into_iter()
+        .map(|frame| {
+            format!(
+                "event: {}\ndata: {frame}\n\n",
+                frame["event_type"].as_str().unwrap()
+            )
+        })
+        .collect::<String>()
+            + "event: done\ndata: [DONE]\n\n";
+        let mut events = vec![];
+        let mut rest = wire.as_bytes();
+        while !rest.is_empty() {
+            let (used, chunk_events) = attempt.push(rest).unwrap();
+            assert!(used > 0);
+            events.extend(chunk_events);
+            rest = &rest[used..];
+        }
         attempt.finish().unwrap();
         let observed = attempt.response().unwrap().clone();
         let delivery = |streaming| {

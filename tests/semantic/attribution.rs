@@ -184,14 +184,11 @@ fn single_carriers_preserve_priority_presence_and_separate_legacy_cache_loss() {
             .endpoint()
             .encode_request_with_rules(&request)
             .unwrap();
-        let google_value = selected.as_ref().filter(|v| !v.is_null());
-        assert_eq!(
-            wire.get("labels").and_then(|m| m.get("safety_identifier")),
-            google_value
-        );
+        assert!(wire.get("labels").is_none());
+        assert!(wire.get("metadata").is_none());
         assert_eq!(
             rules.contains(&"generation.omit-identity-hints.v1"),
-            lost_identity || selected == Some(Value::Null)
+            selected.is_some()
         );
         assert_eq!(
             rules.contains(&"cache.omit-legacy-user-bucketing.v1"),
@@ -229,7 +226,7 @@ fn single_carriers_preserve_priority_presence_and_separate_legacy_cache_loss() {
     }
     // Interactions has no selected identity carrier; do not invent labels/metadata.
     let (wire, rules) = google_bindings()[0]
-        .interactions_endpoint()
+        .endpoint()
         .encode_request_with_rules(&request)
         .unwrap();
     assert!(wire.get("labels").is_none());
@@ -243,8 +240,8 @@ fn single_carriers_preserve_priority_presence_and_separate_legacy_cache_loss() {
         .endpoint()
         .encode_request_with_rules(&native)
         .unwrap();
-    assert_eq!(wire["labels"], json!({"safety_identifier":"native_用户"}));
-    assert!(!rules.contains(&"generation.omit-identity-hints.v1"));
+    assert!(wire.get("labels").is_none());
+    assert!(rules.contains(&"generation.omit-identity-hints.v1"));
     assert!(!rules.contains(&"cache.omit-legacy-user-bucketing.v1"));
 }
 

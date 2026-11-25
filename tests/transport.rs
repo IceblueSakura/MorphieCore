@@ -4,8 +4,6 @@ pub(crate) use morphiecore_test_support::{chat_profile as chat_wire, responses_p
 
 #[path = "transport/anthropic_sse.rs"]
 mod anthropic_sse;
-#[path = "transport/attribution.rs"]
-mod attribution;
 #[path = "transport/body_lifecycle.rs"]
 mod body_lifecycle;
 #[path = "transport/chain.rs"]
@@ -14,8 +12,6 @@ mod chain;
 mod chat;
 #[path = "transport/framing.rs"]
 mod framing;
-#[path = "transport/google_sse.rs"]
-mod google_sse;
 #[path = "transport/model_values.rs"]
 mod model_values;
 #[path = "transport/native.rs"]

@@ -338,14 +338,6 @@ fn preflight_names_the_incompatible_declaration_without_exporting_private_schema
             constraint: ToolConstraint::MinLength,
         })
     );
-    let generate_error = crate::protocol::google::generate_content::encode_generation_request(
-        &request.task.semantic,
-        &request.task.fidelity,
-        &target,
-        None,
-    )
-    .unwrap_err();
-    assert_eq!(generate_error, error);
     let (sink, exporter) = Sink::memory();
     let mut trace = Trace::new(Some(&sink));
     trace.generation("public", crate::protocol::ClientProtocol::Responses);

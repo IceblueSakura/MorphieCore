@@ -136,14 +136,10 @@ async fn stateless_json_and_sse_replay_signatures_and_cancel_upstream() {
     let binding = &google_bindings()[0];
     let mut provider = binding.provider();
     provider.origin = TrustedOrigin::parse(&origin).unwrap();
-    let mut endpoint = binding.interactions_endpoint();
+    let mut endpoint = binding.endpoint();
     endpoint.target.origin = provider.origin.clone();
-    let mut route = binding.route();
-    assert_eq!(
-        route.endpoints,
-        [binding.endpoint().id, endpoint.id.clone()]
-    );
-    route.endpoints = vec![endpoint.id.clone()];
+    let route = binding.route();
+    assert_eq!(route.endpoints, [endpoint.id.clone()]);
     let topology = topology::compile(
         vec![provider],
         vec![endpoint.clone()],

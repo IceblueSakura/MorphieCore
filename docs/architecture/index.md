@@ -58,7 +58,7 @@ Bounded transport retries retain their separate contract and cannot rewrite that
 | Direction | Supported Protocols |
 |---|---|
 | Downstream | OpenAI Chat Completions, OpenAI Responses, Anthropic Messages |
-| Upstream | OpenAI Responses/Chat and compatible dialects, Anthropic Messages, Google generateContent, Google Interactions |
+| Upstream | OpenAI Responses/Chat and compatible dialects, Anthropic Messages, Google Interactions |
 
 Generation supports JSON and SSE delivery. Responses, native Messages and Google upstreams use streaming intake even for downstream JSON delivery. Chat retains the [qualified JSON exception](../refs/2026-10-27-client-ir-boundaries.md#chat-json-intake-evidence-2026-10-30) for metadata and URL annotations without chunk carriers. Interactions uses stateless, full-history requests.
 
@@ -88,7 +88,7 @@ Stable configured names identify accounts; credential provenance owns security i
 |---|---|
 | `base_url` | Trusted origin only; no API prefix, query, fragment, or credentials |
 | `auth` | `{ "kind": "bearer" }`, `x_api_key`, `x_goog_api_key`, or `{ "kind": "oauth", "profile": "openai" \| "grok" }` |
-| `endpoints` | Closed map: `models`, `chat_completions`, `responses`, `messages`, `generate_content`, `interactions`, `embeddings`, `images`, `speech`, `transcription` |
+| `endpoints` | Closed map: `models`, `chat_completions`, `responses`, `messages`, `interactions`, `embeddings`, `images`, `speech`, `transcription` |
 | `path` | Concrete path relative to `base_url`; omitted operations are undeclared |
 | `suffix` | Operation-relative path appended to an account's complete API-root override; never infer version-prefix changes |
 | `auth` (endpoint) | Optional header override; cannot alter credential kind or OAuth profile |
@@ -217,7 +217,7 @@ Bailian function strictness has its separately selected [service policy](adaptat
 
 Namespace aliases, custom-text wrappers, examples, result-media relocation, prompt annotations and non-developer returned-addition replay are not selected by this combination.
 
-Existing generateContent and Interactions targets use the same effective active-set projection when ordered declarations have no native carrier. Historical call/result content and identities survive; old declaration visibility, insertion timing and prefix/cache stability take the existing `generation.collapse-tool-set.v1` loss. This adds no Google API, hosted execution, strict guarantee or serial carrier.
+Existing Interactions targets use the effective active-set projection when ordered declarations have no native carrier. Historical call/result content and identities survive; old declaration visibility, insertion timing and prefix/cache stability take the existing `generation.collapse-tool-set.v1` loss. This adds no Google API, hosted execution, strict guarantee or serial carrier.
 
 Repair the shared tool contract rather than adding a decoder-only exception.
 
@@ -281,10 +281,9 @@ JSON, SSE and retained snapshots use this same owner and custom-tool capability 
 
 #### Google foreground intake
 
-- Intake for `generateContent` and `Interactions` accepts optional stream lifecycle IDs and started statuses.
+- Intake for `Interactions` accepts optional stream lifecycle IDs and started statuses.
 - Final envelope authority governs stream completion: terminal outcomes require strict upstream EOF before publication.
 - Tool results with `is_error` are mapped without inferring execution failure from result text.
-- Structured function responses in `generateContent` preserve JSON objects directly under `functionResponse.response.output`.
 
 #### Scoped accounting
 

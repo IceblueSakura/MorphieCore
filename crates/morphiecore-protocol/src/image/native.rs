@@ -36,23 +36,27 @@ fn admit(request: &Request) -> Result<(), CodecError> {
     Ok(())
 }
 
-pub(crate) fn gemini_request(request: &Request) -> Result<Value, CodecError> {
+pub(crate) fn gemini_request(request: &Request, model: &str) -> Result<Value, CodecError> {
     admit(request)?;
-    let mut parts = Vec::new();
+    if !crate::openai::speech::valid_model(model) {
+        return Err(CodecError::invalid());
+    }
+    let mut input = Vec::new();
     if let Some(edit) = request.task.edit() {
         for source in &edit.sources {
-            parts.push(json!({
-                "inlineData": {
-                    "mimeType": source.mime(),
-                    "data": STANDARD.encode(source.data()),
-                }
+            input.push(json!({
+                "type": "image",
+                "mime_type": source.mime(),
+                "data": STANDARD.encode(source.data()),
             }));
         }
     }
-    parts.push(json!({"text": request.task.prompt()}));
+    input.push(json!({"type": "text", "text": request.task.prompt()}));
     Ok(json!({
-        "contents": [{"role":"user","parts":parts}],
-        "generationConfig": {"responseModalities":["TEXT","IMAGE"]}
+        "model": model,
+        "store": false,
+        "input": input,
+        "response_format": {"type": "image"}
     }))
 }
 
@@ -104,59 +108,60 @@ fn completed(encoded: &str, mime: &str) -> Result<ImageGenerationResponse, Codec
 }
 
 #[derive(Deserialize)]
-struct Gemini {
-    candidates: Vec<GeminiCandidate>,
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GeminiCandidate {
-    finish_reason: String,
-    content: GeminiContent,
-}
-#[derive(Deserialize)]
-struct GeminiContent {
-    role: Option<String>,
-    parts: Vec<GeminiPart>,
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GeminiPart {
+struct GeminiInteraction {
+    status: String,
     #[serde(default)]
-    thought: bool,
-    text: Option<String>,
-    inline_data: Option<GeminiImage>,
+    errors: Vec<Value>,
+    #[serde(default)]
+    steps: Vec<GeminiStep>,
 }
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GeminiImage {
-    mime_type: String,
-    data: String,
+struct GeminiStep {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default)]
+    content: Vec<GeminiPart>,
+}
+#[derive(Deserialize)]
+struct GeminiPart {
+    #[serde(rename = "type")]
+    kind: String,
+    data: Option<String>,
+    mime_type: Option<String>,
 }
 pub(crate) fn gemini_response(bytes: &[u8]) -> Result<ImageGenerationResponse, CodecError> {
-    let Gemini { candidates } = serde_json::from_value(crate::json::decode_image_response(bytes)?)
-        .map_err(|_| CodecError::invalid())?;
-    let [candidate] = candidates.as_slice() else {
-        return Err(CodecError::invalid());
-    };
-    if candidate.finish_reason != "STOP"
-        || candidate
-            .content
-            .role
-            .as_deref()
-            .is_some_and(|role| role != "model")
-    {
+    let interaction: GeminiInteraction =
+        serde_json::from_value(crate::json::decode_image_response(bytes)?)
+            .map_err(|_| CodecError::invalid())?;
+    if interaction.status != "completed" || !interaction.errors.is_empty() {
         return Err(CodecError::invalid());
     }
     let mut image = None;
-    for part in candidate.content.parts.iter().filter(|p| !p.thought) {
-        match (&part.text, &part.inline_data) {
-            (Some(_), None) => {}
-            (None, Some(artifact)) if image.is_none() => image = Some(artifact),
+    for step in interaction.steps {
+        match step.kind.as_str() {
+            "thought" => continue,
+            "model_output" => {
+                for part in step.content {
+                    match part.kind.as_str() {
+                        "text" => {}
+                        "image" if image.is_none() => {
+                            let Some(data) = part.data else {
+                                return Err(CodecError::invalid());
+                            };
+                            let Some(mime_type) = part.mime_type else {
+                                return Err(CodecError::invalid());
+                            };
+                            image = Some((data, mime_type));
+                        }
+                        _ => return Err(CodecError::invalid()),
+                    }
+                }
+            }
             _ => return Err(CodecError::invalid()),
         }
     }
-    let image = image.ok_or_else(CodecError::invalid)?;
-    completed(&image.data, &image.mime_type)
+    let (data, mime_type) = image.ok_or_else(CodecError::invalid)?;
+    completed(&data, &mime_type)
 }
 
 #[derive(Deserialize)]
@@ -249,23 +254,47 @@ mod tests {
                 .unwrap()
                 .extend(control.as_object().unwrap().clone());
             let request = decode_request(&serde_json::to_vec(&request).unwrap()).unwrap();
-            assert!(gemini_request(&request).is_err());
+            assert!(gemini_request(&request, "fixture").is_err());
             assert!(grok_request(&request, "fixture").is_err());
         }
     }
 
     #[test]
     fn gemini_requires_one_final_image_not_text_or_a_thought_artifact() {
-        let response = |finish, parts| json!({"candidates":[{"finishReason":finish,"content":{"role":"model","parts":parts}}]});
+        let response = |status, steps| json!({"id":"i1","status":status,"steps":steps});
         let decode = |value| gemini_response(&serde_json::to_vec(&value).unwrap());
-        let thought = json!({"thought":true,"inlineData":{"mimeType":"image/png","data":"AQID"}});
-        let image = json!({"inlineData":{"mimeType":"image/jpeg","data":"BAUG"}});
-        let result = decode(response("STOP", json!([thought, {"text":"Done."}, image]))).unwrap();
+        let thought = json!({"type":"thought","summary":[{"type":"image","mime_type":"image/png","data":"AQID"}]});
+        let image = json!({"type":"image","mime_type":"image/jpeg","data":"BAUG"});
+        let result = decode(response(
+            "completed",
+            json!([thought, {"type":"model_output","content":[{"type":"text","text":"Done."}, image]}]),
+        ))
+        .unwrap();
         assert_eq!(result.images[0].format, Presence::Value(ImageFormat::Jpeg));
         assert_eq!(result.images[0].data.as_base64(), "BAUG");
-        assert!(decode(response("STOP", json!([thought, {"text":"Done."}]))).is_err());
-        assert!(decode(response("MAX_TOKENS", json!([image]))).is_err());
-        assert!(decode(response("STOP", json!([image, image]))).is_err());
+        assert!(
+            decode(response(
+                "completed",
+                json!([thought, {"type":"model_output","content":[{"type":"text","text":"Done."}]}])
+            ))
+            .is_err()
+        );
+        assert!(
+            decode(response(
+                "incomplete",
+                json!([{"type":"model_output","content":[image]}])
+            ))
+            .is_err()
+        );
+        assert!(
+            decode(response(
+                "completed",
+                json!([{"type":"model_output","content":[image, image]}])
+            ))
+            .is_err()
+        );
+        assert!(decode(json!({"id":"i1","status":"completed","errors":[{"message":"fault"}],"steps":[{"type":"model_output","content":[image]}]})).is_err());
+        assert!(decode(response("completed", json!([{"type":"model_output","content":[{"type":"image","uri":"https://example.invalid/out.png"}]}]))).is_err());
     }
 
     #[test]

@@ -96,7 +96,7 @@ Strict-tool admission follows the effective binding/API disposition in shared re
 
 #### Google strict function arguments
 
-Existing generateContent and Interactions targets admit a qualified closed-object function-argument subset through their native request-wide validation modes. The [local SDK evidence](../refs/2026-10-27-official-sdk-sources.md#google-function-argument-carriers-2026-11-09) is separate from text-response schema support.
+Existing Interactions targets admit a qualified closed-object function-argument subset through their native request-wide validation modes. The [local SDK evidence](../refs/2026-10-27-official-sdk-sources.md#google-function-argument-carriers-2026-11-09) is separate from text-response schema support.
 
 - Preserve supplied schemas exactly.
 
@@ -128,12 +128,9 @@ Existing generateContent and Interactions targets admit a qualified closed-objec
   Missing/remote/percent-encoded references, extra pointer segments, nested definition repositories, resource scopes, other reference siblings and cycles remain outside this qualified subset.
 
   Memoized subtree heights bound every logical schema/reference path to 64 edges without exponential DAG expansion; existing document byte/node/depth bounds remain.
-- Strict automatic selection uses `VALIDATED` / `validated`; required selection uses `ANY` / `any`; none stays none. Allowed names remain exact. generateContent optional allowed subsets use `VALIDATED`, including non-strict requests, without claiming a new strict guarantee.
+- Strict automatic selection uses `validated`; required selection uses `any`; none stays `none`. Allowed names remain exact.
 - When calls are enabled, the mode covers the whole effective inventory. With any strict tool, every declaration's supplied schema must fit the subset. Mixed strict/non-strict declarations are accepted only within that inventory; non-strictness does not promise invalid arguments. Conditional source defaults resolve on candidate copies through the same schema and inventory check, otherwise taking the existing named conditional-default fallback. Explicit true never takes that fallback.
-- **Native no-call equivalence:** explicit `tool_choice:none` uses `NONE` / `none`, which prohibits every call and satisfies argument/cardinality guarantees vacuously. Shared admission and direct writers retain complete declarations/schemas, skip conditional-strict fallback and accept serial intent without requesting validated decoding. This does not relax auto/required selection or bypass known-field, bounds, trust, history or other declaration-carrier checks.
-  Interactions retains scalar-root declarations in this mode. generateContent
-  keeps its separate non-object-root carrier rejection; success on one API
-  does not qualify the other's declaration parser.
+- **Native no-call equivalence:** explicit `tool_choice:none` uses `none`, which prohibits every call and satisfies argument/cardinality guarantees vacuously. Shared admission and direct writers retain complete declarations/schemas, skip conditional-strict fallback and accept serial intent without requesting validated decoding, including scalar-root declarations. This does not relax auto/required selection or bypass known-field, bounds, trust, history or other declaration-carrier checks.
 - Parameter omission keeps the native parameterless declaration. No schema deletion, argument repair, inferred prompting or local retry supplies a missing guarantee. Serial intent still rejects when calls are enabled; one declared function can produce multiple calls.
 
 Ordinary Google text/call signatures without a lawful stateless carrier reject on Responses and Chat/Messages. Managed continuation is experimental and disabled under the [stateful freeze](history-and-replay.md#stateful-history); the [field-level boundary](history-and-replay.md#stateless-api-boundaries) records owners and rejection timing. No public replay extension, signature deletion or surrogate reasoning owner is available.
@@ -143,7 +140,7 @@ Ordinary Google text/call signatures without a lawful stateless carrier reject o
 Module layout mirrors `vendor / api / responsibility`:
 - `protocol::openai::{chat, responses}`
 - `protocol::anthropic::messages`
-- `protocol::google::{generate_content, interactions}`
+- `protocol::google::interactions`
 
 ##### OpenAI Terra
 
@@ -749,7 +746,7 @@ Media resources (images, audio, video, files) are handled as inert payloads (bas
 | Target | Native wire and terminal |
 |---|---|
 | Qwen Image 3.0 Pro | Both Aliyun targets use synchronous native multimodal generation/editing (`content` ordered data-URL images + text) with inline PNG data URLs and `input_image_count` verification. |
-| Gemini Nano Banana 2.1 | Google `generateContent` with ordered `inlineData` input parts, text and `TEXT`/`IMAGE` response modalities. Publish one non-thought inline image only after `STOP` and EOF. Text-only output, intermediate thought images and incomplete candidates cannot satisfy completion. |
+| Gemini Nano Banana 2.1 | Google Interactions (`/v1/interactions`) with ordered `image` input parts, `text`, `store: false`, and `response_format: {"type":"image"}`. Publish one inline image from `model_output` steps only after `"status": "completed"`, empty `errors`, and EOF. Text-only output, `thought` steps and incomplete interactions cannot satisfy completion. |
 | Grok Imagine Image 2.0 | xAI `/v1/images/generations` or JSON `/v1/images/edits` (`image`/`images` data-URL objects) with `b64_json` and the named managed Grok OAuth account. Require one inline result with a supported MIME; do not recognize URL, deferred or stored results as inline success. |
 
 | Field or behavior | Disposition |

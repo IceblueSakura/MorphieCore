@@ -63,7 +63,6 @@ pub enum GenerationProtocol {
     OpenAiChat,
     OpenAiResponses,
     AnthropicMessages,
-    GoogleGenerateContent,
     GoogleInteractions,
 }
 impl GenerationProtocol {
@@ -73,7 +72,6 @@ impl GenerationProtocol {
             Self::OpenAiChat => 0,
             Self::OpenAiResponses => 1,
             Self::AnthropicMessages => 2,
-            Self::GoogleGenerateContent => 3,
             Self::GoogleInteractions => 4,
         }
     }
@@ -82,10 +80,7 @@ impl GenerationProtocol {
     pub fn requires_streaming_intake(self) -> bool {
         match self {
             Self::OpenAiChat => false,
-            Self::OpenAiResponses
-            | Self::AnthropicMessages
-            | Self::GoogleGenerateContent
-            | Self::GoogleInteractions => true,
+            Self::OpenAiResponses | Self::AnthropicMessages | Self::GoogleInteractions => true,
         }
     }
 
@@ -95,7 +90,6 @@ impl GenerationProtocol {
             Self::OpenAiChat => GenerationOperation::ChatCompletions,
             Self::OpenAiResponses => GenerationOperation::Responses,
             Self::AnthropicMessages => GenerationOperation::AnthropicMessages,
-            Self::GoogleGenerateContent => GenerationOperation::GoogleGenerateContent,
             Self::GoogleInteractions => GenerationOperation::GoogleInteractions,
         }
     }

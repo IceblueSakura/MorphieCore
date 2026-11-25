@@ -1,9 +1,11 @@
-//! Pinned SDK tool correction and signed final-history return through one Google candidate.
+//! Pinned SDK tool correction and signed final-history return through one Google Interactions candidate.
 use crate::google_tool_fixture as fixture;
 use morphiecore::protocol::openai::GenerationApi;
 use std::time::Duration;
 
-async fn exercise(api: fixture::Api, api_name: &str) {
+#[tokio::test]
+#[ignore = "requires pinned SDKs; synthetic Interactions JSON/SSE tool correction"]
+async fn interactions_tool_correction_and_signed_final_history() {
     for (profile, name, count) in [
         (GenerationApi::Chat, "chat-json", 1),
         (GenerationApi::Chat, "chat-sse", 1),
@@ -12,9 +14,9 @@ async fn exercise(api: fixture::Api, api_name: &str) {
     ] {
         let messages = name.starts_with("messages-");
         let fixture = if messages {
-            fixture::start_messages(api).await
+            fixture::start_messages().await
         } else {
-            fixture::start(profile, api, false).await
+            fixture::start(profile, false).await
         };
         let home = tempfile::tempdir().unwrap();
         let mut command = super::isolated_sdk_python(home.path());
@@ -22,7 +24,7 @@ async fn exercise(api: fixture::Api, api_name: &str) {
             "tests/sdk/google_tool_history.py",
             &fixture.base,
             name,
-            api_name,
+            "interactions",
         ]);
         let output =
             super::child_process::run(&mut command, b"", Duration::from_secs(30), 64 << 10)
@@ -37,20 +39,8 @@ async fn exercise(api: fixture::Api, api_name: &str) {
         assert_eq!(report["requests"], count);
         assert_eq!(report["http_requests"], count);
         assert_eq!(report["unrepresentable_signature_rejected"], true);
-        assert_eq!(report["upstream"], api_name);
+        assert_eq!(report["upstream"], "interactions");
         assert_eq!(fixture.seen.lock().unwrap().len(), count);
         fixture.gateway.flush_diagnostics().await;
     }
-}
-
-#[tokio::test]
-#[ignore = "requires pinned SDKs; synthetic generateContent JSON/SSE tool correction"]
-async fn google_tool_correction_and_signed_final_history() {
-    exercise(fixture::Api::GenerateContent, "generate_content").await;
-}
-
-#[tokio::test]
-#[ignore = "requires pinned SDKs; synthetic Interactions JSON/SSE tool correction"]
-async fn interactions_tool_correction_and_signed_final_history() {
-    exercise(fixture::Api::Interactions, "interactions").await;
 }

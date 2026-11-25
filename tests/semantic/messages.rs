@@ -723,7 +723,7 @@ mod phase {
     fn foreign_requests_omit_phase_without_editing_responses_history() {
         use morphiecore::protocol::{
             anthropic,
-            google::{generate_content as google, interactions},
+            google::interactions,
             native::ReplayTarget,
             openai::{Dialect, GenerationCodec, TargetContract},
         };
@@ -773,18 +773,6 @@ mod phase {
         assert_eq!(
             messages.value["messages"][1]["content"],
             json!([{"type":"text","text":"checking"},{"type":"text","text":"done"}])
-        );
-        let (wire, rules) = google::encode_generation_request(
-            &request.task.semantic,
-            &request.task.fidelity,
-            &target,
-            None,
-        )
-        .unwrap();
-        assert!(rules.contains(&google::RequestRule::OmitMessagePhase));
-        assert_eq!(
-            wire["contents"][1],
-            json!({"role":"model","parts":[{"text":"checking"},{"text":"done"}]})
         );
         let (wire, rules) = interactions::encode_generation_request(
             &request.task.semantic,

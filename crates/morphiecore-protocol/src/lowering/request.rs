@@ -20,7 +20,6 @@ use crate::{
 pub enum Target<'a> {
     OpenAi(GenerationApi, &'a OpenAiContract),
     Messages(&'a crate::anthropic::messages::TargetContract),
-    GenerateContent(&'a crate::google::generate_content::TargetContract),
     Interactions(&'a crate::google::interactions::TargetContract),
 }
 pub fn admit_source(source: &Request) -> Result<(), ConversionFailure> {
@@ -68,7 +67,6 @@ impl<'a> Target<'a> {
         match self {
             Self::OpenAi(_, c) => &c.dispositions,
             Self::Messages(c) => &c.dispositions,
-            Self::GenerateContent(c) => &c.dispositions,
             Self::Interactions(c) => &c.dispositions,
         }
     }
@@ -76,7 +74,6 @@ impl<'a> Target<'a> {
         match self {
             Self::OpenAi(_, c) => &c.model_limits,
             Self::Messages(c) => &c.model_limits,
-            Self::GenerateContent(c) => &c.model_limits,
             Self::Interactions(c) => &c.model_limits,
         }
     }
@@ -91,9 +88,7 @@ impl<'a> Target<'a> {
         use EffortLevel::*;
         match self {
             Self::Messages(_) => &[Low, Medium, High, XHigh, Max],
-            Self::GenerateContent(_) | Self::Interactions(_) => {
-                &[Minimal, Low, Medium, High, XHigh]
-            }
+            Self::Interactions(_) => &[Minimal, Low, Medium, High, XHigh],
             _ => &[Minimal, Low, Medium, High, XHigh, Max],
         }
     }
@@ -104,7 +99,6 @@ impl<'a> Target<'a> {
                     && !c.adaptation.rules.request.reject_reasoning_controls
             }
             Self::Messages(c) => c.dispositions.native(Feature::ResponseEffort),
-            Self::GenerateContent(c) => c.dispositions.native(Feature::Reasoning),
             Self::Interactions(c) => c.dispositions.native(Feature::Reasoning),
         }
     }
@@ -112,15 +106,6 @@ impl<'a> Target<'a> {
         match self {
             Self::OpenAi(GenerationApi::Chat, c) => c.has_numeric_budget(),
             Self::Messages(c) => c.dispositions.native(Feature::ReasoningBudget),
-            Self::GenerateContent(c) => {
-                c.dispositions.native(Feature::ReasoningBudget)
-                    || c.reasoning_policy.as_ref().is_some_and(|p| {
-                        matches!(
-                            p.conversion,
-                            crate::reasoning::ReasoningConversion::EffortToBudget { .. }
-                        )
-                    })
-            }
             _ => false,
         }
     }
@@ -128,7 +113,6 @@ impl<'a> Target<'a> {
         match self {
             Self::OpenAi(_, c) => c.adaptation.reasoning_policy.as_ref(),
             Self::Messages(c) => c.reasoning_policy.as_ref(),
-            Self::GenerateContent(c) => c.reasoning_policy.as_ref(),
             Self::Interactions(c) => c.reasoning_policy.as_ref(),
         }
     }
@@ -136,7 +120,6 @@ impl<'a> Target<'a> {
         match self {
             Self::OpenAi(_, c) => c.cache,
             Self::Messages(c) => c.cache,
-            Self::GenerateContent(c) => c.cache,
             Self::Interactions(c) => c.cache,
         }
     }
@@ -170,10 +153,6 @@ impl<'a> Target<'a> {
             Self::Messages(_) => Presentation::Summarize {
                 rule: MESSAGES_SUMMARY,
                 only_when_allocated: true,
-            },
-            Self::GenerateContent(_) => Presentation::Summarize {
-                rule: GENERATE_CONTENT_SUMMARY,
-                only_when_allocated: false,
             },
             Self::Interactions(_) => Presentation::Summarize {
                 rule: INTERACTIONS_SUMMARY,
@@ -459,42 +438,6 @@ impl<'a> Target<'a> {
                     },
                 );
             }
-            Self::GenerateContent(c) => {
-                table.set_native(ReasoningActivation, true);
-                table.set_native(ReasoningMode, true);
-                table.set(ParallelTools, Disposition::Equivalent);
-                table.set(
-                    SerialTools,
-                    Disposition::Reject("Google has no exact serial-tool guarantee carrier"),
-                );
-                for feature in [
-                    Verbosity,
-                    Metadata,
-                    ServicePolicy,
-                    Prediction,
-                    ExplicitCache,
-                    RequestLifetimeCache,
-                    AutomaticPrefixCache,
-                    Truncation,
-                ] {
-                    omit(&mut table, feature);
-                }
-                for feature in [TopK, PresencePenalty, FrequencyPenalty, Seed] {
-                    table.set_native(feature, true);
-                }
-                if c.sampling != crate::google::SamplingPolicy::Native {
-                    for feature in [Temperature, TopP, TopK] {
-                        omit(&mut table, feature);
-                    }
-                }
-                if controls.seed.is_some_and(|v| i32::try_from(v).is_err()) {
-                    omit(&mut table, Seed);
-                }
-                table.set(
-                    MessagePhase,
-                    Disposition::Omit(super::disposition::OMIT_PHASE),
-                );
-            }
             Self::Interactions(_) => {
                 table.set_native(ReasoningActivation, true);
                 table.set_native(ReasoningMode, true);
@@ -527,7 +470,7 @@ impl<'a> Target<'a> {
                 );
             }
         }
-        if matches!(self, Self::GenerateContent(_) | Self::Interactions(_)) {
+        if matches!(self, Self::Interactions(_)) {
             table.set(
                 ToolChanges,
                 Disposition::Approximate(super::disposition::TOOL_CHANGES),
@@ -543,7 +486,7 @@ impl<'a> Target<'a> {
                 super::disposition::unsupported(Effort)
             },
         );
-        if matches!(self, Target::GenerateContent(_) | Target::Interactions(_))
+        if matches!(self, Target::Interactions(_))
             && source.tool_choice() == Some(&crate::semantic::task::generation::ToolChoice::None)
         {
             // Google's native NONE also satisfies at-most-one without removing
@@ -613,7 +556,7 @@ impl<'a> Target<'a> {
         }
         if (self.limits().reject_disabled_reasoning
             || matches!(self, Target::OpenAi(_, contract) if contract.adaptation.rules.request.reject_disabled_reasoning)
-            || matches!(self, Target::GenerateContent(_) | Target::Interactions(_)))
+            || matches!(self, Target::Interactions(_)))
             && (source.reasoning().activation.as_ref() == Some(&crate::semantic::task::generation::ReasoningActivation::Disabled)
                 || source.items().iter().any(|(_, item)| matches!(item, Item::ConfigurationUpdate(update)
                     if update.activation == Some(crate::semantic::task::generation::ReasoningActivation::Disabled))))
@@ -897,9 +840,6 @@ impl<'a> Target<'a> {
         table.set(
             Feature::SessionAffinity,
             match self {
-                Target::GenerateContent(_) => {
-                    Disposition::Omit(super::disposition::OMIT_GENERATE_CONTENT_SESSION)
-                }
                 Target::Interactions(_) => {
                     Disposition::Omit(super::disposition::OMIT_INTERACTIONS_SESSION)
                 }
@@ -1033,7 +973,7 @@ fn project_semantic_with_table<'a>(
     }
     semantic = semantic_projection::relax_tool_strictness(semantic, table, &mut evidence)?;
     if let Disposition::Omit(rule) = table.get(Feature::ConditionalToolStrictness)
-        && !(matches!(target, Target::GenerateContent(_) | Target::Interactions(_))
+        && !(matches!(target, Target::Interactions(_))
             && semantic.tool_choice() == Some(&ToolChoice::None))
     {
         let resolved = crate::openai::lowering::strictness::project(
@@ -1044,7 +984,7 @@ fn project_semantic_with_table<'a>(
                         && crate::anthropic::messages::strict_schema::admits(schema.root())
                 }
                 Target::OpenAi(_, _) => table.native(Feature::StrictTools),
-                Target::GenerateContent(_) | Target::Interactions(_) => {
+                Target::Interactions(_) => {
                     table.native(Feature::StrictTools)
                         && crate::google::strict_tools::admits(schema)
                 }
@@ -1053,9 +993,7 @@ fn project_semantic_with_table<'a>(
                 Target::Messages(_) => {
                     crate::anthropic::messages::strict_schema::admits_generation(request)
                 }
-                Target::GenerateContent(_) | Target::Interactions(_) => {
-                    crate::google::strict_tools::validated(request).is_ok()
-                }
+                Target::Interactions(_) => crate::google::strict_tools::validated(request).is_ok(),
                 _ => true,
             },
         )?;
@@ -1086,7 +1024,6 @@ fn project_semantic_with_table<'a>(
     } else {
         let rule = match target {
             Target::Messages(_) => super::disposition::MESSAGES_SCHEMA_NAME,
-            Target::GenerateContent(_) => super::disposition::GENERATE_CONTENT_SCHEMA_NAME,
             Target::Interactions(_) => super::disposition::INTERACTIONS_SCHEMA_NAME,
             Target::OpenAi(_, _) => unreachable!(),
         };
@@ -1176,7 +1113,7 @@ pub fn project<'a>(
                             _ => false,
                         }
                 }),
-                Target::GenerateContent(_) | Target::Interactions(_) => reasoning.replay.is_some(),
+                Target::Interactions(_) => reasoning.replay.is_some(),
             };
             Ok(!carries)
         })?;
@@ -1247,10 +1184,6 @@ pub fn project<'a>(
                 ReplayFormat::AnthropicMessagesThinking,
                 ReplayFormat::AnthropicMessagesRedactedThinking,
             ],
-            Target::GenerateContent(_) => &[
-                ReplayFormat::GoogleGenerateContentPart,
-                ReplayFormat::GoogleGenerateContentSignature,
-            ],
             Target::Interactions(_) => &[
                 ReplayFormat::GoogleInteractionsV1Thought,
                 ReplayFormat::GoogleInteractionsV1FunctionCall,
@@ -1317,7 +1250,6 @@ pub fn project<'a>(
                 super::disposition::TRANSFER_RESPONSES_HISTORY
             }
             Target::Messages(_) => super::disposition::TRANSFER_MESSAGES_HISTORY,
-            Target::GenerateContent(_) => super::disposition::TRANSFER_GENERATE_CONTENT_HISTORY,
             Target::Interactions(_) => super::disposition::TRANSFER_INTERACTIONS_HISTORY,
         };
         evidence.push(rule.effect(ConversionBoundary::RequestProject));
@@ -1337,7 +1269,6 @@ pub fn project<'a>(
             Carrier::OpenAi
         }
         Target::Messages(_) => Carrier::Messages,
-        Target::GenerateContent(_) => Carrier::GoogleLabels,
         _ => Carrier::None,
     };
     let attribution = attribution::project(source, carrier)?;
@@ -1687,13 +1618,6 @@ mod tests {
                 "thinking":{"type":"adaptive","display":display},
                 "messages":[{"role":"user","content":"hello"}]}));
             let before = source.clone();
-            let gc = crate::google::generate_content::TargetContract::default()
-                .encode_request(&source, &target)
-                .unwrap();
-            assert_eq!(
-                gc.value["generationConfig"]["thinkingConfig"].get("includeThoughts"),
-                (display == "summarized").then_some(&serde_json::Value::Bool(true))
-            );
             let interactions = crate::google::interactions::TargetContract::default()
                 .encode_request(&source, &target)
                 .unwrap();
@@ -1715,25 +1639,19 @@ mod tests {
         let source = codec.decode_request(br#"{"model":"m","input":"hello",
             "tools":[{"type":"function","name":"lookup","parameters":{"type":"object","properties":{},"additionalProperties":false}}]}"#).unwrap();
         let before = source.clone();
-        for output in [
-            crate::google::generate_content::TargetContract::default()
-                .encode_request(&source, &target)
-                .unwrap(),
-            crate::google::interactions::TargetContract::default()
-                .encode_request(&source, &target)
-                .unwrap(),
-        ] {
-            assert!(
-                !output
-                    .evidence
-                    .contains_rule(super::super::disposition::CONDITIONAL_STRICTNESS.id)
-            );
-            assert!(!output.value.to_string().contains("\"strict\""));
-            assert!(
-                output.value["toolConfig"]["functionCallingConfig"]["mode"] == "VALIDATED"
-                    || output.value["generation_config"]["tool_choice"] == "validated"
-            );
-        }
+        let output = crate::google::interactions::TargetContract::default()
+            .encode_request(&source, &target)
+            .unwrap();
+        assert!(
+            !output
+                .evidence
+                .contains_rule(super::super::disposition::CONDITIONAL_STRICTNESS.id)
+        );
+        assert!(!output.value.to_string().contains("\"strict\""));
+        assert_eq!(
+            output.value["generation_config"]["tool_choice"],
+            "validated"
+        );
         assert_eq!(source, before);
     }
 
@@ -1844,12 +1762,12 @@ mod tests {
         source.task.semantic = source.task.semantic.with_settings(settings).unwrap();
         let before = source.clone();
         let target = crate::native::ReplayTarget::new("synthetic", "m").unwrap();
-        let contract = crate::google::generate_content::TargetContract {
+        let contract = crate::google::interactions::TargetContract {
             sampling: crate::google::SamplingPolicy::Ignored,
             ..Default::default()
         };
         let output = contract.encode_request(&source, &target).unwrap();
-        assert!(output.value["generationConfig"].get("topK").is_none());
+        assert!(output.value["generation_config"].get("top_k").is_none());
         assert!(output.evidence.contains_rule("generation.omit-top-k.v1"));
         assert_eq!(source, before);
     }

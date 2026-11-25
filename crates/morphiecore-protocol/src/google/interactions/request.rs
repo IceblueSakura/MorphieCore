@@ -1,4 +1,4 @@
-//! Direct IR → Interactions steps; no generateContent wire translation.
+//! Direct IR → stateless Interactions steps.
 use super::items::steps;
 use crate::{
     CodecError,

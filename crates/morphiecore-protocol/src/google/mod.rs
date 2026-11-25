@@ -1,7 +1,6 @@
-//! Google wire APIs. `generateContent` and stateless `Interactions` are separate
-//! operations of one vendor; vendor-wide restrictions live beside them, not in an API.
+//! Google wire APIs (embeddings and stateless Interactions).
+//! Vendor-wide restrictions live beside them, not in an API.
 pub mod embeddings;
-pub mod generate_content;
 pub mod interactions;
 mod media;
 mod sampling;

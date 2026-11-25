@@ -79,7 +79,6 @@ fn final_item_replay_cannot_be_revoked_or_rewritten_at_closure() {
     for (kind, format) in [
         (ItemKind::Reasoning, ReplayFormat::ResponsesEncrypted),
         (ItemKind::Compaction, ReplayFormat::ResponsesCompaction),
-        (call(), ReplayFormat::GoogleGenerateContentSignature),
         (call(), ReplayFormat::GoogleInteractionsV1FunctionCall),
     ] {
         let final_value = value(format, true, "synthetic-final", Some("origin-a"));
@@ -247,19 +246,7 @@ fn function_call_format_does_not_widen_reasoning_or_part_purpose() {
         part: PartId::new(1),
         replay,
     };
-    assert!(reduce(state.clone(), attach(replay)).is_err());
-    assert!(
-        reduce(
-            state,
-            attach(value(
-                ReplayFormat::GoogleGenerateContentSignature,
-                true,
-                "synthetic-part",
-                Some("origin-a")
-            ))
-        )
-        .is_ok()
-    );
+    assert!(reduce(state, attach(replay)).is_err());
     let oversized = ReplayValue::final_value(
         format,
         Text::new(

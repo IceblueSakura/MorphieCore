@@ -285,7 +285,6 @@ fn compaction_replay_rejects_incompatible_or_unbound_context_without_stripping()
     assert_eq!(request, saved);
     for caps in [
         morphiecore::protocol::anthropic::messages::Profile::AdaptiveTextTools.semantic_contract(),
-        morphiecore::protocol::google::generate_content::semantic_contract(),
         morphiecore::protocol::google::interactions::semantic_contract(),
     ] {
         assert_eq!(

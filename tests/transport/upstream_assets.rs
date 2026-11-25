@@ -242,55 +242,6 @@ fn vercel_custom_tool_output_replays_distinct_item_and_call_identity() {
 }
 
 #[test]
-fn vercel_google_stream_preserves_content_and_source_accounting() {
-    let target = ReplayTarget::new("public-fixture", "gemini-3-pro-preview").unwrap();
-    let adapter = UpstreamAdapter::GoogleGenerateContent { target };
-    let bytes = jsonl_sse("vercel/google-text.jsonl", None);
-    for chunk in [1, 23, 8192] {
-        let attempt = decode(adapter.clone(), &bytes, chunk).unwrap();
-        let response = attempt.response().unwrap();
-        assert_eq!(
-            text(&attempt),
-            "There are **3** \"r\"s in strawberry.\n\nst**r**awbe**rr**y"
-        );
-        let counts = &response
-            .semantic
-            .usage_reports()
-            .operation()
-            .unwrap()
-            .counts;
-        assert_eq!(counts.input_tokens, Some(9));
-        assert_eq!(counts.output_tokens, Some(23));
-        assert_eq!(counts.reasoning_tokens, Some(185));
-        let signed_parts: Vec<_> = response
-            .semantic
-            .items()
-            .iter()
-            .flat_map(|(_, item)| match item {
-                Item::Message(message) => message
-                    .parts
-                    .iter()
-                    .filter_map(|part| part.replay.as_ref())
-                    .collect::<Vec<_>>(),
-                _ => vec![],
-            })
-            .collect();
-        assert_eq!(signed_parts.len(), 1);
-        let original = String::from_utf8(asset("vercel/google-text.jsonl")).unwrap();
-        let last: Value = serde_json::from_str(original.lines().last().unwrap()).unwrap();
-        assert_eq!(
-            signed_parts[0].format(),
-            morphiecore::semantic::task::generation::ReplayFormat::GoogleGenerateContentSignature
-        );
-        assert_eq!(
-            signed_parts[0].replay_token(),
-            last["candidates"][0]["content"]["parts"][0]["thoughtSignature"].as_str()
-        );
-        assert_eq!(response.semantic.outcome(), Outcome::Completed);
-    }
-}
-
-#[test]
 fn interactions_allows_first_service_tier_report_at_terminal() {
     use morphiecore::semantic::context::{ReportPhase, ServiceClass};
     let target = ReplayTarget::new("public-fixture", "gemini-2.5-flash").unwrap();
@@ -373,12 +324,6 @@ fn upstream_eof_is_distinct_from_malformed_pending_frames() {
             messages_with_delimiter("anthropic/basic.sse"),
         ),
         (
-            UpstreamAdapter::GoogleGenerateContent {
-                target: target.clone(),
-            },
-            jsonl_sse("vercel/google-text.jsonl", None),
-        ),
-        (
             UpstreamAdapter::GoogleInteractions { target },
             jsonl_sse("vercel/interactions-basic.jsonl", Some("event_type")),
         ),
@@ -445,12 +390,6 @@ fn field_only_keepalive_blocks_are_not_events_for_any_upstream_decoder() {
             messages_with_delimiter("anthropic/basic.sse"),
         ),
         (
-            UpstreamAdapter::GoogleGenerateContent {
-                target: target.clone(),
-            },
-            jsonl_sse("vercel/google-text.jsonl", None),
-        ),
-        (
             UpstreamAdapter::GoogleInteractions { target },
             jsonl_sse("vercel/interactions-basic.jsonl", Some("event_type")),
         ),
@@ -503,12 +442,6 @@ fn upstream_ingress_budgets_are_independent_and_fragmentation_invariant() {
         (
             messages("claude-3-opus-latest"),
             messages_with_delimiter("anthropic/basic.sse"),
-        ),
-        (
-            UpstreamAdapter::GoogleGenerateContent {
-                target: target.clone(),
-            },
-            jsonl_sse("vercel/google-text.jsonl", None),
         ),
         (
             UpstreamAdapter::GoogleInteractions { target },
@@ -588,22 +521,12 @@ fn google_protocol_errors_before_and_after_content_poison_the_attempt() {
         },
     };
     let target = ReplayTarget::new("public-fixture", "gemini-fixture").unwrap();
-    for (adapter, bytes, error, status) in [
-        (
-            UpstreamAdapter::GoogleGenerateContent {
-                target: target.clone(),
-            },
-            jsonl_sse("vercel/google-text.jsonl", None),
-            "data: {\"error\":{\"code\":429,\"message\":\"synthetic quota\"}}\n\n",
-            429,
-        ),
-        (
-            UpstreamAdapter::GoogleInteractions { target },
-            jsonl_sse("vercel/interactions-basic.jsonl", Some("event_type")),
-            "event: error\ndata: {\"event_type\":\"error\",\"error\":{\"code\":\"UNAVAILABLE\",\"message\":\"synthetic unavailable\"}}\n\n",
-            503,
-        ),
-    ] {
+    for (adapter, bytes, error, status) in [(
+        UpstreamAdapter::GoogleInteractions { target },
+        jsonl_sse("vercel/interactions-basic.jsonl", Some("event_type")),
+        "event: error\ndata: {\"event_type\":\"error\",\"error\":{\"code\":\"UNAVAILABLE\",\"message\":\"synthetic unavailable\"}}\n\n",
+        503,
+    )] {
         let raw = std::str::from_utf8(&bytes).unwrap();
         let frames: Vec<_> = raw.split_inclusive("\n\n").collect();
         let prefix = frames[..frames.len() - 1].concat();

@@ -182,9 +182,9 @@ Chat `stop` and Messages `stop_sequences` decode into ordered stop controls; an 
 
 OpenAI Chat/Responses accept independent `safety_identifier` (up to 128 characters) and deprecated `user` (up to 256); native Messages accepts `metadata.user_id` (up to 512). Native OpenAI paths, including Chat↔Responses, retain both fields independently. They never automatically modernize `user` into safety/cache fields.
 
-Cross-protocol targets with one attribution carrier prefer an explicit safety identifier, otherwise general user attribution. Messages uses `metadata.user_id`; OpenAI uses `safety_identifier`, not legacy `user`; generateContent uses only `labels.safety_identifier`. Google values allow at most 63 Unicode codepoints of lowercase/uncased letters, numeric characters, underscores and dashes. No generic label/metadata map or Interactions carrier is selected.
+Cross-protocol targets with one attribution carrier prefer an explicit safety identifier, otherwise general user attribution. Messages uses `metadata.user_id`; OpenAI uses `safety_identifier`, not legacy `user`; no Interactions label carrier is selected.
 
-Documented null defaults normalize to absence; an explicit empty string remains explicit and prevents fallback. Google omits an identifier that its label grammar cannot carry, with a named receipt and without selecting another ID. Other native field bounds remain strict; for example, a 129-character native Messages ID cannot project to OpenAI's 128-character safety carrier. No projection truncates, lowercases or hashes attribution.
+Documented null defaults normalize to absence; an explicit empty string remains explicit and prevents fallback. Native field bounds remain strict; for example, a 129-character native Messages ID cannot project to OpenAI's 128-character safety carrier. No projection truncates, lowercases or hashes attribution.
 
 `prompt_cache_key` remains independent. A projection can lose identity under `generation.omit-identity-hints.v1` and separately lose OpenAI legacy `user` cache bucketing under `cache.omit-legacy-user-bucketing.v1`; neither receipt includes identifier values. No identity is derived from credentials, prompts or conversation IDs. See the [attribution contract](../architecture/adaptation-and-dialects.md#end-user-attribution).
 

@@ -82,7 +82,7 @@ impl Protocol {
             Self::OpenaiChat => GenerationOperation::ChatCompletions,
             Self::OpenaiResponses => GenerationOperation::Responses,
             Self::Anthropic => GenerationOperation::AnthropicMessages,
-            Self::Google => GenerationOperation::GoogleGenerateContent,
+            Self::Google => GenerationOperation::GoogleInteractions,
         }
     }
     fn name(self) -> &'static str {
@@ -161,18 +161,10 @@ impl Command {
                 {
                     return Err(Error::Invalid);
                 }
-                let model = if options.protocol == Protocol::Google {
-                    options
-                        .model
-                        .strip_prefix("models/")
-                        .unwrap_or(&options.model)
-                } else {
-                    &options.model
-                };
                 let path = options
                     .protocol
                     .operation()
-                    .resolve_path(entry.path, model, siwc)
+                    .resolve_path(entry.path, &options.model, siwc)
                     .map_err(|_| Error::Invalid)?;
                 (
                     path,

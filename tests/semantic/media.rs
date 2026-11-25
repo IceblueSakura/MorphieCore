@@ -893,12 +893,17 @@ mod image_edit {
             .unwrap();
         let gemini_json: serde_json::Value = serde_json::from_slice(&gemini.body).unwrap();
         assert_eq!(
-            gemini_json["contents"][0]["parts"],
-            json!([
-                {"inlineData": {"mimeType": "image/png", "data": "cG5nMA=="}},
-                {"inlineData": {"mimeType": "image/webp", "data": "d2VicDE="}},
-                {"text": "edit two"}
-            ])
+            gemini_json,
+            json!({
+                "model": "gemini-nano-banana-2.1",
+                "store": false,
+                "input": [
+                    {"type": "image", "mime_type": "image/png", "data": "cG5nMA=="},
+                    {"type": "image", "mime_type": "image/webp", "data": "d2VicDE="},
+                    {"type": "text", "text": "edit two"}
+                ],
+                "response_format": {"type": "image"}
+            })
         );
 
         let grok_single = UpstreamAdapter::GrokImage

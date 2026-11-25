@@ -44,13 +44,10 @@ fn auto_uses_native_default_without_losing_images_or_mutating_source() {
         };
         let request = decode(true);
         let before = request.clone();
-        let mut native = vec![
+        let native = vec![
             catalog::messages_bindings()[0].endpoint(),
-            catalog::google_bindings()[0].interactions_endpoint(),
+            catalog::google_bindings()[0].endpoint(),
         ];
-        if !tool {
-            native.push(catalog::google_bindings()[0].endpoint());
-        }
         for endpoint in native {
             let (projected, rules) = endpoint.encode_request_with_rules(&request).unwrap();
             assert_eq!(projected, endpoint.encode_request(&decode(false)).unwrap());
@@ -68,12 +65,6 @@ fn auto_uses_native_default_without_losing_images_or_mutating_source() {
                         json!({
                             "type":"base64","media_type":"image/png","data":"AQID"
                         })
-                    );
-                }
-                GenerationProtocol::GoogleGenerateContent => {
-                    assert_eq!(
-                        projected["contents"][0]["parts"][0]["inlineData"],
-                        json!({"mimeType":"image/png","data":"AQID"})
                     );
                 }
                 GenerationProtocol::GoogleInteractions => {

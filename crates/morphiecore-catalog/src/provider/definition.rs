@@ -109,33 +109,17 @@ pub enum GenerationOperation {
     ChatCompletions,
     Responses,
     AnthropicMessages,
-    GoogleGenerateContent,
     GoogleInteractions,
 }
 impl GenerationOperation {
-    /// Google has a model-bearing path; all other operations use the declared entry.
+    /// All supported generation operations use the declared endpoint entry.
     pub fn resolve_path(
         self,
         entry: &EndpointPath,
-        model: &str,
-        streaming: bool,
+        _model: &str,
+        _streaming: bool,
     ) -> Result<EndpointPath, ProviderError> {
-        if self != Self::GoogleGenerateContent {
-            return Ok(entry.clone());
-        }
-        if model.is_empty()
-            || !model
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
-        {
-            return Err(ProviderError::InvalidPath);
-        }
-        let action = if streaming {
-            "streamGenerateContent"
-        } else {
-            "generateContent"
-        };
-        EndpointPath::new(&format!("{}/{model}:{action}", entry.as_str()))
+        Ok(entry.clone())
     }
 }
 
@@ -146,7 +130,6 @@ pub enum ProviderOperation {
     ChatCompletions,
     Responses,
     Messages,
-    GenerateContent,
     Interactions,
     Embeddings,
     Images,
@@ -160,7 +143,6 @@ impl From<GenerationOperation> for ProviderOperation {
             GenerationOperation::ChatCompletions => Self::ChatCompletions,
             GenerationOperation::Responses => Self::Responses,
             GenerationOperation::AnthropicMessages => Self::Messages,
-            GenerationOperation::GoogleGenerateContent => Self::GenerateContent,
             GenerationOperation::GoogleInteractions => Self::Interactions,
         }
     }
@@ -311,7 +293,7 @@ mod tests {
             "/chat/completions",
             "/responses",
             "/v1/responses",
-            "/v1beta/models/gemini-3.8-flash:streamGenerateContent",
+            "/v1/interactions",
         ] {
             let path = EndpointPath::new(ok).unwrap();
             let url =

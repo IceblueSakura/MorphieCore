@@ -8,9 +8,6 @@ pub enum ReplayFormat {
     GoogleInteractionsV1Thought,
     /// Opaque signature owned by one Interactions function-call step.
     GoogleInteractionsV1FunctionCall,
-    GoogleGenerateContentPart,
-    /// Opaque signature of an actual non-thought text part or function call.
-    GoogleGenerateContentSignature,
     AnthropicMessagesThinking,
     /// Safety-redacted thinking: opaque `data` with no readable parts.
     AnthropicMessagesRedactedThinking,
@@ -64,7 +61,6 @@ impl ReplayValue {
             self.format(),
             ReplayFormat::ResponsesEncrypted
                 | ReplayFormat::GoogleInteractionsV1Thought
-                | ReplayFormat::GoogleGenerateContentPart
                 | ReplayFormat::AnthropicMessagesThinking
                 | ReplayFormat::AnthropicMessagesRedactedThinking
         ) {
@@ -73,17 +69,10 @@ impl ReplayValue {
         self.validate()
     }
     pub fn validate_attachment(&self) -> Result<(), GenerationError> {
-        if self.format() != ReplayFormat::GoogleGenerateContentSignature {
-            return Err(GenerationError::InvalidReplay);
-        }
-        self.validate()
+        Err(GenerationError::InvalidReplay)
     }
     pub fn validate_call_attachment(&self) -> Result<(), GenerationError> {
-        if !matches!(
-            self.format(),
-            ReplayFormat::GoogleGenerateContentSignature
-                | ReplayFormat::GoogleInteractionsV1FunctionCall
-        ) {
+        if self.format() != ReplayFormat::GoogleInteractionsV1FunctionCall {
             return Err(GenerationError::InvalidReplay);
         }
         self.validate()
@@ -94,11 +83,9 @@ impl ReplayValue {
         hash.update([match self.format() {
             ReplayFormat::ResponsesEncrypted => 0,
             ReplayFormat::GoogleInteractionsV1Thought => 1,
-            ReplayFormat::GoogleGenerateContentPart => 3,
             ReplayFormat::AnthropicMessagesThinking => 4,
             ReplayFormat::AnthropicMessagesRedactedThinking => 5,
             ReplayFormat::ResponsesCompaction => 6,
-            ReplayFormat::GoogleGenerateContentSignature => 7,
             ReplayFormat::GoogleInteractionsV1FunctionCall => 8,
         }]);
         hash.update([u8::from(self.replay_token().is_some())]);

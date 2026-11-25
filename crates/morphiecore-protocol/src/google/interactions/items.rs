@@ -179,8 +179,7 @@ pub(super) fn steps(
     Ok(steps.into())
 }
 
-/// One inert resource as v1 content. v1 has no video content, and `function_result`
-/// carries only text and images.
+/// One inert resource as v1 content. `function_result` carries only text and images.
 /// Media policy: docs/architecture/adaptation-and-dialects.md#media.
 fn media(
     resource: ResourceView<'_>,
@@ -190,6 +189,7 @@ fn media(
     let kind = match resource.kind() {
         ResourceKind::Image => "image",
         ResourceKind::Audio if !tool => "audio",
+        ResourceKind::Video if !tool => "video",
         ResourceKind::File if !tool => "document",
         _ => return Err(unsupported()),
     };

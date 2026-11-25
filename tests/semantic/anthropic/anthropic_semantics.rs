@@ -1224,15 +1224,6 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
         assert!(!wire.to_string().contains("cache_control"));
     }
     assert!(
-        morphiecore::protocol::google::generate_content::encode_generation_request(
-            &client.task.semantic,
-            &client.task.fidelity,
-            &target(),
-            None,
-        )
-        .is_err()
-    );
-    assert!(
         morphiecore::protocol::google::interactions::encode_generation_request(
             &client.task.semantic,
             &client.task.fidelity,

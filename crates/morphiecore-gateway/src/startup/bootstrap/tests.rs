@@ -1,9 +1,6 @@
 //! Independent activation/target assertions over synthetic file configuration.
 use super::{test_support::*, *};
-use crate::protocol::{
-    ClientProtocol,
-    failure::{CarrierReason, ShapeReason},
-};
+use crate::protocol::{ClientProtocol, failure::ShapeReason};
 
 #[test]
 fn gateway_example_passes_service_schema_and_resource_validation() {
@@ -800,8 +797,7 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
     let limits_config = serde_json::json!({"models":{google.model:{"candidates":[
         {"binding":google.endpoint().id.as_str(),
             "allowed_effort":["medium","high"],"maximum_output_tokens":4096,
-            "context_window_tokens":200000,"maximum_input_tokens":100000},
-        {"binding":google.interactions_endpoint().id.as_str()}
+            "context_window_tokens":200000,"maximum_input_tokens":100000}
     ]}}});
     private_write(&models_file, limits_config.clone());
     let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
@@ -810,7 +806,7 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
             crate::protocol::ClientProtocol::from(protocol),
             google.model.into(),
         )];
-        assert_eq!(entry.candidates.len(), 2);
+        assert_eq!(entry.candidates.len(), 1);
         let limits = entry.candidates[0].endpoint.representation.model_limits();
         assert_eq!(limits.maximum_output_tokens, Some(4096));
         assert_eq!(limits.context_window_tokens, Some(200_000));
@@ -823,10 +819,6 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
                     crate::semantic::task::generation::EffortLevel::High,
                 ][..]
             )
-        );
-        assert_eq!(
-            entry.candidates[1].endpoint.representation.model_limits(),
-            google.interactions_endpoint().representation.model_limits()
         );
     }
     // The loader retains the catalog scope policy when no conversion override is supplied.
@@ -969,57 +961,67 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
         .unwrap()
         .remove("base_url");
     write_accounts(directory.path(), &account_config);
-    let mut models = serde_json::json!({"models":{google.model:{
+    let invalid_conversion = serde_json::json!({"models":{google.model:{
         "thinking_tokens":{"minimal":1024,"low":2048,"medium":3072,"high":8192,"xhigh":16384,"max":24576},
         "candidates":[{"binding":google.endpoint().id.as_str(),"thinking_conversion":"effort_to_budget"}]
+    }}});
+    private_write(&models_file, invalid_conversion);
+    assert!(Bootstrap::from_files(&gateway_file, &store).is_err());
+
+    let mut models = serde_json::json!({"models":{google.model:{
+        "thinking_tokens":{"minimal":1024,"low":2048,"medium":3072,"high":8192,"xhigh":16384,"max":24576},
+        "candidates":[{"binding":google.endpoint().id.as_str(),"thinking_conversion":"budget_to_effort"}]
     }}});
     private_write(&models_file, models.clone());
     let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
     let (entry, request) = crate::ingress::admission::prepare(
-        &configured.gateway.state, ClientProtocol::Responses,
+        &configured.gateway.state,
+        ClientProtocol::Messages,
         &serde_json::to_vec(&serde_json::json!({
-            "model":google.model,"input":"hi","reasoning":{"effort":"medium"},"max_output_tokens":6000
-        })).unwrap(),&crate::execution::report::Report::default()).unwrap();
+            "model":google.model,"messages":[{"role":"user","content":"hi"}],
+            "thinking":{"type":"enabled","budget_tokens":3072},"max_tokens":6000
+        }))
+        .unwrap(),
+        &crate::execution::report::Report::default(),
+    )
+    .unwrap();
     let before = request.clone();
     let (wire, rules) = entry.candidates[0]
         .endpoint
         .encode_request_with_rules(&request)
         .unwrap();
-    assert_eq!(
-        wire["generationConfig"]["thinkingConfig"]["thinkingLevel"],
-        "MEDIUM"
-    );
-    assert!(
-        wire["generationConfig"]["thinkingConfig"]
-            .get("thinkingBudget")
-            .is_none()
-    );
-    assert!(!rules.contains(&"configured.effort-to-budget.v1"));
+    assert_eq!(wire["generation_config"]["thinking_level"], "medium");
+    assert!(rules.contains(&"configured.budget-to-effort.v1"));
     assert_eq!(request, before);
+    let (_, scoped_rules) = entry.candidates[0]
+        .endpoint
+        .encode_request_with_rules(&scoped_request)
+        .unwrap();
     assert!(
-        matches!(
-            entry.candidates[0].endpoint.encode_request(&scoped_request),
-            Err(crate::protocol::ConversionFailure { cause: crate::protocol::ConversionCause::Codec(crate::protocol::CodecError::Unsupported(reason)), .. })
-                if matches!(reason,CarrierReason::Reasoning)
-        ),
+        scoped_rules.contains(&"generation.project-effort.v1")
+            && !scoped_rules.contains(&"google.gemini-3.8-flash.response-effort-to-thinking.v1"),
         "an explicit numeric policy replaces, rather than chains with, the scope policy"
     );
-    models["models"][google.model]["thinking_tokens"]["medium"] = serde_json::json!(7000);
+    models["models"][google.model]["thinking_tokens"]["medium"] = serde_json::json!(5000);
     private_write(&models_file, models);
     let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
-    let entry = &configured.gateway.state.entries[&(
-        crate::protocol::ClientProtocol::Responses,
-        google.model.into(),
-    )];
+    let (entry, request) = crate::ingress::admission::prepare(
+        &configured.gateway.state,
+        ClientProtocol::Messages,
+        &serde_json::to_vec(&serde_json::json!({
+            "model":google.model,"messages":[{"role":"user","content":"hi"}],
+            "thinking":{"type":"enabled","budget_tokens":5000},"max_tokens":6000
+        }))
+        .unwrap(),
+        &crate::execution::report::Report::default(),
+    )
+    .unwrap();
     let wire = entry.candidates[0]
         .endpoint
         .encode_request(&request)
         .unwrap();
-    assert_eq!(
-        wire["generationConfig"]["thinkingConfig"]["thinkingLevel"],
-        "MEDIUM"
-    );
-    assert_eq!(wire["generationConfig"]["maxOutputTokens"], 6000);
+    assert_eq!(wire["generation_config"]["thinking_level"], "medium");
+    assert_eq!(wire["generation_config"]["max_output_tokens"], 6000);
 
     private_write(
         &gateway_file,

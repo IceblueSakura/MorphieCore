@@ -346,18 +346,14 @@ impl Catalog {
                 .map_err(|_| TopologyError::InvalidModelBinding)?;
         }
         for b in &self.google {
-            b.endpoint_ids()?;
+            b.endpoint_id()?;
             b.route_id()?;
-            for p in [
-                GenerationOperation::GoogleGenerateContent,
-                GenerationOperation::GoogleInteractions,
-            ] {
-                operation(b.provider, p.into(), CredentialKind::ApiKey)?;
-                let provider = provider(b.provider);
-                let entry = provider.generation_entry(p).expect("validated entry");
-                p.resolve_path(entry.path, b.upstream, true)
-                    .map_err(|_| TopologyError::InvalidModelBinding)?;
-            }
+            let p = GenerationOperation::GoogleInteractions;
+            operation(b.provider, p.into(), CredentialKind::ApiKey)?;
+            let provider = provider(b.provider);
+            let entry = provider.generation_entry(p).expect("validated entry");
+            p.resolve_path(entry.path, b.upstream, true)
+                .map_err(|_| TopologyError::InvalidModelBinding)?;
             if let Some(effort) = &b.scope_effort
                 && (effort.rule.is_empty()
                     || effort.from == effort.to

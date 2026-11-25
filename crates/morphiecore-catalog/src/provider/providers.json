@@ -342,17 +342,13 @@
         "path": "/v1beta/models",
         "suffix": "/models"
       },
-      "generate_content": {
-        "path": "/v1beta/models",
-        "suffix": "/models"
-      },
       "images": {
-        "path": "/v1beta/models",
-        "suffix": "/models"
+        "path": "/v1/interactions",
+        "suffix": "/interactions"
       },
       "images_edit": {
-        "path": "/v1beta/models",
-        "suffix": "/models"
+        "path": "/v1/interactions",
+        "suffix": "/interactions"
       },
       "interactions": {
         "path": "/v1/interactions",
@@ -365,7 +361,6 @@
     },
     "sources": [
       "https://ai.google.dev/api/models",
-      "https://ai.google.dev/api/generate-content",
       "https://ai.google.dev/api/interactions-api-v1",
       "https://ai.google.dev/api/embeddings"
     ]

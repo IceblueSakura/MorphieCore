@@ -1331,15 +1331,6 @@ fn function_call_signatures_are_native_and_dependency_bound() {
     ] {
         assert!(encode_generation_request(&request, &fidelity, &other).is_err());
     }
-    let (foreign, receipt) =
-        morphiecore::protocol::google::generate_content::encode_generation_request(
-            &request, &fidelity, &target, None,
-        )
-        .unwrap();
-    assert!(!foreign.to_string().contains("synthetic-call"));
-    assert!(receipt.contains(
-        &morphiecore::protocol::google::generate_content::RequestRule::TransferVisibleHistory
-    ));
     for payload in [
         json!({"anchor":"thought","signature":"synthetic-call"}),
         json!({"anchor":"function_call"}),
@@ -1356,7 +1347,7 @@ fn function_call_signatures_are_native_and_dependency_bound() {
 }
 
 #[test]
-fn restores_native_signatures_by_anchor_and_drops_the_other_google_format() {
+fn restores_native_signatures_by_anchor_and_drops_foreign_reasoning_formats() {
     let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
     let (request, fidelity) = signed_history(ReplayFormat::GoogleInteractionsV1Thought);
     let (wire, rules) = encode_generation_request(&request, &fidelity, &target).unwrap();
@@ -1370,7 +1361,7 @@ fn restores_native_signatures_by_anchor_and_drops_the_other_google_format() {
         ])
     );
     assert!(rules.is_empty());
-    let (request, fidelity) = signed_history(ReplayFormat::GoogleGenerateContentPart);
+    let (request, fidelity) = signed_history(ReplayFormat::AnthropicMessagesThinking);
     let (wire, rules) = encode_generation_request(&request, &fidelity, &target).unwrap();
     assert_eq!(
         wire["input"],
@@ -1466,7 +1457,7 @@ fn projects_stateless_steps_tools_and_controls() {
         rules.iter().map(|r| r.name()).collect::<Vec<_>>(),
         ["interactions.join-instruction-parts.v1"]
     );
-    let mut endpoint = morphiecore::topology::catalog::google_bindings()[0].interactions_endpoint();
+    let mut endpoint = morphiecore::topology::catalog::google_bindings()[0].endpoint();
     assert!(endpoint.encode_request_with_rules(&request).is_err());
     endpoint.representation = morphiecore::protocol::google::interactions::TargetContract {
         dispositions: morphiecore::protocol::google::interactions::representation_contract(),
@@ -1601,12 +1592,16 @@ fn rejects_unrepresentable_critical_tool_semantics() {
 }
 
 #[test]
-fn media_become_v1_content_and_video_has_no_carrier() {
+fn media_and_user_video_become_v1_content_while_tool_video_rejects() {
     let decode = |profile, body: serde_json::Value| {
         GenerationCodec::new(profile, Dialect::OpenRouter, None)
             .decode_request(body.to_string().as_bytes())
             .unwrap()
     };
+    assert!(
+        morphiecore::protocol::google::interactions::semantic_contract()
+            .native(Feature::VideoInput)
+    );
     let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
     let request = decode(
         GenerationApi::Responses,
@@ -1652,10 +1647,73 @@ fn media_become_v1_content_and_video_has_no_carrier() {
     let video = decode(
         GenerationApi::Chat,
         json!({"model":"public","messages":[{"role":"user","content":[
-            {"type":"video_url","video_url":{"url":"https://example.invalid/a.mp4"}}]}]}),
+            {"type":"video_url","video_url":{"url":"https://example.invalid/a.mp4"}},
+            {"type":"video_url","video_url":{"url":"data:video/mp4;base64,BAUG"}}]}]}),
     );
+    let (video_wire, video_rules) =
+        encode_generation_request(&video.task.semantic, &video.task.fidelity, &target).unwrap();
+    assert_eq!(
+        video_wire["input"],
+        json!([{"type":"user_input","content":[
+            {"type":"video","uri":"https://example.invalid/a.mp4"},
+            {"type":"video","data":"BAUG","mime_type":"video/mp4"}]}])
+    );
+    assert!(video_rules.is_empty());
+    let mut tool_video = decode(
+        GenerationApi::Responses,
+        json!({"model":"public","tools":[{"type":"function","name":"shot","strict":false,"parameters":{"type":"object"}}],
+            "input":[{"role":"user","content":"Check."},
+                {"type":"function_call","call_id":"c1","name":"shot","arguments":"{}"},
+                {"type":"function_call_output","call_id":"c1","output":[
+                    {"type":"input_file","file_data":"data:application/pdf;base64,BAUG"}]}]}),
+    );
+    let mut items = tool_video.task.semantic.items().to_vec();
+    let Item::ToolResult(result) = &mut items[2].1 else {
+        panic!("result")
+    };
+    let ToolOutput::Parts(parts) = &mut result.output else {
+        panic!("parts")
+    };
+    let InputPart::Resource(resource) = &mut parts[0].content else {
+        panic!("resource")
+    };
+    resource.description = ResourceDescription::Video;
+    let resource_id = resource.id;
+    let resources = ResourceTable::new(
+        tool_video
+            .task
+            .semantic
+            .resources()
+            .iter()
+            .map(|(id, loc)| {
+                (
+                    id,
+                    if id == resource_id {
+                        ResourceLocation::Inline {
+                            media_type: Text::new("video/mp4", "test", 32).unwrap(),
+                            data_base64: Text::new("BAUG", "test", 32).unwrap(),
+                        }
+                    } else {
+                        loc.clone()
+                    },
+                )
+            })
+            .collect(),
+    )
+    .unwrap();
+    tool_video.task.semantic = GenerationRequest::from_resources(
+        items,
+        tool_video.task.semantic.settings().clone(),
+        resources,
+    )
+    .unwrap();
     assert!(
-        encode_generation_request(&video.task.semantic, &video.task.fidelity, &target).is_err()
+        encode_generation_request(
+            &tool_video.task.semantic,
+            &tool_video.task.fidelity,
+            &target
+        )
+        .is_err()
     );
     // System instructions are text, and other targets may downsize an oversized image.
     assert_eq!(
@@ -1852,33 +1910,16 @@ fn tool_result_execution_reports_require_a_real_carrier() {
     let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
     let fidelity = FidelityRecords::default();
     let encode = |request: &GenerationRequest| {
-        let interactions = encode_generation_request(request, &fidelity, &target)
-            .map(|(wire, _)| wire["input"][2].clone());
-        let generate = morphiecore::protocol::google::generate_content::encode_generation_request(
-            request, &fidelity, &target, None,
-        )
-        .map(|(wire, _)| wire["contents"][2]["parts"][0]["functionResponse"]["response"].clone());
-        (interactions, generate)
+        encode_generation_request(request, &fidelity, &target)
+            .map(|(wire, _)| wire["input"][2].clone())
     };
     for is_error in [None, Some(false), Some(true)] {
         let source = request(None, is_error);
-        let (interactions, generate) = encode(&source);
-        let key = if is_error == Some(true) {
-            "error"
-        } else {
-            "output"
-        };
-        assert_eq!(generate.unwrap(), json!({key: "out"}));
-        let interactions = interactions.unwrap();
+        let interactions = encode(&source).unwrap();
         assert_eq!(interactions["result"], "out");
         assert_eq!(
             interactions.get("is_error"),
             is_error.map(|e| json!(e)).as_ref()
-        );
-        assert!(
-            morphiecore::protocol::google::generate_content::semantic_contract()
-                .check(&source)
-                .is_ok()
         );
         assert!(
             morphiecore::protocol::google::interactions::semantic_contract()
@@ -1905,21 +1946,15 @@ fn tool_result_execution_reports_require_a_real_carrier() {
     ] {
         let source = request(Some(execution.clone()), is_error);
         let original = source.clone();
-        let (interactions, generate) = encode(&source);
-        assert!(
-            matches!(&generate, Err(morphiecore::protocol::CodecError::Unsupported(r)) if matches!(r,morphiecore::protocol::failure::CarrierReason::Unavailable)),
-            "{execution:?}"
-        );
+        let interactions = encode(&source);
         assert!(
             matches!(&interactions, Err(morphiecore::protocol::CodecError::Unsupported(r)) if matches!(r,morphiecore::protocol::failure::CarrierReason::Unavailable)),
             "{execution:?}"
         );
-        for contract in [
-            morphiecore::protocol::google::generate_content::semantic_contract(),
-            morphiecore::protocol::google::interactions::semantic_contract(),
-        ] {
-            assert_eq!(contract.check(&source), Err(Feature::ToolExecutionReport));
-        }
+        assert_eq!(
+            morphiecore::protocol::google::interactions::semantic_contract().check(&source),
+            Err(Feature::ToolExecutionReport)
+        );
         assert_eq!(source, original);
     }
 }
