@@ -63,6 +63,8 @@ Exact public/native IDs are `gemini-4-argon` (2026-10-13), `gemini-4-hydrogen` (
 
 Thinking is mandatory and default high. Argon/Carbon natively support low/medium/high; Hydrogen also supports xhigh. GenerateContent spells the highest level `XHIGH`; Interactions spells it `xhigh`. Existing nearest-level projection applies outside each native domain; response-scoped effort uses a named model-specific scope conversion. Explicit thinking off rejects rather than disappearing. Sampling controls are ignored and omitted with existing named rules. No explicit-cache capability or 3.8-only terminal projection is activated for these new models.
 
+Follow-up, 2026-11-25: added `gemini-4-neon` (2026-11-18, [Neon](https://ai.google.dev/gemini-api/docs/models/gemini-4-neon)) on Google Interactions with the same unified 1,048,576-token window, 65,536 synchronous output cap, mandatory thinking, and native `low`/`medium`/`high`/`xhigh` levels.
+
 ## Aliyun plans
 
 ### Kimi K3.1 Pro

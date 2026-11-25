@@ -709,6 +709,25 @@
         "context_window_tokens": 1048576,
         "maximum_output_tokens": 65536
       }
+    },
+    {
+      "model": "gemini-4-neon",
+      "upstream": "gemini-4-neon",
+      "released_at": 1794960000,
+      "developer": "Google",
+      "provider": "google",
+      "scope_effort": {
+        "rule": "google.gemini-4-neon.response-effort-to-thinking.v1",
+        "from": "response",
+        "to": "reasoning",
+        "levels": [["low", "low"], ["medium", "medium"], ["high", "high"], ["xhigh", "xhigh"]]
+      },
+      "limits": {
+        "reject_disabled_reasoning": true,
+        "allowed_effort": ["low", "medium", "high", "xhigh"],
+        "context_window_tokens": 1048576,
+        "maximum_output_tokens": 65536
+      }
     }
   ],
   "images": [

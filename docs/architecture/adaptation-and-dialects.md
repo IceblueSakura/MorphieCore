@@ -677,7 +677,7 @@ No new format, task budget, `clear_at`, thinking mode or weaker content/explicit
 
 The model-qualified `google.<model>.response-effort-to-thinking.v1` rules map response-scoped effort to Gemini thinking effort via [`ReasoningConversion::Scope`](../../crates/morphiecore-lowering/src/reasoning.rs).
 
-Gemini 4 Argon and Carbon map low/medium/high; Hydrogen also carries xhigh as native `xhigh` on Interactions.
+Gemini 4 Argon and Carbon map low/medium/high; Hydrogen and Neon also carry xhigh as native `xhigh` on Interactions.
 
 Gemini 4 planning records its unified context window rather than relabeling it as independent input capacity.
 

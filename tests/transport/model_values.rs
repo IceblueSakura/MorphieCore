@@ -952,24 +952,23 @@ fn google_sampling_omission_is_binding_selected_and_preparation_matches_prefligh
 }
 #[test]
 fn hydrogen_xhigh_uses_both_native_carriers_without_reactivating_disabled_thinking() {
-    let binding = google_bindings()
-        .iter()
-        .find(|b| b.model == "gemini-4-hydrogen")
-        .unwrap();
-    let request = source(json!({"model":binding.model,"input":"go",
-        "reasoning":{"effort":"xhigh"},"temperature":0.4,"top_p":0.8}));
-    let before = request.clone();
-    let interaction = binding.endpoint().encode_request(&request).unwrap();
-    assert_eq!(interaction["generation_config"]["thinking_level"], "xhigh");
-    assert!(
-        interaction["generation_config"]
-            .get("temperature")
-            .is_none()
-    );
-    assert!(interaction["generation_config"].get("top_p").is_none());
-    assert_eq!(request, before);
-    let off = source(json!({"model":binding.model,"input":"go","reasoning":{"effort":"none"}}));
-    assert!(representable(&binding.endpoint(), &off).is_err());
+    for model in ["gemini-4-hydrogen", "gemini-4-neon"] {
+        let binding = google_bindings().iter().find(|b| b.model == model).unwrap();
+        let request = source(json!({"model":binding.model,"input":"go",
+            "reasoning":{"effort":"xhigh"},"temperature":0.4,"top_p":0.8}));
+        let before = request.clone();
+        let interaction = binding.endpoint().encode_request(&request).unwrap();
+        assert_eq!(interaction["generation_config"]["thinking_level"], "xhigh");
+        assert!(
+            interaction["generation_config"]
+                .get("temperature")
+                .is_none()
+        );
+        assert!(interaction["generation_config"].get("top_p").is_none());
+        assert_eq!(request, before);
+        let off = source(json!({"model":binding.model,"input":"go","reasoning":{"effort":"none"}}));
+        assert!(representable(&binding.endpoint(), &off).is_err());
+    }
 }
 
 #[test]
