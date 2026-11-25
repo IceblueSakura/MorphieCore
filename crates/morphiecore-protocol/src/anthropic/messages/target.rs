@@ -168,14 +168,29 @@ impl TargetContract {
         target: &ReplayTarget,
     ) -> Result<crate::conversion::generation::Conversion<serde_json::Value>, ConversionFailure>
     {
+        self.encode_request_with_delivery(request, target)
+            .map(|(conversion, _)| conversion)
+    }
+    pub fn encode_request_with_delivery(
+        &self,
+        request: &Request,
+        target: &ReplayTarget,
+    ) -> Result<
+        (
+            crate::conversion::generation::Conversion<serde_json::Value>,
+            crate::tool_projection::ToolDeliveryMap,
+        ),
+        ConversionFailure,
+    > {
         let result = (|| {
             self.validate()?;
             request.task.semantic.validate().map_err(CodecError::from)?;
-            let request_projection = crate::lowering::request::project(
-                request,
-                crate::lowering::request::Target::Messages(self),
-                Some(target),
-            )?;
+            let (request_projection, tool_delivery) =
+                crate::lowering::request::project_with_delivery(
+                    request,
+                    crate::lowering::request::Target::Messages(self),
+                    Some(target),
+                )?;
             let request = request_projection.value.as_ref();
             let evidence = request_projection.evidence;
             self.check_context(request)?;
@@ -197,7 +212,7 @@ impl TargetContract {
             projection.evidence.extend_prefer_summary(evidence);
 
             super::shape::bounded(&projection.value)?;
-            Ok(projection)
+            Ok((projection, tool_delivery))
         })();
         result.map_err(|error: crate::ConversionFailure| {
             error.at(crate::conversion::generation::ConversionBoundary::RequestEncode)

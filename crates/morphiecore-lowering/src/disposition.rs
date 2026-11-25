@@ -533,6 +533,13 @@ pub const FILTER_ALLOWED_INVENTORY: Rule = Rule::new(
     Field::Tools,
     Change::Approximate,
 );
+/// Reversible namespace aliases flatten nested tool groups into unique leaf
+/// names on targets without a native namespace carrier.
+pub const ALIAS_TOOL_NAMESPACES: Rule = Rule::new(
+    "generation.alias-tool-namespaces.v1",
+    Field::Tools,
+    Change::Approximate,
+);
 
 /// Auto selects the target model's own default, not a fixed processing level.
 pub const IMAGE_AUTO_DEFAULT: Rule = Rule::new(

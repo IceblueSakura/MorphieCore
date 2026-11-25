@@ -75,6 +75,21 @@ impl GenerationCodec {
         contract: &TargetContract,
     ) -> Result<crate::conversion::generation::Conversion<serde_json::Value>, ConversionFailure>
     {
+        self.encode_request_with_delivery(request, model, contract)
+            .map(|(conversion, _)| conversion)
+    }
+    pub fn encode_request_with_delivery(
+        &self,
+        request: &Request,
+        model: &str,
+        contract: &TargetContract,
+    ) -> Result<
+        (
+            crate::conversion::generation::Conversion<serde_json::Value>,
+            crate::tool_projection::ToolDeliveryMap,
+        ),
+        ConversionFailure,
+    > {
         let result = (|| {
             if self.adaptation.rules.hooks.bailian_requests
                 && self.adaptation.effort_mapping.is_none()
@@ -83,16 +98,17 @@ impl GenerationCodec {
             {
                 let mut bound = self.clone();
                 bound.adaptation.effort_mapping = Some(mapping);
-                return bound.encode_request_with_evidence(request, model, contract);
+                return bound.encode_request_with_delivery(request, model, contract);
             }
             let contract = self
                 .contract(contract)
                 .with_model_policy(model, self.protocol);
-            let request_projection = crate::lowering::request::project(
-                request,
-                crate::lowering::request::Target::OpenAi(self.protocol, &contract),
-                None,
-            )?;
+            let (request_projection, tool_delivery) =
+                crate::lowering::request::project_with_delivery(
+                    request,
+                    crate::lowering::request::Target::OpenAi(self.protocol, &contract),
+                    None,
+                )?;
             let request = request_projection.value.as_ref();
             let mut evidence = request_projection.evidence;
             if self.adaptation.rules.hooks.responses_siwc
@@ -212,7 +228,10 @@ impl GenerationCodec {
                 crate::semantic::task::generation::MAX_TOTAL_BYTES,
             )
             .map_err(|_| CodecError::Limit)?;
-            Ok(crate::conversion::generation::Conversion { value, evidence })
+            Ok((
+                crate::conversion::generation::Conversion { value, evidence },
+                tool_delivery,
+            ))
         })();
         result.map_err(|error: crate::ConversionFailure| {
             error.at(crate::conversion::generation::ConversionBoundary::RequestEncode)

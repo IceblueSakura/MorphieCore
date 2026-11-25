@@ -8,6 +8,7 @@ pub mod failure;
 pub mod model_limits;
 pub mod reasoning;
 pub mod request;
+pub mod tool_projection;
 pub mod tool_set;
 
 pub use conversion::{ConversionCause, ConversionFailure};

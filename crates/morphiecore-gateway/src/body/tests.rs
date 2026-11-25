@@ -1454,6 +1454,7 @@ async fn attempt_wait_attribution_and_hold_deadline_are_explicit() {
             candidate,
             &request,
             &request,
+            None,
             source.into(),
             &gate.state.limits,
             &lane,

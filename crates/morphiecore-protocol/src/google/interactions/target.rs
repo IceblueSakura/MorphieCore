@@ -96,12 +96,27 @@ impl TargetContract {
         target: &ReplayTarget,
     ) -> Result<crate::conversion::generation::Conversion<serde_json::Value>, ConversionFailure>
     {
+        self.encode_request_with_delivery(request, target)
+            .map(|(conversion, _)| conversion)
+    }
+    pub fn encode_request_with_delivery(
+        &self,
+        request: &Request,
+        target: &ReplayTarget,
+    ) -> Result<
+        (
+            crate::conversion::generation::Conversion<serde_json::Value>,
+            crate::tool_projection::ToolDeliveryMap,
+        ),
+        ConversionFailure,
+    > {
         let result = (|| {
-            let request_projection = crate::lowering::request::project(
-                request,
-                crate::lowering::request::Target::Interactions(self),
-                Some(target),
-            )?;
+            let (request_projection, tool_delivery) =
+                crate::lowering::request::project_with_delivery(
+                    request,
+                    crate::lowering::request::Target::Interactions(self),
+                    Some(target),
+                )?;
             let request = request_projection.value.as_ref();
             let mut evidence = request_projection.evidence;
             self.check_context(request)?;
@@ -114,10 +129,13 @@ impl TargetContract {
                     evidence.push(rule.effect(&request.task.semantic));
                 }
             }
-            Ok(crate::conversion::generation::Conversion {
-                value: wire,
-                evidence,
-            })
+            Ok((
+                crate::conversion::generation::Conversion {
+                    value: wire,
+                    evidence,
+                },
+                tool_delivery,
+            ))
         })();
         result.map_err(|error: crate::ConversionFailure| {
             error.at(crate::conversion::generation::ConversionBoundary::RequestEncode)

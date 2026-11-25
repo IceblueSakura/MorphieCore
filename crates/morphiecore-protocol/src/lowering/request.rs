@@ -185,6 +185,12 @@ impl<'a> Target<'a> {
                 }
                 _ => OrderedCarrier::None,
             },
+            alias_tool_namespaces: match self {
+                Self::OpenAi(GenerationApi::Chat, _)
+                | Self::Messages(_)
+                | Self::Interactions(_) => true,
+                Self::OpenAi(GenerationApi::Responses, _) => bailian,
+            },
             filter_allowed_inventory: messages.is_some(),
             filter_singleton_inventory: matches!(openai, Some((GenerationApi::Responses, _)))
                 && bailian,
@@ -925,7 +931,7 @@ pub fn project_semantic<'a>(
     target: Target<'_>,
 ) -> Result<Conversion<Cow<'a, GenerationRequest>>, ConversionFailure> {
     let mut table = target.table(source);
-    let projected = project_semantic_with_table(source, source, target, &mut table)?;
+    let (projected, _) = project_semantic_with_table(source, source, target, &mut table)?;
     target.projected_rows(projected.value.as_ref(), false, &mut table);
     table
         .check(projected.value.as_ref())
@@ -938,7 +944,13 @@ fn project_semantic_with_table<'a>(
     original: &GenerationRequest,
     target: Target<'_>,
     table: &mut Dispositions,
-) -> Result<Conversion<Cow<'a, GenerationRequest>>, ConversionFailure> {
+) -> Result<
+    (
+        Conversion<Cow<'a, GenerationRequest>>,
+        crate::tool_projection::ToolDeliveryMap,
+    ),
+    ConversionFailure,
+> {
     source.validate().map_err(CodecError::from)?;
     target.limits().validate()?;
     if let Target::OpenAi(_, contract) = target
@@ -975,7 +987,7 @@ fn project_semantic_with_table<'a>(
     let controls =
         semantic_projection::project_controls(semantic, source, capabilities, table, evidence)?;
     let mut evidence = controls.evidence;
-    let mut semantic = semantic_projection::project_tool_inventory(
+    let (mut semantic, mut tool_delivery) = semantic_projection::project_tool_inventory(
         controls.value,
         capabilities,
         table,
@@ -1065,14 +1077,18 @@ fn project_semantic_with_table<'a>(
         }
     }
     let semantic = semantic_projection::project_tool_result_errors(semantic, table, &mut evidence)?;
+    tool_delivery.retain_declared(semantic.as_ref());
     crate::anthropic::messages::check_signed_configuration_prefix(source, &semantic)?;
     controls
         .reasoning
         .record(source, &semantic, &mut evidence)?;
-    Ok(Conversion {
-        value: semantic,
-        evidence,
-    })
+    Ok((
+        Conversion {
+            value: semantic,
+            evidence,
+        },
+        tool_delivery,
+    ))
 }
 
 pub fn project<'a>(
@@ -1080,6 +1096,20 @@ pub fn project<'a>(
     target: Target<'_>,
     native_target: Option<&crate::native::ReplayTarget>,
 ) -> Result<Conversion<Cow<'a, Request>>, ConversionFailure> {
+    project_with_delivery(source, target, native_target).map(|(conversion, _)| conversion)
+}
+
+pub fn project_with_delivery<'a>(
+    source: &'a Request,
+    target: Target<'_>,
+    native_target: Option<&crate::native::ReplayTarget>,
+) -> Result<
+    (
+        Conversion<Cow<'a, Request>>,
+        crate::tool_projection::ToolDeliveryMap,
+    ),
+    ConversionFailure,
+> {
     source.check_grouping()?;
     source.context.validate().map_err(CodecError::from)?;
     source.delivery.validate().map_err(CodecError::from)?;
@@ -1236,7 +1266,7 @@ pub fn project<'a>(
     }
     let input = stripped.as_ref().unwrap_or(source);
     let mut table = target.table(&input.task.semantic);
-    let semantic = project_semantic_with_table(
+    let (semantic, tool_delivery) = project_semantic_with_table(
         &input.task.semantic,
         &source.task.semantic,
         target,
@@ -1371,10 +1401,13 @@ pub fn project<'a>(
     table
         .check(&projected.task.semantic)
         .map_err(crate::conversion::generation::RepresentationError::Admission)?;
-    Ok(Conversion {
-        value: projected,
-        evidence,
-    })
+    Ok((
+        Conversion {
+            value: projected,
+            evidence,
+        },
+        tool_delivery,
+    ))
 }
 
 /// OpenAI requires a schema name; Messages and Gemini formats have none. The fixed

@@ -75,6 +75,7 @@ struct Prepared<'r> {
     evidence: crate::protocol::conversion::generation::EvidenceDelta,
     request: Cow<'r, Request>,
     affinity: Option<crate::routing::prefix_cache::Selection>,
+    tool_delivery: crate::protocol::tool_projection::ToolDeliveryMap,
 }
 /// Resolve the bound credential, apply an affinity projection when it fits,
 /// encode for this candidate and send. Each candidate starts from the original
@@ -163,6 +164,7 @@ async fn prepare_attempt<'r>(
     let upstream_request = &intake_request;
     #[cfg(not(any(test, feature = "test-hooks")))]
     let upstream_request = &local;
+    let tool_delivery = projection.value.tool_delivery.clone();
     let conversion = crate::execution::attempt::prepare_retained(
         &candidate.endpoint,
         &candidate.provider,
@@ -183,6 +185,7 @@ async fn prepare_attempt<'r>(
         evidence: conversion.evidence,
         request: local,
         affinity,
+        tool_delivery,
     })
 }
 
@@ -414,6 +417,7 @@ pub(crate) async fn produce_chain(
                         &candidate,
                         local,
                         request,
+                        prepared.as_ref().map(|ready| &ready.tool_delivery),
                         upstream,
                         limits,
                         lane,

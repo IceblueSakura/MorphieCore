@@ -478,6 +478,7 @@ pub(crate) async fn produce_candidate(
     candidate: &BoundCandidate,
     request: &Request,
     original: &Request,
+    tool_delivery: Option<&crate::protocol::tool_projection::ToolDeliveryMap>,
     upstream: Response,
     limits: &Limits,
     lane: &Lane<'_>,
@@ -644,6 +645,7 @@ pub(crate) async fn produce_candidate(
     )
     .with_report(trace.report.clone())
     .with_request(&candidate.endpoint, request, original)
+    .with_tool_delivery(tool_delivery.cloned().unwrap_or_default())
     .with_coalescing(stream.then_some(limits.delta_coalescing).flatten());
     let result = {
         let production = produce(

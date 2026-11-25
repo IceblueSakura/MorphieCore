@@ -113,37 +113,41 @@ pub fn project_candidate(
     {
         return Err(RejectionReason::ReasoningHistoryRequired);
     }
-    let projection = endpoint
-        .encode_request_with_evidence(request)
-        .map_err(|error| {
-            use crate::protocol::{ConversionFailure, conversion::generation::RepresentationError};
-            match error {
-                ConversionFailure {
-                    cause:
-                        crate::protocol::ConversionCause::Representation(
-                            RepresentationError::Admission(feature),
-                        ),
-                    ..
-                } => RejectionReason::Semantic(feature),
-                ConversionFailure {
-                    cause:
-                        crate::protocol::ConversionCause::Representation(
-                            RepresentationError::ImageInput,
-                        ),
-                    ..
-                } => RejectionReason::Image,
-                ConversionFailure {
-                    cause:
-                        crate::protocol::ConversionCause::Representation(
-                            RepresentationError::ReplayOrigin,
-                        ),
-                    ..
-                } => RejectionReason::ReplayScope,
-                error => RejectionReason::Conversion(Box::new(error)),
-            }
-        })?;
-    crate::execution::attempt::RequestProjection::new(
+    let (projection, tool_delivery) =
+        endpoint
+            .encode_request_with_delivery(request)
+            .map_err(|error| {
+                use crate::protocol::{
+                    ConversionFailure, conversion::generation::RepresentationError,
+                };
+                match error {
+                    ConversionFailure {
+                        cause:
+                            crate::protocol::ConversionCause::Representation(
+                                RepresentationError::Admission(feature),
+                            ),
+                        ..
+                    } => RejectionReason::Semantic(feature),
+                    ConversionFailure {
+                        cause:
+                            crate::protocol::ConversionCause::Representation(
+                                RepresentationError::ImageInput,
+                            ),
+                        ..
+                    } => RejectionReason::Image,
+                    ConversionFailure {
+                        cause:
+                            crate::protocol::ConversionCause::Representation(
+                                RepresentationError::ReplayOrigin,
+                            ),
+                        ..
+                    } => RejectionReason::ReplayScope,
+                    error => RejectionReason::Conversion(Box::new(error)),
+                }
+            })?;
+    crate::execution::attempt::RequestProjection::from_delivery(
         projection,
+        tool_delivery,
         endpoint.execution.request_body_limit,
     )
     .map_err(|_| RejectionReason::BodyLimit)

@@ -73,6 +73,7 @@ pub struct ClientProjection {
     source_lifecycles: BTreeMap<ItemId, ItemLifecycle>,
     text_sources: BTreeSet<ItemId>,
     plain_text_source: bool,
+    tool_delivery: crate::tool_projection::ToolDeliveryMap,
 }
 impl ClientProjection {
     pub fn new(client: ClientAdapter, native: bool, streaming: bool) -> Self {
@@ -107,10 +108,18 @@ impl ClientProjection {
             source_lifecycles: BTreeMap::new(),
             text_sources: BTreeSet::new(),
             plain_text_source: true,
+            tool_delivery: Default::default(),
             omitted: BTreeSet::new(),
             calls: BTreeMap::new(),
             losses: vec![],
         }
+    }
+    pub fn with_tool_delivery(
+        mut self,
+        tool_delivery: crate::tool_projection::ToolDeliveryMap,
+    ) -> Self {
+        self.tool_delivery = tool_delivery;
+        self
     }
     pub fn with_limits(mut self, limits: crate::stream::SseLimits) -> Self {
         self.limits = limits;
@@ -346,6 +355,18 @@ impl ClientProjection {
                     continue;
                 }
                 let mut event = event.clone();
+                if let StreamEvent::ItemStarted {
+                    kind:
+                        ItemKind::ToolCall { name, context, .. }
+                        | ItemKind::CustomCall { name, context, .. },
+                    ..
+                } = &mut event
+                    && let Some(orig) = self.tool_delivery.entries.get(name.as_str())
+                    && !orig.wrapped_custom
+                {
+                    *name = orig.name.clone();
+                    context.namespace = orig.namespace.clone();
+                }
                 match &mut event {
                     StreamEvent::ItemStarted {
                         item,

@@ -689,10 +689,28 @@ pub fn project_tool_inventory<'a>(
     target: TargetCapabilities<'_>,
     table: &mut Dispositions,
     evidence: &mut EvidenceDelta,
-) -> Result<Cow<'a, GenerationRequest>, ConversionFailure> {
-    // The selected bounded tool-set projections share one owner: retained
-    // native additions, the effective active-set collapse and allowed-set
-    // inventory filtering. Projections act on this candidate copy only.
+) -> Result<
+    (
+        Cow<'a, GenerationRequest>,
+        crate::tool_projection::ToolDeliveryMap,
+    ),
+    ConversionFailure,
+> {
+    // The selected bounded tool-set projections share one owner: namespace
+    // aliasing, retained native additions, the effective active-set collapse
+    // and allowed-set inventory filtering. Projections act on this candidate copy only.
+    let mut tool_delivery = crate::tool_projection::ToolDeliveryMap::default();
+    if target.alias_tool_namespaces {
+        let (aliased, map, changed) = crate::tool_projection::alias_tool_namespaces(semantic)?;
+        semantic = aliased;
+        tool_delivery = map;
+        if changed {
+            evidence.push(
+                super::disposition::ALIAS_TOOL_NAMESPACES
+                    .effect(ConversionBoundary::RequestProject),
+            );
+        }
+    }
     let ordered = ordered_tool_declarations(semantic.items());
     let allowed_choice = matches!(semantic.tool_choice(), Some(ToolChoice::Allowed { .. }));
     // The required carrier can need a singleton request inventory, not only
@@ -825,7 +843,8 @@ pub fn project_tool_inventory<'a>(
             );
         }
     }
-    Ok(semantic)
+    tool_delivery.retain_declared(semantic.as_ref());
+    Ok((semantic, tool_delivery))
 }
 
 pub fn relax_tool_strictness<'a>(

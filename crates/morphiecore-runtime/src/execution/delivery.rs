@@ -105,6 +105,7 @@ struct Projection {
     rendered: bool,
     phase: ProjectionPhase,
     adapter: Option<crate::adapter::ClientProjection>,
+    tool_delivery: crate::protocol::tool_projection::ToolDeliveryMap,
 }
 
 enum OutputMode {
@@ -181,6 +182,7 @@ impl ResponseDelivery {
                 source: None,
                 rendered: false,
                 phase: ProjectionPhase::Open,
+                tool_delivery: Default::default(),
             },
             output: if streaming {
                 OutputMode::Sse(Box::new(StreamDelivery::new(options, padding)))
@@ -205,6 +207,13 @@ impl ResponseDelivery {
     /// Only Responses can deliver an upstream-reported failed response as such.
     pub fn carries_failed_responses(&self) -> bool {
         self.client.protocol() == ClientProtocol::Responses
+    }
+    pub fn with_tool_delivery(
+        mut self,
+        tool_delivery: crate::protocol::tool_projection::ToolDeliveryMap,
+    ) -> Self {
+        self.projection.tool_delivery = tool_delivery;
+        self
     }
     pub fn with_request(
         mut self,
@@ -374,7 +383,15 @@ impl ResponseDelivery {
         {
             return None;
         }
-        let decoded = self.client_response(attempt).ok()?;
+        let mut decoded = self.client_response(attempt).ok()?;
+        if !self.projection.tool_delivery.is_empty() {
+            let adapter = self.projection.adapter.as_ref()?;
+            if !adapter.finished() {
+                return None;
+            }
+            decoded.semantic = adapter.snapshot().ok()?;
+            decoded.fidelity = adapter.fidelity().clone();
+        }
         let mut successor = self.client.cache_successor(request, &decoded)?;
         super::replay::open_from_client(&mut successor).ok()?;
         Some(successor)
@@ -471,10 +488,12 @@ impl ResponseDelivery {
                 } else {
                     adapter.with_chat_source()
                 };
-                adapter.with_messages_terminal(
-                    self.projection.messages_without_stops,
-                    self.projection.messages_ambiguous_stops,
-                )
+                adapter
+                    .with_messages_terminal(
+                        self.projection.messages_without_stops,
+                        self.projection.messages_ambiguous_stops,
+                    )
+                    .with_tool_delivery(self.projection.tool_delivery.clone())
             })
             .project(events)?;
         self.projection.content_ready |= projected.iter().any(content_event);

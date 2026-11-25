@@ -151,22 +151,35 @@ impl Endpoint {
         crate::protocol::conversion::generation::Conversion<serde_json::Value>,
         crate::protocol::ConversionFailure,
     > {
+        self.encode_request_with_delivery(request)
+            .map(|(conversion, _)| conversion)
+    }
+    pub fn encode_request_with_delivery(
+        &self,
+        request: &crate::protocol::GenerationRequestEnvelope,
+    ) -> Result<
+        (
+            crate::protocol::conversion::generation::Conversion<serde_json::Value>,
+            crate::protocol::tool_projection::ToolDeliveryMap,
+        ),
+        crate::protocol::ConversionFailure,
+    > {
         let result = (|| {
             use crate::adapter::UpstreamAdapter;
             match (self.adapter()?, &self.representation) {
                 (UpstreamAdapter::OpenAi(adapter), TargetContract::OpenAi(caps)) => {
                     let mut contract = caps.as_ref().clone();
                     contract.replay_origin = contract.replay_origin.map(|_| self.replay_origin());
-                    adapter.encode_request_with_evidence(request, &self.upstream_model, &contract)
+                    adapter.encode_request_with_delivery(request, &self.upstream_model, &contract)
                 }
                 (
                     UpstreamAdapter::AnthropicMessages { target, .. },
                     TargetContract::AnthropicMessages(caps),
-                ) => caps.encode_request(request, &target),
+                ) => caps.encode_request_with_delivery(request, &target),
                 (
                     UpstreamAdapter::GoogleInteractions { target },
                     TargetContract::GoogleInteractions(caps),
-                ) => caps.encode_request(request, &target),
+                ) => caps.encode_request_with_delivery(request, &target),
                 _ => Err(crate::protocol::CodecError::ProfileMismatch.into()),
             }
         })();

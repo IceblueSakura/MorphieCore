@@ -16,6 +16,7 @@ pub mod attribution;
 pub mod cache;
 pub use morphiecore_lowering::{
     CodecError, ConversionCause, ConversionFailure, conversion, failure, model_limits, reasoning,
+    tool_projection,
 };
 pub mod request;
 pub use request::{ClientProtocol, GenerationRequestEnvelope};

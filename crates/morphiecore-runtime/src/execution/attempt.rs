@@ -231,10 +231,18 @@ pub struct RequestProjection {
     value: serde_json::Value,
     bytes: usize,
     evidence: crate::protocol::conversion::generation::EvidenceDelta,
+    tool_delivery: crate::protocol::tool_projection::ToolDeliveryMap,
 }
 impl RequestProjection {
     pub fn new(
         projection: crate::protocol::conversion::generation::Conversion<serde_json::Value>,
+        limit: usize,
+    ) -> Result<Self, crate::semantic::value::ValueError> {
+        Self::from_delivery(projection, Default::default(), limit)
+    }
+    pub fn from_delivery(
+        projection: crate::protocol::conversion::generation::Conversion<serde_json::Value>,
+        tool_delivery: crate::protocol::tool_projection::ToolDeliveryMap,
         limit: usize,
     ) -> Result<Self, crate::semantic::value::ValueError> {
         let bytes = crate::semantic::value::json_size(&projection.value, limit)?;
@@ -242,11 +250,14 @@ impl RequestProjection {
             value: projection.value,
             bytes,
             evidence: projection.evidence,
+            tool_delivery,
         })
     }
     pub fn encode(endpoint: &Endpoint, request: &Request) -> Result<Self, AttemptError> {
-        Self::new(
-            endpoint.encode_request_with_evidence(request)?,
+        let (conversion, tool_delivery) = endpoint.encode_request_with_delivery(request)?;
+        Self::from_delivery(
+            conversion,
+            tool_delivery,
             endpoint.execution.request_body_limit,
         )
         .map_err(|_| AttemptError::Limit)
@@ -275,6 +286,9 @@ impl RequestProjection {
     pub fn evidence(&self) -> &crate::protocol::conversion::generation::EvidenceDelta {
         &self.evidence
     }
+    pub fn tool_delivery(&self) -> &crate::protocol::tool_projection::ToolDeliveryMap {
+        &self.tool_delivery
+    }
 }
 
 /// Credential-free final wire data. No generic JSON reconstruction is needed
@@ -284,6 +298,7 @@ pub struct EncodedRequest {
     headers: Vec<(String, String)>,
     // Filled only by gateway lookup materialization, never by direct preparation.
     pub prefixes: Option<Vec<[u8; 32]>>,
+    pub tool_delivery: crate::protocol::tool_projection::ToolDeliveryMap,
 }
 impl EncodedRequest {
     pub fn retained_bytes(&self) -> usize {
@@ -298,6 +313,7 @@ impl EncodedRequest {
             + self.prefixes.as_ref().map_or(0, |prefixes| {
                 prefixes.capacity() * std::mem::size_of::<[u8; 32]>()
             })
+            + self.tool_delivery.retained_bytes()
     }
 }
 
@@ -341,6 +357,7 @@ pub fn encode_projection(
             body,
             headers: endpoint.request_headers(request, &value)?,
             prefixes: None,
+            tool_delivery: projection.tool_delivery,
         },
         evidence: projection.evidence,
     })
