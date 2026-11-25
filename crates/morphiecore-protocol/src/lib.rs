@@ -32,6 +32,7 @@ pub mod reports;
 pub mod usage;
 
 // Shared wire validation and framing.
+pub mod decision;
 pub mod embedding;
 pub mod file_constraints;
 pub mod image;

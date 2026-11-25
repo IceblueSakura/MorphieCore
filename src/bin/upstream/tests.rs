@@ -181,7 +181,11 @@ fn decision_probe_uses_native_shape_and_requires_the_requested_answer() {
             &body["questions"]["damaged"]
         };
         assert_eq!(question["instructions"], "Was the item damaged on arrival?");
-        let native = json!({"answers":answer});
+        let native = json!({"model":"actual","answers":answer,"usage":{
+            "input_tokens":20, "output_tokens":0, "total_tokens":20,
+            "input_tokens_details":{"cached_tokens":0,"cache_write_tokens":0},
+            "output_tokens_details":{"reasoning_tokens":0}
+        }});
         let unbound = native.to_string().replace("damaged", "different");
         assert!(wire::probe(unbound.as_bytes(), protocol).is_err());
         let report = wire::probe(native.to_string().as_bytes(), protocol).unwrap();

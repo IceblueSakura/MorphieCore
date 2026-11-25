@@ -1,6 +1,7 @@
 //! Small native diagnostic contracts, not gateway codecs or model capability claims.
 use super::{Error, PROMPT, Protocol};
 use morphiecore::{
+    protocol::decision::Native,
     semantic::value::{JsonLimits, parse_json},
     transport::sse::SseDecoder,
 };
@@ -92,6 +93,24 @@ fn completion(bytes: usize) -> Result<Value, Error> {
     Ok(json!({"completed":true,"text_bytes":bytes}))
 }
 pub(super) fn probe(bytes: &[u8], protocol: Protocol) -> Result<Value, Error> {
+    if let Some((native, kind)) = match protocol {
+        Protocol::OpenaiDecisions => Some((Native::OpenAi, "predicate")),
+        Protocol::TypesafeSystemOne => Some((Native::SystemOne, "noul")),
+        _ => None,
+    } {
+        let request = request(protocol, "diagnostic", false);
+        let request = native
+            .decode_request(request.to_string().as_bytes())
+            .map_err(|_| Error::Response)?;
+        let delivery = native
+            .prepare(request.task, "diagnostic")
+            .and_then(|prepared| prepared.expectation.complete(bytes, "diagnostic"))
+            .map_err(|_| Error::Response)?;
+        if protocol == Protocol::OpenaiDecisions && delivery["answers"][0]["type"] != kind {
+            return Err(Error::Incomplete);
+        }
+        return Ok(json!({"completed":true,"answers":1,"type":kind}));
+    }
     let value = decode(bytes)?;
     no_error(&value)?;
     let text_bytes = match protocol {
@@ -138,37 +157,21 @@ pub(super) fn probe(bytes: &[u8], protocol: Protocol) -> Result<Value, Error> {
             }
             bytes
         }
-        Protocol::OpenaiDecisions | Protocol::TypesafeSystemOne | Protocol::GoogleDecisions => {
-            return decision(&value, protocol);
+        Protocol::GoogleDecisions => {
+            let answers = value["answers"].as_object().ok_or(Error::Response)?;
+            if answers.len() != 1 {
+                return Err(Error::Response);
+            }
+            let answer = answers.get(DECISION_ID).ok_or(Error::Response)?;
+            let probability = answer["noul"].as_f64().ok_or(Error::Response)?;
+            if answer["type"] != "noul" || !(0.01..=0.99).contains(&probability) {
+                return Err(Error::Response);
+            }
+            return Ok(json!({"completed":true,"answers":1,"type":"noul"}));
         }
+        Protocol::OpenaiDecisions | Protocol::TypesafeSystemOne => unreachable!("handled above"),
     };
     completion(text_bytes)
-}
-fn decision(value: &Value, protocol: Protocol) -> Result<Value, Error> {
-    let (answer, kind, field) = if protocol == Protocol::OpenaiDecisions {
-        let [answer] = array(&value["answers"])?.as_slice() else {
-            return Err(Error::Response);
-        };
-        if answer["name"] != DECISION_ID {
-            return Err(Error::Response);
-        }
-        (answer, "predicate", "probability")
-    } else {
-        let answers = value["answers"].as_object().ok_or(Error::Response)?;
-        if answers.len() != 1 {
-            return Err(Error::Response);
-        }
-        (
-            answers.get(DECISION_ID).ok_or(Error::Response)?,
-            "noul",
-            "noul",
-        )
-    };
-    let probability = answer[field].as_f64().ok_or(Error::Response)?;
-    if answer["type"] != kind || !(0.0..=1.0).contains(&probability) {
-        return Err(Error::Response);
-    }
-    Ok(json!({"completed":true,"answers":1,"type":kind}))
 }
 pub(super) fn responses_stream(bytes: &[u8]) -> Result<Value, Error> {
     let mut decoder = SseDecoder::new(1 << 20);

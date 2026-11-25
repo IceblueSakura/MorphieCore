@@ -1,4 +1,5 @@
 //! Closed inference task family.
+pub mod decision;
 pub mod embedding;
 pub mod generation;
 pub mod image_generation;

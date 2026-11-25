@@ -1,0 +1,177 @@
+//! Decision text evidence, ordered questions, and request-bound outcomes.
+use crate::value::Text;
+use serde_json::Number;
+use std::fmt;
+
+pub const MAX_QUESTIONS: usize = 1_000;
+pub const MAX_TEXT_BYTES: usize = 1 << 20;
+pub const MAX_NAME_BYTES: usize = 256;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum Error {
+    #[error("invalid Decision evidence or question set")]
+    Request,
+    #[error("Decision answers do not match the request")]
+    Association,
+    #[error("invalid Decision probability")]
+    Probability,
+}
+
+/// The two text carriers currently implemented; history shorthand has user authority.
+#[derive(Clone, Eq, PartialEq)]
+pub enum Evidence {
+    StateText(Text),
+    HistoryUserText(Text),
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct Predicate {
+    name: Option<Text>,
+    instructions: Text,
+}
+impl Predicate {
+    pub fn new(name: Option<String>, instructions: String) -> Result<Self, Error> {
+        let name = name
+            .map(|name| Text::allowing_empty(name, "question name", MAX_NAME_BYTES))
+            .transpose()
+            .map_err(|_| Error::Request)?;
+        let instructions = Text::allowing_empty(instructions, "instructions", MAX_TEXT_BYTES)
+            .map_err(|_| Error::Request)?;
+        Ok(Self { name, instructions })
+    }
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_ref().map(Text::as_str)
+    }
+    pub fn instructions(&self) -> &str {
+        self.instructions.as_str()
+    }
+}
+
+pub struct Request {
+    evidence: Evidence,
+    questions: Vec<Predicate>,
+}
+impl Request {
+    pub fn new(evidence: Evidence, questions: Vec<Predicate>) -> Result<Self, Error> {
+        let (Evidence::StateText(text) | Evidence::HistoryUserText(text)) = &evidence;
+        if questions.is_empty()
+            || questions.len() > MAX_QUESTIONS
+            || text.as_str().len() > MAX_TEXT_BYTES
+        {
+            return Err(Error::Request);
+        }
+        Ok(Self {
+            evidence,
+            questions,
+        })
+    }
+    pub fn evidence(&self) -> &Evidence {
+        &self.evidence
+    }
+    pub fn questions(&self) -> &[Predicate] {
+        &self.questions
+    }
+}
+impl fmt::Debug for Request {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DecisionRequest")
+            .field("question_count", &self.questions.len())
+            .finish_non_exhaustive()
+    }
+}
+
+/// Exact decimal in [0, 1]. Check the decimal order before any floating conversion.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Probability(Number);
+impl Probability {
+    pub fn new(value: Number) -> Result<Self, Error> {
+        let spelling = value.as_str();
+        if spelling.len() > 128 {
+            return Err(Error::Probability);
+        }
+        let (mantissa, exponent) = match spelling.split_once(['e', 'E']) {
+            Some((mantissa, exponent)) => (
+                mantissa,
+                i64::from(exponent.parse::<i32>().map_err(|_| Error::Probability)?),
+            ),
+            None => (spelling, 0),
+        };
+        let magnitude = mantissa.strip_prefix('-').unwrap_or(mantissa);
+        let whole = magnitude
+            .split_once('.')
+            .map_or(magnitude, |(whole, _)| whole);
+        let mut digits = magnitude.bytes().filter(|&byte| byte != b'.').peekable();
+        let mut leading_zeroes = 0;
+        while digits.next_if_eq(&b'0').is_some() {
+            leading_zeroes += 1;
+        }
+        if let Some(first) = digits.next() {
+            let order = whole.len() as i64 - leading_zeroes as i64 + exponent;
+            if mantissa.starts_with('-')
+                || order > 1
+                || (order == 1 && (first != b'1' || digits.any(|digit| digit != b'0')))
+            {
+                return Err(Error::Probability);
+            }
+        }
+        Ok(Self(value))
+    }
+    pub fn as_number(&self) -> &Number {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Outcome {
+    Answered(Probability),
+    Refused,
+}
+
+/// Answers in source question order, validated against the request cardinality.
+pub struct AnswerSet(Vec<Outcome>);
+impl AnswerSet {
+    pub fn for_request(request: &Request, answers: Vec<Outcome>) -> Result<Self, Error> {
+        if answers.len() != request.questions.len() {
+            return Err(Error::Association);
+        }
+        Ok(Self(answers))
+    }
+    pub fn outcomes(&self) -> &[Outcome] {
+        &self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Usage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub total_tokens: Option<u64>,
+    pub cache_read_tokens: Option<u64>,
+    pub cache_write_tokens: Option<u64>,
+    pub reasoning_tokens: Option<u64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exact_probability_does_not_round_out_of_range_decimals_into_bounds() {
+        for (number, valid) in [
+            ("0", true),
+            ("-0.0", true),
+            ("0.00001", true),
+            ("1.0000000000000000000", true),
+            ("1.0000000000000000001", false),
+            ("-1e-999", false),
+            ("100e-2", true),
+            ("100.001e-2", false),
+            ("0.01e2", true),
+            ("0.011e2", false),
+            ("2", false),
+        ] {
+            let value = Probability::new(number.parse().unwrap());
+            assert_eq!(value.is_ok(), valid, "{number}");
+        }
+    }
+}
