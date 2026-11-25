@@ -1,7 +1,12 @@
 use super::*;
 
-fn predicate(name: Option<&str>, instructions: &str) -> Predicate {
-    Predicate::new(name.map(str::to_owned), instructions.to_owned()).unwrap()
+fn predicate(name: Option<&str>, instructions: &str) -> Question {
+    Question::new(
+        name.map(str::to_owned),
+        Some(Text::new(instructions, "test instructions", 128).unwrap()),
+        QuestionKind::Predicate,
+    )
+    .unwrap()
 }
 
 #[test]
@@ -157,4 +162,118 @@ fn system_one_projection_restores_order_from_a_shuffled_native_map() {
             .complete(wrong_key.as_bytes(), "public")
             .is_err()
     );
+}
+
+#[test]
+fn openai_choice_binds_full_distribution_by_typed_value() {
+    let request = br#"{
+        "model":"luna","input":"evidence","questions":[{"type":"choice","name":"action",
+          "instructions":"Classify","choices":[{"value":true},{"value":"true","description":"Flag"},{"value":false}]}]}"#;
+    let prepared = || {
+        let source = Native::OpenAi.decode_request(request).unwrap();
+        Native::OpenAi.prepare(source.task, "upstream").unwrap()
+    };
+    let actual = prepared().body;
+    assert_eq!(
+        actual["questions"][0]["choices"],
+        json!([{"value":true},{"value":"true","description":"Flag"},{"value":false}])
+    );
+    let wire = json!({
+        "model":"upstream","answers":[{"type":"choice","name":"action","choice":"true",
+            "confidence":0.37,"probabilities":[
+                {"value":false,"probability":0.15},
+                {"value":"true","probability":0.75},
+                {"value":true,"probability":0.1}]}],
+        "usage":{"input_tokens":5,"output_tokens":0,"total_tokens":5,
+            "input_tokens_details":{"cached_tokens":0,"cache_write_tokens":0},
+            "output_tokens_details":{"reasoning_tokens":0}}
+    });
+    let output = prepared()
+        .expectation
+        .complete(wire.to_string().as_bytes(), "luna")
+        .unwrap();
+    assert_eq!(output["answers"][0]["choice"], "true");
+    assert_eq!(output["answers"][0]["confidence"], json!(0.37));
+    assert_eq!(
+        output["answers"][0]["probabilities"],
+        json!([
+            {"value":true,"probability":0.1},{"value":"true","probability":0.75},
+            {"value":false,"probability":0.15}
+        ])
+    );
+    for (pointer, invalid) in [
+        ("/answers/0/choice", json!(true)), // cannot be a winner even under rounding
+        ("/answers/0/probabilities/2/value", json!("true")), // duplicate typed value
+        ("/answers/0/probabilities/2/probability", json!(0.2)), // unusable mass
+    ] {
+        let mut wrong = wire.clone();
+        *wrong.pointer_mut(pointer).unwrap() = invalid;
+        assert!(
+            prepared()
+                .expectation
+                .complete(wrong.to_string().as_bytes(), "luna")
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn system_one_score_checks_rounded_weighted_mass_and_rubric_without_repair() {
+    let labels: Vec<_> = (0..10).map(|i| format!("rating {i}")).collect();
+    let input = json!({"model":"jev","state":"evidence","questions":{
+        "severity":{"type":"score","criteria":labels}
+    }});
+    let prepared = || {
+        let source = Native::SystemOne
+            .decode_request(input.to_string().as_bytes())
+            .unwrap();
+        Native::SystemOne.prepare(source.task, "upstream").unwrap()
+    };
+    assert_eq!(
+        prepared().body["questions"]["severity"],
+        input["questions"]["severity"]
+    );
+    let probabilities = (0..10)
+        .rev()
+        .map(|i| (i.to_string(), json!(0.1)))
+        .collect::<Map<_, _>>();
+    let legend = labels
+        .iter()
+        .enumerate()
+        .rev()
+        .map(|(i, label)| (i.to_string(), json!(label)))
+        .collect::<Map<_, _>>();
+    let wire = json!({"model":"upstream","answers":{"severity":{
+        "type":"score","score":4.55,"confidence":0.47,
+        "legend":legend,"probabilities":probabilities
+    }},"usage":{"input_tokens":8,"output_tokens":0}});
+
+    let output = prepared()
+        .expectation
+        .complete(wire.to_string().as_bytes(), "jev")
+        .unwrap();
+    let answer = &output["answers"]["severity"];
+    assert_eq!(answer["score"], json!(4.55)); // rounded report, not recomputed 4.5
+    assert_eq!(answer["confidence"], json!(0.47));
+    assert!(
+        answer["probabilities"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .eq((0..10).map(|i| i.to_string()))
+    );
+    for (pointer, invalid) in [
+        ("/answers/severity/score", json!(5.0)),
+        ("/answers/severity/legend/9", json!("another rubric")),
+    ] {
+        let mut wrong = wire.clone();
+        *wrong.pointer_mut(pointer).unwrap() = invalid;
+        assert!(
+            prepared()
+                .expectation
+                .complete(wrong.to_string().as_bytes(), "jev")
+                .is_err()
+        );
+    }
 }

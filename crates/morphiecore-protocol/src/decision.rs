@@ -1,15 +1,17 @@
-//! Native text-predicate profiles. A prepared target owns return-path association.
+//! Native Decision profiles. A prepared target owns return-path association.
 use crate::{
     CodecError,
     semantic::{
         task::decision::{
-            AnswerSet, Evidence, MAX_TEXT_BYTES, Outcome, Predicate, Probability, Request, Usage,
+            Answer, AnswerSet, ChoiceOption, ChoiceValue, Confidence, Evidence, MAX_TEXT_BYTES,
+            Outcome, Probability, Question, QuestionKind, Request, ScoreLevel, Usage,
         },
         value::{JsonLimits, Text, parse_json},
     },
 };
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Number, Value, json};
 
+mod distribution;
 mod openai;
 mod system_one;
 
@@ -119,11 +121,23 @@ fn text(value: Option<&Value>) -> Result<Text, CodecError> {
         .map_err(|_| CodecError::Limit)
 }
 
-fn probability(value: &Value) -> Result<Outcome, CodecError> {
+fn optional_text(value: Option<&Value>) -> Result<Option<Text>, CodecError> {
+    value
+        .filter(|v| !v.is_null())
+        .map(|v| text(Some(v)))
+        .transpose()
+}
+
+fn array(value: &Value) -> Result<&[Value], CodecError> {
+    value
+        .as_array()
+        .map(Vec::as_slice)
+        .ok_or_else(CodecError::invalid)
+}
+
+fn probability(value: &Value) -> Result<Probability, CodecError> {
     let value = value.as_number().ok_or_else(CodecError::invalid)?.clone();
-    Ok(Outcome::Answered(
-        Probability::new(value).map_err(|_| CodecError::invalid())?,
-    ))
+    Probability::new(value).map_err(|_| CodecError::invalid())
 }
 
 fn count(value: &Value) -> Result<u64, CodecError> {
@@ -132,6 +146,30 @@ fn count(value: &Value) -> Result<u64, CodecError> {
 
 fn answers(request: &Request, outcomes: Vec<Outcome>) -> Result<AnswerSet, CodecError> {
     AnswerSet::for_request(request, outcomes).map_err(|_| CodecError::invalid())
+}
+
+/// Assemble the bijection in requested slot order, failing on any missing,
+/// repeated or unknown option/level regardless of the native map/array order.
+fn ordered_probabilities(
+    n: usize,
+    reports: impl IntoIterator<Item = Result<(usize, Probability), CodecError>>,
+) -> Result<Vec<Probability>, CodecError> {
+    let mut slots = vec![None; n];
+    for report in reports {
+        let (index, probability) = report?;
+        if slots
+            .get_mut(index)
+            .ok_or_else(CodecError::invalid)?
+            .replace(probability)
+            .is_some()
+        {
+            return Err(CodecError::invalid());
+        }
+    }
+    slots
+        .into_iter()
+        .collect::<Option<_>>()
+        .ok_or_else(CodecError::invalid)
 }
 
 #[cfg(test)]

@@ -1,13 +1,92 @@
-//! OpenAI Decisions ordered Predicate wire profile.
+//! OpenAI Decisions ordered wire profile.
 use super::*;
 
 const MAX_QUESTIONS: usize = 400;
+const PRECISION: distribution::Precision = distribution::Precision {
+    probability_half_step: 0.005,
+    score_half_step: 0.005,
+};
 
 fn name(value: Option<&Value>) -> Result<Option<&str>, CodecError> {
     match value {
         None | Some(Value::Null) => Ok(None),
         Some(value) => Ok(Some(string(Some(value))?)),
     }
+}
+
+fn choice_wire(value: &ChoiceValue) -> Value {
+    match value {
+        ChoiceValue::String(s) => json!(s.as_str()),
+        ChoiceValue::Bool(b) => json!(b),
+    }
+}
+
+fn choice_index(options: &[ChoiceOption], wire: &Value) -> Result<usize, CodecError> {
+    options
+        .iter()
+        .position(|option| match &option.value {
+            ChoiceValue::String(s) => wire.as_str() == Some(s.as_str()),
+            ChoiceValue::Bool(b) => wire.as_bool() == Some(*b),
+        })
+        .ok_or_else(CodecError::invalid)
+}
+
+fn decode_question(question: &Value) -> Result<Question, CodecError> {
+    let question = object(question)?;
+    let kind = match string(question.get("type"))? {
+        "predicate" => QuestionKind::Predicate,
+        "choice" => {
+            let options = array(question.get("choices").ok_or_else(CodecError::invalid)?)?;
+            if !(2..=255).contains(&options.len()) {
+                return Err(CodecError::invalid());
+            }
+            QuestionKind::SingleChoice(
+                options
+                    .iter()
+                    .map(|option| {
+                        let option = object(option)?;
+                        let value = match option.get("value") {
+                            Some(Value::Bool(b)) => ChoiceValue::Bool(*b),
+                            v => ChoiceValue::String(text(v)?),
+                        };
+                        let criterion = option
+                            .get("description")
+                            .map(|v| text(Some(v)))
+                            .transpose()?;
+                        Ok(ChoiceOption { value, criterion })
+                    })
+                    .collect::<Result<_, CodecError>>()?,
+            )
+        }
+        "score" => {
+            let levels = array(question.get("levels").ok_or_else(CodecError::invalid)?)?;
+            if !(2..=10).contains(&levels.len()) {
+                return Err(CodecError::invalid());
+            }
+            QuestionKind::OrdinalScore(
+                levels
+                    .iter()
+                    .map(|level| {
+                        let level = object(level)?;
+                        Ok(ScoreLevel {
+                            label: Some(text(level.get("label"))?),
+                            criterion: level
+                                .get("description")
+                                .map(|v| text(Some(v)))
+                                .transpose()?,
+                        })
+                    })
+                    .collect::<Result<_, CodecError>>()?,
+            )
+        }
+        _ => return Err(CodecError::invalid()),
+    };
+    Question::new(
+        name(question.get("name"))?.map(str::to_owned),
+        Some(text(question.get("instructions"))?),
+        kind,
+    )
+    .map_err(|_| CodecError::invalid())
 }
 
 pub(super) fn decode_request(root: &Map<String, Value>) -> Result<Request, CodecError> {
@@ -24,28 +103,54 @@ pub(super) fn decode_request(root: &Map<String, Value>) -> Result<Request, Codec
         return Err(CodecError::invalid());
     }
     let input = text(root.get("input"))?;
-    let questions = root
-        .get("questions")
-        .and_then(Value::as_array)
-        .ok_or_else(CodecError::invalid)?;
+    let questions = array(root.get("questions").ok_or_else(CodecError::invalid)?)?;
     if !(1..=MAX_QUESTIONS).contains(&questions.len()) {
         return Err(CodecError::Limit);
     }
-    let predicates = questions
+    let questions = questions
         .iter()
-        .map(|question| {
-            let question = object(question)?;
-            if string(question.get("type"))? != "predicate" {
-                return Err(CodecError::invalid());
-            }
-            Predicate::new(
-                name(question.get("name"))?.map(str::to_owned),
-                string(question.get("instructions"))?.to_owned(),
-            )
-            .map_err(|_| CodecError::invalid())
-        })
+        .map(decode_question)
         .collect::<Result<_, _>>()?;
-    Request::new(Evidence::HistoryUserText(input), predicates).map_err(|_| CodecError::invalid())
+    Request::new(Evidence::HistoryUserText(input), questions).map_err(|_| CodecError::invalid())
+}
+
+fn describe(mut value: Value, description: Option<&Text>) -> Value {
+    if let Some(description) = description {
+        value["description"] = json!(description.as_str());
+    }
+    value
+}
+
+fn encode_question(question: &Question) -> Result<Value, CodecError> {
+    let mut value = match question.kind() {
+        QuestionKind::Predicate => json!({"type":"predicate"}),
+        QuestionKind::SingleChoice(options) if (2..=255).contains(&options.len()) => {
+            let choices: Vec<_> = options
+                .iter()
+                .map(|o| describe(json!({"value":choice_wire(&o.value)}), o.criterion.as_ref()))
+                .collect();
+            json!({"type":"choice", "choices":choices})
+        }
+        QuestionKind::OrdinalScore(levels) if (2..=10).contains(&levels.len()) => {
+            let levels = levels
+                .iter()
+                .map(|l| {
+                    let label = l.label.as_ref().ok_or_else(CodecError::invalid)?;
+                    Ok(describe(
+                        json!({"label":label.as_str()}),
+                        l.criterion.as_ref(),
+                    ))
+                })
+                .collect::<Result<Vec<_>, CodecError>>()?;
+            json!({"type":"score", "levels":levels})
+        }
+        _ => return Err(CodecError::invalid()),
+    };
+    value["instructions"] = json!(question.instructions().ok_or_else(CodecError::invalid)?);
+    if let Some(name) = question.name() {
+        value["name"] = json!(name);
+    }
+    Ok(value)
 }
 
 pub(super) fn encode_request(request: &Request, model: &str) -> Result<Value, CodecError> {
@@ -55,18 +160,111 @@ pub(super) fn encode_request(request: &Request, model: &str) -> Result<Value, Co
     if request.questions().len() > MAX_QUESTIONS {
         return Err(CodecError::Limit);
     }
-    let questions: Vec<_> = request
+    let questions = request
         .questions()
         .iter()
-        .map(|question| {
-            let mut value = json!({"type":"predicate", "instructions":question.instructions()});
-            if let Some(name) = question.name() {
-                value["name"] = json!(name);
-            }
-            value
-        })
-        .collect();
+        .map(encode_question)
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(json!({"model":model,"input":input.as_str(),"questions":questions}))
+}
+
+fn decode_answer(question: &Question, value: &Value) -> Result<Outcome, CodecError> {
+    let map = object(value)?;
+    let reported_name = map.get("name").ok_or_else(CodecError::invalid)?;
+    if name(Some(reported_name))? != question.name() {
+        return Err(CodecError::invalid());
+    }
+    let parsed = match (question.kind(), string(map.get("type"))?) {
+        (_, "refusal") => return Ok(Outcome::Refused),
+        (QuestionKind::Predicate, "predicate") => {
+            Answer::Predicate(probability(&value["probability"])?)
+        }
+        (QuestionKind::SingleChoice(options), "choice") => {
+            let selected = choice_index(options, &value["choice"])?;
+            let probabilities = ordered_probabilities(
+                options.len(),
+                array(&value["probabilities"])?.iter().map(|p| {
+                    Ok((
+                        choice_index(options, &p["value"])?,
+                        probability(&p["probability"])?,
+                    ))
+                }),
+            )?;
+            PRECISION.choice(&probabilities, selected)?;
+            Answer::SingleChoice {
+                selected,
+                probabilities,
+                confidence: Confidence::Unspecified(probability(&value["confidence"])?),
+            }
+        }
+        (QuestionKind::OrdinalScore(levels), "score") => {
+            let score = value["score"]
+                .as_number()
+                .ok_or_else(CodecError::invalid)?
+                .clone();
+            let probabilities = ordered_probabilities(
+                levels.len(),
+                array(&value["probabilities"])?.iter().map(|p| {
+                    let index =
+                        usize::try_from(count(&p["value"])?).map_err(|_| CodecError::invalid())?;
+                    let label = levels
+                        .get(index)
+                        .and_then(|l| l.label.as_ref())
+                        .ok_or_else(CodecError::invalid)?;
+                    if p["label"].as_str() != Some(label.as_str()) {
+                        return Err(CodecError::invalid());
+                    }
+                    Ok((index, probability(&p["probability"])?))
+                }),
+            )?;
+            PRECISION.score(&probabilities, &score)?;
+            Answer::OrdinalScore {
+                score,
+                probabilities,
+                confidence: Confidence::Unspecified(probability(&value["confidence"])?),
+            }
+        }
+        _ => return Err(CodecError::invalid()),
+    };
+    Ok(Outcome::Answered(parsed))
+}
+
+fn encode_answer(question: &Question, outcome: &Outcome) -> Result<Value, CodecError> {
+    let name = question.name();
+    Ok(match (question.kind(), outcome) {
+        (_, Outcome::Refused) => json!({"type":"refusal", "name":name}),
+        (QuestionKind::Predicate, Outcome::Answered(Answer::Predicate(p))) => {
+            json!({"type":"predicate", "name":name, "probability":p.as_number()})
+        }
+        (
+            QuestionKind::SingleChoice(options),
+            Outcome::Answered(Answer::SingleChoice {
+                selected,
+                probabilities,
+                confidence: Confidence::Unspecified(confidence),
+            }),
+        ) => {
+            let probabilities: Vec<_> = options.iter().zip(probabilities).map(|(option, p)| {
+                json!({"value":choice_wire(&option.value), "probability":p.as_number()})
+            }).collect();
+            json!({"type":"choice", "name":name, "choice":choice_wire(&options[*selected].value),
+                   "probabilities":probabilities, "confidence":confidence.as_number()})
+        }
+        (
+            QuestionKind::OrdinalScore(levels),
+            Outcome::Answered(Answer::OrdinalScore {
+                score,
+                probabilities,
+                confidence: Confidence::Unspecified(confidence),
+            }),
+        ) => {
+            let probabilities: Vec<_> = levels.iter().zip(probabilities).enumerate().map(|(index, (level, p))| {
+                json!({"value":index, "label":level.label.as_ref().map(Text::as_str), "probability":p.as_number()})
+            }).collect();
+            json!({"type":"score", "name":name, "score":score, "probabilities":probabilities, "confidence":confidence.as_number()})
+        }
+        _ => return Err(CodecError::invalid()),
+    })
 }
 
 pub(super) fn complete(
@@ -74,30 +272,15 @@ pub(super) fn complete(
     root: &Map<String, Value>,
     public_model: &str,
 ) -> Result<Value, CodecError> {
-    let reports = root
-        .get("answers")
-        .and_then(Value::as_array)
-        .ok_or_else(CodecError::invalid)?;
+    let reports = array(root.get("answers").ok_or_else(CodecError::invalid)?)?;
     if request.questions().len() != reports.len() {
         return Err(CodecError::invalid());
     }
-    let outcomes = reports
+    let outcomes = request
+        .questions()
         .iter()
-        .zip(request.questions())
-        .map(|(native, question)| {
-            let native = object(native)?;
-            let reported_name = native.get("name").ok_or_else(CodecError::invalid)?;
-            if name(Some(reported_name))? != question.name() {
-                return Err(CodecError::invalid());
-            }
-            match string(native.get("type"))? {
-                "predicate" => {
-                    probability(native.get("probability").ok_or_else(CodecError::invalid)?)
-                }
-                "refusal" => Ok(Outcome::Refused),
-                _ => Err(CodecError::invalid()),
-            }
-        })
+        .zip(reports)
+        .map(|(q, value)| decode_answer(q, value))
         .collect::<Result<_, _>>()?;
     let answers = answers(request, outcomes)?;
     let usage = root.get("usage").ok_or_else(CodecError::invalid)?;
@@ -109,17 +292,12 @@ pub(super) fn complete(
         cache_write_tokens: Some(count(&usage["input_tokens_details"]["cache_write_tokens"])?),
         reasoning_tokens: Some(count(&usage["output_tokens_details"]["reasoning_tokens"])?),
     };
-    let answers: Vec<_> = request
+    let answers = request
         .questions()
         .iter()
         .zip(answers.outcomes())
-        .map(|(question, outcome)| match outcome {
-            Outcome::Answered(probability) => json!({
-                "type":"predicate", "name":question.name(), "probability":probability.as_number(),
-            }),
-            Outcome::Refused => json!({"type":"refusal", "name":question.name()}),
-        })
-        .collect();
+        .map(|(q, value)| encode_answer(q, value))
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(json!({
         "model":public_model, "answers":answers, "usage":{
             "input_tokens":source.input_tokens, "output_tokens":source.output_tokens,

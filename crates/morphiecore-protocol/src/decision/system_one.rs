@@ -1,5 +1,62 @@
-//! TypeSafe System One keyed Noul wire profile.
+//! TypeSafe System One keyed wire profile.
 use super::*;
+
+const PRECISION: distribution::Precision = distribution::Precision {
+    probability_half_step: 0.005,
+    score_half_step: 0.005,
+};
+
+fn decode_question(name: &str, question: &Value) -> Result<Question, CodecError> {
+    let question = object(question)?;
+    let criteria = question.get("criteria");
+    let kind = match string(question.get("type"))? {
+        "noul" if criteria.is_none_or(Value::is_null) => QuestionKind::Predicate,
+        "choice" => {
+            let entries = object(criteria.ok_or_else(CodecError::invalid)?)?;
+            if !(1..=255).contains(&entries.len()) {
+                return Err(CodecError::invalid());
+            }
+            QuestionKind::SingleChoice(
+                entries
+                    .iter()
+                    .map(|(key, v)| {
+                        Ok(ChoiceOption {
+                            value: ChoiceValue::String(
+                                Text::allowing_empty(key, "choice key", MAX_TEXT_BYTES)
+                                    .map_err(|_| CodecError::Limit)?,
+                            ),
+                            criterion: optional_text(Some(v))?,
+                        })
+                    })
+                    .collect::<Result<_, CodecError>>()?,
+            )
+        }
+        "score" => {
+            let entries = array(criteria.ok_or_else(CodecError::invalid)?)?;
+            if !(1..=10).contains(&entries.len()) {
+                return Err(CodecError::invalid());
+            }
+            QuestionKind::OrdinalScore(
+                entries
+                    .iter()
+                    .map(|v| {
+                        Ok(ScoreLevel {
+                            label: None,
+                            criterion: Some(text(Some(v))?),
+                        })
+                    })
+                    .collect::<Result<_, CodecError>>()?,
+            )
+        }
+        _ => return Err(CodecError::invalid()),
+    };
+    Question::new(
+        Some(name.to_owned()),
+        optional_text(question.get("instructions"))?,
+        kind,
+    )
+    .map_err(|_| CodecError::invalid())
+}
 
 pub(super) fn decode_request(root: &Map<String, Value>) -> Result<Request, CodecError> {
     if root.get("assets").is_some_and(|value| !value.is_null()) {
@@ -10,25 +67,66 @@ pub(super) fn decode_request(root: &Map<String, Value>) -> Result<Request, Codec
     if questions.len() > crate::semantic::task::decision::MAX_QUESTIONS {
         return Err(CodecError::Limit);
     }
-    let predicates = questions
+    let questions = questions
         .iter()
-        .map(|(name, question)| {
-            let question = object(question)?;
-            if string(question.get("type"))? != "noul"
-                || question
-                    .get("criteria")
-                    .is_some_and(|value| !value.is_null())
-            {
-                return Err(CodecError::invalid());
-            }
-            Predicate::new(
-                Some(name.clone()),
-                string(question.get("instructions"))?.to_owned(),
-            )
-            .map_err(|_| CodecError::invalid())
-        })
+        .map(|(name, q)| decode_question(name, q))
         .collect::<Result<_, _>>()?;
-    Request::new(Evidence::StateText(state), predicates).map_err(|_| CodecError::invalid())
+    Request::new(Evidence::StateText(state), questions).map_err(|_| CodecError::invalid())
+}
+
+fn choice_key(option: &ChoiceOption) -> Result<&str, CodecError> {
+    let ChoiceValue::String(value) = &option.value else {
+        return Err(CodecError::invalid());
+    };
+    Ok(value.as_str())
+}
+
+fn choice_index(options: &[ChoiceOption], key: &str) -> Result<usize, CodecError> {
+    options
+        .iter()
+        .position(|option| choice_key(option).is_ok_and(|value| value == key))
+        .ok_or_else(CodecError::invalid)
+}
+
+fn criterion(level: &ScoreLevel) -> Result<&str, CodecError> {
+    if level.label.is_some() {
+        return Err(CodecError::invalid());
+    }
+    level
+        .criterion
+        .as_ref()
+        .map(Text::as_str)
+        .ok_or_else(CodecError::invalid)
+}
+
+fn encode_question(question: &Question) -> Result<Value, CodecError> {
+    let mut value = match question.kind() {
+        QuestionKind::Predicate => json!({"type":"noul"}),
+        QuestionKind::SingleChoice(options) => {
+            let criteria = options
+                .iter()
+                .map(|o| {
+                    Ok((
+                        choice_key(o)?.to_owned(),
+                        json!(o.criterion.as_ref().map(Text::as_str)),
+                    ))
+                })
+                .collect::<Result<Map<String, Value>, CodecError>>()?;
+            json!({"type":"choice", "criteria":criteria})
+        }
+        QuestionKind::OrdinalScore(levels) if levels.len() <= 10 => {
+            let criteria = levels
+                .iter()
+                .map(criterion)
+                .collect::<Result<Vec<_>, _>>()?;
+            json!({"type":"score", "criteria":criteria})
+        }
+        _ => return Err(CodecError::invalid()),
+    };
+    if let Some(instructions) = question.instructions() {
+        value["instructions"] = json!(instructions);
+    }
+    Ok(value)
 }
 
 pub(super) fn encode_request(request: &Request, model: &str) -> Result<Value, CodecError> {
@@ -36,19 +134,125 @@ pub(super) fn encode_request(request: &Request, model: &str) -> Result<Value, Co
         return Err(CodecError::invalid());
     };
     let mut questions = Map::new();
-    for predicate in request.questions() {
-        let name = predicate.name().ok_or_else(CodecError::invalid)?;
+    for question in request.questions() {
+        let key = question.name().ok_or_else(CodecError::invalid)?;
         if questions
-            .insert(
-                name.to_owned(),
-                json!({"type":"noul", "instructions":predicate.instructions()}),
-            )
+            .insert(key.to_owned(), encode_question(question)?)
             .is_some()
         {
             return Err(CodecError::invalid());
         }
     }
     Ok(json!({"model":model,"state":state.as_str(),"questions":questions}))
+}
+
+fn decode_answer(question: &Question, value: &Value) -> Result<Outcome, CodecError> {
+    let kind = value["type"].as_str().ok_or_else(CodecError::invalid)?;
+    let answer = match (question.kind(), kind) {
+        (QuestionKind::Predicate, "noul") => Answer::Predicate(probability(&value["noul"])?),
+        (QuestionKind::SingleChoice(options), "choice") => {
+            let selected = choice_index(options, string(value.get("choice"))?)?;
+            let probabilities = ordered_probabilities(
+                options.len(),
+                object(&value["probabilities"])?
+                    .iter()
+                    .map(|(key, p)| Ok((choice_index(options, key)?, probability(p)?))),
+            )?;
+            PRECISION.choice(&probabilities, selected)?;
+            let confidence = probability(&value["confidence"])?;
+            Answer::SingleChoice {
+                selected,
+                probabilities,
+                confidence: if options.len() == 1 {
+                    Confidence::Unspecified(confidence)
+                } else {
+                    Confidence::UniformAdjustedMaximum(confidence)
+                },
+            }
+        }
+        (QuestionKind::OrdinalScore(levels), "score") => {
+            let score = value["score"]
+                .as_number()
+                .ok_or_else(CodecError::invalid)?
+                .clone();
+            let legend = object(&value["legend"])?;
+            if legend.len() != levels.len() {
+                return Err(CodecError::invalid());
+            }
+            let probabilities = ordered_probabilities(
+                levels.len(),
+                object(&value["probabilities"])?.iter().map(|(key, p)| {
+                    let index = key.parse::<usize>().map_err(|_| CodecError::invalid())?;
+                    let level = levels.get(index).ok_or_else(CodecError::invalid)?;
+                    if index.to_string() != *key
+                        || legend.get(key).and_then(Value::as_str) != Some(criterion(level)?)
+                    {
+                        return Err(CodecError::invalid());
+                    }
+                    Ok((index, probability(p)?))
+                }),
+            )?;
+            PRECISION.score(&probabilities, &score)?;
+            let confidence = probability(&value["confidence"])?;
+            Answer::OrdinalScore {
+                score,
+                probabilities,
+                confidence: if levels.len() == 1 {
+                    Confidence::Unspecified(confidence)
+                } else {
+                    Confidence::CenteredOrdinalSpread(confidence)
+                },
+            }
+        }
+        _ => return Err(CodecError::invalid()),
+    };
+    Ok(Outcome::Answered(answer))
+}
+
+fn encode_answer(question: &Question, outcome: &Outcome) -> Result<Value, CodecError> {
+    Ok(match (question.kind(), outcome) {
+        (QuestionKind::Predicate, Outcome::Answered(Answer::Predicate(p))) => {
+            json!({"type":"noul", "noul":p.as_number()})
+        }
+        (
+            QuestionKind::SingleChoice(options),
+            Outcome::Answered(Answer::SingleChoice {
+                selected,
+                probabilities,
+                confidence,
+            }),
+        ) => {
+            let probabilities = options
+                .iter()
+                .zip(probabilities)
+                .map(|(o, p)| Ok((choice_key(o)?.to_owned(), json!(p.as_number()))))
+                .collect::<Result<Map<String, Value>, CodecError>>()?;
+            json!({"type":"choice", "choice":choice_key(&options[*selected])?,
+                   "probabilities":probabilities, "confidence":confidence.reported().as_number()})
+        }
+        (
+            QuestionKind::OrdinalScore(levels),
+            Outcome::Answered(Answer::OrdinalScore {
+                score,
+                probabilities,
+                confidence,
+            }),
+        ) => {
+            let legend = levels
+                .iter()
+                .enumerate()
+                .map(|(i, level)| Ok((i.to_string(), json!(criterion(level)?))))
+                .collect::<Result<Map<String, Value>, CodecError>>()?;
+            let probabilities = probabilities
+                .iter()
+                .enumerate()
+                .map(|(i, p)| (i.to_string(), json!(p.as_number())))
+                .collect::<Map<String, Value>>();
+            json!({"type":"score", "score":score, "legend":legend,
+                   "probabilities":probabilities, "confidence":confidence.reported().as_number()})
+        }
+        _ => return Err(CodecError::invalid()),
+    })
 }
 
 pub(super) fn complete(
@@ -63,13 +267,9 @@ pub(super) fn complete(
     let outcomes = request
         .questions()
         .iter()
-        .map(|question| {
-            let key = question.name().ok_or_else(CodecError::invalid)?;
-            let native = reports.get(key).ok_or_else(CodecError::invalid)?;
-            if native["type"] != "noul" {
-                return Err(CodecError::invalid());
-            }
-            probability(&native["noul"])
+        .map(|q| {
+            let key = q.name().ok_or_else(CodecError::invalid)?;
+            decode_answer(q, reports.get(key).ok_or_else(CodecError::invalid)?)
         })
         .collect::<Result<_, _>>()?;
     let answers = answers(request, outcomes)?;
@@ -86,17 +286,13 @@ pub(super) fn complete(
         .questions()
         .iter()
         .zip(answers.outcomes())
-        .map(|(question, outcome)| {
-            let Outcome::Answered(probability) = outcome else {
-                return Err(CodecError::invalid());
-            };
-            let key = question.name().ok_or_else(CodecError::invalid)?;
+        .map(|(q, value)| {
             Ok((
-                key.to_owned(),
-                json!({"type":"noul", "noul":probability.as_number()}),
+                q.name().ok_or_else(CodecError::invalid)?.to_owned(),
+                encode_answer(q, value)?,
             ))
         })
-        .collect::<Result<Map<String, Value>, _>>()?;
+        .collect::<Result<Map<String, Value>, CodecError>>()?;
     Ok(json!({
         "model":public_model, "answers":delivery, "usage":{
             "input_tokens":source.input_tokens, "output_tokens":source.output_tokens,

@@ -1,11 +1,12 @@
 //! Decision text evidence, ordered questions, and request-bound outcomes.
 use crate::value::Text;
 use serde_json::Number;
-use std::fmt;
+use std::{collections::BTreeSet, fmt};
 
 pub const MAX_QUESTIONS: usize = 1_000;
 pub const MAX_TEXT_BYTES: usize = 1 << 20;
 pub const MAX_NAME_BYTES: usize = 256;
+pub const MAX_LEVELS: usize = 255;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum Error {
@@ -25,34 +26,98 @@ pub enum Evidence {
 }
 
 #[derive(Clone, Eq, PartialEq)]
-pub struct Predicate {
+pub struct Question {
     name: Option<Text>,
-    instructions: Text,
+    instructions: Option<Text>,
+    kind: QuestionKind,
 }
-impl Predicate {
-    pub fn new(name: Option<String>, instructions: String) -> Result<Self, Error> {
+impl Question {
+    pub fn new(
+        name: Option<String>,
+        instructions: Option<Text>,
+        kind: QuestionKind,
+    ) -> Result<Self, Error> {
         let name = name
             .map(|name| Text::allowing_empty(name, "question name", MAX_NAME_BYTES))
             .transpose()
             .map_err(|_| Error::Request)?;
-        let instructions = Text::allowing_empty(instructions, "instructions", MAX_TEXT_BYTES)
-            .map_err(|_| Error::Request)?;
-        Ok(Self { name, instructions })
+        let within_bound = |text: &Text| text.as_str().len() <= MAX_TEXT_BYTES;
+        if !instructions.as_ref().is_none_or(within_bound) {
+            return Err(Error::Request);
+        }
+        match &kind {
+            QuestionKind::Predicate if instructions.is_none() => return Err(Error::Request),
+            QuestionKind::SingleChoice(options) => {
+                let mut seen = BTreeSet::new();
+                if !(1..=MAX_LEVELS).contains(&options.len()) || options.iter().any(|option| {
+                    !seen.insert(&option.value)
+                        || matches!(&option.value, ChoiceValue::String(value) if !within_bound(value))
+                        || !option.criterion.as_ref().is_none_or(within_bound)
+                }) {
+                    return Err(Error::Request);
+                }
+            }
+            QuestionKind::OrdinalScore(levels) => {
+                if !(1..=MAX_LEVELS).contains(&levels.len())
+                    || levels.iter().any(|level| {
+                        (level.label.is_none() && level.criterion.is_none())
+                            || !level.label.as_ref().is_none_or(within_bound)
+                            || !level.criterion.as_ref().is_none_or(within_bound)
+                    })
+                {
+                    return Err(Error::Request);
+                }
+            }
+            QuestionKind::Predicate => {}
+        }
+        Ok(Self {
+            name,
+            instructions,
+            kind,
+        })
     }
     pub fn name(&self) -> Option<&str> {
         self.name.as_ref().map(Text::as_str)
     }
-    pub fn instructions(&self) -> &str {
-        self.instructions.as_str()
+    pub fn instructions(&self) -> Option<&str> {
+        self.instructions.as_ref().map(Text::as_str)
     }
+    pub fn kind(&self) -> &QuestionKind {
+        &self.kind
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub enum QuestionKind {
+    Predicate,
+    SingleChoice(Vec<ChoiceOption>),
+    OrdinalScore(Vec<ScoreLevel>),
+}
+
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ChoiceValue {
+    String(Text),
+    Bool(bool),
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct ChoiceOption {
+    pub value: ChoiceValue,
+    pub criterion: Option<Text>,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct ScoreLevel {
+    pub label: Option<Text>,
+    pub criterion: Option<Text>,
 }
 
 pub struct Request {
     evidence: Evidence,
-    questions: Vec<Predicate>,
+    questions: Vec<Question>,
 }
 impl Request {
-    pub fn new(evidence: Evidence, questions: Vec<Predicate>) -> Result<Self, Error> {
+    pub fn new(evidence: Evidence, questions: Vec<Question>) -> Result<Self, Error> {
         let (Evidence::StateText(text) | Evidence::HistoryUserText(text)) = &evidence;
         if questions.is_empty()
             || questions.len() > MAX_QUESTIONS
@@ -68,7 +133,7 @@ impl Request {
     pub fn evidence(&self) -> &Evidence {
         &self.evidence
     }
-    pub fn questions(&self) -> &[Predicate] {
+    pub fn questions(&self) -> &[Question] {
         &self.questions
     }
 }
@@ -123,15 +188,68 @@ impl Probability {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Outcome {
-    Answered(Probability),
+    Answered(Answer),
     Refused,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Answer {
+    Predicate(Probability),
+    SingleChoice {
+        selected: usize,
+        probabilities: Vec<Probability>,
+        confidence: Confidence,
+    },
+    OrdinalScore {
+        score: Number,
+        probabilities: Vec<Probability>,
+        confidence: Confidence,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Confidence {
+    Unspecified(Probability),
+    UniformAdjustedMaximum(Probability),
+    CenteredOrdinalSpread(Probability),
+}
+impl Confidence {
+    pub fn reported(&self) -> &Probability {
+        match self {
+            Self::Unspecified(p)
+            | Self::UniformAdjustedMaximum(p)
+            | Self::CenteredOrdinalSpread(p) => p,
+        }
+    }
 }
 
 /// Answers in source question order, validated against the request cardinality.
 pub struct AnswerSet(Vec<Outcome>);
 impl AnswerSet {
     pub fn for_request(request: &Request, answers: Vec<Outcome>) -> Result<Self, Error> {
-        if answers.len() != request.questions.len() {
+        if answers.len() != request.questions.len()
+            || request
+                .questions
+                .iter()
+                .zip(&answers)
+                .any(|(question, outcome)| match (&question.kind, outcome) {
+                    (_, Outcome::Refused)
+                    | (QuestionKind::Predicate, Outcome::Answered(Answer::Predicate(_))) => false,
+                    (
+                        QuestionKind::SingleChoice(options),
+                        Outcome::Answered(Answer::SingleChoice {
+                            selected,
+                            probabilities,
+                            ..
+                        }),
+                    ) => *selected >= options.len() || probabilities.len() != options.len(),
+                    (
+                        QuestionKind::OrdinalScore(levels),
+                        Outcome::Answered(Answer::OrdinalScore { probabilities, .. }),
+                    ) => probabilities.len() != levels.len(),
+                    _ => true,
+                })
+        {
             return Err(Error::Association);
         }
         Ok(Self(answers))
