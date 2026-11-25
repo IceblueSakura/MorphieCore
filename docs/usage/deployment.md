@@ -36,7 +36,7 @@ All three executables (`morphiecore`, `morphiecore-auth`, `morphiecore-upstream`
 
 Ctrl-C shuts down the listener and cancels in-flight upstream work.
 
-For Rust embedding, `Gateway::new` takes a compiled topology and one `TaskEntries` value with separate Generation, Images, Speech, Transcription and Embeddings lists. Empty lists activate nothing. Credentials and limits remain explicit; the embedded constructor does not opt into environment proxies. Each Generation entry names one client protocol (Chat, Responses or Messages); file-configured models expose all three. See [task entries](../../crates/morphiecore-gateway/src/startup/entries.rs) and [binding](../../crates/morphiecore-gateway/src/startup/bind.rs).
+For Rust embedding, `Gateway::new` takes a compiled topology and one `TaskEntries` value with separate Generation, Images, Speech, Transcription, Embeddings and Decision lists. Empty lists activate nothing. Credentials and limits remain explicit; the embedded constructor does not opt into environment proxies. Each Generation entry names one client protocol (Chat, Responses or Messages); file-configured models expose all three. Decision entries exist only for explicit [embedded text qualification](../architecture/index.md#decision-api-direction), not service configuration or discovery. See [task entries](../../crates/morphiecore-gateway/src/startup/entries.rs) and [binding](../../crates/morphiecore-gateway/src/startup/bind.rs).
 
 ### Binary-only SSH releases
 

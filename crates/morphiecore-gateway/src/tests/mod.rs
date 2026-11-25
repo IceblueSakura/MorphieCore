@@ -1,6 +1,7 @@
 //! Synthetic cross-module gateway contracts.
 mod affinity;
 mod conversation;
+mod decision;
 mod embedding;
 mod ingress;
 mod listener;

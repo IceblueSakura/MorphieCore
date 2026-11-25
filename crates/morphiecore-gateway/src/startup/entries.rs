@@ -26,6 +26,11 @@ pub struct TranscriptionEntry {
 pub struct EmbeddingEntry {
     pub model: String,
 }
+/// Opt-in native text profile for embedded qualification.
+#[derive(Clone, Debug)]
+pub struct DecisionEntry {
+    pub model: String,
+}
 /// Explicit task activation. Empty task lists activate nothing.
 #[derive(Clone, Debug, Default)]
 pub struct TaskEntries {
@@ -34,4 +39,5 @@ pub struct TaskEntries {
     pub speech: Vec<SpeechEntry>,
     pub transcriptions: Vec<TranscriptionEntry>,
     pub embeddings: Vec<EmbeddingEntry>,
+    pub decisions: Vec<DecisionEntry>,
 }

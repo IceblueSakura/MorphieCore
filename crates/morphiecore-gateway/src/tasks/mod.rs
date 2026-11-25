@@ -1,4 +1,5 @@
 //! Standalone tasks with one dispatched target per exchange.
+pub(crate) mod decisions;
 pub(crate) mod embeddings;
 mod exchange;
 pub(crate) mod images;

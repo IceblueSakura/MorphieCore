@@ -33,7 +33,10 @@ pub(crate) use morphiecore_semantic as semantic;
 use runtime::{BoundCandidate, BoundEntry, Runtime};
 pub use startup::credentials::Credentials;
 pub use startup::{
-    entries::{EmbeddingEntry, Entry, ImageEntry, SpeechEntry, TaskEntries, TranscriptionEntry},
+    entries::{
+        DecisionEntry, EmbeddingEntry, Entry, ImageEntry, SpeechEntry, TaskEntries,
+        TranscriptionEntry,
+    },
     error::StartupError,
     limits::Limits,
 };

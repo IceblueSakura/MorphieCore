@@ -82,7 +82,33 @@ fn public_routes_match_openapi_in_both_directions() {
 impl Gateway {
     /// Embedding callers own listener security; `serve` enforces loopback itself.
     pub fn router(&self) -> Router {
-        routes()
+        use crate::protocol::decision::Native;
+
+        let mut router = routes();
+        // Native text qualification is explicitly bound by embedded callers only.
+        // The service catalog does not activate these operations yet.
+        for (native, path, method) in [
+            (
+                Native::OpenAi,
+                "/v1/decisions",
+                axum::routing::post(crate::tasks::decisions::openai),
+            ),
+            (
+                Native::SystemOne,
+                "/typesafe/v1/systemone",
+                axum::routing::post(crate::tasks::decisions::system_one),
+            ),
+        ] {
+            if self
+                .state
+                .decisions
+                .values()
+                .any(|entry| entry.route.native == native)
+            {
+                router = router.route(path, method);
+            }
+        }
+        router
             .fallback(|uri: axum::http::Uri| async move {
                 ingress_error(
                     uri.path(),
@@ -230,6 +256,8 @@ pub(crate) async fn serve_connections(
 fn ingress_error(path: &str, error: ApiError) -> Response {
     if path == "/v1/messages" || path.starts_with("/v1/messages/") {
         error.into_messages_response()
+    } else if path == "/typesafe/v1/systemone" {
+        error.into_system_one_response()
     } else {
         error.into_response()
     }

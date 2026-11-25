@@ -4,7 +4,7 @@ use super::{
     ingress::{auth, capabilities, discovery, models},
     routing::{executors, prefix_cache as affinity},
     startup::credentials,
-    tasks::{embeddings, images, speech, transcription},
+    tasks::{decisions, embeddings, images, speech, transcription},
 };
 use crate::{
     adapter::ClientAdapter,
@@ -144,6 +144,7 @@ pub(super) struct Runtime {
     pub(super) speech: BTreeMap<String, Arc<speech::BoundSpeech>>,
     pub(super) transcriptions: BTreeMap<String, Arc<transcription::BoundTranscription>>,
     pub(super) embeddings: BTreeMap<String, Arc<embeddings::BoundEmbedding>>,
+    pub(super) decisions: BTreeMap<String, Arc<decisions::BoundDecision>>,
     pub(super) models: models::ModelView,
     pub(super) text_models: discovery::TextModelView,
     pub(super) capabilities: capabilities::CapabilityView,

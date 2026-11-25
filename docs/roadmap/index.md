@@ -45,7 +45,7 @@ Every pending slice follows: pin official contracts → implement one coherent s
 | **Video** | Async video generation (`grok-imagine-video` / native jobs), polling, and artifact delivery | Selected async job contract, bounded polling, cancellation, and honest completion |
 | **Image & Audio extensions** | Optional OpenAI `mask` on Edit, `partial_images` preview SSE on static targets, native ratio/resolution tiers; Audio Translation, progressive non-SSE binary Speech, and subtitle/diarized ASR | Explicit contract selection and conformance per extension; existing static behavior stays protected |
 
-Decision execution order: first qualify native OpenAI and TypeSafe text predicates through the gateway, then complete the initial text/JSON SDK profile before public discovery and activation. Qualify Gemini native execution and each cross-family direction independently; grouped/truncating targets, media, and sibling primitives do not gate the initial public profile. See the [Decision proposal](../proposals/decisions-api.md#decisions) for the SDK boundary and per-capability oracles.
+Decision execution order: complete the initial text/JSON SDK profile (Choice, Score, bounded TypeSafe zstd, and native discovery) before service activation. Qualify Gemini native execution and each cross-family direction independently; grouped/truncating targets, media, and sibling primitives do not gate the initial public profile. See the [Decision proposal](../proposals/decisions-api.md#decisions) for the SDK boundary and per-capability oracles.
 
 ### Stage 5 backlog
 

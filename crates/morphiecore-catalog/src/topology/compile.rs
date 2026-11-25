@@ -73,6 +73,7 @@ pub struct CompiledTopology {
     pub(super) transcription_routes: BTreeMap<String, super::transcription::TranscriptionRoute>,
     pub(super) transcription_models: BTreeMap<String, Vec<EndpointId>>,
     pub(super) embedding_routes: BTreeMap<String, super::embeddings::EmbeddingRoute>,
+    pub(super) decision_routes: BTreeMap<String, super::decisions::DecisionRoute>,
     pub(super) model_metadata: BTreeMap<String, super::ModelMetadata>,
 }
 
@@ -123,6 +124,7 @@ impl CompiledTopology {
         compiled.transcription_routes = self.transcription_routes;
         compiled.transcription_models = self.transcription_models;
         compiled.embedding_routes = self.embedding_routes;
+        compiled.decision_routes = self.decision_routes;
         compiled.model_metadata = self.model_metadata;
         Ok(compiled)
     }
@@ -302,6 +304,7 @@ fn compile_deployments(
         transcription_routes: BTreeMap::new(),
         transcription_models: BTreeMap::new(),
         embedding_routes: BTreeMap::new(),
+        decision_routes: BTreeMap::new(),
         model_metadata: BTreeMap::new(),
     })
 }

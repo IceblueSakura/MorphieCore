@@ -265,6 +265,7 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
             } else {
                 vec![]
             },
+            ..Default::default()
         },
         credentials,
         std::collections::BTreeMap::from([(

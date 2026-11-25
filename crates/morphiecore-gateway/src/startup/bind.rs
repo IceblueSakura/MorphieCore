@@ -51,6 +51,7 @@ impl Gateway {
             speech,
             transcriptions,
             embeddings,
+            decisions,
         } = entries;
         let credentials = credentials.into();
         let auth = auth::Auth::new(agents)?;
@@ -59,6 +60,7 @@ impl Gateway {
         let transcriptions =
             crate::tasks::transcription::bind(&topology, transcriptions, &credentials)?;
         let embeddings = crate::tasks::embeddings::bind(&topology, embeddings, &credentials)?;
+        let decisions = crate::tasks::decisions::bind(&topology, decisions, &credentials)?;
         limits.validate()?;
         let transport = HttpTransport::with_environment_proxy(proxy, environment)
             .map_err(|_| StartupError::Transport)?;
@@ -68,6 +70,7 @@ impl Gateway {
             && speech.is_empty()
             && transcriptions.is_empty()
             && embeddings.is_empty()
+            && decisions.is_empty()
         {
             return Err(StartupError::Binding);
         }
@@ -116,6 +119,7 @@ impl Gateway {
                 speech,
                 transcriptions,
                 embeddings,
+                decisions,
                 models,
                 text_models,
                 capabilities,

@@ -409,6 +409,27 @@ impl ApiError {
         )
     }
 }
+impl ApiError {
+    pub fn into_system_one_response(self) -> Response {
+        let mut response = self.into_response();
+        let detail = match self.kind {
+            ErrorKind::InvalidRequest => {
+                *response.status_mut() = StatusCode::UNPROCESSABLE_ENTITY;
+                json!([{"loc":["body"],"msg":"Invalid Decision request.","type":"value_error"}])
+            }
+            ErrorKind::Overloaded => {
+                *response.status_mut() = StatusCode::from_u16(529).expect("valid status");
+                json!("Overloaded.")
+            }
+            _ => json!(format!(
+                "The request could not be completed ({}).",
+                self.code()
+            )),
+        };
+        *response.body_mut() = Json(json!({"detail":detail})).into_response().into_body();
+        response
+    }
+}
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let mut response = (self.status, Json(self.body())).into_response();
