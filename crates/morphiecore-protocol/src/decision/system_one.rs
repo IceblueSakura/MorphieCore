@@ -62,7 +62,12 @@ pub(super) fn decode_request(root: &Map<String, Value>) -> Result<Request, Codec
     if root.get("assets").is_some_and(|value| !value.is_null()) {
         return Err(CodecError::invalid());
     }
-    let state = text(root.get("state"))?;
+    let state = match root.get("state").ok_or_else(CodecError::invalid)? {
+        state if state.is_string() => Evidence::StateText(text(Some(state))?),
+        state => Evidence::StateJson(
+            StructuredEvidence::new(state.clone()).map_err(|_| CodecError::invalid())?,
+        ),
+    };
     let questions = object(root.get("questions").ok_or_else(CodecError::invalid)?)?;
     if questions.len() > crate::semantic::task::decision::MAX_QUESTIONS {
         return Err(CodecError::Limit);
@@ -71,7 +76,7 @@ pub(super) fn decode_request(root: &Map<String, Value>) -> Result<Request, Codec
         .iter()
         .map(|(name, q)| decode_question(name, q))
         .collect::<Result<_, _>>()?;
-    Request::new(Evidence::StateText(state), questions).map_err(|_| CodecError::invalid())
+    Request::new(state, questions).map_err(|_| CodecError::invalid())
 }
 
 fn choice_key(option: &ChoiceOption) -> Result<&str, CodecError> {
@@ -130,8 +135,10 @@ fn encode_question(question: &Question) -> Result<Value, CodecError> {
 }
 
 pub(super) fn encode_request(request: &Request, model: &str) -> Result<Value, CodecError> {
-    let Evidence::StateText(state) = request.evidence() else {
-        return Err(CodecError::invalid());
+    let state = match request.evidence() {
+        Evidence::StateText(state) => json!(state.as_str()),
+        Evidence::StateJson(state) => state.value().clone(),
+        _ => return Err(CodecError::invalid()),
     };
     let mut questions = Map::new();
     for question in request.questions() {
@@ -143,7 +150,7 @@ pub(super) fn encode_request(request: &Request, model: &str) -> Result<Value, Co
             return Err(CodecError::invalid());
         }
     }
-    Ok(json!({"model":model,"state":state.as_str(),"questions":questions}))
+    Ok(json!({"model":model,"state":state,"questions":questions}))
 }
 
 fn decode_answer(question: &Question, value: &Value) -> Result<Outcome, CodecError> {

@@ -1,12 +1,13 @@
 //! Decision text evidence, ordered questions, and request-bound outcomes.
-use crate::value::Text;
-use serde_json::Number;
+use crate::value::{Text, json_size};
+use serde_json::{Number, Value};
 use std::{collections::BTreeSet, fmt};
 
 pub const MAX_QUESTIONS: usize = 1_000;
 pub const MAX_TEXT_BYTES: usize = 1 << 20;
 pub const MAX_NAME_BYTES: usize = 256;
 pub const MAX_LEVELS: usize = 255;
+pub const MAX_TEXT_PARTS: usize = 16_384;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum Error {
@@ -18,11 +19,72 @@ pub enum Error {
     Probability,
 }
 
-/// The two text carriers currently implemented; history shorthand has user authority.
+/// State is role-less; OpenAI evidence retains its user-owned message boundaries.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Evidence {
     StateText(Text),
+    StateJson(StructuredEvidence),
     HistoryUserText(Text),
+    HistoryUserMessages(Vec<UserMessage>),
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub enum UserMessage {
+    Text(Text),
+    Parts(Vec<UserPart>),
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub enum UserPart {
+    Text(Text),
+    Json(StructuredEvidence),
+}
+
+/// Ordered business JSON, never interpreted as an instruction or media carrier.
+#[derive(Clone, Eq, PartialEq)]
+pub struct StructuredEvidence {
+    value: Value,
+    compact_bytes: usize,
+}
+impl StructuredEvidence {
+    pub fn new(value: Value) -> Result<Self, Error> {
+        const MAX_VALUES: usize = 10_000;
+        const MAX_CONTAINERS: usize = 32;
+        fn bounded(value: &Value, depth: usize, remaining: &mut usize) -> bool {
+            let Some(left) = remaining.checked_sub(1) else {
+                return false;
+            };
+            *remaining = left;
+            match value {
+                Value::Array(items) => {
+                    depth < MAX_CONTAINERS && items.iter().all(|v| bounded(v, depth + 1, remaining))
+                }
+                Value::Object(items) => {
+                    depth < MAX_CONTAINERS
+                        && items.values().all(|v| bounded(v, depth + 1, remaining))
+                }
+                _ => true,
+            }
+        }
+        if !matches!(value, Value::Array(_) | Value::Object(_)) {
+            return Err(Error::Request);
+        }
+        let mut remaining = MAX_VALUES;
+        if !bounded(&value, 0, &mut remaining) {
+            return Err(Error::Request);
+        }
+        let compact_bytes = json_size(&value, MAX_TEXT_BYTES).map_err(|_| Error::Request)?;
+        Ok(Self {
+            value,
+            compact_bytes,
+        })
+    }
+    pub fn value(&self) -> &Value {
+        &self.value
+    }
+    pub fn compact_bytes(&self) -> usize {
+        self.compact_bytes
+    }
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -118,11 +180,25 @@ pub struct Request {
 }
 impl Request {
     pub fn new(evidence: Evidence, questions: Vec<Question>) -> Result<Self, Error> {
-        let (Evidence::StateText(text) | Evidence::HistoryUserText(text)) = &evidence;
-        if questions.is_empty()
-            || questions.len() > MAX_QUESTIONS
-            || text.as_str().len() > MAX_TEXT_BYTES
-        {
+        let text_bound = |t: &Text| t.as_str().len() <= MAX_TEXT_BYTES;
+        let evidence_ok = match &evidence {
+            Evidence::StateText(text) | Evidence::HistoryUserText(text) => text_bound(text),
+            Evidence::StateJson(_) => true,
+            Evidence::HistoryUserMessages(messages) => {
+                messages.len() <= MAX_TEXT_PARTS
+                    && messages.iter().all(|m| match m {
+                        UserMessage::Text(text) => text_bound(text),
+                        UserMessage::Parts(parts) => {
+                            parts.len() <= MAX_TEXT_PARTS
+                                && parts.iter().all(|part| match part {
+                                    UserPart::Text(text) => text_bound(text),
+                                    UserPart::Json(_) => true,
+                                })
+                        }
+                    })
+            }
+        };
+        if questions.is_empty() || questions.len() > MAX_QUESTIONS || !evidence_ok {
             return Err(Error::Request);
         }
         Ok(Self {

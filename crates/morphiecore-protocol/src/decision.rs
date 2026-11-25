@@ -4,7 +4,8 @@ use crate::{
     semantic::{
         task::decision::{
             Answer, AnswerSet, ChoiceOption, ChoiceValue, Confidence, Evidence, MAX_TEXT_BYTES,
-            Outcome, Probability, Question, QuestionKind, Request, ScoreLevel, Usage,
+            Outcome, Probability, Question, QuestionKind, Request, ScoreLevel, StructuredEvidence,
+            Usage, UserMessage, UserPart,
         },
         value::{JsonLimits, Text, parse_json},
     },
@@ -100,7 +101,7 @@ fn valid_model(model: &str) -> bool {
 fn decode(bytes: &[u8]) -> Result<Value, CodecError> {
     const LIMITS: JsonLimits = JsonLimits {
         bytes: 4 << 20,
-        depth: 32,
+        depth: 40, // includes the wire envelope around a 32-container JSON part
         nodes: 32_768,
     };
     parse_json(bytes, LIMITS).map_err(CodecError::from)

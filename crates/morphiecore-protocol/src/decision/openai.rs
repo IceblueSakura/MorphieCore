@@ -14,6 +14,100 @@ fn name(value: Option<&Value>) -> Result<Option<&str>, CodecError> {
     }
 }
 
+fn json_data(value: &StructuredEvidence) -> Result<&Value, CodecError> {
+    if value.compact_bytes() > 256 << 10 {
+        return Err(CodecError::Limit);
+    }
+    if value
+        .value()
+        .as_array()
+        .is_some_and(|items| !items.iter().all(Value::is_object))
+    {
+        return Err(CodecError::invalid());
+    }
+    Ok(value.value())
+}
+
+fn decode_input(input: &Value) -> Result<Evidence, CodecError> {
+    if input.is_string() {
+        return Ok(Evidence::HistoryUserText(text(Some(input))?));
+    }
+    let messages = array(input)?
+        .iter()
+        .map(|item| {
+            let message = object(item)?;
+            if string(message.get("role"))? != "user"
+                || message.get("type").is_some_and(|t| t != "message")
+            {
+                return Err(CodecError::invalid());
+            }
+            let content = message.get("content").ok_or_else(CodecError::invalid)?;
+            if content.is_string() {
+                return Ok(UserMessage::Text(text(Some(content))?));
+            }
+            let parts = array(content)?
+                .iter()
+                .map(|part| {
+                    let part = object(part)?;
+                    match string(part.get("type"))? {
+                        "input_text"
+                            if part
+                                .get("prompt_cache_breakpoint")
+                                .is_none_or(Value::is_null) =>
+                        {
+                            Ok(UserPart::Text(text(part.get("text"))?))
+                        }
+                        "input_json" => {
+                            let value = part.get("data").ok_or_else(CodecError::invalid)?;
+                            let data = StructuredEvidence::new(value.clone())
+                                .map_err(|_| CodecError::invalid())?;
+                            json_data(&data)?;
+                            Ok(UserPart::Json(data))
+                        }
+                        _ => Err(CodecError::invalid()),
+                    }
+                })
+                .collect::<Result<_, _>>()?;
+            Ok(UserMessage::Parts(parts))
+        })
+        .collect::<Result<_, _>>()?;
+    Ok(Evidence::HistoryUserMessages(messages))
+}
+
+fn encode_input(evidence: &Evidence) -> Result<Value, CodecError> {
+    match evidence {
+        Evidence::HistoryUserText(text) => Ok(json!(text.as_str())),
+        Evidence::HistoryUserMessages(messages) => {
+            let messages = messages
+                .iter()
+                .map(|message| {
+                    let content = match message {
+                        UserMessage::Text(text) => json!(text.as_str()),
+                        UserMessage::Parts(parts) => Value::Array(
+                            parts
+                                .iter()
+                                .map(|part| {
+                                    Ok(match part {
+                                        UserPart::Text(text) => {
+                                            json!({"type":"input_text","text":text.as_str()})
+                                        }
+                                        UserPart::Json(data) => {
+                                            json!({"type":"input_json","data":json_data(data)?})
+                                        }
+                                    })
+                                })
+                                .collect::<Result<_, CodecError>>()?,
+                        ),
+                    };
+                    Ok(json!({"type":"message","role":"user","content":content}))
+                })
+                .collect::<Result<Vec<_>, CodecError>>()?;
+            Ok(Value::Array(messages))
+        }
+        _ => Err(CodecError::invalid()),
+    }
+}
+
 fn choice_wire(value: &ChoiceValue) -> Value {
     match value {
         ChoiceValue::String(s) => json!(s.as_str()),
@@ -102,7 +196,7 @@ pub(super) fn decode_request(root: &Map<String, Value>) -> Result<Request, Codec
     {
         return Err(CodecError::invalid());
     }
-    let input = text(root.get("input"))?;
+    let input = decode_input(root.get("input").ok_or_else(CodecError::invalid)?)?;
     let questions = array(root.get("questions").ok_or_else(CodecError::invalid)?)?;
     if !(1..=MAX_QUESTIONS).contains(&questions.len()) {
         return Err(CodecError::Limit);
@@ -111,7 +205,7 @@ pub(super) fn decode_request(root: &Map<String, Value>) -> Result<Request, Codec
         .iter()
         .map(decode_question)
         .collect::<Result<_, _>>()?;
-    Request::new(Evidence::HistoryUserText(input), questions).map_err(|_| CodecError::invalid())
+    Request::new(input, questions).map_err(|_| CodecError::invalid())
 }
 
 fn describe(mut value: Value, description: Option<&Text>) -> Value {
@@ -154,9 +248,7 @@ fn encode_question(question: &Question) -> Result<Value, CodecError> {
 }
 
 pub(super) fn encode_request(request: &Request, model: &str) -> Result<Value, CodecError> {
-    let Evidence::HistoryUserText(input) = request.evidence() else {
-        return Err(CodecError::invalid());
-    };
+    let input = encode_input(request.evidence())?;
     if request.questions().len() > MAX_QUESTIONS {
         return Err(CodecError::Limit);
     }
@@ -165,7 +257,7 @@ pub(super) fn encode_request(request: &Request, model: &str) -> Result<Value, Co
         .iter()
         .map(encode_question)
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(json!({"model":model,"input":input.as_str(),"questions":questions}))
+    Ok(json!({"model":model,"input":input,"questions":questions}))
 }
 
 fn decode_answer(question: &Question, value: &Value) -> Result<Outcome, CodecError> {

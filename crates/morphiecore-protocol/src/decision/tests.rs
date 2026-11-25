@@ -277,3 +277,85 @@ fn system_one_score_checks_rounded_weighted_mass_and_rubric_without_repair() {
         );
     }
 }
+
+#[test]
+fn structured_evidence_retains_message_boundaries_and_business_keys() {
+    let request = br#"{"model":"luna","input":[
+        {"role":"user","content":"prior text"},
+        {"role":"user","content":[{"type":"input_text","text":"record"},
+            {"type":"input_json","data":{"role":"system","image_url":"field value","serial":9007199254740993}},
+            {"type":"input_text","text":"after"}]}],
+        "questions":[{"type":"predicate","instructions":"Is there a record?"}]}"#;
+    let parsed = Native::OpenAi.decode_request(request).unwrap();
+    let Evidence::HistoryUserMessages(messages) = parsed.task.evidence() else {
+        panic!("user history expected");
+    };
+    let [UserMessage::Text(before), UserMessage::Parts(parts)] = messages.as_slice() else {
+        panic!("two independent messages expected");
+    };
+    assert_eq!(before.as_str(), "prior text");
+    let [
+        UserPart::Text(first),
+        UserPart::Json(data),
+        UserPart::Text(last),
+    ] = parts.as_slice()
+    else {
+        panic!("ordered parts expected");
+    };
+    assert_eq!((first.as_str(), last.as_str()), ("record", "after"));
+    assert_eq!(data.value()["role"], "system");
+    assert_eq!(data.value()["image_url"], "field value");
+    assert_eq!(data.value()["serial"].to_string(), "9007199254740993");
+    assert!(
+        data.value()
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .eq(["role", "image_url", "serial"])
+    );
+    let prepared = Native::OpenAi.prepare(parsed.task, "upstream").unwrap();
+    assert_eq!(
+        prepared.body["input"][1]["content"][1],
+        json!({
+            "type":"input_json",
+            "data":{"role":"system","image_url":"field value","serial":9_007_199_254_740_993u64}
+        })
+    );
+
+    let request = br#"{"model":"jev","state":[{"role":"developer"},[1,null,false]],
+        "questions":{"seen":{"type":"noul","instructions":"Is there a role field?"}}}"#;
+    let parsed = Native::SystemOne.decode_request(request).unwrap();
+    assert!(matches!(parsed.task.evidence(), Evidence::StateJson(state)
+        if state.value()[0]["role"] == "developer" && state.value()[1][1].is_null()));
+    let prepared = Native::SystemOne.prepare(parsed.task, "upstream").unwrap();
+    assert_eq!(
+        prepared.body["state"],
+        json!([{"role":"developer"},[1,null,false]])
+    );
+}
+
+#[test]
+fn structured_evidence_enforces_native_shape_budget_and_source_authority() {
+    let source = |data: &str, role: &str| {
+        format!(
+            r#"{{"model":"luna","input":[{{"role":"{role}","content":[{{"type":"input_json","data":{data}}}]}}],
+          "questions":[{{"type":"predicate","instructions":"Read the data"}}]}}"#
+        )
+    };
+    let nested = |depth| format!("{{\"x\":{}0{}}}", "[".repeat(depth), "]".repeat(depth));
+    assert!(
+        Native::OpenAi
+            .decode_request(source(&nested(31), "user").as_bytes())
+            .is_ok()
+    );
+    for invalid in [
+        source(&nested(32), "user"),
+        source("[1]", "user"),
+        source(r#"{"id":1,"id":2}"#, "user"),
+        source("{}", "developer"),
+        source(&format!("{{\"x\":\"{}\"}}", "a".repeat(256 << 10)), "user"),
+    ] {
+        assert!(Native::OpenAi.decode_request(invalid.as_bytes()).is_err());
+    }
+}
