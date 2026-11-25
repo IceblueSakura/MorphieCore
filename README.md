@@ -1,6 +1,6 @@
 # MorphieCore
 
-MorphieCore is a local gateway that hides LLM Provider differences behind a single typed Intermediate Representation (IR). Clients communicate via OpenAI Chat Completions, OpenAI Responses, or Anthropic Messages; upstream protocols also include Google generateContent and Interactions.
+MorphieCore is a local gateway that hides LLM Provider differences behind a single typed Intermediate Representation (IR). Clients communicate via OpenAI Chat Completions, OpenAI Responses, or Anthropic Messages; upstream protocols also include Google Interactions.
 
 `pi` and `opencode` are the primary verified clients. See [current status](docs/roadmap/index.md#current-status) for active scope and roadmap gates.
 

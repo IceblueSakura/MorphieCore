@@ -243,7 +243,7 @@ The protocol choices are `openai-chat`, `openai-responses`, `anthropic` and `goo
 
 Optional token limits are omitted. Anthropic Messages alone requires `max_tokens`, so its request uses a fixed `1024`. SIWC requires `store:false` and `stream:true`; other probes use static JSON. SIWC consumes SSE through strict EOF, including closed event-owned output when its final summary is empty. Local deadlines and byte bounds do not guarantee bounded remote computation or billing.
 
-Success requires nonempty text plus an ordinary completion (`stop`, `completed`, `end_turn` or `STOP`), not merely HTTP 200 or an exact `OK` answer. Truncation, failed/incomplete terminals and malformed responses fail. Reports contain status, elapsed time, byte counts and whether OAuth refreshed, not generated text, raw errors, credentials or private identities. This is a basic service observation, not gateway compatibility or capability certification.
+Success requires nonempty text plus an ordinary completion (`stop`, `completed` or `end_turn`), not merely HTTP 200 or an exact `OK` answer. Truncation, failed/incomplete terminals and malformed responses fail. Reports contain status, elapsed time, byte counts and whether OAuth refreshed, not generated text, raw errors, credentials or private identities. This is a basic service observation, not gateway compatibility or capability certification.
 
 ### Credential selection and optional controls
 
