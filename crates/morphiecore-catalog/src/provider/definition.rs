@@ -136,6 +136,9 @@ pub enum ProviderOperation {
     ImagesEdit,
     Speech,
     Transcription,
+    OpenaiDecisions,
+    SystemOne,
+    GoogleDecisions,
 }
 impl From<GenerationOperation> for ProviderOperation {
     fn from(operation: GenerationOperation) -> Self {

@@ -79,6 +79,31 @@
       ],
       "purpose": "Google SDK consumer and fixtures"
     },
+    "google-python-decisions": {
+      "repository": "https://github.com/googleapis/python-genai",
+      "selection": "stable-release",
+      "revision": "aa813f8bf805b6f4f3e57abb8f04b91d769e23e6",
+      "release": "v3.6.1",
+      "license": "Apache-2.0",
+      "paths": [
+        "google/genai/types.py",
+        "google/genai/_gaos",
+        "google/genai/tests"
+      ],
+      "purpose": "Gemini native Decisions request and response evidence; separate from the Interactions baseline"
+    },
+    "typesafe-python": {
+      "repository": "https://github.com/typesafe-ai/typesafe-sdk-python",
+      "selection": "stable-release",
+      "revision": "023fdc925d740a6ab4a7a31488b75c90e6bd289e",
+      "release": "v0.7.6",
+      "license": "MIT",
+      "paths": [
+        "src/typesafe_sdk",
+        "tests"
+      ],
+      "purpose": "System One typed answers, SDK endpoint joining, discovery, and compression"
+    },
     "pi": {
       "repository": "https://github.com/earendil-works/pi",
       "selection": "stable-release",

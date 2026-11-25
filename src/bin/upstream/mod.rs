@@ -12,8 +12,8 @@ use morphiecore::{
     },
     execution::UpstreamRequest,
     provider::{
-        AuthScheme, CredentialKind, EndpointPath, GenerationOperation, ProviderDefinition,
-        ProviderOperation, SecretMaterial, catalog,
+        AuthScheme, CredentialKind, EndpointPath, ProviderDefinition, ProviderOperation,
+        SecretMaterial, catalog,
     },
     transport::http::HttpTransport,
 };
@@ -28,7 +28,7 @@ const PROMPT: &str = "Reply with the single word OK.";
 
 #[derive(Parser)]
 #[command(
-    about = "Query a Provider's model list or send one text probe using shared embedded metadata"
+    about = "Query a Provider's model list or send one native probe using shared embedded metadata"
 )]
 pub struct Options {
     #[command(subcommand)]
@@ -75,14 +75,20 @@ enum Protocol {
     OpenaiResponses,
     Anthropic,
     Google,
+    OpenaiDecisions,
+    TypesafeSystemOne,
+    GoogleDecisions,
 }
 impl Protocol {
-    fn operation(self) -> GenerationOperation {
+    fn operation(self) -> ProviderOperation {
         match self {
-            Self::OpenaiChat => GenerationOperation::ChatCompletions,
-            Self::OpenaiResponses => GenerationOperation::Responses,
-            Self::Anthropic => GenerationOperation::AnthropicMessages,
-            Self::Google => GenerationOperation::GoogleInteractions,
+            Self::OpenaiChat => ProviderOperation::ChatCompletions,
+            Self::OpenaiResponses => ProviderOperation::Responses,
+            Self::Anthropic => ProviderOperation::Messages,
+            Self::Google => ProviderOperation::Interactions,
+            Self::OpenaiDecisions => ProviderOperation::OpenaiDecisions,
+            Self::TypesafeSystemOne => ProviderOperation::SystemOne,
+            Self::GoogleDecisions => ProviderOperation::GoogleDecisions,
         }
     }
     fn name(self) -> &'static str {
@@ -91,6 +97,9 @@ impl Protocol {
             Self::OpenaiResponses => "openai-responses",
             Self::Anthropic => "anthropic",
             Self::Google => "google",
+            Self::OpenaiDecisions => "openai-decisions",
+            Self::TypesafeSystemOne => "typesafe-system-one",
+            Self::GoogleDecisions => "google-decisions",
         }
     }
 }
@@ -131,6 +140,13 @@ struct Plan {
     body: Option<Value>,
 }
 impl Command {
+    fn operation(&self) -> ProviderOperation {
+        match self {
+            Self::Models(_) => ProviderOperation::Models,
+            Self::Probe(probe) => probe.protocol.operation(),
+        }
+    }
+
     fn target(&self) -> &Target {
         match self {
             Self::Models(c) => c,
@@ -143,14 +159,10 @@ impl Command {
             return Err(Error::Invalid);
         }
         let provider = catalog::get(&target.provider).ok_or(Error::Provider)?;
-        let operation = match self {
-            Self::Models(_) => ProviderOperation::Models,
-            Self::Probe(options) => options.protocol.operation().into(),
-        };
-        let entry = provider.entry(operation).ok_or(Error::Endpoint)?;
+        let entry = provider.entry(self.operation()).ok_or(Error::Endpoint)?;
         let siwc = entry.auth.kind() == CredentialKind::OAuth("openai");
-        let (path, body) = match self {
-            Self::Models(_) => (entry.path.clone(), None),
+        let body = match self {
+            Self::Models(_) => None,
             Self::Probe(options) => {
                 if options.model.is_empty()
                     || options.model.len() > 256
@@ -161,20 +173,12 @@ impl Command {
                 {
                     return Err(Error::Invalid);
                 }
-                let path = options
-                    .protocol
-                    .operation()
-                    .resolve_path(entry.path, &options.model, siwc)
-                    .map_err(|_| Error::Invalid)?;
-                (
-                    path,
-                    Some(wire::request(options.protocol, &options.model, siwc)),
-                )
+                Some(wire::request(options.protocol, &options.model, siwc))
             }
         };
         Ok(Plan {
             provider: provider.clone(),
-            path,
+            path: entry.path.clone(),
             auth: entry.auth,
             body,
         })
@@ -233,30 +237,9 @@ pub async fn execute(options: Options) -> Result<Value, Error> {
         .bind(&plan.provider, &manager)
         .map_err(|_| Error::Account)?;
     plan.provider = binding.provider;
-    let operation = match &options.command {
-        Command::Models(_) => ProviderOperation::Models,
-        Command::Probe(probe) => probe.protocol.operation().into(),
-    };
+    let operation = options.command.operation();
     let entry = plan.provider.entry(operation).ok_or(Error::Endpoint)?;
-    plan.path = match &options.command {
-        Command::Models(_) => entry.path.clone(),
-        Command::Probe(probe) => {
-            let model = if probe.protocol == Protocol::Google {
-                probe.model.strip_prefix("models/").unwrap_or(&probe.model)
-            } else {
-                &probe.model
-            };
-            probe
-                .protocol
-                .operation()
-                .resolve_path(
-                    entry.path,
-                    model,
-                    plan.auth.kind() == CredentialKind::OAuth("openai"),
-                )
-                .map_err(|_| Error::Invalid)?
-        }
-    };
+    plan.path = entry.path.clone();
     tokio::time::timeout(
         Duration::from_secs(target.timeout_seconds),
         run(

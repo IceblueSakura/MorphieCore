@@ -239,11 +239,15 @@ morphiecore-upstream probe openai \
   --accounts "$ROOT/accounts.json" --store "$ROOT/credentials"
 ```
 
-The protocol choices are `openai-chat`, `openai-responses`, `anthropic` and `google` (Interactions). The operation must be declared by the Provider, but the model name is an ordinary upstream string: it need not appear in the local catalog or a previous model list. The fixed prompt is `Reply with the single word OK.`; no user payload, tools or history are accepted.
+The Generation protocol choices are `openai-chat`, `openai-responses`, `anthropic` and `google` (Interactions). The operation must be declared by the Provider, but the model name is an ordinary upstream string: it need not appear in the local catalog or a previous model list. The fixed prompt is `Reply with the single word OK.`; no user payload, tools or history are accepted.
 
 Optional token limits are omitted. Anthropic Messages alone requires `max_tokens`, so its request uses a fixed `1024`. SIWC requires `store:false` and `stream:true`; other probes use static JSON. SIWC consumes SSE through strict EOF, including closed event-owned output when its final summary is empty. Local deadlines and byte bounds do not guarantee bounded remote computation or billing.
 
-Success requires nonempty text plus an ordinary completion (`stop`, `completed` or `end_turn`), not merely HTTP 200 or an exact `OK` answer. Truncation, failed/incomplete terminals and malformed responses fail. Reports contain status, elapsed time, byte counts and whether OAuth refreshed, not generated text, raw errors, credentials or private identities. This is a basic service observation, not gateway compatibility or capability certification.
+Generation success requires nonempty text plus an ordinary completion (`stop`, `completed` or `end_turn`), not merely HTTP 200 or an exact `OK` answer. Truncation, failed/incomplete terminals and malformed responses fail.
+
+`openai-decisions` (OpenAI), `typesafe-system-one` (TypeSafe) and `google-decisions` (Gemini) submit one fixed synthetic text predicate. They require exactly one associated probability answer after EOF. The report gives its type and count, not the probability or response body. These operation declarations do not activate or qualify a gateway binding.
+
+Reports contain status, elapsed time, byte counts and whether OAuth refreshed, not generated text, raw errors, credentials or private identities. This is a basic service observation, not gateway compatibility or capability certification.
 
 ### Credential selection and optional controls
 

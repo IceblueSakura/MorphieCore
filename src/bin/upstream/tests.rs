@@ -135,6 +135,61 @@ fn native_probe_paths_and_headers_follow_the_shared_entries() {
         );
     }
 }
+#[test]
+fn decision_probe_uses_native_shape_and_requires_the_requested_answer() {
+    for (provider, protocol, path, input_key, answer) in [
+        (
+            "openai",
+            Protocol::OpenaiDecisions,
+            "/v1/decisions",
+            "input",
+            json!([{"name":"damaged","type":"predicate","probability":0.9}]),
+        ),
+        (
+            "typesafe",
+            Protocol::TypesafeSystemOne,
+            "/v1/systemone",
+            "state",
+            json!({"damaged":{"type":"noul","noul":0.9}}),
+        ),
+        (
+            "google",
+            Protocol::GoogleDecisions,
+            "/v1beta/decisions",
+            "input",
+            json!({"damaged":{"type":"noul","noul":0.9,"confidence":0.9}}),
+        ),
+    ] {
+        let plan = command(&[
+            "probe",
+            provider,
+            "--protocol",
+            protocol.name(),
+            "--model",
+            "new",
+        ])
+        .plan()
+        .unwrap();
+        assert_eq!(plan.path.as_str(), path);
+        let body = plan.body.unwrap();
+        assert_eq!(body[input_key], "The package arrived with a broken screen.");
+        assert!(body.get("stream").is_none());
+        let question = if protocol == Protocol::OpenaiDecisions {
+            assert_eq!(body["questions"][0]["name"], "damaged");
+            &body["questions"][0]
+        } else {
+            &body["questions"]["damaged"]
+        };
+        assert_eq!(question["instructions"], "Was the item damaged on arrival?");
+        let native = json!({"answers":answer});
+        let unbound = native.to_string().replace("damaged", "different");
+        assert!(wire::probe(unbound.as_bytes(), protocol).is_err());
+        let report = wire::probe(native.to_string().as_bytes(), protocol).unwrap();
+        assert_eq!(report["answers"], 1);
+        assert!(report.get("probability").is_none());
+    }
+}
+
 #[tokio::test]
 async fn diagnostics_select_only_the_configured_named_account_without_alias_bypass() {
     let directory = filesystem::private_directory();

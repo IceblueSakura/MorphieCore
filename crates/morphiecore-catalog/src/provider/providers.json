@@ -255,6 +255,10 @@
       "kind": "bearer"
     },
     "endpoints": {
+      "openai_decisions": {
+        "path": "/v1/decisions",
+        "suffix": "/decisions"
+      },
       "models": {
         "path": "/v1/models",
         "suffix": "/models"
@@ -285,6 +289,7 @@
       }
     },
     "sources": [
+      "https://developers.openai.com/api/reference/resources/decisions/methods/create",
       "https://developers.openai.com/api/reference/resources/responses/methods/create",
       "https://developers.openai.com/api/reference/resources/embeddings/methods/create",
       "https://developers.openai.com/api/docs/models/text-embedding-3-small",
@@ -338,6 +343,10 @@
       "kind": "x_goog_api_key"
     },
     "endpoints": {
+      "google_decisions": {
+        "path": "/v1beta/decisions",
+        "suffix": "/decisions"
+      },
       "models": {
         "path": "/v1beta/models",
         "suffix": "/models"
@@ -360,9 +369,30 @@
       }
     },
     "sources": [
+      "https://aistudio.google.com/api-reference/decisions/create-decision",
       "https://ai.google.dev/api/models",
       "https://ai.google.dev/api/interactions-api-v1",
       "https://ai.google.dev/api/embeddings"
+    ]
+  },
+  "typesafe": {
+    "base_url": "https://api.typesafe.ai",
+    "auth": {
+      "kind": "bearer"
+    },
+    "endpoints": {
+      "models": {
+        "path": "/v1/models",
+        "suffix": "/models"
+      },
+      "system_one": {
+        "path": "/v1/systemone",
+        "suffix": "/systemone"
+      }
+    },
+    "sources": [
+      "https://docs.typesafe.ai/api/system-one",
+      "https://docs.typesafe.ai/api/list-models"
     ]
   },
   "chatgpt": {

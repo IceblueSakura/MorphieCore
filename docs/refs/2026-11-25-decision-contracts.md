@@ -1,6 +1,6 @@
 # Decision model contracts expansion
 
-Checked 2026-11-25. This note extends the [2026-10-23 Decision contracts](2026-10-23-decision-contracts.md) note with newly published provider APIs, primitive extensions, and codebase constraints observed while refining the unified Decision Semantic IR. No inference calls, credentials, or SDK executions were run. [Architecture](../architecture/index.md#decision-api-direction) owns the selected dual-SDK direction; [Decision API Proposal](../proposals/decisions-api.md#decisions) owns proposed layouts and projections; [Roadmap](../roadmap/index.md#stage-4-pending-scope) owns gates.
+Checked 2026-11-25. This note extends the [2026-10-23 Decision contracts](2026-10-23-decision-contracts.md) note with newly published provider APIs, primitive extensions, and codebase constraints observed while refining the unified Decision Semantic IR. [Architecture](../architecture/index.md#decision-api-direction) owns the selected dual-SDK direction; [Decision API Proposal](../proposals/decisions-api.md#decisions) owns proposed layouts and projections; [Roadmap](../roadmap/index.md#stage-4-pending-scope) owns gates.
 
 Evidence is explicitly stratified into two tiers:
 - **P1 (Primary schema/SDK evidence):** Direct OpenAPI `v1beta` schema, official `@google/genai` / `google-genai` SDK source, and official guide pages for Google Gemini Decision 1, alongside the earlier P1 baselines for OpenAI, TypeSafe, Perplexity v1.2, and Cloudflare Clef recorded on 2026-10-23.
@@ -107,7 +107,9 @@ Inspection of `crates/morphiecore-semantic` establishes three concrete constrain
 
 ## Updated implementation evidence still needed
 
-1. Pin `@google/genai` / `google-genai` `>= 3.2` decision fixtures in `tests/upstream/sources.lock.json` alongside pinned OpenAI and TypeSafe SDK releases before Wave 1 execution.
+Native text-predicate diagnostics returned a matching answer from OpenAI `gpt-6-luna`, TypeSafe `jev-1.13.0`, and Google `gemini-decision-1`. The first Python contract pilot used OpenAI `3.37.0` and TypeSafe `0.7.6` against a synthetic receiver; the SDKs joined the proposed roots, parsed typed answers and validation errors, and TypeSafe used zstd with its supported compressor. These observations establish neither gateway integration nor other primitives.
+
+1. Verify the native directions through the gateway using the Python releases in the [source lock](../../tests/upstream/sources.lock.json); pin JavaScript SDK consumers separately before claiming support.
 2. Retrieve primary DashScope OpenAPI / run a bounded probe for `qwen/decision-model-preview` to resolve the response-key and image-support conflicts.
 3. Lock Perplexity `v1.3` `locate` span unit (`UTF-8` vs `UTF-16` vs Unicode scalar), endpoint bounds, and `v1.3` question-grouping behavior before Wave 2 `TextLocate` admission.
 4. Retrieve primary Foundry OpenAPI for `Microsoft-Decision-1.1` before adding any Microsoft binding.

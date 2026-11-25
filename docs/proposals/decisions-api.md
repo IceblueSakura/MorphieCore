@@ -23,16 +23,16 @@ See [Proposals Framework](index.md) for shared boundaries and [Roadmap](../roadm
 
 Provide both official downstream SDK families—OpenAI and TypeSafe—without monkey-patches, custom answer types, or a third public downstream schema. Google Gemini (`gemini-decision-1`), Cloudflare Clef, Perplexity Decider, Qwen, Microsoft Decision, and future decision models are upstream targets only. Clients may configure the gateway base URL, gateway credential, public model, and documented standard options. Stable access includes request serialization, typed answer consumption, model discovery, errors, and cancellation within an explicit feature/version profile; merely parsing a success body is insufficient.
 
-Recommended roots, still unselected:
+Selected roots for the first Python SDK profile; their gateway routes are not yet activated:
 
 | Client | SDK base URL | Gateway operations |
 |---|---|---|
 | OpenAI | `http://127.0.0.1:<port>/v1` | `POST /v1/decisions`; retain existing OpenAI `GET /v1/models` and model retrieval |
 | TypeSafe | `http://127.0.0.1:<port>/typesafe` | SDK-appended `POST /typesafe/v1/systemone` and `GET /typesafe/v1/models` |
 
-Both official APIs use `GET /v1/models`, but TypeSafe returns `models:[{name,description,release_date}]` while OpenAI returns `object:"list",data:[...]`. Use a distinct TypeSafe root rather than header/User-Agent sniffing, merged response shapes, or replacing existing discovery. Verify actual URL joining with the selected SDKs before freezing these paths. Reuse the activated public model catalog, not upstream enumeration; define honest TypeSafe metadata and filter its view to admitted Decision models. Do not fabricate release dates to satisfy its required schema.
+Both official APIs use `GET /v1/models`, but TypeSafe returns `models:[{name,description,release_date}]` while OpenAI returns `object:"list",data:[...]`. Use a distinct TypeSafe root rather than header/User-Agent sniffing, merged response shapes, or replacing existing discovery. The locked Python clients verified the URL joins against a synthetic receiver; gateway loopback and JavaScript/TypeScript remain separate gates. Reuse the activated public model catalog, not upstream enumeration; define honest TypeSafe metadata and filter its view to admitted Decision models. Do not fabricate release dates to satisfy its required schema.
 
-TypeSafe's documented Python SDK compresses requests of at least 1 KiB with zstd when available. Recommend supporting bounded zstd intake as part of stable default-client access, with separate compressed/decompressed byte ceilings and cancellation; disabling compression would instead be an explicit compatibility restriction. Pin Python and JavaScript/TypeScript SDK releases before claiming both languages. Test their actual defaults separately, including model selection, omitted values, media helpers, and retry behavior. No client runtime or package version is accepted by this proposal alone.
+TypeSafe Python `0.7.6` emits default zstd for bodies of at least 1 KiB when its compressor is available (the `zstd` extra before Python 3.14). Support bounded zstd intake as part of stable default-client access, with separate compressed/decompressed byte ceilings and cancellation. Pin JavaScript/TypeScript SDK releases and exercise their defaults separately before claiming support. A package pin alone does not qualify a gateway route.
 
 Keep error delivery native to the selected client family, including authentication before body decoding, validation paths, unsupported-operation errors, overload/rate-limit status, and safe `Retry-After`. Do not relay private upstream error payloads. SDK retries are client behavior, not gateway retries; disable them in bounded acceptance runs and test error classification separately.
 
@@ -323,7 +323,7 @@ Use this precedence per meaning: **exact carrier → justified derivation → se
 | `decision.blocked-to-client-error.v1` | R, delivery | Fails the complete operation with a non-retryable client-native error when `RequestDisposition::Blocked` lacks a legal downstream carrier |
 
 **Default cross-family gating policy:**
-- *Standard cross-family profile:* Permits evidence carrier projections (`State` ↔ `Parts` ↔ `History`) and prompt/rubric/typed-choice-surrogate rendering with named L3 receipts.
+- *Standard cross-family profile:* Admits proven directions. Evidence carrier projections (`State` ↔ `Parts` ↔ `History`) and prompt/rubric/typed-choice-surrogate rendering need named L3 receipts and explicit selection when they downgrade content or an explicit guarantee.
 - *Explicit opt-in only:* Relaxing question isolation (`decision.relax-question-isolation.v1`), regrouping shared contexts, and permitting silent text truncation (`decision.allow-native-state-truncation.v1`) must be opted into explicitly on the target binding/profile.
 - *Confidence delivery policy (withdrawing default opaque transfer):* Default `decision.transfer-opaque-confidence.v1` is **withdrawn**. For clients with documented formulas (TypeSafe), derive confidence from the complete validated distribution via `decision.derive-distribution-statistic.v1` or reject. For clients without a documented formula (OpenAI), allow explicit profile-selected derivation or opt-in approximate transfer without claiming portable cross-model thresholds.
 - *Fail-closed outcomes:* Unrepresentable `Blocked` or `Refused` outcomes, unsupported modalities, group-shared → isolated context loss, and guessed `Box`/`TextLocate` coordinates always reject cleanly (`R` / L5).
@@ -334,7 +334,7 @@ Simple usage completion follows **source facts → justified inference → simpl
 
 Reuse neutral leaves cleanly: extract `InputModality` / `ModalityTokenCount` from [`task/embedding.rs`](../../crates/morphiecore-semantic/src/task/embedding.rs#L162-L175) and `CacheMode` / `CacheTtl` from [`context.rs`](../../crates/morphiecore-semantic/src/context.rs#L102-L110) alongside `Text`, `Presence`, `parse_json`, and inert media leaves. Do not reuse Generation's `StructuredValue` (`JsonLimits::STRUCTURED`), `ContentPart`, `Item`/`ResourceTable`, `ExecutionHints`, or completion estimator. Follow [`generation/request/mod.rs`](../../crates/morphiecore-semantic/src/task/generation/request/mod.rs), [`embedding.rs`](../../crates/morphiecore-semantic/src/task/embedding.rs), [`adapter/embeddings.rs`](../../crates/morphiecore-protocol/src/adapter/embeddings.rs), and [`embedding/projection.rs`](../../crates/morphiecore-protocol/src/embedding/projection.rs) for immutable requests and `Prepared` source/delivery separation.
 
-Eight directional design oracles (with independent hand-authored expectations, not round-trip self-checks) must be discriminated before implementation:
+Use these directional design oracles when implementing the relevant capability, with independent hand-authored expectations rather than round-trip self-checks. Deferred cells (media, spans, grouped targets, and sibling primitives) are gates for their own slices, not the text baseline:
 
 | # | Input / mutation scenario | Required observation |
 |---|---|---|
@@ -355,10 +355,10 @@ Review these choices before dependent implementation:
 
 | Decision | Recommendation | Still to select / lock |
 |---|---|---|
-| Downstream SDK roots | Separate `/typesafe` root; keep existing OpenAI `/v1` discovery; no third downstream Gemini surface | Exact SDK versions/languages, TypeSafe discovery metadata, and native error mapping |
+| Downstream SDK roots | Separate `/typesafe` root; keep existing OpenAI `/v1` discovery; no third downstream Gemini surface | TypeSafe discovery metadata, full native error mapping, and non-Python qualification |
 | Wave 1 Semantic IR | `Evidence::{State, Parts, History}`, Core 3 primitives (`Predicate`, `SingleChoice`, `OrdinalScore`), two-tier outcomes (`Blocked` vs `Refused`), exact decimal `Probability`, `ModalityTokenCount` | Human review of concrete Rust layout, custom Decision `JsonLimits`, and Wave 1 text/JSON bounds |
-| Wave 1 Upstream targets | P1 trio (`openai/decisions`, `typesafe/systemone`, `google/decisions` native codec); Perplexity `v1.2` and Cloudflare Clef as same-generation P1 follow-ups | Pinned OpenAI / TypeSafe / `@google/genai >= 3.2` revisions in `tests/upstream/sources.lock.json` |
-| Cross-family adaptation | Tiered gating: carrier/rubric/surrogate L3 in standard profile; isolation/truncation opt-in only; opaque confidence transfer withdrawn; `Blocked`/`Refused` L5 | Per-profile rule selection, rounding interval tolerances, and passing all 8 directional oracles |
+| Wave 1 Upstream targets | OpenAI and TypeSafe native text first; Gemini native codec and then Perplexity/Cloudflare as separate slices | Use the pinned Python sources in [`tests/upstream/sources.lock.json`](../../tests/upstream/sources.lock.json); qualify the implemented directions before activation |
+| Cross-family adaptation | Qualify each direction; require selection for carrier/rubric/surrogate L3 that downgrades content or guarantees; isolation/truncation opt-in only; no default opaque confidence transfer; uncarriable `Blocked`/`Refused` L5 | Per-profile rule selection, rounding interval tolerances, and the applicable directional oracles |
 | Wave 2 & Wave 3 extensions | Wave 2: multimodal (`Image`/`Audio`/`Video`/`Document` PDF, `MediaPresentation`), `SingleBox`, `TextLocate`; Wave 3: `MultiLabelChoice`, `QuantityRange`; Files URI deferred to Stage 4 Files & Uploads | Primary schema pinning for Qwen (`decision-model-preview`), Perplexity `v1.3` (`locate`), Microsoft `1.1`, Liquid `d1.2`, and Inception `mercury-decide` |
 
 Neither the dual-SDK direction nor the capability-union principle approves these concrete recommendations automatically. Use the [roadmap gates](../roadmap/index.md#stage-4-pending-scope), not this section, as the implementation queue.

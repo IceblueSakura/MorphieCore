@@ -6,6 +6,10 @@ use morphiecore::{
 };
 use serde_json::{Value, json};
 
+const DECISION_EVIDENCE: &str = "The package arrived with a broken screen.";
+const DECISION_INSTRUCTIONS: &str = "Was the item damaged on arrival?";
+const DECISION_ID: &str = "damaged";
+
 pub(super) fn request(protocol: Protocol, model: &str, siwc: bool) -> Value {
     match protocol {
         Protocol::OpenaiChat => {
@@ -20,6 +24,21 @@ pub(super) fn request(protocol: Protocol, model: &str, siwc: bool) -> Value {
         }
         Protocol::Google => {
             json!({"model":model,"input":PROMPT,"store":false,"stream":false})
+        }
+        Protocol::OpenaiDecisions => json!({
+            "model":model, "input":DECISION_EVIDENCE,
+            "questions":[{"type":"predicate","name":DECISION_ID,"instructions":DECISION_INSTRUCTIONS}]
+        }),
+        Protocol::TypesafeSystemOne | Protocol::GoogleDecisions => {
+            let field = if protocol == Protocol::TypesafeSystemOne {
+                "state"
+            } else {
+                "input"
+            };
+            json!({
+                "model":model, (field):DECISION_EVIDENCE,
+                "questions":{(DECISION_ID):{"type":"noul","instructions":DECISION_INSTRUCTIONS}}
+            })
         }
     }
 }
@@ -119,8 +138,37 @@ pub(super) fn probe(bytes: &[u8], protocol: Protocol) -> Result<Value, Error> {
             }
             bytes
         }
+        Protocol::OpenaiDecisions | Protocol::TypesafeSystemOne | Protocol::GoogleDecisions => {
+            return decision(&value, protocol);
+        }
     };
     completion(text_bytes)
+}
+fn decision(value: &Value, protocol: Protocol) -> Result<Value, Error> {
+    let (answer, kind, field) = if protocol == Protocol::OpenaiDecisions {
+        let [answer] = array(&value["answers"])?.as_slice() else {
+            return Err(Error::Response);
+        };
+        if answer["name"] != DECISION_ID {
+            return Err(Error::Response);
+        }
+        (answer, "predicate", "probability")
+    } else {
+        let answers = value["answers"].as_object().ok_or(Error::Response)?;
+        if answers.len() != 1 {
+            return Err(Error::Response);
+        }
+        (
+            answers.get(DECISION_ID).ok_or(Error::Response)?,
+            "noul",
+            "noul",
+        )
+    };
+    let probability = answer[field].as_f64().ok_or(Error::Response)?;
+    if answer["type"] != kind || !(0.0..=1.0).contains(&probability) {
+        return Err(Error::Response);
+    }
+    Ok(json!({"completed":true,"answers":1,"type":kind}))
 }
 pub(super) fn responses_stream(bytes: &[u8]) -> Result<Value, Error> {
     let mut decoder = SseDecoder::new(1 << 20);
