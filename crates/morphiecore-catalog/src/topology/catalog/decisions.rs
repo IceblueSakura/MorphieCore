@@ -1,6 +1,6 @@
 //! Qualified native Decision bindings. Task activation belongs to the deployment.
 use crate::{
-    protocol::decision::Native,
+    protocol::decision::{Native, Target},
     provider::{CredentialBindingId, CredentialKind, ProviderId},
     topology::{
         ExecutionContract, ModelId,
@@ -46,7 +46,7 @@ impl DecisionBinding {
             model: ModelId::new(self.model).expect("static Decision model"),
             upstream_model: self.model.into(),
             provider: ProviderId::new(self.provider).expect("static Decision provider"),
-            native: self.native,
+            target: Target::Native(self.native),
             credential,
             execution: ExecutionContract {
                 streaming: false,

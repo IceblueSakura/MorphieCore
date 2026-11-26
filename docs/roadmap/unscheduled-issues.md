@@ -70,7 +70,7 @@ Generation uses standard downstream APIs only. Uncarriable ordinary signatures f
 
 ### Decision qualification
 
-Only the [qualified native profile](../usage/api-reference.md#decisions) is public. The [roadmap](index.md#stage-4-pending-scope) schedules Gemini native text before individually selected cross-family mappings; the following gaps do not gate that work.
+Only the [qualified native OpenAI and TypeSafe profiles](../usage/api-reference.md#decisions) are public. The [roadmap](index.md#stage-4-pending-scope) schedules individually selected cross-family mappings; the following gaps do not gate that work.
 
 | Gap | Re-entry criterion |
 |---|---|

@@ -130,6 +130,18 @@ impl Trace {
             .set_attribute("morphiecore.operation", trace.request.operation);
         trace
     }
+    pub(super) fn embedded_decision(runtime: &crate::Runtime) -> Self {
+        let mut trace = Self::build(
+            runtime.diagnostics.as_ref(),
+            runtime.request_ids.next().map(|id| id.0.to_string()),
+            None,
+        );
+        trace.request.operation = "decision";
+        trace
+            .operation_span
+            .set_attribute("morphiecore.operation", "decision");
+        trace
+    }
     #[cfg(test)]
     pub(super) fn new(sink: Option<&Sink>) -> Self {
         Self::build(

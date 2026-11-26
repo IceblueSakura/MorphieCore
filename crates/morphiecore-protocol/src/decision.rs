@@ -13,6 +13,7 @@ use crate::{
 use serde_json::{Map, Number, Value, json};
 
 mod distribution;
+pub mod gemini;
 mod openai;
 mod system_one;
 
@@ -20,6 +21,13 @@ mod system_one;
 pub enum Native {
     OpenAi,
     SystemOne,
+}
+
+/// Upstream wire selection is separate from the two public SDK families.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Target {
+    Native(Native),
+    Gemini,
 }
 
 #[derive(Debug)]

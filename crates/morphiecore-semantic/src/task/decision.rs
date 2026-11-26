@@ -1,4 +1,5 @@
 //! Decision text evidence, ordered questions, and request-bound outcomes.
+use super::ModalityTokenCount;
 use crate::value::{Text, json_size};
 use serde_json::{Number, Value};
 use std::{collections::BTreeSet, fmt};
@@ -24,6 +25,7 @@ pub enum Error {
 pub enum Evidence {
     StateText(Text),
     StateJson(StructuredEvidence),
+    TextParts(Vec<Text>),
     HistoryUserText(Text),
     HistoryUserMessages(Vec<UserMessage>),
 }
@@ -108,7 +110,16 @@ impl Question {
             return Err(Error::Request);
         }
         match &kind {
-            QuestionKind::Predicate if instructions.is_none() => return Err(Error::Request),
+            QuestionKind::Predicate { criteria } => {
+                if instructions.is_none()
+                    || criteria.as_ref().is_some_and(|criteria| {
+                        !criteria.when_true.as_ref().is_none_or(within_bound)
+                            || !criteria.when_false.as_ref().is_none_or(within_bound)
+                    })
+                {
+                    return Err(Error::Request);
+                }
+            }
             QuestionKind::SingleChoice(options) => {
                 let mut seen = BTreeSet::new();
                 if !(1..=MAX_LEVELS).contains(&options.len()) || options.iter().any(|option| {
@@ -130,7 +141,6 @@ impl Question {
                     return Err(Error::Request);
                 }
             }
-            QuestionKind::Predicate => {}
         }
         Ok(Self {
             name,
@@ -151,9 +161,15 @@ impl Question {
 
 #[derive(Clone, Eq, PartialEq)]
 pub enum QuestionKind {
-    Predicate,
+    Predicate { criteria: Option<BinaryCriteria> },
     SingleChoice(Vec<ChoiceOption>),
     OrdinalScore(Vec<ScoreLevel>),
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct BinaryCriteria {
+    pub when_true: Option<Text>,
+    pub when_false: Option<Text>,
 }
 
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
@@ -184,6 +200,12 @@ impl Request {
         let evidence_ok = match &evidence {
             Evidence::StateText(text) | Evidence::HistoryUserText(text) => text_bound(text),
             Evidence::StateJson(_) => true,
+            Evidence::TextParts(parts) => {
+                !parts.is_empty()
+                    && parts.len() <= MAX_TEXT_PARTS
+                    && parts.iter().all(text_bound)
+                    && parts.iter().any(|part| !part.as_str().is_empty())
+            }
             Evidence::HistoryUserMessages(messages) => {
                 messages.len() <= MAX_TEXT_PARTS
                     && messages.iter().all(|m| match m {
@@ -270,7 +292,10 @@ pub enum Outcome {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Answer {
-    Predicate(Probability),
+    Predicate {
+        probability: Probability,
+        confidence: Option<Confidence>,
+    },
     SingleChoice {
         selected: usize,
         probabilities: Vec<Probability>,
@@ -286,6 +311,7 @@ pub enum Answer {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Confidence {
     Unspecified(Probability),
+    WinningMass(Probability),
     UniformAdjustedMaximum(Probability),
     CenteredOrdinalSpread(Probability),
 }
@@ -293,6 +319,7 @@ impl Confidence {
     pub fn reported(&self) -> &Probability {
         match self {
             Self::Unspecified(p)
+            | Self::WinningMass(p)
             | Self::UniformAdjustedMaximum(p)
             | Self::CenteredOrdinalSpread(p) => p,
         }
@@ -300,6 +327,7 @@ impl Confidence {
 }
 
 /// Answers in source question order, validated against the request cardinality.
+#[derive(Debug)]
 pub struct AnswerSet(Vec<Outcome>);
 impl AnswerSet {
     pub fn for_request(request: &Request, answers: Vec<Outcome>) -> Result<Self, Error> {
@@ -310,7 +338,10 @@ impl AnswerSet {
                 .zip(&answers)
                 .any(|(question, outcome)| match (&question.kind, outcome) {
                     (_, Outcome::Refused)
-                    | (QuestionKind::Predicate, Outcome::Answered(Answer::Predicate(_))) => false,
+                    | (
+                        QuestionKind::Predicate { .. },
+                        Outcome::Answered(Answer::Predicate { .. }),
+                    ) => false,
                     (
                         QuestionKind::SingleChoice(options),
                         Outcome::Answered(Answer::SingleChoice {
@@ -335,14 +366,37 @@ impl AnswerSet {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug)]
+pub struct Evaluation {
+    pub disposition: Disposition,
+    pub usage: Option<Usage>,
+}
+
+#[derive(Debug)]
+pub enum Disposition {
+    Evaluated(AnswerSet),
+    Blocked(PromptBlock),
+}
+
+pub struct PromptBlock {
+    pub reason: Text,
+    pub message: Option<Text>,
+}
+impl fmt::Debug for PromptBlock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PromptBlock").finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Usage {
-    pub input_tokens: u64,
-    pub output_tokens: u64,
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
     pub total_tokens: Option<u64>,
     pub cache_read_tokens: Option<u64>,
     pub cache_write_tokens: Option<u64>,
     pub reasoning_tokens: Option<u64>,
+    pub input_by_modality: Option<Vec<ModalityTokenCount>>,
 }
 
 #[cfg(test)]

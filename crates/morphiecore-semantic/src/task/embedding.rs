@@ -1,4 +1,5 @@
 //! Independent samples, exact dense values and source accounting. No wire or runtime target.
+pub use super::{InputModality, ModalityTokenCount};
 use serde_json::Number;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
@@ -158,20 +159,6 @@ impl EmbeddingVector {
 pub enum AccountingBasis {
     InputOnly,
     Unspecified,
-}
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum InputModality {
-    Unspecified,
-    Text,
-    Image,
-    Audio,
-    Video,
-    Document,
-}
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ModalityTokenCount {
-    pub modality: InputModality,
-    pub tokens: u64,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EmbeddingUsage {

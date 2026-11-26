@@ -128,7 +128,7 @@ fn choice_index(options: &[ChoiceOption], wire: &Value) -> Result<usize, CodecEr
 fn decode_question(question: &Value) -> Result<Question, CodecError> {
     let question = object(question)?;
     let kind = match string(question.get("type"))? {
-        "predicate" => QuestionKind::Predicate,
+        "predicate" => QuestionKind::Predicate { criteria: None },
         "choice" => {
             let options = array(question.get("choices").ok_or_else(CodecError::invalid)?)?;
             if !(2..=255).contains(&options.len()) {
@@ -217,7 +217,7 @@ fn describe(mut value: Value, description: Option<&Text>) -> Value {
 
 fn encode_question(question: &Question) -> Result<Value, CodecError> {
     let mut value = match question.kind() {
-        QuestionKind::Predicate => json!({"type":"predicate"}),
+        QuestionKind::Predicate { criteria: None } => json!({"type":"predicate"}),
         QuestionKind::SingleChoice(options) if (2..=255).contains(&options.len()) => {
             let choices: Vec<_> = options
                 .iter()
@@ -268,9 +268,10 @@ fn decode_answer(question: &Question, value: &Value) -> Result<Outcome, CodecErr
     }
     let parsed = match (question.kind(), string(map.get("type"))?) {
         (_, "refusal") => return Ok(Outcome::Refused),
-        (QuestionKind::Predicate, "predicate") => {
-            Answer::Predicate(probability(&value["probability"])?)
-        }
+        (QuestionKind::Predicate { criteria: None }, "predicate") => Answer::Predicate {
+            probability: probability(&value["probability"])?,
+            confidence: None,
+        },
         (QuestionKind::SingleChoice(options), "choice") => {
             let selected = choice_index(options, &value["choice"])?;
             let probabilities = ordered_probabilities(
@@ -325,7 +326,13 @@ fn encode_answer(question: &Question, outcome: &Outcome) -> Result<Value, CodecE
     let name = question.name();
     Ok(match (question.kind(), outcome) {
         (_, Outcome::Refused) => json!({"type":"refusal", "name":name}),
-        (QuestionKind::Predicate, Outcome::Answered(Answer::Predicate(p))) => {
+        (
+            QuestionKind::Predicate { criteria: None },
+            Outcome::Answered(Answer::Predicate {
+                probability: p,
+                confidence: None,
+            }),
+        ) => {
             json!({"type":"predicate", "name":name, "probability":p.as_number()})
         }
         (
@@ -377,12 +384,13 @@ pub(super) fn complete(
     let answers = answers(request, outcomes)?;
     let usage = root.get("usage").ok_or_else(CodecError::invalid)?;
     let source = Usage {
-        input_tokens: count(&usage["input_tokens"])?,
-        output_tokens: count(&usage["output_tokens"])?,
+        input_tokens: Some(count(&usage["input_tokens"])?),
+        output_tokens: Some(count(&usage["output_tokens"])?),
         total_tokens: Some(count(&usage["total_tokens"])?),
         cache_read_tokens: Some(count(&usage["input_tokens_details"]["cached_tokens"])?),
         cache_write_tokens: Some(count(&usage["input_tokens_details"]["cache_write_tokens"])?),
         reasoning_tokens: Some(count(&usage["output_tokens_details"]["reasoning_tokens"])?),
+        input_by_modality: None,
     };
     let answers = request
         .questions()

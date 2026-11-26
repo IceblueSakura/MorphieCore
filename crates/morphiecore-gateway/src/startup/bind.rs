@@ -85,7 +85,10 @@ impl Gateway {
                 .chain(embeddings.keys().map(String::as_str))
                 .chain(decisions.values().filter_map(|entry| {
                     let route = &entry.route;
-                    (route.native == crate::protocol::decision::Native::OpenAi
+                    (route.target
+                        == crate::protocol::decision::Target::Native(
+                            crate::protocol::decision::Native::OpenAi,
+                        )
                         && topology.model_metadata(&route.model).is_some())
                     .then(|| route.model.as_str())
                 })),

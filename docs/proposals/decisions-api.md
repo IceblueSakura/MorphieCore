@@ -2,28 +2,14 @@
 
 This page covers extensions to the [delivered native Python profile](../usage/api-reference.md#decisions), not a second baseline spec. [Architecture](../architecture/index.md#decision-api-direction) owns the independent Decision IR and public SDK families; the [roadmap](../roadmap/index.md#stage-4-pending-scope) owns execution order, and the [issue register](../roadmap/unscheduled-issues.md#decision-qualification) owns unscheduled gaps. An extension is not a binding or a support claim until its direction passes verification.
 
-## Gemini native execution
-
-The next slice is text-only `gemini-decision-1` at Google's `POST /v1beta/decisions`. The [contract evidence](../refs/2026-11-25-decision-contracts.md#google-gemini-decision-1-p1) and [direct predicate probe](../refs/2026-11-25-decision-contracts.md#native-qualification-evidence) establish a callable endpoint, not a gateway codec, binding, or client mapping. Use the [locked upstream sources](../../tests/upstream/sources.lock.json) and add a distinct codec: keyed questions resemble System One, but Gemini owns its input parts, binary criteria, usage and whole-request blocking. Reuse neutral Interactions content leaves where their meanings agree. Do not add a third downstream SDK family or activate a public model as part of the upstream slice.
-
-| Contract | Gate for the native slice |
-|---|---|
-| Ordered text evidence and criteria | Preserve part order and Gemini's concatenation contract. Check shared-input and question-position rules independently. Treat structured JSON serialization, role removal and media as separate projections, not implicit text handling. |
-| Noul | Carry true/false descriptions without folding them into instructions. Validate the reported `[0.01, 0.99]` value and native confidence as distinct facts; never unclamp or substitute one for the other. |
-| Choice | Validate UTF-8 option ordering and target tie-breaks before restoring source slots. Associate the complete keyed answer set through a request-bound expectation; reject missing, duplicate or extra keys. |
-| Score and usage | Keep ordinal rubric order, validate native probabilities, reported score and confidence against the locked contract, and preserve reported totals and modality details without inventing counts. |
-| Block and failure | Represent an explicit whole-request block separately from per-question refusal. Empty answers without block evidence, contradictory answers plus block evidence, and incomplete EOF are errors, not evaluated results. |
-
-Exit with directional codec expectations, a synthetic gateway-to-upstream exchange covering evaluation and block/failure cases, and a real mixed three-primitive native request. The predicate probe alone does not close this slice.
-
 ## Cross-family directions
 
-No off-diagonal route is enabled. Select and qualify one source, target, evidence carrier and primitive subset at a time; qualification in one direction does not authorize the reverse.
+No cross-family route is enabled. Gemini's [qualified native upstream](../architecture/index.md#decision-api-direction) is embedded-only until a downstream direction is qualified. Select one source, target, evidence carrier and primitive subset at a time; qualification in one direction does not authorize the reverse.
 
 | Downstream SDK | Pending upstream directions |
 |---|---|
-| OpenAI | TypeSafe System One; Gemini after native execution qualifies |
-| TypeSafe | OpenAI Decisions; Gemini after native execution qualifies |
+| OpenAI | TypeSafe System One; Gemini Decisions |
+| TypeSafe | OpenAI Decisions; Gemini Decisions |
 
 Before activating a direction, classify its fields under the [conversion ladder](../architecture/adaptation.md#conversion-ladder). Start with the smallest faithful subset. Keep request preparation and answer association coupled: emitted keys, target option order and rubric expectations must be recorded with the request and checked before shaping a client answer.
 
@@ -39,7 +25,7 @@ A public direction needs independent request and result expectations, negative t
 
 ## Deferred extensions
 
-These are research or review items, not Gemini prerequisites or current activation scope. Re-enter only for a selected consumer and a pinned target contract.
+These are research or review items, not prerequisites for the selected cross-family slices. Re-enter only for a selected consumer and a pinned target contract.
 
 | Extension | What is still needed |
 |---|---|

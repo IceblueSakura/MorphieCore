@@ -452,7 +452,7 @@ impl Models {
                 .filter(|account| account.enabled)
                 .ok_or(StartupError::Credentials)?;
             let route = binding.route(account.binding_id());
-            if route.native == crate::protocol::decision::Native::OpenAi
+            if binding.native == crate::protocol::decision::Native::OpenAi
                 && catalog.model_metadata(&route.model).is_none()
             {
                 return Err(StartupError::Binding);

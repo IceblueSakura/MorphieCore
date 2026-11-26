@@ -4,7 +4,7 @@ fn predicate(name: Option<&str>, instructions: &str) -> Question {
     Question::new(
         name.map(str::to_owned),
         Some(Text::new(instructions, "test instructions", 128).unwrap()),
-        QuestionKind::Predicate,
+        QuestionKind::Predicate { criteria: None },
     )
     .unwrap()
 }

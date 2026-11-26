@@ -7,7 +7,7 @@ The expansion proposals are modularized by operational domain:
 
 | Domain | Proposal document | Scope & Target Stage | Status |
 |---|---|---|---|
-| **Decision extensions** | [Decision API Extension Proposals](decisions-api.md) | Stage 4: Gemini native upstream, then selected cross-family directions | Remaining contracts under review |
+| **Decision extensions** | [Decision API Extension Proposals](decisions-api.md) | Stage 4: selected cross-family directions | Remaining contracts under review |
 | **Multimodal Operations** | [Multimodal Media Proposals](multimodal.md) | Stage 4: Unselected Speech/ASR extensions, non-static Image controls/streaming, and async Video | Pending review |
 | **Tasks & Counting** | [Standalone Tasks and Token Counting](tasks-and-counting.md) | Deferred: Messages counting. Unscheduled: Responses input-token counting and Embedding extensions | Pending review |
 | **Files & Uploads** | [Files and Uploads Resource Proposals](files-and-uploads.md) | Stage 4: Files management, multipart uploads | Pending review |

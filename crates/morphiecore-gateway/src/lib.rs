@@ -10,6 +10,7 @@ mod routing;
 mod runtime;
 pub mod startup;
 mod tasks;
+pub use tasks::decisions::DecisionExecutionError;
 #[cfg(test)]
 mod tests;
 

@@ -1,6 +1,6 @@
 use crate::{
     DecisionEntry, Gateway, Limits, TaskEntries,
-    protocol::decision::Native,
+    protocol::decision::{Native, Target},
     provider::{CredentialBindingId, CredentialKind, SecretMaterial, TrustedOrigin, catalog},
     topology::{ExecutionContract, ModelId, compile, decisions::DecisionRoute},
 };
@@ -14,6 +14,160 @@ use axum::{
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, sync::Arc};
 use tower::ServiceExt;
+
+#[tokio::test]
+async fn gemini_decision_uses_bound_upstream_without_opening_http_routes() {
+    use crate::semantic::{
+        task::decision::{
+            Answer, Disposition, Evidence, Outcome, Question, QuestionKind,
+            Request as DecisionRequest,
+        },
+        value::Text,
+    };
+    use axum::{http::header::CONTENT_TYPE, response::IntoResponse};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let observe = calls.clone();
+    let upstream = Router::new().route("/v1beta/decisions", post(move |headers: HeaderMap, Json(wire): Json<Value>| {
+        let calls = observe.clone();
+        async move {
+            calls.fetch_add(1, Ordering::Relaxed);
+            assert_eq!(headers["x-goog-api-key"], "synthetic-google-key");
+            assert!(!headers.contains_key("authorization"));
+            assert_eq!(wire["model"], "gemini-decision-1");
+            assert_eq!(wire["questions"], json!({"0":{"type":"noul","instructions":"Did it arrive?"}}));
+            match wire["input"].as_str().unwrap() {
+                "complete" => Json(json!({"answers":{"0":{"type":"noul","noul":0.92,"confidence":0.92}},
+                                          "usage":{"total_input_tokens":7,"total_output_tokens":0,"total_tokens":7}})).into_response(),
+                "blocked" => Json(json!({"prompt_feedback":{"block_reason":"safety"},"answers":{}})).into_response(),
+                "incomplete" => (
+                    [(CONTENT_TYPE, "application/json")],
+                    Body::from(r#"{"answers":{"0":{"type":"noul","noul":0.92,"confidence":0.92}}"#),
+                ).into_response(),
+                _ => panic!("unexpected Decision input"),
+            }
+        }
+    }));
+    let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+    let credential = CredentialBindingId::new("google-test").unwrap();
+    let mut provider = catalog::get("google").unwrap().clone();
+    provider.origin = TrustedOrigin::parse(&format!("http://{address}")).unwrap();
+    let route = DecisionRoute {
+        model: ModelId::new("internal-gemini").unwrap(),
+        upstream_model: "gemini-decision-1".into(),
+        provider: provider.id.clone(),
+        credential: credential.clone(),
+        target: Target::Gemini,
+        execution: ExecutionContract {
+            streaming: false,
+            request_body_limit: 4096,
+            response_body_limit: 4096,
+            timeout_ms: 2000,
+            credential_kind: CredentialKind::ApiKey,
+        },
+        system_one_metadata: None,
+    };
+    let gateway = Gateway::new(
+        compile(vec![provider], vec![], vec![], vec![], vec![])
+            .unwrap()
+            .with_decisions(vec![route])
+            .unwrap(),
+        TaskEntries {
+            decisions: vec![DecisionEntry {
+                model: "internal-gemini".into(),
+            }],
+            ..TaskEntries::default()
+        },
+        BTreeMap::from([(
+            credential,
+            Arc::new(SecretMaterial::new("synthetic-google-key").unwrap()),
+        )]),
+        BTreeMap::from([(
+            "test".into(),
+            SecretMaterial::new(super::support::KEY).unwrap(),
+        )]),
+        Limits::default(),
+        None,
+    )
+    .unwrap();
+    let router = gateway.router();
+    let authed = |method: &str, path: &str, body: &'static str| {
+        Request::builder()
+            .method(method)
+            .uri(path)
+            .header("authorization", format!("Bearer {}", super::support::KEY))
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap()
+    };
+    for path in [
+        "/v1/decisions",
+        "/typesafe/v1/systemone",
+        "/v1beta/decisions",
+    ] {
+        let response = router
+            .clone()
+            .oneshot(authed("POST", path, r#"{"model":"internal-gemini"}"#))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+    let models = router
+        .oneshot(authed("GET", "/v1/models", ""))
+        .await
+        .unwrap();
+    let models: Value =
+        serde_json::from_slice(&to_bytes(models.into_body(), 4096).await.unwrap()).unwrap();
+    assert_eq!(models["data"], json!([]));
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+
+    let request = |text| {
+        DecisionRequest::new(
+            Evidence::StateText(Text::new(text, "evidence", 128).unwrap()),
+            vec![
+                Question::new(
+                    None,
+                    Some(Text::new("Did it arrive?", "instructions", 128).unwrap()),
+                    QuestionKind::Predicate { criteria: None },
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap()
+    };
+    let evaluated = gateway
+        .evaluate_gemini_decision("internal-gemini", request("complete"))
+        .await
+        .unwrap();
+    let Disposition::Evaluated(answers) = evaluated.disposition else {
+        panic!("expected evaluation")
+    };
+    assert!(matches!(
+        answers.outcomes(),
+        [Outcome::Answered(Answer::Predicate {
+            confidence: Some(_),
+            ..
+        })]
+    ));
+    assert_eq!(evaluated.usage.unwrap().input_tokens, Some(7));
+    let blocked = gateway
+        .evaluate_gemini_decision("internal-gemini", request("blocked"))
+        .await
+        .unwrap();
+    assert!(
+        matches!(blocked.disposition, Disposition::Blocked(block) if block.reason.as_str() == "safety")
+    );
+    let malformed = gateway
+        .evaluate_gemini_decision("internal-gemini", request("incomplete"))
+        .await
+        .unwrap_err();
+    assert_eq!(malformed.status, StatusCode::BAD_GATEWAY);
+    assert_eq!(calls.load(Ordering::Relaxed), 3);
+    server.abort();
+}
 
 #[tokio::test]
 async fn configured_decision_discovery_separates_sdk_families() {
@@ -184,7 +338,7 @@ async fn explicit_decision_routes_send_only_their_bound_native_operation() {
             upstream_model: wire.into(),
             provider: provider.id.clone(),
             credential: key.clone(),
-            native,
+            target: Target::Native(native),
             system_one_metadata: None,
             execution: ExecutionContract {
                 streaming: false,

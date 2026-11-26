@@ -1,7 +1,7 @@
 //! Explicit, native-only Decision routes. A label may also have a Generation route.
 use super::{CompiledTopology, ExecutionContract, ModelId, TopologyError};
 use crate::{
-    protocol::decision::Native,
+    protocol::decision::{Native, Target},
     provider::{CredentialBindingId, CredentialKind, ProviderId, ProviderOperation},
 };
 
@@ -10,7 +10,7 @@ pub struct DecisionRoute {
     pub model: ModelId,
     pub upstream_model: String,
     pub provider: ProviderId,
-    pub native: Native,
+    pub target: Target,
     pub credential: CredentialBindingId,
     pub execution: ExecutionContract,
     pub system_one_metadata: Option<SystemOneMetadata>,
@@ -25,9 +25,10 @@ pub struct SystemOneMetadata {
 
 impl DecisionRoute {
     pub fn operation(&self) -> ProviderOperation {
-        match self.native {
-            Native::OpenAi => ProviderOperation::OpenaiDecisions,
-            Native::SystemOne => ProviderOperation::SystemOne,
+        match self.target {
+            Target::Native(Native::OpenAi) => ProviderOperation::OpenaiDecisions,
+            Target::Native(Native::SystemOne) => ProviderOperation::SystemOne,
+            Target::Gemini => ProviderOperation::GoogleDecisions,
         }
     }
 }
@@ -61,7 +62,9 @@ impl CompiledTopology {
             {
                 return Err(TopologyError::InvalidExecutionLimits);
             }
-            if route.native != Native::SystemOne && route.system_one_metadata.is_some() {
+            if route.target != Target::Native(Native::SystemOne)
+                && route.system_one_metadata.is_some()
+            {
                 return Err(TopologyError::TaskMismatch);
             }
             if route.upstream_model.is_empty()

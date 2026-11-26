@@ -40,7 +40,7 @@ Every pending slice follows: pin official contracts → implement one coherent s
 
 | Package | Scope | Exit criteria |
 |---|---|---|
-| **Decision API extensions** | [Gemini native text upstream](../proposals/decisions-api.md#gemini-native-execution) first (diagnostic only today), then individually selected [cross-family directions](../proposals/decisions-api.md#cross-family-directions) | Native codec/execution and real mixed-primitive evidence for Gemini; directional association, outcome checks, and real client SDK acceptance for each public mapping |
+| **Decision API extensions** | Individually selected [cross-family directions](../proposals/decisions-api.md#cross-family-directions) across OpenAI, TypeSafe and Gemini upstreams | Directional request/result association, outcome checks, and real client SDK acceptance for each public mapping |
 | **Files & Uploads** | File storage/ID authorization, bounded chunked uploads, cleanup, and file-reference resolution | Isolated account/project namespaces, bounded spooling, cancellation cleanup, and target-scoped ID checks |
 | **Video** | Async video generation (`grok-imagine-video` / native jobs), polling, and artifact delivery | Selected async job contract, bounded polling, cancellation, and honest completion |
 | **Image & Audio extensions** | Optional OpenAI `mask` on Edit, `partial_images` preview SSE on static targets, native ratio/resolution tiers; Audio Translation, progressive non-SSE binary Speech, and subtitle/diarized ASR | Explicit contract selection and conformance per extension; existing static behavior stays protected |

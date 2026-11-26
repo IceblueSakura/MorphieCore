@@ -10,7 +10,7 @@ fn decode_question(name: &str, question: &Value) -> Result<Question, CodecError>
     let question = object(question)?;
     let criteria = question.get("criteria");
     let kind = match string(question.get("type"))? {
-        "noul" if criteria.is_none_or(Value::is_null) => QuestionKind::Predicate,
+        "noul" if criteria.is_none_or(Value::is_null) => QuestionKind::Predicate { criteria: None },
         "choice" => {
             let entries = object(criteria.ok_or_else(CodecError::invalid)?)?;
             if !(1..=255).contains(&entries.len()) {
@@ -106,7 +106,7 @@ fn criterion(level: &ScoreLevel) -> Result<&str, CodecError> {
 
 fn encode_question(question: &Question) -> Result<Value, CodecError> {
     let mut value = match question.kind() {
-        QuestionKind::Predicate => json!({"type":"noul"}),
+        QuestionKind::Predicate { criteria: None } => json!({"type":"noul"}),
         QuestionKind::SingleChoice(options) => {
             let criteria = options
                 .iter()
@@ -156,7 +156,10 @@ pub(super) fn encode_request(request: &Request, model: &str) -> Result<Value, Co
 fn decode_answer(question: &Question, value: &Value) -> Result<Outcome, CodecError> {
     let kind = value["type"].as_str().ok_or_else(CodecError::invalid)?;
     let answer = match (question.kind(), kind) {
-        (QuestionKind::Predicate, "noul") => Answer::Predicate(probability(&value["noul"])?),
+        (QuestionKind::Predicate { criteria: None }, "noul") => Answer::Predicate {
+            probability: probability(&value["noul"])?,
+            confidence: None,
+        },
         (QuestionKind::SingleChoice(options), "choice") => {
             let selected = choice_index(options, string(value.get("choice"))?)?;
             let probabilities = ordered_probabilities(
@@ -218,7 +221,13 @@ fn decode_answer(question: &Question, value: &Value) -> Result<Outcome, CodecErr
 
 fn encode_answer(question: &Question, outcome: &Outcome) -> Result<Value, CodecError> {
     Ok(match (question.kind(), outcome) {
-        (QuestionKind::Predicate, Outcome::Answered(Answer::Predicate(p))) => {
+        (
+            QuestionKind::Predicate { criteria: None },
+            Outcome::Answered(Answer::Predicate {
+                probability: p,
+                confidence: None,
+            }),
+        ) => {
             json!({"type":"noul", "noul":p.as_number()})
         }
         (
@@ -282,12 +291,9 @@ pub(super) fn complete(
     let answers = answers(request, outcomes)?;
     let usage = root.get("usage").ok_or_else(CodecError::invalid)?;
     let source = Usage {
-        input_tokens: count(&usage["input_tokens"])?,
-        output_tokens: count(&usage["output_tokens"])?,
-        total_tokens: None,
-        cache_read_tokens: None,
-        cache_write_tokens: None,
-        reasoning_tokens: None,
+        input_tokens: Some(count(&usage["input_tokens"])?),
+        output_tokens: Some(count(&usage["output_tokens"])?),
+        ..Usage::default()
     };
     let delivery = request
         .questions()
