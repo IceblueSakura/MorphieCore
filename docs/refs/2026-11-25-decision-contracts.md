@@ -21,6 +21,7 @@ As of 2026-11-25, no dedicated `/v1/decisions` or `/v1/systemone` decision-model
   - [OpenRouter Decisions aggregator](#openrouter-decisions-aggregator)
 - [Codebase and IR boundary observations](#codebase-and-ir-boundary-observations)
 - [Native qualification evidence](#native-qualification-evidence)
+- [Cross-family projection evidence](#cross-family-projection-evidence)
 
 ## Wire families and ecosystem matrix
 
@@ -117,4 +118,19 @@ Native Python clients also completed mixed three-primitive requests over structu
 
 Gemini returned complete Noul, Choice and Score reports for ordered text parts and explicit binary criteria. The embedded gateway validated all three together, including native winning-mass confidence, zero reported output tokens, and text input usage. This qualifies one explicitly bound native upstream, not a downstream SDK direction. Blocked, inconsistent and incomplete responses were checked against synthetic upstreams, not triggered on the live Provider.
 
-See the [extension proposals](../proposals/decisions-api.md) for qualification gates beyond these observations.
+## Cross-family projection evidence
+
+An isolated loopback trial connected the pinned OpenAI Python `3.37.0` and TypeSafe Python `0.7.6` SDKs to the real upstreams through the native codecs. The trial evaluated two separately named binary questions over plain text and checked name-to-answer association. It used test-only framing and delivery, not a configured gateway route or model discovery.
+
+| SDK → upstream | Request evidence | Downstream result |
+|---|---|---|
+| OpenAI → TypeSafe | Native inference succeeded after explicitly removing the OpenAI user frame. | The strict SDK rejected missing `total_tokens`, `input_tokens_details`, and `output_tokens_details`; ordinary parsing returned the predicates without those fields. No counters were filled. |
+| OpenAI → Gemini | Native inference succeeded after explicitly removing the OpenAI user frame. | The strict SDK rejected missing `input_tokens_details` and `output_tokens_details`; reported totals were present. Gemini's source confidence has no standard OpenAI Predicate field. |
+| TypeSafe → OpenAI | Native inference succeeded with the TypeSafe state explicitly placed in an OpenAI user frame. | The SDK consumed both Noul results and the reported token counts. The framing change and OpenAI's per-question refusal still need policy selection. |
+| TypeSafe → Gemini | Plain text and question instructions prepared without a role or content change. The [TypeSafe Noul guide](https://docs.typesafe.ai/primitives/noul.md) and [Gemini guide](https://aistudio.google.com/docs/decisions-api#best-practices) both say question keys are not sent to the model. | Both Noul results and reported token counts were consumed. The standard typed `NoulAnswer` discarded `confidence` even when the loopback fixture included the genuine Gemini value in JSON. Gemini also reports no `model` in the evaluation envelope; the trial label was a binding label, not a claimed upstream report. |
+
+Synthetic success envelopes carrying an OpenAI refusal or a Gemini block produced incomplete or empty TypeSafe typed results. A synthetic TypeSafe `422` produced a typed exception; this is evidence that an error carrier works, not selection of a production status or error policy.
+
+Real mixed native replies show why `confidence` cannot be copied between protocols. Gemini Choice and Score report winning mass (`p_max`); its values differed from the documented TypeSafe formulas on the same serialized distributions. The TypeSafe samples included a Choice and a Score that differed from `p_max`. OpenAI also matched the TypeSafe statistic in individual examples, but a sample match does not establish the undocumented formula. Separately, the exact `gemini-decision-1` release is documented in the [Google release notes](https://aistudio.google.com/docs/changelog#11-11-2026); this is not runtime discovery acceptance.
+
+See the [extension proposals](../proposals/decisions-api.md) for selection and release gates. None of the trial directions is qualified for public use.

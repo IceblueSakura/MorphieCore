@@ -1,5 +1,66 @@
 use super::*;
 
+#[test]
+fn system_one_plain_text_noul_prepares_gemini_without_reframing_state() {
+    use crate::semantic::task::decision::Disposition;
+
+    let ingress = Native::SystemOne
+        .decode_request(
+            br#"{
+        "model":"candidate","state":"The box is dry, but the screen is cracked.",
+        "questions":{
+            "z":{"type":"noul","instructions":"Is the screen cracked?"},
+            "a":{"type":"noul","instructions":"Is the box wet?"}
+        }
+    }"#,
+        )
+        .unwrap();
+    let prepared = gemini::prepare(ingress.task, "gemini-decision-1").unwrap();
+    assert_eq!(
+        prepared.body,
+        json!({
+            "model":"gemini-decision-1","input":"The box is dry, but the screen is cracked.",
+            "questions":{
+                "0":{"type":"noul","instructions":"Is the screen cracked?"},
+                "1":{"type":"noul","instructions":"Is the box wet?"}
+            }
+        })
+    );
+    let reply = br#"{"answers":{
+        "1":{"type":"noul","noul":0.14,"confidence":0.86},
+        "0":{"type":"noul","noul":0.93,"confidence":0.93}
+    }}"#;
+    let source = prepared.expectation.complete(reply).unwrap();
+    let Disposition::Evaluated(answers) = source.disposition else {
+        panic!("expected typed evaluation");
+    };
+    let [
+        Outcome::Answered(Answer::Predicate {
+            probability: first,
+            confidence: Some(Confidence::WinningMass(first_mass)),
+        }),
+        Outcome::Answered(Answer::Predicate {
+            probability: second,
+            confidence: Some(Confidence::WinningMass(second_mass)),
+        }),
+    ] = answers.outcomes()
+    else {
+        panic!("expected Noul reports including their source confidence");
+    };
+    assert_eq!(
+        (first.as_number().as_str(), second.as_number().as_str()),
+        ("0.93", "0.14")
+    );
+    assert_eq!(
+        (
+            first_mass.as_number().as_str(),
+            second_mass.as_number().as_str()
+        ),
+        ("0.93", "0.86")
+    );
+    assert!(source.usage.is_none(), "absent usage is not backfilled");
+}
+
 fn predicate(name: Option<&str>, instructions: &str) -> Question {
     Question::new(
         name.map(str::to_owned),
@@ -7,6 +68,24 @@ fn predicate(name: Option<&str>, instructions: &str) -> Question {
         QuestionKind::Predicate { criteria: None },
     )
     .unwrap()
+}
+
+#[test]
+fn native_preparation_does_not_implicitly_add_or_drop_user_framing() {
+    let openai = br#"{"model":"test","input":"text","questions":[
+        {"name":"a","type":"predicate","instructions":"Check."}
+    ]}"#;
+    let system_one = br#"{"model":"test","state":"text","questions":{
+        "a":{"type":"noul","instructions":"Check."}
+    }}"#;
+    for (source, target, wire) in [
+        (Native::OpenAi, Native::SystemOne, openai.as_slice()),
+        (Native::SystemOne, Native::OpenAi, system_one.as_slice()),
+    ] {
+        let request = || source.decode_request(wire).unwrap().task;
+        assert!(source.prepare(request(), "control").is_ok());
+        assert!(target.prepare(request(), "opposite").is_err());
+    }
 }
 
 #[test]
