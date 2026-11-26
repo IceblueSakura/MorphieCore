@@ -1,6 +1,6 @@
 # Decision model contracts expansion
 
-Checked 2026-11-25. This note extends the [2026-10-23 Decision contracts](2026-10-23-decision-contracts.md) note with newly published provider APIs, primitive extensions, and codebase constraints observed while refining the unified Decision Semantic IR. [Architecture](../architecture/index.md#decision-api-direction) owns the selected dual-SDK direction; [Decision API Proposal](../proposals/decisions-api.md#decisions) owns proposed layouts and projections; [Roadmap](../roadmap/index.md#stage-4-pending-scope) owns gates.
+Checked 2026-11-25. This note extends the [2026-10-23 Decision contracts](2026-10-23-decision-contracts.md) note with newly published provider APIs, primitive extensions, and codebase constraints observed while refining the unified Decision Semantic IR. [Architecture](../architecture/index.md#decision-api-direction) owns the selected dual-SDK direction; [Decision extensions](../proposals/decisions-api.md) own proposed projections; [Roadmap](../roadmap/index.md#stage-4-pending-scope) owns gates.
 
 Evidence is explicitly stratified into two tiers:
 - **P1 (Primary schema/SDK evidence):** Direct OpenAPI `v1beta` schema, official `@google/genai` / `google-genai` SDK source, and official guide pages for Google Gemini Decision 1, alongside the earlier P1 baselines for OpenAI, TypeSafe, Perplexity v1.2, and Cloudflare Clef recorded on 2026-10-23.
@@ -20,7 +20,7 @@ As of 2026-11-25, no dedicated `/v1/decisions` or `/v1/systemone` decision-model
   - [Inception Mercury Decide](#inception-mercury-decide)
   - [OpenRouter Decisions aggregator](#openrouter-decisions-aggregator)
 - [Codebase and IR boundary observations](#codebase-and-ir-boundary-observations)
-- [Updated implementation evidence still needed](#updated-implementation-evidence-still-needed)
+- [Native qualification evidence](#native-qualification-evidence)
 
 ## Wire families and ecosystem matrix
 
@@ -105,9 +105,9 @@ Inspection of `crates/morphiecore-semantic` establishes three concrete constrain
 - **Shared leaf reuse candidates:** [`InputModality` and `ModalityTokenCount`](../../crates/morphiecore-semantic/src/task/embedding.rs#L162-L175) already match Gemini `input_tokens_by_modality` and can be shared neutrally without coupling Decision to Embedding. Similarly, [`CacheMode` and `CacheTtl`](../../crates/morphiecore-semantic/src/context.rs#L102-L110) fit `DecisionServiceHints` without importing [`ExecutionHints`](../../crates/morphiecore-semantic/src/context.rs#L168-L176) (`store`, `background`, `max_tool_calls`).
 - **Presence serialization rule:** [`Presence<T>`](../../crates/morphiecore-semantic/src/value/presence.rs#L9-L16) serializes both `Absent` and `Null` via `serialize_none`, leaving field omission (`skip_serializing_if`) to the enclosing wire codec. Use `Option<T>` by default and reserve `Presence<T>` for fields where `null` and absent are observably distinct.
 
-## Updated implementation evidence still needed
+## Native qualification evidence
 
-Native text-predicate diagnostics returned a matching answer from OpenAI `gpt-6-luna`, TypeSafe `jev-1.13.0`, and Google `gemini-decision-1`. The locked OpenAI and TypeSafe Python SDKs discovered the configured models through their respective service endpoints and consumed all three typed primitives from the native Providers. OpenAI also retrieved the same model object; TypeSafe used its default zstd request compression. Service discovery did not query either upstream.
+Native text-predicate diagnostics returned a matching answer from OpenAI `gpt-6-luna`, TypeSafe `jev-1.13.0`, and Google `gemini-decision-1`. Gemini evidence is diagnostic only. The locked OpenAI and TypeSafe Python SDKs discovered `gpt-6-luna` and `jev-1.14.0` through their respective service endpoints and consumed all three typed primitives from the native Providers, including through the deployed TLS reverse proxy. OpenAI also retrieved the same model object; TypeSafe used its default zstd request compression. Service discovery did not query either upstream.
 
 The fixed OpenAI and TypeSafe models both returned full distributions for a 40-option Choice and a 10-level Score. OpenAI kept Boolean `true` distinct from string `"true"` and both models echoed the requested rubric. One TypeSafe ten-level report differed from the expected score computed from its serialized probabilities by `0.05`, despite those probabilities summing to one. The native codecs use clipped half-hundredth intervals and the simplex constraint to admit rounded reports without rewriting the distribution or reported statistics. This is a gateway acceptance envelope, not a vendor guarantee of precision. TypeSafe also served singletons with a numeric confidence; the singleton formula is not asserted.
 
@@ -115,8 +115,4 @@ Live TypeSafe discovery listed `jev-latest` and `jev-preview`, not the fixed Jev
 
 Native Python clients also completed mixed three-primitive requests over structured evidence. OpenAI used an `input_json` part within user-owned history, whereas TypeSafe kept business JSON in `state`; keys such as `role` and `image_url` stayed inert data.
 
-1. Qualify Gemini through the gateway and pin JavaScript SDK consumers separately before claiming support.
-2. Retrieve primary DashScope OpenAPI / run a bounded probe for `qwen/decision-model-preview` to resolve the response-key and image-support conflicts.
-3. Lock Perplexity `v1.3` `locate` span unit (`UTF-8` vs `UTF-16` vs Unicode scalar), endpoint bounds, and `v1.3` question-grouping behavior before Wave 2 `TextLocate` admission.
-4. Retrieve primary Foundry OpenAPI for `Microsoft-Decision-1.1` before adding any Microsoft binding.
-5. Pin primary schemas for Liquid `d1.2` (`MultiLabelChoice`, `QuantityRange`, detection/extraction) and Inception `mercury-decide` (`extract`) before Wave 3 admission.
+See the [extension proposals](../proposals/decisions-api.md) for qualification gates beyond these observations.

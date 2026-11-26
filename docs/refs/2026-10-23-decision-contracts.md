@@ -1,6 +1,6 @@
 # Decision model contracts
 
-Checked 2026-10-23. Official documentation, model schemas and SDK source describe dedicated typed decision APIs, not ordinary reasoning or JSON-mode Generation. This note records source evidence and conflicts, not design approval or runtime support. [Architecture](../architecture/index.md#decision-api-direction) owns the selected dual-SDK direction; [API expansion design](../proposals/decisions-api.md#decisions) owns proposals; [Roadmap](../roadmap/index.md#stage-4-pending-scope) owns gates.
+Checked 2026-10-23. Official documentation, model schemas and SDK source describe dedicated typed decision APIs, not ordinary reasoning or JSON-mode Generation. This note records source evidence and conflicts, not design approval or runtime support. [Architecture](../architecture/index.md#decision-api-direction) owns the dual-SDK contract; [Decision extensions](../proposals/decisions-api.md) own proposals; [Roadmap](../roadmap/index.md#stage-4-pending-scope) owns gates.
 
 No inference calls, credentials, SDK executions or implementation changes were used for this research. SDK links below point to mutable branches/documentation, not pinned acceptance releases. Search snippets and extracted HTML sometimes lagged directly retrieved Markdown/schema content; conflicts are retained rather than treated as live behavior.
 
@@ -16,7 +16,7 @@ No inference calls, credentials, SDK executions or implementation changes were u
 - [Cloudflare](#cloudflare)
 - [Confidence is not a universal contract](#confidence-is-not-a-universal-contract)
 - [Capability-union source recheck](#capability-union-source-recheck)
-- [Implementation evidence still needed](#implementation-evidence-still-needed)
+- [Qualification follow-up](#qualification-follow-up)
 
 ## Source index
 
@@ -78,7 +78,7 @@ The Python SDK accepts an API-root `base_url`, explicit retry policy and compres
 
 The Python SDK documents warning and skipping unknown answer kinds, and ignoring unknown response fields. A returned response object can therefore conceal a missing typed answer. Acceptance must compare requested question identities with the typed answers actually consumed.
 
-TypeSafe model discovery uses `GET /v1/models` with `models:[{name,description,release_date}]`; all three entry fields are required. OpenAI uses the same suffix with `object:"list",data:[...]`, already implemented by MorphieCore's [model view](../../crates/morphiecore-gateway/src/ingress/models.rs). A shared root cannot serve both contracts without an explicit discriminator. The [namespace proposal](../proposals/decisions-api.md#sdk-surfaces-and-discovery) avoids SDK-specific header sniffing.
+TypeSafe model discovery uses `GET /v1/models` with `models:[{name,description,release_date}]`; all three entry fields are required. OpenAI uses the same suffix with `object:"list",data:[...]`. A shared root cannot serve both contracts without an explicit discriminator. The [separate gateway roots](../usage/api-reference.md#decisions) avoid SDK-specific header sniffing.
 
 Documented errors include validation `422`, rate limiting `429` and overload `529`; image/multipart paths also describe `400` and `413`. SDK default retries and body-inclusive debug logging require care in acceptance: disable retries for bounded Provider runs and do not enable business-payload logging merely to inspect SDK behavior.
 
@@ -146,10 +146,6 @@ The [Embedding adapter](../../crates/morphiecore-protocol/src/adapter/embeddings
 
 These observations support neutral leaf reuse and independent Decision owners, not an automatic extraction or refactor.
 
-## Implementation evidence still needed
+## Qualification follow-up
 
-- Pin official SDK releases/schema revisions and reconcile nullable fields, score minima, question-media support, cache controls and model aliases.
-- Verify default SDK paths, compression, retry/error behavior and typed answer completeness, including companion model listing.
-- Select directional projections for role-bearing evidence, structured rubric, typed option values, refusal and confidence. Preserve same-protocol meaning before declaring cross-family support.
-- Establish trustworthy per-target limits/grouping and no-truncation behavior; do not infer them from SDK permissiveness or broad context marketing.
-- Keep offline codec checks, SDK loopback acceptance, bounded Provider observations and statistical quality/calibration evaluation separate. No part of this note establishes those runtime claims.
+See the [later evidence](2026-11-25-decision-contracts.md#native-qualification-evidence) for the pinned native Python profiles. The [extension proposals](../proposals/decisions-api.md) track unresolved input carriers, directional projections, grouping and overflow. Contract and SDK checks do not establish statistical quality or calibration.

@@ -322,7 +322,7 @@ Non-Generation tasks maintain independent request, execution, and result lifecyc
 
 #### Decision API direction
 
-TypeSafe and OpenAI SDK access use an independent capability-union Decision IR, not Generation execution. The [native Python SDK profile](../usage/api-reference.md#decisions) exposes Predicate/Noul, Choice, and Score over text and structured evidence with native discovery. Activation is explicit and task-local through [`models.json` `decisions`](../usage/gateway-configuration.md#decision-models), with one bound target and no cross-family conversion. OpenAI retains user-owned message and part order; TypeSafe retains a role-less `state`. The [Decision proposal](../proposals/decisions-api.md#decisions) owns remaining profiles and mappings.
+TypeSafe and OpenAI SDK access use an independent capability-union Decision IR, not Generation execution. The [native Python SDK profile](../usage/api-reference.md#decisions) exposes Predicate/Noul, Choice, and Score over text and structured evidence with native discovery. Activation is explicit and task-local through [`models.json` `decisions`](../usage/gateway-configuration.md#decision-models), with one bound target and no cross-family conversion. OpenAI retains user-owned message and part order; TypeSafe retains a role-less `state`. The [extension proposals](../proposals/decisions-api.md) own remaining profiles and mappings.
 
 #### Token counting policy
 

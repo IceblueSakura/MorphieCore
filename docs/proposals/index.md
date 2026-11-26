@@ -7,7 +7,7 @@ The expansion proposals are modularized by operational domain:
 
 | Domain | Proposal document | Scope & Target Stage | Status |
 |---|---|---|---|
-| **Decision API** | [Decision API Proposal](decisions-api.md) | Stage 4: OpenAI Decisions + TypeSafe System One dual-SDK support | Ready for review |
+| **Decision extensions** | [Decision API Extension Proposals](decisions-api.md) | Stage 4: Gemini native upstream, then selected cross-family directions | Remaining contracts under review |
 | **Multimodal Operations** | [Multimodal Media Proposals](multimodal.md) | Stage 4: Unselected Speech/ASR extensions, non-static Image controls/streaming, and async Video | Pending review |
 | **Tasks & Counting** | [Standalone Tasks and Token Counting](tasks-and-counting.md) | Deferred: Messages counting. Unscheduled: Responses input-token counting and Embedding extensions | Pending review |
 | **Files & Uploads** | [Files and Uploads Resource Proposals](files-and-uploads.md) | Stage 4: Files management, multipart uploads | Pending review |
@@ -46,8 +46,6 @@ Stage 3 closed its selected projection/loop scope with `count_tokens` deferred.
 
 [Unscheduled qualification issues](../roadmap/unscheduled-issues.md#unscheduled-issues), including R09 account failover, require individual re-entry selection and do not gate Stage 4.
 
-Decision, Embedding/audio/image/video and Files/multipart Uploads then advance as their contracts are selected.
-
 Server-side compaction, Batch and Realtime join complete citations/discovery/hosted tools in stage 5.
 
 **All stage-5 tasks are currently unscheduled:** scope placement is not a start or delivery commitment.
@@ -56,11 +54,11 @@ Detailed operation designs remain proposals; stage-4/5 work is not an exit condi
 
 Code and tests describe current behavior, not authority over official contracts. The accepted [standards reset and Generation redesign](../architecture/decisions.md#scope-and-activation-decisions) governs further modality implementation and supersedes conflicting legacy mapping assumptions here. This document records unselected operation/resource designs, not a catalog or conformance claim. Provider and binding availability belongs to [the catalog](../../crates/morphiecore-catalog/src/topology/catalog.rs) and [startup](../../crates/morphiecore-gateway/src/startup/bootstrap.rs).
 
-Under the [stage-4 pending scope](../roadmap/index.md#stage-4-pending-scope), Decision, Files/Uploads, Video, and unselected Audio/Image extensions advance as scheduled; only their own contract selection and actual dependencies constrain a slice. The proposals below do not approve new IR layouts, delivery dialects, comprehensive coverage or bindings.
+Under the [stage-4 pending scope](../roadmap/index.md#stage-4-pending-scope), Decision extensions, Files/Uploads, Video, and unselected Audio/Image extensions advance as scheduled; only their own contract selection and actual dependencies constrain a slice. The proposals below do not approve new IR layouts, delivery dialects, comprehensive coverage or bindings.
 
 The subsequent Embedding selections are recorded in Architecture: [four-way encoding](../architecture/index.md#embedding-encoding-compatibility), sample-centered inputs and [report/identity projection](../architecture/index.md#google-embedding-compatibility) are implemented. Complete downstream usage with explicit request-based approximation supersedes missing-usage delivery; it does not reopen the deferred counting endpoint. This document retains only unselected Embedding extensions.
 
-With [dual-SDK Decision access](../architecture/index.md#decision-api-direction) selected, its design, implementation and acceptance closure belongs to stage 4. Both TypeSafe and OpenAI are required downstream families, rather than competing alternatives. The [Decision section](decisions-api.md#decisions) proposes the detailed contract; selecting that direction does not approve its pending layouts, mappings or implementation.
+The delivered [native Decision profiles](../usage/api-reference.md#decisions) are no longer proposal work. [Decision extensions](decisions-api.md) own the undecided dialect, mapping and coverage choices.
 
 ## Requested scope
 
@@ -68,7 +66,7 @@ The user selected OpenAI-first downstream contracts, broad coverage of current a
 
 | Requested surface | Expansion goal |
 |---|---|
-| OpenAI Decisions and TypeSafe System One, including SDK companion operations | Stable standard-SDK access through one Decision IR; adapt initially researched OpenAI, TypeSafe, Perplexity and Cloudflare upstreams. Concrete namespaces and compatibility profiles remain under review |
+| Decision extensions | Extend the existing independent Decision task without introducing a third downstream schema. Select further upstream targets and directional profiles independently. |
 | `POST /v1/messages/count_tokens` | Stage 3, deferred: count a structured model input under the selected target/projection contract, without generation |
 | `POST /v1/responses/compact` | Stage 5, unscheduled: execute native context compaction and return reusable context |
 | `POST /v1/embeddings` | Implemented ([Architecture](../architecture/index.md#independent-embedding-path)); only unselected extensions remain |
@@ -101,7 +99,7 @@ One typed semantic core does not require one universal `GenerationRequest`. Stan
 
 | Surface | Semantic or service owner | Execution owner | Reuse from Generation |
 |---|---|---|---|
-| OpenAI Decisions / TypeSafe System One | Independent Decision task; detailed layout proposed below | Independent evaluation and complete-result delivery | Evidence/content values where meanings agree, not Generation controls or execution |
+| Decision extensions | [Independent Decision task](../architecture/index.md#decision-api-direction) | Independent evaluation and complete-result delivery | Evidence/content values where meanings agree, not Generation controls or execution |
 | Messages and proposed Responses token counting | New `TokenCount` task | Independent counting operation | Ordered input, tools, media and count-relevant controls |
 | Responses compaction | New `ContextCompaction` task | Independent compaction operation | Ordered context, item identity and opaque replay |
 | Embeddings | Existing Embedding task | Existing independent path | Shared scalar/accounting values only where meanings match |
@@ -294,7 +292,7 @@ These recommendations have not been adopted merely by requesting this document.
 
 | Decision | Options and recommendation | Blocks |
 |---|---|---|
-| Dual-SDK Decision contract | Both standard SDK families and shared IR/codec/dialect adaptation are selected. The [Decision review](decisions-api.md#decision-execution-and-review-choices) owns remaining roots, evidence/result types, projections, delivery and execution choices | Decision implementation and integration, not independent source research |
+| Decision projections | Select [each cross-family direction](decisions-api.md#cross-family-directions) with explicit fidelity and outcome rules. | Activation of that direction only |
 | Bounded token-budget rule | [Default expansion and derived-preset adjustment](#independent-output-ceilings-unselected) are candidates under the accepted adaptation direction; target, reserve, finite bound and loss provenance remain unselected | Budget implementation only; not Messages stream scheduling or unrelated Stage-4 design |
 | Images contract | The [Image review](multimodal.md#image-design-review) owns pending structural choices. The selected Embedding contract has moved to [Architecture](../architecture/index.md#independent-embedding-path); future extensions remain unselected | Dependent S4-3 implementation and integration |
 | Task grouping and shared content | Recommend independent TokenCount/Compaction, AudioToText variants, and Image Generate/Edit variants; share content without inheriting Generation execution | New task type and public Rust contract changes |
@@ -307,7 +305,7 @@ These recommendations have not been adopted merely by requesting this document.
 | Custom voices | Recommend authorized voice references first; voice creation/consent management as a separate resource slice. Broader audio resource coverage may be selected explicitly. `TaskKind::VoiceDesign` and `TaskKind::VoiceClone` exist only as unactivated enum variants, establishing no request/result contract, route, binding or voice-resource implementation | Voice-resource endpoints, not ordinary speech |
 | Video contracts | Select current operations/endpoints, task versus content ownership, artifact access and any required job lifecycle before implementation | Video implementation, not stages 1–3 |
 | Realtime design | Client scenario, session/transport and interruption/recovery contracts are unselected; keep stage 5 unscheduled | Realtime implementation |
-| Later-operation selection | Generation Text closure and the selected Embedding design are complete; all stage-4 API families have equal priority, including Decision closure. Static Generate is an Images-internal recommendation; each operation needs just-in-time contract selection. All stage-5 tasks remain unscheduled | Per-operation design, activation and full-chain acceptance |
+| Later-operation selection | Follow the [Stage 4 pending scope](../roadmap/index.md#stage-4-pending-scope) and select contracts per slice. All stage-5 tasks remain unscheduled. | Per-operation design, activation and full-chain acceptance |
 
 ## Execution handoff
 

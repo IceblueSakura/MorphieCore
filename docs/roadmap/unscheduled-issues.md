@@ -1,6 +1,6 @@
 # Unscheduled Issue and Limitation Register
 
-This page is the single register for unresolved Generation/client boundaries, qualification gaps, and conditional tool follow-ups. The [roadmap](index.md#planned-order) selects scheduling and future entry gates; recorded issues do not reopen the delivered baseline.
+This page is the single register for unresolved operation/client boundaries, qualification gaps, and conditional tool follow-ups. The [roadmap](index.md#planned-order) selects scheduling and future entry gates; recorded issues do not reopen the delivered baseline.
 
 See [Roadmap Main](index.md) for current priorities, deferred work, and non-goals, and [Architecture](../architecture/index.md) for accepted system contracts.
 
@@ -10,6 +10,7 @@ See [Roadmap Main](index.md) for current priorities, deferred work, and non-goal
   - [Tool guarantees](#tool-guarantees)
   - [History and replay](#history-and-replay)
   - [Content and client qualification](#content-and-client-qualification)
+  - [Decision qualification](#decision-qualification)
   - [Protocol boundaries](#protocol-boundaries)
   - [Routing qualification](#routing-qualification)
   - [Maintainability](#maintainability)
@@ -20,7 +21,7 @@ See [Roadmap Main](index.md) for current priorities, deferred work, and non-goal
 
 ## Unscheduled issues
 
-This is the single register for unresolved Generation/client boundaries and qualification gaps.
+This is the single register for unresolved operation/client boundaries and qualification gaps.
 
 Only issues explicitly selected in the [roadmap](index.md#planned-order) gate future work; all others remain unscheduled and none reopens the delivered baseline.
 
@@ -66,6 +67,18 @@ Generation uses standard downstream APIs only. Uncarriable ordinary signatures f
 | TokenPlan Qwen4-Max full-extension pi qualification | Default Responses streaming and stateless summary/ciphertext tool continuation pass through the fixed binding on a temporary gateway. The historical preview failure does not qualify the production model with the full installed extension inventory. [Model contract](../refs/2026-11-13-model-catalog-expansion.md) | Recheck current pi with its complete installed extensions against the fixed gateway; use untouched history and actual tool execution |
 | Unverified dialect candidates | No selected rule for a Grok Responses `[DONE]` trailer, alternate Zhipu/Xiaomi call indexes, or mixed OpenRouter Chat `reasoning_details`. | Require an exact affected target and original wire-shape evidence before changing decoding; retain strict identity and terminal checks |
 | DeepSeek strict-schema source discrepancy | The beta Chat/Responses endpoints accept a strict schema containing `minLength`, although the strict guide excludes it. Ordinary/non-strict requests and tool/history continuation are qualified for the unified beta default; accepting a schema does not establish enforcement. | Keep current strict-schema validation and explicit strictness. Broaden enforcement claims only with an independently discriminating argument/schema case and current authoritative semantics |
+
+### Decision qualification
+
+Only the [qualified native profile](../usage/api-reference.md#decisions) is public. The [roadmap](index.md#stage-4-pending-scope) schedules Gemini native text before individually selected cross-family mappings; the following gaps do not gate that work.
+
+| Gap | Re-entry criterion |
+|---|---|
+| Additional SDK profiles | Select and pin an official JavaScript/TypeScript consumer; verify its own discovery, request, answer, error and cancellation behavior. |
+| Broader native inputs and controls | Select a concrete client need for role-bearing history, structured rubric/instructions, cache/attribution controls, binary criteria, extended context, media or `SingleBox`. Pin carriers and limits independently. |
+| Additional upstreams and primitives | Select an exact target. Resolve Perplexity grouping and span coordinates, Cloudflare truncation, or the unpinned schemas for other dialects before exposing them. |
+
+The [extension proposals](../proposals/decisions-api.md#deferred-extensions) record the target-specific design questions and checks.
 
 ### Protocol boundaries
 

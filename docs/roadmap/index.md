@@ -24,14 +24,14 @@ This page owns active scope, planned execution order, pending decisions, deferre
 
 - **Stateful API freeze:** Upstream and downstream stateful APIs (`store: true`, reference-based continuation, stored-resource operations) remain [experimental and disabled](../architecture/history-and-replay.md#stateful-history). Exclude their acceptance from model adaptation and issue repairs until explicitly enabled by the user.
 - **Delivered Stage 4 slices:** Independent Embeddings (`POST /v1/embeddings`), Static Images Generate & Edit (`POST /v1/images/generations`, `POST /v1/images/edits` with `png`/`jpeg`/`webp` normalization and `completed`-only SSE on static targets), Audio Speech (`POST /v1/audio/speech`), and Audio Transcription (`POST /v1/audio/transcriptions`) are implemented; remaining work in those families covers only unselected extensions below.
-- **Pending Stage 4 & Stage 3 items:** Decision API, Files & Uploads, Video, conditional Stage-3 tool follow-ups, [unscheduled issues](unscheduled-issues.md#unscheduled-issues), R09 real-account failover, and opt-in Agent session files advance independently as scheduled.
+- **Pending Stage 4 & Stage 3 items:** Decision extensions, Files & Uploads, Video, conditional Stage-3 tool follow-ups, [unscheduled issues](unscheduled-issues.md#unscheduled-issues), R09 real-account failover, and opt-in Agent session files advance independently as scheduled.
 
 ## Planned order
 
 | Stage | Goal | Exit evidence |
 |---|---|---|
 | **3 — Conditional compatibility follow-ups** | [Conditional packages](unscheduled-issues.md#conditional-stage-3-follow-ups) | Separate policy selection and affected-loop verification; not default Stage-4 blockers |
-| **4 — Pending modalities, Decision & Files** | Decision API, Files/Uploads, Video, and unselected Speech/Transcription/Image extensions | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
+| **4 — Pending modalities, Decision & Files** | Decision extensions, Files/Uploads, Video, and unselected Speech/Transcription/Image extensions | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
 | **5 — Unscheduled follow-ups** | Citations, tool discovery, hosted tools, server-side compaction, Batch, and Realtime | Explicit per-slice design selection and scheduling prior to implementation |
 
 ### Stage 4 pending scope
@@ -40,12 +40,12 @@ Every pending slice follows: pin official contracts → implement one coherent s
 
 | Package | Scope | Exit criteria |
 |---|---|---|
-| **Decision API extensions** | Gemini native upstream, selected cross-family directions, expanded evidence and SDK profiles | Versioned target contracts, directional association and outcome checks, and applicable native SDK loops |
+| **Decision API extensions** | [Gemini native text upstream](../proposals/decisions-api.md#gemini-native-execution) first (diagnostic only today), then individually selected [cross-family directions](../proposals/decisions-api.md#cross-family-directions) | Native codec/execution and real mixed-primitive evidence for Gemini; directional association, outcome checks, and real client SDK acceptance for each public mapping |
 | **Files & Uploads** | File storage/ID authorization, bounded chunked uploads, cleanup, and file-reference resolution | Isolated account/project namespaces, bounded spooling, cancellation cleanup, and target-scoped ID checks |
 | **Video** | Async video generation (`grok-imagine-video` / native jobs), polling, and artifact delivery | Selected async job contract, bounded polling, cancellation, and honest completion |
 | **Image & Audio extensions** | Optional OpenAI `mask` on Edit, `partial_images` preview SSE on static targets, native ratio/resolution tiers; Audio Translation, progressive non-SSE binary Speech, and subtitle/diarized ASR | Explicit contract selection and conformance per extension; existing static behavior stays protected |
 
-Decision execution order: qualify Gemini native execution, then each selected cross-family direction independently. Grouped/truncating targets, media, and sibling primitives remain separate slices. See the [Decision proposal](../proposals/decisions-api.md#decisions) for the SDK boundary and per-capability oracles.
+Additional Decision SDKs, media, controls, and Provider dialects remain [unscheduled](unscheduled-issues.md#decision-qualification); they do not gate the next Decision slice.
 
 ### Stage 5 backlog
 
