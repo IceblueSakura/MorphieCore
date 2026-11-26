@@ -107,7 +107,7 @@ Inspection of `crates/morphiecore-semantic` establishes three concrete constrain
 
 ## Updated implementation evidence still needed
 
-Native text-predicate diagnostics returned a matching answer from OpenAI `gpt-6-luna`, TypeSafe `jev-1.13.0`, and Google `gemini-decision-1`. OpenAI Python `3.37.0` and TypeSafe Python `0.7.6` consumed all three typed primitives in a mixed text request through the embedded gateway and their native Provider. TypeSafe also completed a native predicate loop with its default zstd compression enabled. A synthetic receiver established the SDK model listing envelopes and validation exceptions; gateway discovery is not yet qualified.
+Native text-predicate diagnostics returned a matching answer from OpenAI `gpt-6-luna`, TypeSafe `jev-1.13.0`, and Google `gemini-decision-1`. The locked OpenAI and TypeSafe Python SDKs discovered the configured models through their respective service endpoints and consumed all three typed primitives from the native Providers. OpenAI also retrieved the same model object; TypeSafe used its default zstd request compression. Service discovery did not query either upstream.
 
 The fixed OpenAI and TypeSafe models both returned full distributions for a 40-option Choice and a 10-level Score. OpenAI kept Boolean `true` distinct from string `"true"` and both models echoed the requested rubric. One TypeSafe ten-level report differed from the expected score computed from its serialized probabilities by `0.05`, despite those probabilities summing to one. The native codecs use clipped half-hundredth intervals and the simplex constraint to admit rounded reports without rewriting the distribution or reported statistics. This is a gateway acceptance envelope, not a vendor guarantee of precision. TypeSafe also served singletons with a numeric confidence; the singleton formula is not asserted.
 
@@ -115,7 +115,7 @@ Live TypeSafe discovery listed `jev-latest` and `jev-preview`, not the fixed Jev
 
 Native Python clients also completed mixed three-primitive requests over structured evidence. OpenAI used an `input_json` part within user-owned history, whereas TypeSafe kept business JSON in `state`; keys such as `role` and `image_url` stayed inert data.
 
-1. Complete the gateway companion operations using the Python releases in the [source lock](../../tests/upstream/sources.lock.json); pin JavaScript SDK consumers separately before claiming support.
+1. Qualify Gemini through the gateway and pin JavaScript SDK consumers separately before claiming support.
 2. Retrieve primary DashScope OpenAPI / run a bounded probe for `qwen/decision-model-preview` to resolve the response-key and image-support conflicts.
 3. Lock Perplexity `v1.3` `locate` span unit (`UTF-8` vs `UTF-16` vs Unicode scalar), endpoint bounds, and `v1.3` question-grouping behavior before Wave 2 `TextLocate` admission.
 4. Retrieve primary Foundry OpenAPI for `Microsoft-Decision-1.1` before adding any Microsoft binding.

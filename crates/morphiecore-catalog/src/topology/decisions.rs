@@ -13,6 +13,14 @@ pub struct DecisionRoute {
     pub native: Native,
     pub credential: CredentialBindingId,
     pub execution: ExecutionContract,
+    pub system_one_metadata: Option<SystemOneMetadata>,
+}
+
+/// Explicit versioned publication facts; never copied from a serving alias.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct SystemOneMetadata {
+    pub(super) description: &'static str,
+    pub(super) release_date: &'static str,
 }
 
 impl DecisionRoute {
@@ -29,7 +37,7 @@ impl CompiledTopology {
         self.decision_routes.get(model)
     }
 
-    /// In-memory bindings for the native text profile; no implicit catalog activation.
+    /// In-memory bindings for the native profile; no implicit catalog activation.
     pub fn with_decisions(mut self, routes: Vec<DecisionRoute>) -> Result<Self, TopologyError> {
         if !self.decision_routes.is_empty() || routes.len() > 64 {
             return Err(TopologyError::InvalidRoutePolicy);
@@ -52,6 +60,9 @@ impl CompiledTopology {
                 || route.execution.response_body_limit == 0
             {
                 return Err(TopologyError::InvalidExecutionLimits);
+            }
+            if route.native != Native::SystemOne && route.system_one_metadata.is_some() {
+                return Err(TopologyError::TaskMismatch);
             }
             if route.upstream_model.is_empty()
                 || route.upstream_model.len() > 256

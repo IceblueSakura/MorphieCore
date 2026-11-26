@@ -23,16 +23,16 @@ See [Proposals Framework](index.md) for shared boundaries and [Roadmap](../roadm
 
 Provide both official downstream SDK families—OpenAI and TypeSafe—without monkey-patches, custom answer types, or a third public downstream schema. Google Gemini (`gemini-decision-1`), Cloudflare Clef, Perplexity Decider, Qwen, Microsoft Decision, and future decision models are upstream targets only. Clients may configure the gateway base URL, gateway credential, public model, and documented standard options. Stable access includes request serialization, typed answer consumption, model discovery, errors, and cancellation within an explicit feature/version profile; merely parsing a success body is insufficient.
 
-Selected roots for the first Python SDK profile; their gateway routes are not yet activated:
+The first native Python SDK profile uses the roots below. See the [public profile](../usage/api-reference.md#decisions) and [explicit activation](../usage/gateway-configuration.md#decision-models) for the implemented contract.
 
 | Client | SDK base URL | Gateway operations |
 |---|---|---|
 | OpenAI | `http://127.0.0.1:<port>/v1` | `POST /v1/decisions`; retain existing OpenAI `GET /v1/models` and model retrieval |
 | TypeSafe | `http://127.0.0.1:<port>/typesafe` | SDK-appended `POST /typesafe/v1/systemone` and `GET /typesafe/v1/models` |
 
-Both official APIs use `GET /v1/models`, but TypeSafe returns `models:[{name,description,release_date}]` while OpenAI returns `object:"list",data:[...]`. Use a distinct TypeSafe root rather than header/User-Agent sniffing, merged response shapes, or replacing existing discovery. The locked Python clients verified the URL joins against a synthetic receiver; gateway loopback and JavaScript/TypeScript remain separate gates. Reuse the activated public model catalog, not upstream enumeration; define honest TypeSafe metadata and filter its view to admitted Decision models. Do not fabricate release dates to satisfy its required schema.
+Both official APIs use `GET /v1/models`, but TypeSafe returns `models:[{name,description,release_date}]` while OpenAI returns `object:"list",data:[...]`. The distinct TypeSafe root avoids header/User-Agent sniffing, merged response shapes, and replacing existing discovery. Discovery consumes explicitly activated public bindings, not upstream enumeration. JavaScript/TypeScript qualification remains separate.
 
-TypeSafe Python `0.7.6` emits default zstd for bodies of at least 1 KiB when its compressor is available (the `zstd` extra before Python 3.14). The embedded profile accepts the SDK's single-frame zstd encoding after authentication, independently bounds wire bytes, decoder window and expanded bytes, and cancels decoding with the exchange. It sends ordinary JSON to the target. Pin JavaScript/TypeScript SDK releases and exercise their defaults separately before claiming support. A package pin alone does not qualify a gateway route.
+TypeSafe Python `0.7.6` emits default zstd for bodies of at least 1 KiB when its compressor is available (the `zstd` extra before Python 3.14). The native profile accepts the SDK's single-frame zstd encoding after authentication, independently bounds wire bytes, decoder window and expanded bytes, and cancels decoding with the exchange. It sends ordinary JSON to the target. Pin JavaScript/TypeScript SDK releases and exercise their defaults separately before claiming support. A package pin alone does not qualify a gateway route.
 
 Keep error delivery native to the selected client family, including authentication before body decoding, validation paths, unsupported-operation errors, overload/rate-limit status, and safe `Retry-After`. Do not relay private upstream error payloads. SDK retries are client behavior, not gateway retries; disable them in bounded acceptance runs and test error classification separately.
 
@@ -355,7 +355,7 @@ Review these choices before dependent implementation:
 
 | Decision | Recommendation | Still to select / lock |
 |---|---|---|
-| Downstream SDK roots | Separate `/typesafe` root; keep existing OpenAI `/v1` discovery; no third downstream Gemini surface | TypeSafe discovery metadata, full native error mapping, and non-Python qualification |
+| Downstream SDK extension | Keep separate `/typesafe` and OpenAI `/v1` roots; no third downstream Gemini surface | Non-Python qualification and errors for newly supported features |
 | Wave 1 Semantic IR | `Evidence::{State, Parts, History}`, Core 3 primitives (`Predicate`, `SingleChoice`, `OrdinalScore`), two-tier outcomes (`Blocked` vs `Refused`), exact decimal `Probability`, `ModalityTokenCount` | Human review of concrete Rust layout, custom Decision `JsonLimits`, and Wave 1 text/JSON bounds |
 | Wave 1 Upstream targets | OpenAI and TypeSafe native text first; Gemini native codec and then Perplexity/Cloudflare as separate slices | Use the pinned Python sources in [`tests/upstream/sources.lock.json`](../../tests/upstream/sources.lock.json); qualify the implemented directions before activation |
 | Cross-family adaptation | Qualify each direction; require selection for carrier/rubric/surrogate L3 that downgrades content or guarantees; isolation/truncation opt-in only; no default opaque confidence transfer; uncarriable `Blocked`/`Refused` L5 | Per-profile rule selection, rounding interval tolerances, and the applicable directional oracles |

@@ -16,6 +16,134 @@ use std::{collections::BTreeMap, sync::Arc};
 use tower::ServiceExt;
 
 #[tokio::test]
+async fn configured_decision_discovery_separates_sdk_families() {
+    use crate::startup::bootstrap::test_support::{Fixture, service};
+    let bootstrap = Fixture::new(
+        service(),
+        json!({
+            "models": {},
+            "decisions": {
+                "gpt-6-luna": {"account":"platform"},
+                "jev-1.14.0": {"account":"jev"}
+            }
+        }),
+        &[
+            ("openai", "platform", "synthetic-openai-key"),
+            ("typesafe", "jev", "synthetic-typesafe-key"),
+        ],
+    )
+    .unwrap();
+    let router = bootstrap.gateway.router();
+    for (path, pointer, label) in [
+        ("/v1/models", "/data/0/id", "gpt-6-luna"),
+        ("/typesafe/v1/models", "/models/0/name", "jev-1.14.0"),
+        ("/v1/models/gpt-6-luna", "/id", "gpt-6-luna"),
+    ] {
+        let response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(path)
+                    .header("authorization", format!("Bearer {}", super::support::KEY))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let json: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+        assert_eq!(json.pointer(pointer), Some(&json!(label)));
+        if path == "/typesafe/v1/models" {
+            assert_eq!(json["models"].as_array().unwrap().len(), 1);
+            assert_eq!(json["models"][0]["release_date"], "2026-10-14");
+            assert!(json.get("data").is_none());
+        } else if path == "/v1/models" {
+            assert_eq!(json["data"].as_array().unwrap().len(), 1);
+            assert!(json.get("models").is_none());
+        }
+    }
+    let unauthed = router
+        .oneshot(
+            Request::builder()
+                .uri("/typesafe/v1/models")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(unauthed.status(), StatusCode::UNAUTHORIZED);
+    let error: Value =
+        serde_json::from_slice(&to_bytes(unauthed.into_body(), 4096).await.unwrap()).unwrap();
+    assert!(error["detail"].is_string());
+    assert!(error.get("error").is_none());
+}
+
+#[tokio::test]
+async fn generation_label_does_not_enable_decisions() {
+    use crate::startup::bootstrap::test_support::{Fixture, service};
+    for (activation, status) in [
+        (json!({}), StatusCode::NOT_FOUND),
+        (
+            json!({"gpt-6-luna":{"account":"platform"}}),
+            StatusCode::BAD_REQUEST,
+        ),
+    ] {
+        let boot = Fixture::new(
+            service(),
+            json!({
+                "models":{"gpt-6-luna":{"candidates":[{"binding":"openai-luna-responses"}]}},
+                "decisions":activation,
+            }),
+            &[("openai", "platform", "synthetic-key")],
+        )
+        .unwrap();
+        let router = boot.gateway.router();
+        let response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/decisions")
+                    .header("authorization", format!("Bearer {}", super::support::KEY))
+                    .header("content-type", "application/json")
+                    .body(Body::from("invalid payload"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), status);
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/models")
+                    .header("authorization", format!("Bearer {}", super::support::KEY))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let list: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+        assert_eq!(list["data"].as_array().unwrap().len(), 1);
+        assert_eq!(list["data"][0]["id"], "gpt-6-luna");
+    }
+}
+
+#[test]
+fn decision_configuration_does_not_borrow_another_providers_account() {
+    use crate::startup::bootstrap::test_support::{Fixture, service};
+    let boot = Fixture::new(
+        service(),
+        json!({
+            "models":{}, "decisions":{"gpt-6-luna":{"account":"jev"}}
+        }),
+        &[("typesafe", "jev", "synthetic-key")],
+    );
+    assert!(matches!(boot, Err(crate::StartupError::Credentials)));
+}
+
+#[tokio::test]
 async fn explicit_decision_routes_send_only_their_bound_native_operation() {
     const UPSTREAM_KEY: &str = "synthetic-upstream-key";
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -57,6 +185,7 @@ async fn explicit_decision_routes_send_only_their_bound_native_operation() {
             provider: provider.id.clone(),
             credential: key.clone(),
             native,
+            system_one_metadata: None,
             execution: ExecutionContract {
                 streaming: false,
                 request_body_limit: 4096,

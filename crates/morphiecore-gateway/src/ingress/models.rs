@@ -55,6 +55,7 @@ impl ModelView {
                 .or_else(|| topology.speech_route(label).map(|r| &r.canonical_model))
                 .or_else(|| topology.embedding_route(label).map(|r| &r.canonical_model))
                 .or_else(|| topology.transcription_model(label))
+                .or_else(|| topology.decision_route(label).map(|r| &r.model))
                 .ok_or(StartupError::Binding)?;
             let metadata = topology
                 .model_metadata(canonical)
@@ -86,6 +87,35 @@ impl ModelView {
     }
 }
 
+pub(crate) fn bind_system_one<'a>(
+    routes: impl Iterator<Item = &'a crate::topology::decisions::DecisionRoute>,
+    response_bytes: usize,
+) -> Result<Bytes, StartupError> {
+    #[derive(Serialize)]
+    struct Entry<'a> {
+        name: &'a str,
+        #[serde(flatten)]
+        metadata: &'a crate::topology::decisions::SystemOneMetadata,
+    }
+    #[derive(Serialize)]
+    struct List<'a> {
+        models: Vec<Entry<'a>>,
+    }
+    let models = routes
+        .filter_map(|route| {
+            Some(Entry {
+                name: route.model.as_str(),
+                metadata: route.system_one_metadata.as_ref()?,
+            })
+        })
+        .collect();
+    let bytes = serde_json::to_vec(&List { models }).map_err(|_| StartupError::Binding)?;
+    if bytes.len() > response_bytes.min(32 << 10) {
+        return Err(StartupError::Limits);
+    }
+    Ok(bytes.into())
+}
+
 pub(crate) fn response(bytes: Bytes) -> Response {
     Response::builder()
         .header("content-type", "application/json")
@@ -102,6 +132,12 @@ pub(crate) fn running(state: &Runtime) -> Result<(), ApiError> {
 pub(crate) async fn list(State(state): State<Arc<Runtime>>) -> Result<Response, ApiError> {
     running(&state)?;
     Ok(response(state.models.list.clone()))
+}
+pub(crate) async fn list_system_one(State(state): State<Arc<Runtime>>) -> Response {
+    match running(&state) {
+        Ok(()) => response(state.system_one_models.clone()),
+        Err(error) => error.into_system_one_response(),
+    }
 }
 pub(crate) async fn retrieve(
     State(state): State<Arc<Runtime>>,

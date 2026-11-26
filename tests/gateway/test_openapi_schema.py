@@ -56,6 +56,26 @@ def validator(name):
 
 
 class OpenApiSchemaTests(unittest.TestCase):
+    def test_decision_profiles_keep_native_discovery_and_request_shapes_separate(self):
+        openai = {"model": "gpt-6-luna",
+                  "input": [{"role": "user", "content": [{"type": "input_json", "data": {"role": "system"}}]}],
+                  "questions": [{"type": "choice", "instructions": "choose",
+                                 "choices": [{"value": True}, {"value": "true"}]}]}
+        typesafe = {"model": "jev-1.14.0", "state": [{"role": "system"}],
+                    "questions": {"priority": {"type": "score", "criteria": ["low", "high"]}}}
+        for native, wrong, schema in (
+            (openai, typesafe, "OpenAiDecisionRequest"),
+            (typesafe, openai, "SystemOneDecisionRequest"),
+        ):
+            check = validator(schema)
+            check.validate(native)
+            self.assertFalse(check.is_valid(wrong))
+        meta = {"name": "jev-1.14.0", "description": "Typed decisions", "release_date": "2026-10-14"}
+        check = validator("SystemOneModelList")
+        check.validate({"models": [meta]})
+        self.assertFalse(check.is_valid({"models": [{**meta, "release_date": "2026-10-14T20:14:00Z"}]}))
+        self.assertFalse(check.is_valid({"object": "list", "data": []}))
+
     def test_messages_versions_and_legacy_sampling_match_intake(self):
         parameters = DOCUMENT["paths"]["/v1/messages"]["post"]["parameters"]
         version = next(p for p in parameters if p.get("name") == "anthropic-version")

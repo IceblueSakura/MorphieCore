@@ -5,6 +5,8 @@ pub use data::{
     speech_bindings, subscription_bindings, transcription_bindings,
 };
 mod bindings;
+mod decisions;
+pub use decisions::{DecisionBinding, decision_bindings};
 mod messages;
 pub use messages::MessagesBinding;
 mod embeddings;

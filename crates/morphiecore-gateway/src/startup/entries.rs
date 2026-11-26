@@ -26,7 +26,7 @@ pub struct TranscriptionEntry {
 pub struct EmbeddingEntry {
     pub model: String,
 }
-/// Opt-in native text profile for embedded qualification.
+/// Explicit activation of one compiled native Decision route.
 #[derive(Clone, Debug)]
 pub struct DecisionEntry {
     pub model: String,

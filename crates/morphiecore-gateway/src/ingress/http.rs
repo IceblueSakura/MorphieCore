@@ -22,6 +22,7 @@ macro_rules! public_routes {
         $consume! {
             "/v1/morphiecore/capabilities" => get(crate::ingress::capabilities::retrieve);
             "/v1/models" => get(crate::ingress::models::list);
+            "/typesafe/v1/models" => get(crate::ingress::models::list_system_one);
             "/v1/morphiecore/models" => get(crate::ingress::discovery::list);
             "/v1/morphiecore/models/{model}" => get(crate::ingress::discovery::retrieve);
             "/v1/models/{model}" => get(crate::ingress::models::retrieve), delete(crate::ingress::models::delete);
@@ -30,6 +31,8 @@ macro_rules! public_routes {
             "/v1/responses/{response_id}" => get(reject_stateful), delete(reject_stateful);
             "/v1/responses/{response_id}/input_items" => get(reject_stateful);
             "/v1/messages" => post(messages);
+            "/v1/decisions" => post(crate::tasks::decisions::openai);
+            "/typesafe/v1/systemone" => post(crate::tasks::decisions::system_one);
             "/v1/embeddings" => post(crate::tasks::embeddings::handle);
             "/v1/images/generations" => post(crate::tasks::images::handle);
             "/v1/images/edits" => post(crate::tasks::images::handle_edit);
@@ -82,33 +85,7 @@ fn public_routes_match_openapi_in_both_directions() {
 impl Gateway {
     /// Embedding callers own listener security; `serve` enforces loopback itself.
     pub fn router(&self) -> Router {
-        use crate::protocol::decision::Native;
-
-        let mut router = routes();
-        // Native text qualification is explicitly bound by embedded callers only.
-        // The service catalog does not activate these operations yet.
-        for (native, path, method) in [
-            (
-                Native::OpenAi,
-                "/v1/decisions",
-                axum::routing::post(crate::tasks::decisions::openai),
-            ),
-            (
-                Native::SystemOne,
-                "/typesafe/v1/systemone",
-                axum::routing::post(crate::tasks::decisions::system_one),
-            ),
-        ] {
-            if self
-                .state
-                .decisions
-                .values()
-                .any(|entry| entry.route.native == native)
-            {
-                router = router.route(path, method);
-            }
-        }
-        router
+        routes()
             .fallback(|uri: axum::http::Uri| async move {
                 ingress_error(
                     uri.path(),
@@ -256,7 +233,7 @@ pub(crate) async fn serve_connections(
 fn ingress_error(path: &str, error: ApiError) -> Response {
     if path == "/v1/messages" || path.starts_with("/v1/messages/") {
         error.into_messages_response()
-    } else if path == "/typesafe/v1/systemone" {
+    } else if path.starts_with("/typesafe/v1/") {
         error.into_system_one_response()
     } else {
         error.into_response()

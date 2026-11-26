@@ -36,7 +36,7 @@ All three executables (`morphiecore`, `morphiecore-auth`, `morphiecore-upstream`
 
 Ctrl-C shuts down the listener and cancels in-flight upstream work.
 
-For Rust embedding, `Gateway::new` takes a compiled topology and one `TaskEntries` value with separate Generation, Images, Speech, Transcription, Embeddings and Decision lists. Empty lists activate nothing. Credentials and limits remain explicit; the embedded constructor does not opt into environment proxies. Each Generation entry names one client protocol (Chat, Responses or Messages); file-configured models expose all three. Decision entries exist only for explicit [embedded text qualification](../architecture/index.md#decision-api-direction), not service configuration or discovery. See [task entries](../../crates/morphiecore-gateway/src/startup/entries.rs) and [binding](../../crates/morphiecore-gateway/src/startup/bind.rs).
+For Rust embedding, `Gateway::new` takes a compiled topology and one `TaskEntries` value with separate Generation, Images, Speech, Transcription, Embeddings and Decision lists. Empty lists activate nothing. Credentials and limits remain explicit; the embedded constructor does not opt into environment proxies. Each Generation entry names one client protocol (Chat, Responses or Messages); file-configured Generation models expose all three. Decision activation remains task-local in both the [service configuration](gateway-configuration.md#decision-models) and [embedding entries](../../crates/morphiecore-gateway/src/startup/entries.rs).
 
 ### Binary-only SSH releases
 
@@ -106,7 +106,7 @@ Initial migration may remove the former source/build directory only after succes
 
 Keep MorphieCore on loopback. A separately managed Nginx may expose the standard APIs over TLS; this is deployment guidance, not permission to publish a listener. The [delivery contract](../architecture/runtime-and-routing.md#reverse-proxy-delivery) owns cancellation, publication and trust boundaries.
 
-Copy [`nginx.example.conf`](../../config/nginx.example.conf) to deployment storage and include it from Nginx's `http {}` context, not inside another `server {}`. Replace the `.invalid` domain and certificate paths. It targets the service template's `127.0.0.1:8080`; change both sides together when moving that listener.
+Copy [`nginx.example.conf`](../../config/nginx.example.conf) to deployment storage and include it from Nginx's `http {}` context, not inside another `server {}`. Replace the `.invalid` domain and certificate paths. It forwards `/v1/` and `/typesafe/v1/` to the service template's `127.0.0.1:8080`; change both sides together when moving that listener.
 
 The template includes example limits of 16 concurrent requests per IP and 32 for the virtual host. Review these for shared NATs and capacity; they are pre-authentication resource guards, not Agent quotas. Create its body-temporary directory with private service ownership on space-bounded storage, and protect access/error logs. The access format omits identifying headers, URLs and bodies; inherited Nginx error logs can still contain request URLs and must not be published. Do not enable debug logging for production traffic.
 

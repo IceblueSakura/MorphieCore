@@ -12,6 +12,8 @@ pub(crate) use morphiecore_test_support::{
 mod chat_media_sdk;
 #[path = "sdk/chat.rs"]
 mod chat_sdk;
+#[path = "sdk/decisions.rs"]
+mod decisions;
 #[path = "sdk/embeddings.rs"]
 mod embeddings;
 #[path = "sdk/gateway.rs"]

@@ -1,6 +1,6 @@
 # HTTP API Reference and Errors
 
-This document defines standalone HTTP endpoints (Embeddings, Model Discovery, Capabilities Notice) and gateway error mappings and resource limits.
+This document defines standalone HTTP endpoints, model discovery, gateway error mappings, and resource limits.
 
 See [Client Requests](client-requests.md) for generation protocols and [OpenAPI](../openapi.json) for machine-readable schemas.
 
@@ -11,6 +11,7 @@ See [Client Requests](client-requests.md) for generation protocols and [OpenAPI]
   - [Speech synthesis](#speech-synthesis)
   - [Audio transcription](#audio-transcription)
   - [Embeddings](#embeddings)
+  - [Decisions](#decisions)
   - [Generation Text model discovery](#generation-text-model-discovery)
   - [Capability discovery and adaptation notice](#capability-discovery-and-adaptation-notice)
 - [Errors and limits](#errors-and-limits)
@@ -19,7 +20,8 @@ See [Client Requests](client-requests.md) for generation protocols and [OpenAPI]
 
 | Method and path | Purpose |
 |---|---|
-| `GET /v1/models` | List activated public models |
+| `GET /v1/models` | List activated OpenAI-side public models |
+| `GET /typesafe/v1/models` | List activated TypeSafe Decision models in the native TypeSafe envelope |
 | `GET /v1/models/{model}` | Retrieve an activated public model |
 | `DELETE /v1/models/{model}` | Denied: 403 for an activated model, 404 otherwise |
 | `GET /v1/morphiecore/models` | List activated Generation Text model/interface contracts |
@@ -37,6 +39,8 @@ Standalone endpoints require explicit model activation:
 | Method and path | Purpose |
 |---|---|
 | `POST /v1/embeddings` | Text or model-scoped token IDs, float or Base64 vectors |
+| `POST /v1/decisions` | OpenAI Predicate, Choice, and Score with ordered answers |
+| `POST /typesafe/v1/systemone` | TypeSafe Noul, Choice, and Score with keyed answers |
 | `POST /v1/images/generations` | Static inline images or preview SSE |
 | `POST /v1/images/edits` | Static multipart edits or preview SSE |
 | `POST /v1/audio/speech` | Binary audio or audio delta SSE |
@@ -82,6 +86,19 @@ A missing model report uses the bound public label.
 Real usage takes precedence, followed by attested input-only derivation; remaining missing counters use the request-local [approximation rule](../architecture/index.md#google-embedding-compatibility) without fabricating all-zero defaults or altering reported zeros. Approximate counts do not reflect exact billing or quotas.
 
 Unsupported `user` hints omit on Google/DashScope and forward on OpenAI bindings (which require matching upstream model and both reported usage counters). Because the pinned OpenAI Python SDK's strict validator types `embedding` as a float list, pass explicit `encoding_format: "float"` when `_strict_response_validation=True`; ordinary mode handles Base64 and float responses alike.
+
+### Decisions
+
+[Enable models in `decisions`](gateway-configuration.md#decision-models) and authenticate with a gateway Agent key, not a Provider key. The first native profiles use one target per request, without switching or retries.
+
+| SDK profile | Base URL | Qualified model | Evaluation and discovery |
+|---|---|---|---|
+| OpenAI Python | `http://127.0.0.1:8080/v1` | `gpt-6-luna` | `client.decisions.create`, `client.models.list`, `client.models.retrieve` |
+| TypeSafe Python | `http://127.0.0.1:8080/typesafe` | `jev-1.14.0` | `client.system_one`, `client.models.list` |
+
+OpenAI accepts text or user messages with ordered text and `input_json` parts; each JSON part is an object or array of objects. Instructions, choice descriptions and score labels/descriptions are text. TypeSafe accepts a string, object or array as `state`, text instructions, text or `null` Choice criteria, and ordered text Score criteria. Noul in this profile requires text instructions. TypeSafe accepts the SDK's default single-frame zstd request compression; auth, wire bytes, decoder window and expanded bytes are bounded before dispatch. Model discovery is local, account-free at request time, and protocol-specific. A known model on the wrong Decision protocol returns 404.
+
+Decision results are complete JSON with native usage and typed answers; native OpenAI refusals retain their answer slots. Unsupported media, non-user OpenAI history, cache or attribution controls, TypeSafe experimental opt-ins, stateful continuation and cross-family execution are outside this profile. TypeSafe validation uses HTTP 422 with `detail`; other TypeSafe errors are sanitized under the same `detail` envelope.
 
 ### Generation Text model discovery
 

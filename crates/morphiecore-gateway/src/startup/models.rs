@@ -1,6 +1,9 @@
 //! Explicit model contracts over account-bound catalog targets.
 use super::{
-    entries::{EmbeddingEntry, Entry, ImageEntry, SpeechEntry, TaskEntries, TranscriptionEntry},
+    entries::{
+        DecisionEntry, EmbeddingEntry, Entry, ImageEntry, SpeechEntry, TaskEntries,
+        TranscriptionEntry,
+    },
     error::StartupError,
 };
 use crate::{
@@ -22,6 +25,14 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(super) struct Models {
     version: u32,
     pub models: BTreeMap<String, Model>,
+    #[serde(default)]
+    decisions: BTreeMap<String, Decision>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Decision {
+    account: String,
 }
 
 #[derive(Default, Deserialize)]
@@ -115,7 +126,7 @@ fn invalid() -> StartupError {
 
 impl Models {
     pub fn bind(self, accounts: &BoundAccounts) -> Result<Plan, StartupError> {
-        if self.version != 1 || self.models.is_empty() || self.models.len() > 64 {
+        if self.version != 1 || !(1..=64).contains(&(self.models.len() + self.decisions.len())) {
             return Err(invalid());
         }
         let catalog = topology::catalog::default_topology().map_err(|_| StartupError::Binding)?;
@@ -430,8 +441,37 @@ impl Models {
             routes.push(route);
             public_models.push(public.clone());
         }
+        let mut decision_routes = Vec::with_capacity(self.decisions.len());
+        for (label, config) in self.decisions {
+            let binding = topology::catalog::decision_bindings()
+                .iter()
+                .find(|candidate| candidate.model == label)
+                .ok_or(StartupError::Binding)?;
+            let account = accounts
+                .account(binding.provider, &config.account)
+                .filter(|account| account.enabled)
+                .ok_or(StartupError::Credentials)?;
+            let route = binding.route(account.binding_id());
+            if route.native == crate::protocol::decision::Native::OpenAi
+                && catalog.model_metadata(&route.model).is_none()
+            {
+                return Err(StartupError::Binding);
+            }
+            let mut described = super::inspection::task(
+                &label,
+                binding.provider,
+                binding.id,
+                &route.execution,
+                "decision",
+            );
+            described["account"] = serde_json::json!(config.account);
+            explanation.push(described);
+            entries.decisions.push(DecisionEntry { model: label });
+            decision_routes.push(route);
+        }
         let topology = catalog
             .with_generation(endpoints, routes, public_models)
+            .and_then(|topology| topology.with_decisions(decision_routes))
             .map_err(|_| StartupError::Binding)?;
         Ok(Plan {
             topology,

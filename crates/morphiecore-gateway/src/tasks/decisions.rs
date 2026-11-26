@@ -79,6 +79,31 @@ async fn ingress(
     mut request: Request,
     native: Native,
 ) -> Result<Response, ApiError> {
+    if !runtime
+        .decisions
+        .values()
+        .any(|entry| entry.route.native == native)
+    {
+        return Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            crate::error::ErrorKind::ModelNotFound,
+        ));
+    }
+    if native == Native::SystemOne {
+        for header in [
+            "typesafe-danger-zone-images",
+            "typesafe-danger-zone-long-context",
+        ] {
+            let mut values = request.headers().get_all(header).iter();
+            if values
+                .next()
+                .is_some_and(|value| !value.as_bytes().eq_ignore_ascii_case(b"false"))
+                || values.next().is_some()
+            {
+                return Err(ApiError::invalid());
+            }
+        }
+    }
     let zstd = native == Native::SystemOne && compression::consume_encoding(request.headers_mut())?;
     let limit = runtime.limits.request_bytes.min(JSON_BYTES);
     let (admitted, _, bytes) =

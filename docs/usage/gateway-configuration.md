@@ -11,6 +11,7 @@ See [Credentials and Diagnostics](credentials-and-diagnostics.md) for `accounts.
   - [Agent API keys](#agent-api-keys)
   - [Failure diagnostics](#failure-diagnostics)
   - [Model configuration](#model-configuration)
+    - [Decision models](#decision-models)
     - [Qwen image candidates](#qwen-image-candidates)
     - [Media format transcoding](#media-format-transcoding)
   - [Delta coalescing](#delta-coalescing)
@@ -158,11 +159,13 @@ Export disables proxy inheritance and redirects, and rejects ambient `OTEL_EXPOR
 
 ### Model configuration
 
-`models.json` activates explicit public models and ordered upstream candidates (`64` models max, `64` candidates per model, `64` expanded account targets per entry). Use `morphiecore --catalog` for registered public model IDs and catalog `binding` IDs; account targets and credentials belong in [accounts.json](credentials-and-diagnostics.md#configure-accounts). See [the catalog](../../crates/morphiecore-catalog/src/topology/catalog.rs), [service loading](../../crates/morphiecore-gateway/src/startup/bootstrap.rs), and [model assembly](../../crates/morphiecore-gateway/src/startup/models.rs).
+`models.json` activates explicit public models and ordered upstream candidates (`64` combined entries in `models` and `decisions`, `64` candidates per Generation model, `64` expanded account targets per entry). Use `morphiecore --catalog` for registered public model IDs and catalog `binding` IDs; account targets and credentials belong in [accounts.json](credentials-and-diagnostics.md#configure-accounts). See [the catalog](../../crates/morphiecore-catalog/src/topology/catalog.rs), [service loading](../../crates/morphiecore-gateway/src/startup/bootstrap.rs), and [model assembly](../../crates/morphiecore-gateway/src/startup/models.rs).
 
 | Scope | Field | Meaning |
 |---|---|---|
 | File | `version` | Required current schema version, `1` |
+| File | `models` | Required map of non-Decision model activations; use `{}` for a Decision-only gateway |
+| File | `decisions` | Optional map of explicit native Decision activations |
 | Model | `candidates` | Nonempty ordered array of Generation bindings for this public model |
 | Model | `total_timeout_ms` | Optional model-local total deadline from request start, bounded by service ceiling |
 | Standalone task | `account` | Required enabled API-key/task account name in the selected binding's Provider |
@@ -196,6 +199,23 @@ Standalone tasks (`GPT Image`, `Gemini Nano Banana`, `Grok Imagine`, `Embeddings
   }
 }
 ```
+
+#### Decision models
+
+Use the separate `decisions` map; a `gpt-6-luna` entry under `models` does not enable `POST /v1/decisions`. Both may be present in one file. Each Decision entry selects one existing enabled API-key account scoped to that binding's Provider; there are no candidates or model overrides. Omit either entry to leave that protocol unbound.
+
+```json
+{
+  "version": 1,
+  "models": {},
+  "decisions": {
+    "gpt-6-luna": {"account": "platform"},
+    "jev-1.14.0": {"account": "jev"}
+  }
+}
+```
+
+Declare `platform` under `openai` and `jev` under `typesafe` in `accounts.json` (or substitute your existing account names), then provision them through [the credential CLI](credentials-and-diagnostics.md#add-an-api-key). See [Decision API](api-reference.md#decisions) for SDK base URLs and the supported profile.
 
 #### Qwen image candidates
 

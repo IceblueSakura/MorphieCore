@@ -113,6 +113,23 @@ pub fn catalog() -> Result<Value, StartupError> {
             "transcription",
         ));
     }
+    for binding in catalog::decision_bindings() {
+        let id = crate::provider::CredentialBindingId::new(binding.id)
+            .map_err(|_| StartupError::Binding)?;
+        let route = binding.route(id);
+        let mut row = task(
+            binding.model,
+            binding.provider,
+            binding.id,
+            &route.execution,
+            "decision",
+        );
+        row["protocol"] = json!(match binding.native {
+            crate::protocol::decision::Native::OpenAi => "openai_decisions",
+            crate::protocol::decision::Native::SystemOne => "typesafe_system_one",
+        });
+        models.push(row);
+    }
     Ok(json!({"models":models,
         "semantics":"Context/input are planning metadata. Output maximum clamps a present ceiling; only Messages defaults fill absence. Endpoint ceilings intersect with deployment budgets."}))
 }

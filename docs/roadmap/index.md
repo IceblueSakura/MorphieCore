@@ -40,12 +40,12 @@ Every pending slice follows: pin official contracts → implement one coherent s
 
 | Package | Scope | Exit criteria |
 |---|---|---|
-| **Decision API** | Dual-SDK (`TypeSafe` + `OpenAI`) backed by unified Decision IR | Resolved schema/discovery envelopes, capability union, bounded execution, and both SDK client loops |
+| **Decision API extensions** | Gemini native upstream, selected cross-family directions, expanded evidence and SDK profiles | Versioned target contracts, directional association and outcome checks, and applicable native SDK loops |
 | **Files & Uploads** | File storage/ID authorization, bounded chunked uploads, cleanup, and file-reference resolution | Isolated account/project namespaces, bounded spooling, cancellation cleanup, and target-scoped ID checks |
 | **Video** | Async video generation (`grok-imagine-video` / native jobs), polling, and artifact delivery | Selected async job contract, bounded polling, cancellation, and honest completion |
 | **Image & Audio extensions** | Optional OpenAI `mask` on Edit, `partial_images` preview SSE on static targets, native ratio/resolution tiers; Audio Translation, progressive non-SSE binary Speech, and subtitle/diarized ASR | Explicit contract selection and conformance per extension; existing static behavior stays protected |
 
-Decision execution order: complete native discovery and explicit service configuration for the initial SDK profile before public activation. Qualify Gemini native execution and each cross-family direction independently; grouped/truncating targets, media, and sibling primitives do not gate the initial public profile. See the [Decision proposal](../proposals/decisions-api.md#decisions) for the SDK boundary and per-capability oracles.
+Decision execution order: qualify Gemini native execution, then each selected cross-family direction independently. Grouped/truncating targets, media, and sibling primitives remain separate slices. See the [Decision proposal](../proposals/decisions-api.md#decisions) for the SDK boundary and per-capability oracles.
 
 ### Stage 5 backlog
 

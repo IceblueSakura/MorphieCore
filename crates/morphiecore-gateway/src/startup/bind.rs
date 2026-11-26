@@ -82,7 +82,17 @@ impl Gateway {
                 .chain(images.keys().map(String::as_str))
                 .chain(speech.keys().map(String::as_str))
                 .chain(transcriptions.keys().map(String::as_str))
-                .chain(embeddings.keys().map(String::as_str)),
+                .chain(embeddings.keys().map(String::as_str))
+                .chain(decisions.values().filter_map(|entry| {
+                    let route = &entry.route;
+                    (route.native == crate::protocol::decision::Native::OpenAi
+                        && topology.model_metadata(&route.model).is_some())
+                    .then(|| route.model.as_str())
+                })),
+            limits.response_bytes,
+        )?;
+        let system_one_models = crate::ingress::models::bind_system_one(
+            decisions.values().map(|entry| &entry.route),
             limits.response_bytes,
         )?;
         let contracts = crate::ingress::discovery::compile(&entries, limits.request_bytes)?;
@@ -121,6 +131,7 @@ impl Gateway {
                 embeddings,
                 decisions,
                 models,
+                system_one_models,
                 text_models,
                 capabilities,
                 permits: Arc::new(Semaphore::new(limits.concurrency)),

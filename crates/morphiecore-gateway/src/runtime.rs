@@ -146,6 +146,7 @@ pub(super) struct Runtime {
     pub(super) embeddings: BTreeMap<String, Arc<embeddings::BoundEmbedding>>,
     pub(super) decisions: BTreeMap<String, Arc<decisions::BoundDecision>>,
     pub(super) models: models::ModelView,
+    pub(super) system_one_models: bytes::Bytes,
     pub(super) text_models: discovery::TextModelView,
     pub(super) capabilities: capabilities::CapabilityView,
     pub(super) limits: Limits,
