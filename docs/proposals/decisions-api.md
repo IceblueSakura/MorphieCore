@@ -4,14 +4,14 @@ This page covers extensions to the [delivered native Python profile](../usage/ap
 
 ## Cross-family directions
 
-The qualified [TypeSafe → Gemini plain-text Noul profile](../usage/api-reference.md#decisions) is no longer pending. Select one further source, target, evidence carrier and primitive subset at a time; qualification in one direction does not authorize the reverse.
+The qualified [TypeSafe → Gemini and OpenAI plain-text Noul profiles](../usage/api-reference.md#decisions) are no longer pending. Select one further source, target, evidence carrier and primitive subset at a time; qualification in one direction does not authorize the reverse.
 
 | Downstream SDK | Pending upstream directions |
 |---|---|
 | OpenAI | TypeSafe System One; Gemini Decisions |
-| TypeSafe | OpenAI Decisions; Gemini extensions beyond plain-text Noul remain unselected |
+| TypeSafe | Further OpenAI and Gemini carriers and primitives beyond plain-text Noul remain unselected |
 
-The [directional trials](../refs/2026-11-25-decision-contracts.md#cross-family-projection-evidence) show that TypeSafe → OpenAI remains gated on introducing a user frame and delivering refusals safely. Both OpenAI downstream directions require a faithful role policy and a complete, source-backed usage contract accepted by the strict SDK; lenient parsing is not sufficient. Choice and Score confidence conversion remains unselected in all directions.
+The [directional trials](../refs/2026-11-25-decision-contracts.md#cross-family-projection-evidence) show that both OpenAI downstream directions require a faithful role policy and a complete, source-backed usage contract accepted by the strict SDK; lenient parsing is not sufficient. Choice and Score confidence conversion remains unselected in all directions.
 
 Before activating a direction, classify its fields under the [conversion ladder](../architecture/adaptation.md#conversion-ladder). Start with the smallest faithful subset. Keep request preparation and answer association coupled: emitted keys, target option order and rubric expectations must be recorded with the request and checked before shaping a client answer.
 

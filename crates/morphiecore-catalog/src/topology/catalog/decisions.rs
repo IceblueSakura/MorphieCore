@@ -4,13 +4,14 @@ use crate::{
     provider::{CredentialBindingId, CredentialKind, ProviderId},
     topology::{
         ExecutionContract, ModelId,
-        decisions::{DecisionRoute, SystemOneMetadata},
+        decisions::{DecisionRoute, LUNA, LUNA_NOUL_LABEL, SystemOneMetadata},
     },
 };
 
 pub struct DecisionBinding {
     pub id: &'static str,
     pub model: &'static str,
+    upstream_model: Option<&'static str>,
     pub provider: &'static str,
     pub client: Native,
     target: Target,
@@ -21,7 +22,8 @@ pub fn decision_bindings() -> &'static [DecisionBinding] {
     static BINDINGS: &[DecisionBinding] = &[
         DecisionBinding {
             id: "openai-luna-decisions",
-            model: "gpt-6-luna",
+            model: LUNA,
+            upstream_model: None,
             provider: "openai",
             client: Native::OpenAi,
             target: Target::Native(Native::OpenAi),
@@ -30,6 +32,7 @@ pub fn decision_bindings() -> &'static [DecisionBinding] {
         DecisionBinding {
             id: "typesafe-jev-1-14-system-one",
             model: "jev-1.14.0",
+            upstream_model: None,
             provider: "typesafe",
             client: Native::SystemOne,
             target: Target::Native(Native::SystemOne),
@@ -42,6 +45,7 @@ pub fn decision_bindings() -> &'static [DecisionBinding] {
         DecisionBinding {
             id: "google-gemini-decision-1-system-one-noul",
             model: "gemini-decision-1",
+            upstream_model: None,
             provider: "google",
             client: Native::SystemOne,
             target: Target::Gemini,
@@ -49,6 +53,19 @@ pub fn decision_bindings() -> &'static [DecisionBinding] {
             metadata: Some(SystemOneMetadata {
                 description: "Gemini Decision 1; plain-text Noul only.",
                 release_date: "2026-11-11",
+            }),
+        },
+        DecisionBinding {
+            id: "openai-luna-system-one-noul",
+            model: LUNA_NOUL_LABEL,
+            upstream_model: Some(LUNA),
+            provider: "openai",
+            client: Native::SystemOne,
+            target: Target::Native(Native::OpenAi),
+            // GA of Luna on Decisions: https://openai.com/index/decisions-api
+            metadata: Some(SystemOneMetadata {
+                description: "OpenAI GPT-6 Luna Decisions; plain-text Noul only.",
+                release_date: "2026-10-22",
             }),
         },
     ];
@@ -59,7 +76,7 @@ impl DecisionBinding {
     pub fn route(&self, credential: CredentialBindingId) -> DecisionRoute {
         DecisionRoute {
             model: ModelId::new(self.model).expect("static Decision model"),
-            upstream_model: self.model.into(),
+            upstream_model: self.upstream_model.unwrap_or(self.model).into(),
             provider: ProviderId::new(self.provider).expect("static Decision provider"),
             target: self.target,
             client: Some(self.client),

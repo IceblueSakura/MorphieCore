@@ -210,13 +210,14 @@ Use the separate `decisions` map; a `gpt-6-luna` entry under `models` does not e
   "models": {},
   "decisions": {
     "gpt-6-luna": {"account": "platform"},
+    "gpt-6-luna-noul": {"account": "platform"},
     "jev-1.14.0": {"account": "jev"},
     "gemini-decision-1": {"account": "google-platform"}
   }
 }
 ```
 
-Declare the selected accounts in `accounts.json` under `openai` (`platform`), `typesafe` (`jev`), or `google` (`google-platform`), then provision them through [the credential CLI](credentials-and-diagnostics.md#add-an-api-key). Substitute your configured names. Gemini is discoverable only on the TypeSafe surface and accepts only plain-text Noul. See [Decision API](api-reference.md#decisions) for the exact profiles and SDK base URLs.
+Declare the selected accounts in `accounts.json` under `openai` (`platform`), `typesafe` (`jev`), or `google` (`google-platform`), then provision them through [the credential CLI](credentials-and-diagnostics.md#add-an-api-key). Substitute your configured names. `gpt-6-luna` and `gpt-6-luna-noul` are independently activated bindings to the same OpenAI model; the `-noul` label is TypeSafe-only, not an upstream model ID. The `-noul` and Gemini bindings accept only plain-text Noul. See [Decision API](api-reference.md#decisions) for the exact profiles and SDK base URLs.
 
 #### Qwen image candidates
 

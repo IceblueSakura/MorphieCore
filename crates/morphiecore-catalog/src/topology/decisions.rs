@@ -5,6 +5,9 @@ use crate::{
     provider::{CredentialBindingId, CredentialKind, ProviderId, ProviderOperation},
 };
 
+pub(super) const LUNA: &str = "gpt-6-luna";
+pub(super) const LUNA_NOUL_LABEL: &str = "gpt-6-luna-noul";
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DecisionRoute {
     pub model: ModelId,
@@ -64,6 +67,12 @@ impl CompiledTopology {
                 return Err(TopologyError::InvalidExecutionLimits);
             }
             let valid_profile = match (route.client, route.target) {
+                (Some(Native::SystemOne), Target::Native(Native::OpenAi)) => {
+                    route.provider.as_str() == "openai"
+                        && route.model.as_str() == LUNA_NOUL_LABEL
+                        && route.upstream_model == LUNA
+                        && route.system_one_metadata.is_some()
+                }
                 (Some(client), Target::Native(target)) => {
                     client == target
                         && (client == Native::SystemOne || route.system_one_metadata.is_none())

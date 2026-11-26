@@ -16,7 +16,7 @@ mod distribution;
 pub mod gemini;
 mod openai;
 mod system_one;
-pub mod system_one_gemini;
+pub mod system_one_noul;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Native {
@@ -86,19 +86,27 @@ impl Native {
 impl Expectation {
     /// Current profiles deliver only native answers; this never infers usage.
     pub fn complete(self, bytes: &[u8], public_model: &str) -> Result<Value, CodecError> {
-        let root = decode(bytes)?;
-        let root = object(&root)?;
-        if root.get("error").is_some_and(|value| !value.is_null())
-            || !valid_model(string(root.get("model"))?)
-            || !valid_model(public_model)
-        {
+        if !valid_model(public_model) {
             return Err(CodecError::invalid());
         }
+        let root = decode_native_result(bytes)?;
+        let root = object(&root)?;
         match self.native {
             Native::OpenAi => openai::complete(&self.request, root, public_model),
             Native::SystemOne => system_one::complete(&self.request, root, public_model),
         }
     }
+}
+
+fn decode_native_result(bytes: &[u8]) -> Result<Value, CodecError> {
+    let root = decode(bytes)?;
+    let fields = object(&root)?;
+    if fields.get("error").is_some_and(|value| !value.is_null())
+        || !valid_model(string(fields.get("model"))?)
+    {
+        return Err(CodecError::invalid());
+    }
+    Ok(root)
 }
 
 fn valid_model(model: &str) -> bool {

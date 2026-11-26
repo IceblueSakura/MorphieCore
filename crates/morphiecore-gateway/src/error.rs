@@ -11,6 +11,7 @@ use serde_json::json;
 pub(super) enum ErrorKind {
     InvalidRequest,
     DecisionBlocked,
+    DecisionRefused,
     StatefulApiDisabled,
     ReasoningHistoryRequired,
     Upstream,
@@ -38,6 +39,7 @@ impl ErrorKind {
         match self {
             Self::InvalidRequest => "gateway.invalid_request",
             Self::DecisionBlocked => "gateway.decision_blocked",
+            Self::DecisionRefused => "gateway.decision_refused",
             Self::StatefulApiDisabled => "gateway.stateful_api_disabled",
             Self::ReasoningHistoryRequired => "gateway.reasoning_history_required",
             Self::Upstream => "gateway.upstream",
@@ -65,6 +67,7 @@ impl ErrorKind {
         match self {
             Self::InvalidRequest => "invalid_request",
             Self::DecisionBlocked => "decision_blocked",
+            Self::DecisionRefused => "decision_refused",
             Self::StatefulApiDisabled => "stateful_api_disabled",
             Self::ReasoningHistoryRequired => "reasoning_history_required",
             Self::Upstream => "upstream_error",

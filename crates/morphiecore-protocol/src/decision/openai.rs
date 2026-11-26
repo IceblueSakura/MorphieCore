@@ -366,11 +366,10 @@ fn encode_answer(question: &Question, outcome: &Outcome) -> Result<Value, CodecE
     })
 }
 
-pub(super) fn complete(
+pub(super) fn evaluate(
     request: &Request,
     root: &Map<String, Value>,
-    public_model: &str,
-) -> Result<Value, CodecError> {
+) -> Result<(AnswerSet, Usage), CodecError> {
     let reports = array(root.get("answers").ok_or_else(CodecError::invalid)?)?;
     if request.questions().len() != reports.len() {
         return Err(CodecError::invalid());
@@ -392,6 +391,15 @@ pub(super) fn complete(
         reasoning_tokens: Some(count(&usage["output_tokens_details"]["reasoning_tokens"])?),
         input_by_modality: None,
     };
+    Ok((answers, source))
+}
+
+pub(super) fn complete(
+    request: &Request,
+    root: &Map<String, Value>,
+    public_model: &str,
+) -> Result<Value, CodecError> {
+    let (answers, source) = evaluate(request, root)?;
     let answers = request
         .questions()
         .iter()

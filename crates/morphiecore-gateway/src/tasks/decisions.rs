@@ -9,7 +9,7 @@ use crate::{
     diagnostics::{Stage, Trace},
     execution::task::PreparedTaskRequest,
     ingress::admission,
-    protocol::decision::{Expectation, Native, Target, gemini, system_one_gemini},
+    protocol::decision::{Expectation, Native, Target, gemini, system_one_noul},
     provider::{CredentialBindingId, CredentialKind, ProviderDefinition, ProviderId},
     semantic::task::decision::{Evaluation, Request as DecisionRequest},
     topology::{CompiledTopology, ExecutionContract, decisions::DecisionRoute},
@@ -151,18 +151,24 @@ async fn ingress(
         ))?
         .clone();
     let model = &entry.route.upstream_model;
-    let (body, output) = match entry.route.target {
-        Target::Native(target) => {
+    let (body, output) = match (native, entry.route.target) {
+        (client, Target::Native(target)) if client == target => {
             let prepared = target
                 .prepare(parsed.task, model)
                 .map_err(|_| ApiError::invalid())?;
             (prepared.body, Output::Native(prepared.expectation))
         }
-        Target::Gemini => {
-            let prepared =
-                system_one_gemini::prepare(parsed.task, model).map_err(|_| ApiError::invalid())?;
-            (prepared.body, Output::GeminiNoul(prepared.expectation))
+        (Native::SystemOne, target @ (Target::Gemini | Target::Native(Native::OpenAi))) => {
+            let target = if target == Target::Gemini {
+                system_one_noul::NoulTarget::Gemini
+            } else {
+                system_one_noul::NoulTarget::OpenAi
+            };
+            let prepared = system_one_noul::prepare(parsed.task, model, target)
+                .map_err(|_| ApiError::invalid())?;
+            (prepared.body, Output::SystemOneNoul(prepared.expectation))
         }
+        _ => return Err(ApiError::upstream()),
     };
     let wire = prepare_wire(&entry, &body, JSON_BYTES)?;
     admitted.respond(runtime, entry, wire, output).await
@@ -287,7 +293,7 @@ async fn receive_json(receiver: Receiver, trace: &mut Trace) -> Result<Vec<u8>, 
 
 enum Output {
     Native(Expectation),
-    GeminiNoul(system_one_gemini::Expectation),
+    SystemOneNoul(system_one_noul::Expectation),
 }
 impl TaskOutput for Output {
     type Route = DecisionRoute;
@@ -314,16 +320,23 @@ impl TaskOutput for Output {
             Self::Native(expectation) => expectation
                 .complete(&bytes, model)
                 .map_err(|_| ApiError::malformed())?,
-            Self::GeminiNoul(expectation) => match expectation
+            Self::SystemOneNoul(expectation) => match expectation
                 .complete(&bytes, model)
                 .map_err(|_| ApiError::malformed())?
             {
-                system_one_gemini::Delivery::Answered(value) => value,
-                system_one_gemini::Delivery::Blocked => {
+                system_one_noul::Delivery::Answered(value) => value,
+                system_one_noul::Delivery::Blocked => {
                     trace.terminal_validated();
                     return Err(ApiError::new(
                         StatusCode::UNPROCESSABLE_ENTITY,
                         crate::error::ErrorKind::DecisionBlocked,
+                    ));
+                }
+                system_one_noul::Delivery::Refused => {
+                    trace.terminal_validated();
+                    return Err(ApiError::new(
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        crate::error::ErrorKind::DecisionRefused,
                     ));
                 }
             },

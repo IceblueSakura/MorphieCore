@@ -72,7 +72,7 @@ fn predicate(name: Option<&str>, instructions: &str) -> Question {
 
 #[test]
 fn gemini_to_system_one_delivers_only_named_predicates_and_reported_usage() {
-    use system_one_gemini::Delivery;
+    use system_one_noul::{Delivery, NoulTarget};
 
     let complete = |wire: &[u8]| {
         let request = Request::new(
@@ -83,7 +83,7 @@ fn gemini_to_system_one_delivers_only_named_predicates_and_reported_usage() {
             ],
         )
         .unwrap();
-        system_one_gemini::prepare(request, "gemini-decision-1")
+        system_one_noul::prepare(request, "gemini-decision-1", NoulTarget::Gemini)
             .unwrap()
             .expectation
             .complete(wire, "gemini-decision-1")
@@ -136,6 +136,70 @@ fn native_preparation_does_not_implicitly_add_or_drop_user_framing() {
         assert!(source.prepare(request(), "control").is_ok());
         assert!(target.prepare(request(), "opposite").is_err());
     }
+}
+
+#[test]
+fn system_one_luna_uses_one_user_message_and_refuses_the_whole_batch() {
+    use system_one_noul::{Delivery, NoulTarget};
+
+    let request = br#"{"model":"gpt-6-luna-noul","state":"  Parcel arrived.\n",
+        "questions":{
+            "z_arrived":{"type":"noul","instructions":"Did it arrive?"},
+            "a_wet":{"type":"noul","instructions":"Was it wet?"}
+        }}"#;
+    let prepare = || {
+        let task = Native::SystemOne.decode_request(request).unwrap().task;
+        system_one_noul::prepare(task, "gpt-6-luna", NoulTarget::OpenAi).unwrap()
+    };
+    let prepared = prepare();
+    assert_eq!(
+        prepared.body,
+        json!({"model":"gpt-6-luna",
+            "input":[{"type":"message","role":"user","content":"  Parcel arrived.\n"}],
+            "questions":[
+                {"type":"predicate","name":"z_arrived","instructions":"Did it arrive?"},
+                {"type":"predicate","name":"a_wet","instructions":"Was it wet?"}
+            ]
+        })
+    );
+    let wire = br#"{"model":"gpt-6-luna","answers":[
+        {"type":"predicate","name":"z_arrived","probability":0.95},
+        {"type":"predicate","name":"a_wet","probability":0.01234567890123456789}
+    ],"usage":{"input_tokens":32,"output_tokens":3,"total_tokens":35,
+               "input_tokens_details":{"cached_tokens":8,"cache_write_tokens":4},
+               "output_tokens_details":{"reasoning_tokens":1}}}"#;
+    let Delivery::Answered(output) = prepared
+        .expectation
+        .complete(wire, "gpt-6-luna-noul")
+        .unwrap()
+    else {
+        panic!("expected complete named Noul answers");
+    };
+    assert_eq!(
+        output,
+        decode(
+            br#"{"model":"gpt-6-luna-noul",
+            "answers":{"z_arrived":{"type":"noul","noul":0.95},
+                       "a_wet":{"type":"noul","noul":0.01234567890123456789}},
+            "usage":{"input_tokens":32,"output_tokens":3}}"#
+        )
+        .unwrap()
+    );
+    let mut refused = decode(wire).unwrap();
+    refused["answers"][1] = json!({"type":"refusal","name":"a_wet"});
+    assert!(matches!(
+        prepare()
+            .expectation
+            .complete(refused.to_string().as_bytes(), "gpt-6-luna-noul"),
+        Ok(Delivery::Refused)
+    ));
+    refused["answers"][1]["name"] = json!("different");
+    assert!(
+        prepare()
+            .expectation
+            .complete(refused.to_string().as_bytes(), "gpt-6-luna-noul")
+            .is_err()
+    );
 }
 
 #[test]

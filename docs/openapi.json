@@ -258,12 +258,12 @@
       "post": {
         "operationId": "createSystemOneDecision",
         "summary": "Evaluate TypeSafe Noul, Choice and Score questions",
-        "description": "Requires a Decision binding activated for TypeSafe. Jev accepts text or JSON state with Noul, Choice or Score. gemini-decision-1 accepts only plain-text state and Noul with text instructions. The SDK may send one bounded zstd frame. Multipart, media, long context opt-ins, SSE and other cross-family mappings are not admitted.",
+        "description": "Requires a Decision binding activated for TypeSafe. Jev accepts text or JSON state with Noul, Choice or Score. gemini-decision-1 and gpt-6-luna-noul are plain-text Noul only. The Luna binding wraps state verbatim in one user message. The SDK may send one bounded zstd frame. Multipart, media, long context opt-ins, SSE and other cross-family mappings are not admitted.",
         "parameters": [{"in": "header", "name": "Content-Encoding", "required": false, "schema": {"const": "zstd"}}],
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SystemOneDecisionRequest"}}}},
         "responses": {
-          "200": {"description": "One typed answer for every requested key, with reported usage. Gemini Noul answers do not expose confidence.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SystemOneDecisionResult"}}}},
-          "422": {"description": "Validation failed or Gemini blocked the entire request (decision_blocked).", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SystemOneError"}}}},
+          "200": {"description": "One typed answer for every requested key, with reported usage. Projected Noul answers do not expose confidence.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SystemOneDecisionResult"}}}},
+          "422": {"description": "Validation failed, Gemini blocked the entire request (decision_blocked), or Luna refused a question (decision_refused). No partial success.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SystemOneError"}}}},
           "default": {"$ref": "#/components/responses/SystemOneError"}
         }
       }
@@ -674,16 +674,20 @@
             ]
           }}
         },
-        "if": {"properties": {"model": {"const": "gemini-decision-1"}}},
-        "then": {"properties": {
-          "state": {"type": "string", "minLength": 1},
-          "questions": {"additionalProperties": {
-            "properties": {
-              "type": {"const": "noul"},
-              "instructions": {"type": "string", "minLength": 1}
-            }
-          }}
-        }}
+        "if": {"properties": {"model": {"enum": ["gemini-decision-1", "gpt-6-luna-noul"]}}},
+        "then": {
+          "properties": {
+            "state": {"type": "string", "minLength": 1},
+            "questions": {"additionalProperties": {
+              "properties": {
+                "type": {"const": "noul"},
+                "instructions": {"type": "string", "minLength": 1}
+              }
+            }}
+          },
+          "if": {"properties": {"model": {"const": "gpt-6-luna-noul"}}},
+          "then": {"properties": {"questions": {"maxProperties": 400}}}
+        }
       },
       "SystemOneDecisionResult": {
         "type": "object", "required": ["model", "answers", "usage"],
@@ -694,7 +698,7 @@
           }}},
           "usage": {"type": "object", "required": ["input_tokens", "output_tokens"]}
         },
-        "if": {"properties": {"model": {"const": "gemini-decision-1"}}},
+        "if": {"properties": {"model": {"enum": ["gemini-decision-1", "gpt-6-luna-noul"]}}},
         "then": {"properties": {
           "answers": {"additionalProperties": {
             "required": ["type", "noul"], "additionalProperties": false,

@@ -324,14 +324,16 @@ Non-Generation tasks maintain independent request, execution, and result lifecyc
 
 TypeSafe and OpenAI SDK access use an independent capability-union Decision IR, not Generation execution. The [Python SDK profiles](../usage/api-reference.md#decisions) expose native Predicate/Noul, Choice, and Score over text and structured evidence. Activation is explicit and task-local through [`models.json` `decisions`](../usage/gateway-configuration.md#decision-models), with one bound target. OpenAI retains user-owned message and part order; TypeSafe retains a role-less `state`. The [extension proposals](../proposals/decisions-api.md) own remaining profiles and mappings.
 
-Gemini `gemini-decision-1` has a text-only [native upstream codec](../../crates/morphiecore-protocol/src/decision/gemini.rs). A trusted Rust embed can explicitly bind `Target::Gemini` and call [`Gateway::evaluate_gemini_decision`](../../crates/morphiecore-gateway/src/tasks/decisions.rs) for the wider native text subset. The public, file-configured binding uses the existing TypeSafe surface only and the selected [plain-text Noul projection](../../crates/morphiecore-protocol/src/decision/system_one_gemini.rs). Both paths validate complete EOF before delivery and share the credential-bound single-attempt exchange.
+Gemini `gemini-decision-1` has a text-only [native upstream codec](../../crates/morphiecore-protocol/src/decision/gemini.rs). A trusted Rust embed can explicitly bind `Target::Gemini` and call [`Gateway::evaluate_gemini_decision`](../../crates/morphiecore-gateway/src/tasks/decisions.rs) for the wider native text subset. The file-configured Gemini and `gpt-6-luna-noul` bindings use the same TypeSafe-only [plain-text Noul delivery](../../crates/morphiecore-protocol/src/decision/system_one_noul.rs). They validate complete EOF before delivery and share the credential-bound single-attempt exchange. The Luna projected label is separate from the native OpenAI binding.
 
-| TypeSafe → Gemini boundary | Disposition |
+| Projected TypeSafe Noul boundary | Disposition |
 |---|---|
-| Text `state`, Noul instructions, and question keys | L1/L2: preserve model-visible text and restore every original question key using request-local slots. Neither model sees the keys. |
+| Gemini text `state`, Noul instructions, and question keys | L1/L2: preserve model-visible text and restore every original question key using request-local slots. Neither source nor target model sees the keys. |
+| OpenAI message framing | L3 `decision.wrap-state-as-user.v1`: preserve the original text verbatim in one `user` message. The new role framing is deliberate, not an equivalence claim. Keep the question text and names, and validate positional/name association before returning named Noul answers. |
 | `noul` and usage | L1/L2: preserve exact reported probability and input/output counts; fail on missing required counts. `model` denotes the trusted binding, not an upstream response report. |
 | Confidence and extra accounting | L4 `decision.omit-gemini-source-reports.v1`: retain Gemini winning-mass confidence and additional accounting in the validated source result, then omit fields without a standard Noul/usage carrier. Do not recompute or copy confidence into the probability. |
-| Unsupported inputs and whole-request block | L5: reject structured/media state, Choice/Score and explicit criteria before dispatch. A validated whole-request block becomes a non-retryable TypeSafe `422 decision_blocked`, without provider message or partial success. |
+| OpenAI usage detail | L4 `decision.omit-openai-usage-details.v1`: retain total/cache/reasoning reports in the source result and omit them from the System One usage envelope. |
+| Unsupported inputs and uncarriable outcomes | L5: reject structured/media state, Choice/Score and explicit criteria before dispatch. A Gemini block becomes TypeSafe `422 decision_blocked`; any validated OpenAI per-question refusal becomes whole-request `422 decision_refused`. Neither publishes partial answers or retries. |
 
 #### Token counting policy
 

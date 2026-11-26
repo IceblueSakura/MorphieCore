@@ -30,14 +30,15 @@ with OpenAI(base_url=root + "/v1", api_key=key, max_retries=0,
     assert [(type(p.value), p.value, p.probability) for p in answer.probabilities] == [
         (bool, True, 0.2), (str, "true", 0.8),
     ]
-    try:
-        client.decisions.create(model="gemini-decision-1", input="parcel", questions=[
-            {"type": "predicate", "instructions": "Did it arrive?"},
-        ])
-    except NotFoundError:
-        pass
-    else:
-        raise AssertionError("Gemini Decision must be usable only through TypeSafe")
+    for model in ("gemini-decision-1", "gpt-6-luna-noul"):
+        try:
+            client.decisions.create(model=model, input="parcel", questions=[
+                {"type": "predicate", "instructions": "Did it arrive?"},
+            ])
+        except NotFoundError:
+            pass
+        else:
+            raise AssertionError("projected Noul bindings must be usable only through TypeSafe")
 
 encodings = []
 with TypeSafeClient(
@@ -48,12 +49,13 @@ with TypeSafeClient(
 ) as client:
     models = client.models.list().models
     assert [(m.name, str(m.release_date)) for m in models] == [
-        ("gemini-decision-1", "2026-11-11"), ("jev-1.14.0", "2026-10-14"),
+        ("gemini-decision-1", "2026-11-11"), ("gpt-6-luna-noul", "2026-10-22"),
+        ("jev-1.14.0", "2026-10-14"),
     ]
     result = client.system_one(
         {"record": "Synthetic parcel. " * 100},
         {"priority": Score(criteria=["routine", "urgent"])},
-        model=models[1].name,
+        model=models[2].name,
     )
     assert encodings == [None, "zstd"]
     assert list(result.answers) == ["priority"] and result.usage.input_tokens == 29
@@ -92,3 +94,20 @@ with TypeSafeClient(
                 assert detail[0]["type"] == "value_error"
         else:
             raise AssertionError("unsupported request or block must fail atomically")
+
+    questions = {"z_arrived": Noul(instructions="Did it arrive?"),
+                 "a_wet": Noul(instructions="Was it wet?")}
+    model = models[1].name
+    result = client.system_one("  Parcel arrived.\n", questions, model=model)
+    assert result.model == model
+    assert result.usage.input_tokens == 35 and result.usage.output_tokens == 0
+    assert {key: answer.noul for key, answer in result.nouls.items()} == {
+        "z_arrived": 0.96, "a_wet": 0.07,
+    }
+    try:
+        client.system_one("refused", questions, model=model)
+    except TypeSafeUnprocessableEntityError as error:
+        assert error.status == 422
+        assert error.body == {"detail": "The request could not be completed (decision_refused)."}
+    else:
+        raise AssertionError("a single OpenAI refusal must not publish a partial result")

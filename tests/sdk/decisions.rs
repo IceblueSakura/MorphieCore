@@ -28,6 +28,28 @@ async fn configured_decision_sdk_discovery_and_bound_calls() {
             async move {
                 calls.fetch_add(1, Ordering::Relaxed);
                 assert_eq!(headers["authorization"], "Bearer synthetic-openai-decision");
+                if body["questions"][0]["type"] == "predicate" {
+                    let state = body["input"][0]["content"].as_str().unwrap();
+                    assert!(matches!(state, "  Parcel arrived.\n" | "refused"));
+                    assert_eq!(body, json!({
+                        "model":"gpt-6-luna",
+                        "input":[{"type":"message","role":"user","content":state}],
+                        "questions":[
+                            {"type":"predicate","name":"z_arrived","instructions":"Did it arrive?"},
+                            {"type":"predicate","name":"a_wet","instructions":"Was it wet?"}
+                        ]
+                    }));
+                    let second = if state == "refused" {
+                        json!({"type":"refusal","name":"a_wet"})
+                    } else {
+                        json!({"type":"predicate","name":"a_wet","probability":0.07})
+                    };
+                    return Json(json!({"model":"gpt-6-luna","answers":[
+                        {"type":"predicate","name":"z_arrived","probability":0.96},second
+                    ],"usage":{"input_tokens":35,"output_tokens":0,"total_tokens":35,
+                        "input_tokens_details":{"cached_tokens":8,"cache_write_tokens":0},
+                        "output_tokens_details":{"reasoning_tokens":0}}}));
+                }
                 assert_eq!(body, json!({
                     "model":"gpt-6-luna",
                     "input":[{"type":"message","role":"user","content":[
@@ -94,6 +116,7 @@ async fn configured_decision_sdk_discovery_and_bound_calls() {
 
     let fixture = Fixture::with_accounts(service(), json!({"models":{}, "decisions":{
         "gpt-6-luna":{"account":"primary"},
+        "gpt-6-luna-noul":{"account":"primary"},
         "jev-1.14.0":{"account":"primary"},
         "gemini-decision-1":{"account":"primary"}
     }}), &[
@@ -131,7 +154,7 @@ async fn configured_decision_sdk_discovery_and_bound_calls() {
     );
     assert_eq!(
         calls.load(Ordering::Relaxed),
-        4,
-        "discovery and intake rejections must not contact any upstream; blocked requests send once"
+        6,
+        "only evaluated, blocked, and refused requests contact an upstream, once each"
     );
 }
