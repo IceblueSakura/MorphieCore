@@ -10,6 +10,7 @@ use serde_json::json;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ErrorKind {
     InvalidRequest,
+    DecisionBlocked,
     StatefulApiDisabled,
     ReasoningHistoryRequired,
     Upstream,
@@ -36,6 +37,7 @@ impl ErrorKind {
     pub const fn diagnostic_code(self) -> &'static str {
         match self {
             Self::InvalidRequest => "gateway.invalid_request",
+            Self::DecisionBlocked => "gateway.decision_blocked",
             Self::StatefulApiDisabled => "gateway.stateful_api_disabled",
             Self::ReasoningHistoryRequired => "gateway.reasoning_history_required",
             Self::Upstream => "gateway.upstream",
@@ -62,6 +64,7 @@ impl ErrorKind {
     pub const fn code(self) -> &'static str {
         match self {
             Self::InvalidRequest => "invalid_request",
+            Self::DecisionBlocked => "decision_blocked",
             Self::StatefulApiDisabled => "stateful_api_disabled",
             Self::ReasoningHistoryRequired => "reasoning_history_required",
             Self::Upstream => "upstream_error",

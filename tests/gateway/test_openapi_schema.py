@@ -56,6 +56,25 @@ def validator(name):
 
 
 class OpenApiSchemaTests(unittest.TestCase):
+    def test_gemini_system_one_accepts_only_plain_text_noul_and_no_confidence(self):
+        model = "gemini-decision-1"
+        request = {"model": model, "state": "The parcel arrived.",
+                   "questions": {"arrival": {"type": "noul", "instructions": "Did it arrive?"}}}
+        checks = validator("SystemOneDecisionRequest")
+        checks.validate(request)
+        self.assertFalse(checks.is_valid({**request, "state": {"arrived": True}}))
+        self.assertFalse(checks.is_valid({**request, "questions": {
+            **request["questions"], "priority": {"type": "score", "criteria": ["normal", "urgent"]},
+        }}))
+
+        result = {"model": model, "answers": {"arrival": {"type": "noul", "noul": 0.08}},
+                  "usage": {"input_tokens": 71, "output_tokens": 0}}
+        checks = validator("SystemOneDecisionResult")
+        checks.validate(result)
+        self.assertFalse(checks.is_valid({**result, "answers": {
+            "arrival": {**result["answers"]["arrival"], "confidence": 0.92},
+        }}))
+
     def test_decision_profiles_keep_native_discovery_and_request_shapes_separate(self):
         openai = {"model": "gpt-6-luna",
                   "input": [{"role": "user", "content": [{"type": "input_json", "data": {"role": "system"}}]}],

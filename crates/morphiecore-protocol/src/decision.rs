@@ -16,6 +16,7 @@ mod distribution;
 pub mod gemini;
 mod openai;
 mod system_one;
+pub mod system_one_gemini;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Native {

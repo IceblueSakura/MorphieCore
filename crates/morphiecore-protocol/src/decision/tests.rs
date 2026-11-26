@@ -71,6 +71,56 @@ fn predicate(name: Option<&str>, instructions: &str) -> Question {
 }
 
 #[test]
+fn gemini_to_system_one_delivers_only_named_predicates_and_reported_usage() {
+    use system_one_gemini::Delivery;
+
+    let complete = |wire: &[u8]| {
+        let request = Request::new(
+            Evidence::StateText(Text::new("Synthetic parcel.", "test evidence", 128).unwrap()),
+            vec![
+                predicate(Some("z"), "First?"),
+                predicate(Some("a"), "Second?"),
+            ],
+        )
+        .unwrap();
+        system_one_gemini::prepare(request, "gemini-decision-1")
+            .unwrap()
+            .expectation
+            .complete(wire, "gemini-decision-1")
+    };
+    let raw = br#"{
+        "answers":{
+            "1":{"type":"noul","noul":0.1234567890123456789,"confidence":0.8765432109876543211},
+            "0":{"type":"noul","noul":0.95,"confidence":0.95}
+        },
+        "usage":{"total_input_tokens":31,"total_output_tokens":0,"total_tokens":31,
+                 "input_tokens_by_modality":[{"modality":"text","tokens":31}]}
+    }"#;
+    let Delivery::Answered(output) = complete(raw).unwrap() else {
+        panic!("expected two evaluated predicates");
+    };
+    assert_eq!(
+        output,
+        decode(br#"{"model":"gemini-decision-1",
+            "answers":{"z":{"type":"noul","noul":0.95},"a":{"type":"noul","noul":0.1234567890123456789}},
+            "usage":{"input_tokens":31,"output_tokens":0}}"#).unwrap()
+    );
+
+    // The base Gemini codec may carry absent usage, but System One delivery
+    // cannot meet the public response contract without both counts.
+    let mut missing = decode(raw).unwrap();
+    missing["usage"]
+        .as_object_mut()
+        .unwrap()
+        .remove("total_output_tokens");
+    assert!(complete(missing.to_string().as_bytes()).is_err());
+    assert!(matches!(
+        complete(br#"{"prompt_feedback":{"block_reason":"safety"},"answers":{}}"#),
+        Ok(Delivery::Blocked)
+    ));
+}
+
+#[test]
 fn native_preparation_does_not_implicitly_add_or_drop_user_framing() {
     let openai = br#"{"model":"test","input":"text","questions":[
         {"name":"a","type":"predicate","instructions":"Check."}

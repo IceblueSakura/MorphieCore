@@ -89,16 +89,19 @@ Unsupported `user` hints omit on Google/DashScope and forward on OpenAI bindings
 
 ### Decisions
 
-[Enable models in `decisions`](gateway-configuration.md#decision-models) and authenticate with a gateway Agent key, not a Provider key. The first native profiles use one target per request, without switching or retries.
+[Enable models in `decisions`](gateway-configuration.md#decision-models) and authenticate with a gateway Agent key, not a Provider key. Each profile uses one target per request, without switching or retries.
 
 | SDK profile | Base URL | Qualified model | Evaluation and discovery |
 |---|---|---|---|
 | OpenAI Python | `http://127.0.0.1:8080/v1` | `gpt-6-luna` | `client.decisions.create`, `client.models.list`, `client.models.retrieve` |
 | TypeSafe Python | `http://127.0.0.1:8080/typesafe` | `jev-1.14.0` | `client.system_one`, `client.models.list` |
+| TypeSafe Python | `http://127.0.0.1:8080/typesafe` | `gemini-decision-1` | `client.system_one` (plain-text Noul only), `client.models.list` |
 
 OpenAI accepts text or user messages with ordered text and `input_json` parts; each JSON part is an object or array of objects. Instructions, choice descriptions and score labels/descriptions are text. TypeSafe accepts a string, object or array as `state`, text instructions, text or `null` Choice criteria, and ordered text Score criteria. Noul in this profile requires text instructions. TypeSafe accepts the SDK's default single-frame zstd request compression; auth, wire bytes, decoder window and expanded bytes are bounded before dispatch. Model discovery is local, account-free at request time, and protocol-specific. A known model on the wrong Decision protocol returns 404.
 
-Decision results are complete JSON with native usage and typed answers; native OpenAI refusals retain their answer slots. Unsupported media, non-user OpenAI history, cache or attribution controls, TypeSafe experimental opt-ins, stateful continuation and cross-family execution are outside this profile. TypeSafe validation uses HTTP 422 with `detail`; other TypeSafe errors are sanitized under the same `detail` envelope.
+The Gemini binding accepts a non-empty string `state` and named Noul questions with non-empty string `instructions` and no binary rubric. A batch containing Choice, Score or structured state rejects before dispatch. It returns the original `noul` probability and reported input/output token counts; the result's `model` is the bound model label, not a Gemini response field. A whole-request Gemini policy block returns HTTP 422 with `decision_blocked` in `detail`, never an empty success. Gemini confidence is validated as a source fact, not delivered as a Noul field.
+
+Decision results are complete JSON with reported usage and typed answers; native OpenAI refusals retain their answer slots. Media, non-user OpenAI history, cache or attribution controls, TypeSafe experimental opt-ins, stateful continuation and other cross-family mappings are not admitted. TypeSafe validation uses HTTP 422 with `detail`; other TypeSafe errors are sanitized under the same `detail` envelope.
 
 ### Generation Text model discovery
 

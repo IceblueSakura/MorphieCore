@@ -61,6 +61,7 @@ async fn gemini_decision_uses_bound_upstream_without_opening_http_routes() {
         provider: provider.id.clone(),
         credential: credential.clone(),
         target: Target::Gemini,
+        client: None,
         execution: ExecutionContract {
             streaming: false,
             request_body_limit: 4096,
@@ -339,6 +340,7 @@ async fn explicit_decision_routes_send_only_their_bound_native_operation() {
             provider: provider.id.clone(),
             credential: key.clone(),
             target: Target::Native(native),
+            client: Some(native),
             system_one_metadata: None,
             execution: ExecutionContract {
                 streaming: false,

@@ -1,9 +1,12 @@
-"""Official native Decision SDK consumers; all network authorities are synthetic."""
+"""Official Decision SDK consumers; all network authorities are synthetic."""
 import sys
 
 from httpx2 import Client
-from openai import OpenAI
-from typesafe_sdk import RetryPolicy, Score, ScoreAnswer, TypeSafeClient
+from openai import NotFoundError, OpenAI
+from typesafe_sdk import (
+    Noul, NoulAnswer, RetryPolicy, Score, ScoreAnswer, TypeSafeClient,
+    TypeSafeUnprocessableEntityError,
+)
 
 root = sys.argv[1]
 key = "synthetic-gateway-client-token-0001"
@@ -27,6 +30,14 @@ with OpenAI(base_url=root + "/v1", api_key=key, max_retries=0,
     assert [(type(p.value), p.value, p.probability) for p in answer.probabilities] == [
         (bool, True, 0.2), (str, "true", 0.8),
     ]
+    try:
+        client.decisions.create(model="gemini-decision-1", input="parcel", questions=[
+            {"type": "predicate", "instructions": "Did it arrive?"},
+        ])
+    except NotFoundError:
+        pass
+    else:
+        raise AssertionError("Gemini Decision must be usable only through TypeSafe")
 
 encodings = []
 with TypeSafeClient(
@@ -36,11 +47,13 @@ with TypeSafeClient(
     }),
 ) as client:
     models = client.models.list().models
-    assert [(m.name, str(m.release_date)) for m in models] == [("jev-1.14.0", "2026-10-14")]
+    assert [(m.name, str(m.release_date)) for m in models] == [
+        ("gemini-decision-1", "2026-11-11"), ("jev-1.14.0", "2026-10-14"),
+    ]
     result = client.system_one(
         {"record": "Synthetic parcel. " * 100},
         {"priority": Score(criteria=["routine", "urgent"])},
-        model=models[0].name,
+        model=models[1].name,
     )
     assert encodings == [None, "zstd"]
     assert list(result.answers) == ["priority"] and result.usage.input_tokens == 29
@@ -48,3 +61,34 @@ with TypeSafeClient(
     assert isinstance(answer, ScoreAnswer) and answer.score == 0.8
     assert answer.legend == {0: "routine", 1: "urgent"}
     assert answer.probabilities == {0: 0.2, 1: 0.8}
+
+    result = client.system_one(
+        "Synthetic parcel. " * 100,
+        {"z_arrived": Noul(instructions="Did it arrive?"),
+         "a_damaged": Noul(instructions="Was it damaged?")},
+        model=models[0].name,
+    )
+    assert encodings == [None, "zstd", "zstd"]
+    assert result.model == "gemini-decision-1"
+    assert result.usage.input_tokens == 71 and result.usage.output_tokens == 0
+    assert set(result.answers) == {"z_arrived", "a_damaged"}
+    for name, probability in {"z_arrived": 0.95, "a_damaged": 0.08}.items():
+        assert isinstance(result.answers[name], NoulAnswer)
+        assert result.answers[name].noul == probability
+
+    for state, questions, blocked in (
+        ({"record": "not plain text"}, {"arrived": Noul(instructions="Did it arrive?")}, False),
+        ("parcel", {"arrived": Noul(instructions="Did it arrive?"),
+                    "priority": Score(criteria=["routine", "urgent"])}, False),
+        ("blocked", {"arrived": Noul(instructions="Did it arrive?")}, True),
+    ):
+        try:
+            client.system_one(state, questions, model=models[0].name)
+        except TypeSafeUnprocessableEntityError as error:
+            detail = error.body["detail"]
+            if blocked:
+                assert detail == "The request could not be completed (decision_blocked)."
+            else:
+                assert detail[0]["type"] == "value_error"
+        else:
+            raise AssertionError("unsupported request or block must fail atomically")

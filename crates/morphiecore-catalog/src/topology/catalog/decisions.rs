@@ -1,4 +1,4 @@
-//! Qualified native Decision bindings. Task activation belongs to the deployment.
+//! Qualified Decision bindings. Task activation belongs to the deployment.
 use crate::{
     protocol::decision::{Native, Target},
     provider::{CredentialBindingId, CredentialKind, ProviderId},
@@ -12,7 +12,8 @@ pub struct DecisionBinding {
     pub id: &'static str,
     pub model: &'static str,
     pub provider: &'static str,
-    pub native: Native,
+    pub client: Native,
+    target: Target,
     metadata: Option<SystemOneMetadata>,
 }
 
@@ -22,18 +23,32 @@ pub fn decision_bindings() -> &'static [DecisionBinding] {
             id: "openai-luna-decisions",
             model: "gpt-6-luna",
             provider: "openai",
-            native: Native::OpenAi,
+            client: Native::OpenAi,
+            target: Target::Native(Native::OpenAi),
             metadata: None,
         },
         DecisionBinding {
             id: "typesafe-jev-1-14-system-one",
             model: "jev-1.14.0",
             provider: "typesafe",
-            native: Native::SystemOne,
+            client: Native::SystemOne,
+            target: Target::Native(Native::SystemOne),
             // https://docs.typesafe.ai/changelog
             metadata: Some(SystemOneMetadata {
                 description: "General-purpose System One model for typed decisions.",
                 release_date: "2026-10-14",
+            }),
+        },
+        DecisionBinding {
+            id: "google-gemini-decision-1-system-one-noul",
+            model: "gemini-decision-1",
+            provider: "google",
+            client: Native::SystemOne,
+            target: Target::Gemini,
+            // https://aistudio.google.com/docs/changelog#11-11-2026
+            metadata: Some(SystemOneMetadata {
+                description: "Gemini Decision 1; plain-text Noul only.",
+                release_date: "2026-11-11",
             }),
         },
     ];
@@ -46,7 +61,8 @@ impl DecisionBinding {
             model: ModelId::new(self.model).expect("static Decision model"),
             upstream_model: self.model.into(),
             provider: ProviderId::new(self.provider).expect("static Decision provider"),
-            target: Target::Native(self.native),
+            target: self.target,
+            client: Some(self.client),
             credential,
             execution: ExecutionContract {
                 streaming: false,

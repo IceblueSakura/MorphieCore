@@ -1,4 +1,4 @@
-//! Native SDK discovery and differing wire shapes through file-configured startup.
+//! Decision SDK discovery and wire shapes through file-configured startup.
 use axum::{Json, Router, http::HeaderMap, routing::post};
 use morphiecore::gateway::startup::bootstrap::test_support::{Fixture, service};
 use serde_json::{Value, json};
@@ -12,13 +12,16 @@ use std::{
 use tokio::net::TcpListener;
 
 #[tokio::test]
-#[ignore = "requires pinned OpenAI and TypeSafe Python SDKs; synthetic native upstreams"]
-async fn configured_decision_sdk_discovery_and_native_calls() {
+#[ignore = "requires pinned OpenAI and TypeSafe Python SDKs; synthetic upstreams"]
+async fn configured_decision_sdk_discovery_and_bound_calls() {
     let upstream = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let upstream_root = format!("http://{}/v1", upstream.local_addr().unwrap());
+    let upstream_address = upstream.local_addr().unwrap();
+    let upstream_root = format!("http://{upstream_address}/v1");
+    let gemini_root = format!("http://{upstream_address}/v1beta");
     let calls = Arc::new(AtomicUsize::new(0));
     let openai = calls.clone();
     let typesafe = calls.clone();
+    let gemini = calls.clone();
     let authority = Router::new()
         .route("/v1/decisions", post(move |headers: HeaderMap, Json(body): Json<Value>| {
             let calls = openai.clone();
@@ -54,6 +57,36 @@ async fn configured_decision_sdk_discovery_and_native_calls() {
                     "legend":{"1":"urgent","0":"routine"},"probabilities":{"1":0.8,"0":0.2}
                 }},"usage":{"input_tokens":29,"output_tokens":0}}))
             }
+        }))
+        .route("/v1beta/decisions", post(move |headers: HeaderMap, Json(body): Json<Value>| {
+            let calls = gemini.clone();
+            async move {
+                calls.fetch_add(1, Ordering::Relaxed);
+                assert_eq!(headers["x-goog-api-key"], "synthetic-google-decision");
+                assert!(!headers.contains_key("authorization"));
+                assert!(!headers.contains_key("content-encoding"));
+                assert_eq!(body["model"], "gemini-decision-1");
+                if body["input"] == "blocked" {
+                    return Json(json!({"answers":{},"prompt_feedback":{
+                        "block_reason":"safety","block_reason_message":"must-not-reach-client"
+                    }}));
+                }
+                assert_eq!(body, json!({
+                    "model":"gemini-decision-1", "input":"Synthetic parcel. ".repeat(100),
+                    "questions":{
+                        "0":{"type":"noul","instructions":"Did it arrive?"},
+                        "1":{"type":"noul","instructions":"Was it damaged?"}
+                    }
+                }));
+                Json(json!({
+                    "answers":{
+                        "1":{"type":"noul","noul":0.08,"confidence":0.92},
+                        "0":{"type":"noul","noul":0.95,"confidence":0.95}
+                    },
+                    "usage":{"total_input_tokens":71,"total_output_tokens":0,
+                             "total_tokens":71,"input_tokens_by_modality":[{"modality":"text","tokens":71}]}
+                }))
+            }
         }));
     let _upstream = super::ServerGuard(
         tokio::spawn(async move { axum::serve(upstream, authority).await.unwrap() }).abort_handle(),
@@ -61,13 +94,16 @@ async fn configured_decision_sdk_discovery_and_native_calls() {
 
     let fixture = Fixture::with_accounts(service(), json!({"models":{}, "decisions":{
         "gpt-6-luna":{"account":"primary"},
-        "jev-1.14.0":{"account":"primary"}
+        "jev-1.14.0":{"account":"primary"},
+        "gemini-decision-1":{"account":"primary"}
     }}), &[
         ("openai", "metered", "synthetic-openai-decision"),
         ("typesafe", "jev", "synthetic-typesafe-decision"),
+        ("google", "gemini", "synthetic-google-decision"),
     ], json!({"version":1,"providers":{
         "openai":{"accounts":[{"name":"primary","enabled":true,"base_url":upstream_root,"credential":{"alias":"metered"}}]},
-        "typesafe":{"accounts":[{"name":"primary","enabled":true,"base_url":upstream_root,"credential":{"alias":"jev"}}]}
+        "typesafe":{"accounts":[{"name":"primary","enabled":true,"base_url":upstream_root,"credential":{"alias":"jev"}}]},
+        "google":{"accounts":[{"name":"primary","enabled":true,"base_url":gemini_root,"credential":{"alias":"gemini"}}]}
     }})).unwrap();
     let gateway = fixture.gateway.clone();
     let listener = TcpListener::bind(fixture.listen).await.unwrap();
@@ -95,7 +131,7 @@ async fn configured_decision_sdk_discovery_and_native_calls() {
     );
     assert_eq!(
         calls.load(Ordering::Relaxed),
-        2,
-        "discovery must not contact the upstream"
+        4,
+        "discovery and intake rejections must not contact any upstream; blocked requests send once"
     );
 }

@@ -202,7 +202,7 @@ Standalone tasks (`GPT Image`, `Gemini Nano Banana`, `Grok Imagine`, `Embeddings
 
 #### Decision models
 
-Use the separate `decisions` map; a `gpt-6-luna` entry under `models` does not enable `POST /v1/decisions`. Both may be present in one file. Each Decision entry selects one existing enabled API-key account scoped to that binding's Provider; there are no candidates or model overrides. Omit either entry to leave that protocol unbound.
+Use the separate `decisions` map; a `gpt-6-luna` entry under `models` does not enable `POST /v1/decisions`. Both may be present in one file. Each Decision entry selects one existing enabled API-key account scoped to that binding's Provider; there are no candidates or model overrides. Omit any entry to leave that binding disabled.
 
 ```json
 {
@@ -210,12 +210,13 @@ Use the separate `decisions` map; a `gpt-6-luna` entry under `models` does not e
   "models": {},
   "decisions": {
     "gpt-6-luna": {"account": "platform"},
-    "jev-1.14.0": {"account": "jev"}
+    "jev-1.14.0": {"account": "jev"},
+    "gemini-decision-1": {"account": "google-platform"}
   }
 }
 ```
 
-Declare `platform` under `openai` and `jev` under `typesafe` in `accounts.json` (or substitute your existing account names), then provision them through [the credential CLI](credentials-and-diagnostics.md#add-an-api-key). See [Decision API](api-reference.md#decisions) for SDK base URLs and the supported profile.
+Declare the selected accounts in `accounts.json` under `openai` (`platform`), `typesafe` (`jev`), or `google` (`google-platform`), then provision them through [the credential CLI](credentials-and-diagnostics.md#add-an-api-key). Substitute your configured names. Gemini is discoverable only on the TypeSafe surface and accepts only plain-text Noul. See [Decision API](api-reference.md#decisions) for the exact profiles and SDK base URLs.
 
 #### Qwen image candidates
 

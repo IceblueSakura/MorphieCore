@@ -247,7 +247,7 @@
       "get": {
         "operationId": "listSystemOneModels",
         "summary": "List activated TypeSafe Decision models",
-        "description": "Native TypeSafe envelope from the immutable gateway catalog. Empty if there are no active TypeSafe bindings. No upstream listing.",
+        "description": "TypeSafe envelope from the immutable gateway catalog. Includes only Decision bindings activated for this client family. No upstream listing.",
         "responses": {
           "200": {"description": "Complete model list.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SystemOneModelList"}}}},
           "default": {"$ref": "#/components/responses/SystemOneError"}
@@ -258,11 +258,12 @@
       "post": {
         "operationId": "createSystemOneDecision",
         "summary": "Evaluate TypeSafe Noul, Choice and Score questions",
-        "description": "Native role-less text or JSON state. Requires an activated TypeSafe Decision binding. The SDK may send one zstd frame; compressed bytes, expanded bytes, and decoder window are bounded. Multipart, media, long context opt-ins, SSE and cross-family routing are not admitted.",
+        "description": "Requires a Decision binding activated for TypeSafe. Jev accepts text or JSON state with Noul, Choice or Score. gemini-decision-1 accepts only plain-text state and Noul with text instructions. The SDK may send one bounded zstd frame. Multipart, media, long context opt-ins, SSE and other cross-family mappings are not admitted.",
         "parameters": [{"in": "header", "name": "Content-Encoding", "required": false, "schema": {"const": "zstd"}}],
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SystemOneDecisionRequest"}}}},
         "responses": {
-          "200": {"description": "One native typed answer for every requested key, with reported usage.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SystemOneDecisionResult"}}}},
+          "200": {"description": "One typed answer for every requested key, with reported usage. Gemini Noul answers do not expose confidence.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SystemOneDecisionResult"}}}},
+          "422": {"description": "Validation failed or Gemini blocked the entire request (decision_blocked).", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SystemOneError"}}}},
           "default": {"$ref": "#/components/responses/SystemOneError"}
         }
       }
@@ -672,7 +673,17 @@
               {"if": {"properties": {"type": {"const": "score"}}}, "then": {"required": ["criteria"], "properties": {"criteria": {"type": "array", "minItems": 1, "maxItems": 10, "items": {"type": "string"}}}}}
             ]
           }}
-        }
+        },
+        "if": {"properties": {"model": {"const": "gemini-decision-1"}}},
+        "then": {"properties": {
+          "state": {"type": "string", "minLength": 1},
+          "questions": {"additionalProperties": {
+            "properties": {
+              "type": {"const": "noul"},
+              "instructions": {"type": "string", "minLength": 1}
+            }
+          }}
+        }}
       },
       "SystemOneDecisionResult": {
         "type": "object", "required": ["model", "answers", "usage"],
@@ -682,7 +693,14 @@
             "type": {"enum": ["noul", "choice", "score"]}
           }}},
           "usage": {"type": "object", "required": ["input_tokens", "output_tokens"]}
-        }
+        },
+        "if": {"properties": {"model": {"const": "gemini-decision-1"}}},
+        "then": {"properties": {
+          "answers": {"additionalProperties": {
+            "required": ["type", "noul"], "additionalProperties": false,
+            "properties": {"type": {"const": "noul"}, "noul": {"type": "number", "minimum": 0, "maximum": 1}}
+          }}
+        }}
       },
       "TextModelList": {
         "type": "object",

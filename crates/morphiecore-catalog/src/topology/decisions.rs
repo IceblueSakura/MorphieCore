@@ -1,4 +1,4 @@
-//! Explicit, native-only Decision routes. A label may also have a Generation route.
+//! Explicit Decision routes. A label may also have a Generation route.
 use super::{CompiledTopology, ExecutionContract, ModelId, TopologyError};
 use crate::{
     protocol::decision::{Native, Target},
@@ -11,6 +11,7 @@ pub struct DecisionRoute {
     pub upstream_model: String,
     pub provider: ProviderId,
     pub target: Target,
+    pub client: Option<Native>,
     pub credential: CredentialBindingId,
     pub execution: ExecutionContract,
     pub system_one_metadata: Option<SystemOneMetadata>,
@@ -38,7 +39,7 @@ impl CompiledTopology {
         self.decision_routes.get(model)
     }
 
-    /// In-memory bindings for the native profile; no implicit catalog activation.
+    /// Bind only selected client/target pairs; no implicit catalog activation.
     pub fn with_decisions(mut self, routes: Vec<DecisionRoute>) -> Result<Self, TopologyError> {
         if !self.decision_routes.is_empty() || routes.len() > 64 {
             return Err(TopologyError::InvalidRoutePolicy);
@@ -62,9 +63,21 @@ impl CompiledTopology {
             {
                 return Err(TopologyError::InvalidExecutionLimits);
             }
-            if route.target != Target::Native(Native::SystemOne)
-                && route.system_one_metadata.is_some()
-            {
+            let valid_profile = match (route.client, route.target) {
+                (Some(client), Target::Native(target)) => {
+                    client == target
+                        && (client == Native::SystemOne || route.system_one_metadata.is_none())
+                }
+                (None, Target::Gemini) => route.system_one_metadata.is_none(),
+                (Some(Native::SystemOne), Target::Gemini) => {
+                    route.provider.as_str() == "google"
+                        && route.model.as_str() == "gemini-decision-1"
+                        && route.upstream_model == "gemini-decision-1"
+                        && route.system_one_metadata.is_some()
+                }
+                _ => false,
+            };
+            if !valid_profile {
                 return Err(TopologyError::TaskMismatch);
             }
             if route.upstream_model.is_empty()

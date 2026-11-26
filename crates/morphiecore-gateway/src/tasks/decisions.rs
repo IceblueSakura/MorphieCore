@@ -9,7 +9,7 @@ use crate::{
     diagnostics::{Stage, Trace},
     execution::task::PreparedTaskRequest,
     ingress::admission,
-    protocol::decision::{Expectation, Native, Target, gemini},
+    protocol::decision::{Expectation, Native, Target, gemini, system_one_gemini},
     provider::{CredentialBindingId, CredentialKind, ProviderDefinition, ProviderId},
     semantic::task::decision::{Evaluation, Request as DecisionRequest},
     topology::{CompiledTopology, ExecutionContract, decisions::DecisionRoute},
@@ -101,7 +101,7 @@ async fn ingress(
     if !runtime
         .decisions
         .values()
-        .any(|entry| entry.route.target == Target::Native(native))
+        .any(|entry| entry.route.client == Some(native))
     {
         return Err(ApiError::new(
             StatusCode::NOT_FOUND,
@@ -144,19 +144,28 @@ async fn ingress(
     let entry = runtime
         .decisions
         .get(&parsed.model)
-        .filter(|entry| entry.route.target == Target::Native(native))
+        .filter(|entry| entry.route.client == Some(native))
         .ok_or(ApiError::new(
             StatusCode::NOT_FOUND,
             crate::error::ErrorKind::ModelNotFound,
         ))?
         .clone();
-    let prepared = native
-        .prepare(parsed.task, &entry.route.upstream_model)
-        .map_err(|_| ApiError::invalid())?;
-    let wire = prepare_wire(&entry, &prepared.body, JSON_BYTES)?;
-    admitted
-        .respond(runtime, entry, wire, Output(prepared.expectation))
-        .await
+    let model = &entry.route.upstream_model;
+    let (body, output) = match entry.route.target {
+        Target::Native(target) => {
+            let prepared = target
+                .prepare(parsed.task, model)
+                .map_err(|_| ApiError::invalid())?;
+            (prepared.body, Output::Native(prepared.expectation))
+        }
+        Target::Gemini => {
+            let prepared =
+                system_one_gemini::prepare(parsed.task, model).map_err(|_| ApiError::invalid())?;
+            (prepared.body, Output::GeminiNoul(prepared.expectation))
+        }
+    };
+    let wire = prepare_wire(&entry, &body, JSON_BYTES)?;
+    admitted.respond(runtime, entry, wire, output).await
 }
 
 impl Gateway {
@@ -276,7 +285,10 @@ async fn receive_json(receiver: Receiver, trace: &mut Trace) -> Result<Vec<u8>, 
     Ok(bytes)
 }
 
-struct Output(Expectation);
+enum Output {
+    Native(Expectation),
+    GeminiNoul(system_one_gemini::Expectation),
+}
 impl TaskOutput for Output {
     type Route = DecisionRoute;
 
@@ -297,10 +309,25 @@ impl TaskOutput for Output {
         trace: &mut Trace,
     ) -> Result<(), ApiError> {
         let bytes = receive_json(receiver, trace).await?;
-        let value = self
-            .0
-            .complete(&bytes, entry.route.model.as_str())
-            .map_err(|_| ApiError::malformed())?;
+        let model = entry.route.model.as_str();
+        let value = match self {
+            Self::Native(expectation) => expectation
+                .complete(&bytes, model)
+                .map_err(|_| ApiError::malformed())?,
+            Self::GeminiNoul(expectation) => match expectation
+                .complete(&bytes, model)
+                .map_err(|_| ApiError::malformed())?
+            {
+                system_one_gemini::Delivery::Answered(value) => value,
+                system_one_gemini::Delivery::Blocked => {
+                    trace.terminal_validated();
+                    return Err(ApiError::new(
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        crate::error::ErrorKind::DecisionBlocked,
+                    ));
+                }
+            },
+        };
         crate::semantic::value::json_size(&value, limits.response_bytes)
             .map_err(|_| ApiError::upstream())?;
         let bytes = serde_json::to_vec(&value).map_err(|_| ApiError::upstream())?;

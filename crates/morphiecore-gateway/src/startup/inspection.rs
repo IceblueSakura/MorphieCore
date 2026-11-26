@@ -124,10 +124,13 @@ pub fn catalog() -> Result<Value, StartupError> {
             &route.execution,
             "decision",
         );
-        row["protocol"] = json!(match binding.native {
+        row["protocol"] = json!(match binding.client {
             crate::protocol::decision::Native::OpenAi => "openai_decisions",
             crate::protocol::decision::Native::SystemOne => "typesafe_system_one",
         });
+        if route.target == crate::protocol::decision::Target::Gemini {
+            row["upstream_protocol"] = json!("google_decisions");
+        }
         models.push(row);
     }
     Ok(json!({"models":models,
